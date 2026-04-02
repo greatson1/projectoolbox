@@ -341,7 +341,7 @@ export default function BillingPage() {
               max={10000}
               step={100}
               value={[topupCustom]}
-              onValueChange={(v: number[]) => setTopupCustom(v[0])}
+              onValueChange={(v: any) => setTopupCustom(Array.isArray(v) ? v[0] : v)}
               className="mb-2"
             />
             <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
@@ -520,7 +520,7 @@ export default function BillingPage() {
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} className="text-muted-foreground" />
                   <Tooltip
                     contentStyle={{ borderRadius: 8, fontSize: 11 }}
-                    formatter={(v: number) => [`$${v.toFixed(2)}`, "Spend"]}
+                    formatter={(v: any) => [`$${v.toFixed(2)}`, "Spend"]}
                   />
                   <Area
                     type="monotone"
