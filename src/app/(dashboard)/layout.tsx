@@ -3,14 +3,10 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { useAppStore } from "@/stores/app";
-import { useAgentSSE } from "@/hooks/use-sse";
 import { cn } from "@/lib/utils";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed } = useAppStore();
-
-  // Connect to real-time SSE for badge updates
-  useAgentSSE();
 
   return (
     <div className="min-h-screen">

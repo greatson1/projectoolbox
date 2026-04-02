@@ -10,7 +10,7 @@ import { useAgents } from "@/hooks/use-api";
 import { cn } from "@/lib/utils";
 import {
   Bot, Play, Pause, MessageSquare, Settings, Rocket, Plus,
-  AlertTriangle, CheckCircle, FileText, Users, Shield,
+  AlertTriangle, CheckCircle2, FileText, Users, Shield,
 } from "lucide-react";
 import {
   BarChart, Bar, AreaChart, Area, RadarChart, Radar, PolarGrid,
