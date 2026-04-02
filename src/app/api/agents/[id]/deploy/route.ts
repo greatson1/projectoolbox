@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { CreditService } from "@/lib/credits/service";
+import { EmailService } from "@/lib/email";
 
 // POST /api/agents/[id]/deploy — Deploy agent to project
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -55,6 +56,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       actionUrl: `/agents/${agentId}`,
     },
   });
+
+  // Send deployment email
+  if (session.user.email) {
+    const agent = await db.agent.findUnique({ where: { id: agentId } });
+    const project = await db.project.findUnique({ where: { id: projectId } });
+    EmailService.sendDeployConfirmation(session.user.email, {
+      agentName: agent?.name || "Agent",
+      projectName: project?.name || "Project",
+      autonomyLevel: agent?.autonomyLevel || 3,
+      dashboardUrl: `${process.env.NEXTAUTH_URL}/agents/${agentId}`,
+    }).catch(() => {}); // Fire and forget
+  }
 
   return NextResponse.json({ data: { deployment, agentId } }, { status: 201 });
 }
