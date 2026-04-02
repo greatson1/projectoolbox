@@ -145,7 +145,7 @@ function RAGDot({ rag }: { rag: string }) {
 
 function AgentCard({ agent, color, gradient }: { agent: any; color: string; gradient: string }) {
   const isActive = agent.status === "ACTIVE";
-  const performanceScore = agent.performanceScore ?? Math.round(70 + Math.random() * 25);
+  const performanceScore = agent.performanceScore ?? 85;
   const creditsToday = agent.creditsUsed ?? 0;
   // Generate a stable sparkline from agent id hash
   const sparkline = useMemo(() => {
@@ -316,17 +316,18 @@ export default function AgentFleetPage() {
     const row: Record<string, string | number> = { metric };
     agents.forEach((agent: any, idx: number) => {
       const count = agent._count;
-      if (metric === "Tasks") row[agent.name] = count?.activities || Math.round(10 + Math.random() * 25);
-      else if (metric === "Docs") row[agent.name] = Math.round(3 + Math.random() * 8);
-      else if (metric === "Approvals") row[agent.name] = count?.decisions || Math.round(1 + Math.random() * 5);
-      else if (metric === "Meetings") row[agent.name] = Math.round(1 + Math.random() * 5);
-      else if (metric === "Risks") row[agent.name] = Math.round(2 + Math.random() * 6);
+      if (metric === "Tasks") row[agent.name] = count?.activities || 18;
+      else if (metric === "Docs") row[agent.name] = 6;
+      else if (metric === "Approvals") row[agent.name] = count?.decisions || 3;
+      else if (metric === "Meetings") row[agent.name] = 3;
+      else if (metric === "Risks") row[agent.name] = 4;
     });
     return row;
   });
 
   // Mock 30-day credit data
-  const credit30D = useMemo(() => generateCredit30D(agentNames), [agentNames.join(",")]);
+  const agentKey = agentNames.join(",");
+  const credit30D = useMemo(() => generateCredit30D(agentNames), [agentKey]);
 
   // ── Empty state ──
   if (agents.length === 0) {
@@ -624,7 +625,7 @@ export default function AgentFleetPage() {
             <CardContent>
               <div className="space-y-3">
                 {agents.map((agent: any, idx: number) => {
-                  const tasksWeek = agent._count?.activities || Math.round(10 + Math.random() * 25);
+                  const tasksWeek = agent._count?.activities || 18;
                   const maxTasks = 35;
                   const pct = Math.min(100, Math.round((tasksWeek / maxTasks) * 100));
                   return (
@@ -685,7 +686,7 @@ export default function AgentFleetPage() {
               </thead>
               <tbody>
                 {agents.map((agent: any, idx: number) => {
-                  const tasksWeek = agent._count?.activities || Math.round(10 + Math.random() * 25);
+                  const tasksWeek = agent._count?.activities || 18;
                   const pending = agent._count?.decisions || 0;
                   const health = agent.status === "ACTIVE" ? "green" : agent.status === "PAUSED" ? "amber" : "red";
                   return (

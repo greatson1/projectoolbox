@@ -85,13 +85,13 @@ const ACTIVITY_EVENTS = [
   ]},
 ];
 
-const HEATMAP_DATA: number[][] = Array.from({ length: 13 }, () =>
-  Array.from({ length: 7 }, () => Math.floor(Math.random() * 5))
+const HEATMAP_DATA: number[][] = Array.from({ length: 13 }, (_, i) =>
+  Array.from({ length: 7 }, (_, j) => ((i * 3 + j * 7) % 5))
 );
 
 const HOURLY_DIST = Array.from({ length: 24 }, (_, h) => ({
   hour: `${h}:00`,
-  actions: h >= 8 && h <= 18 ? 5 + Math.floor(Math.random() * 15) : Math.floor(Math.random() * 3),
+  actions: h >= 8 && h <= 18 ? 5 + ((h * 3) % 12) : h % 2,
 }));
 
 // Decisions tab
@@ -128,13 +128,13 @@ const PERF_RADAR = [
 
 const EFFICIENCY_TREND = Array.from({ length: 12 }, (_, i) => ({
   week: `W${i + 1}`,
-  tasksPerDay: 3.2 + (i * 0.15) + (Math.random() * 0.4 - 0.2),
+  tasksPerDay: 3.2 + (i * 0.15) + ((i % 3) * 0.1),
   fleetAvg: 3.0 + (i * 0.08),
 }));
 
 const CREDIT_EFFICIENCY = Array.from({ length: 12 }, (_, i) => ({
   week: `W${i + 1}`,
-  creditsPerTask: 42 - (i * 1.5) + (Math.random() * 4 - 2),
+  creditsPerTask: 42 - (i * 1.5) + ((i % 3) - 1),
   fleetAvg: 45 - (i * 0.8),
 }));
 
