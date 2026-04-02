@@ -1,0 +1,473 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth (NextAuth adapter) ───
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Users & Orgs ───
+
+model User {
+  id                 String          @id @default(cuid())
+  email              String          @unique
+  emailVerified      DateTime?
+  name               String?
+  passwordHash       String?
+  image              String?
+  role               UserRole        @default(MEMBER)
+  onboardingComplete Boolean         @default(false)
+  orgId              String?
+  org                Organisation?   @relation(fields: [orgId], references: [id])
+  accounts           Account[]
+  sessions           Session[]
+  projects           ProjectMember[]
+  approvals          Approval[]
+  notifications      Notification[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+}
+
+model Organisation {
+  id               String              @id @default(cuid())
+  name             String
+  slug             String              @unique
+  industry         String?
+  companySize      String?
+  website          String?
+  timezone         String              @default("Europe/London")
+  billingEmail     String?
+  plan             PlanTier            @default(FREE)
+  stripeCustomerId String?             @unique
+  stripeSubId      String?
+  creditBalance    Int                 @default(0)
+  autoTopUp        Json?
+  users            User[]
+  projects         Project[]
+  agents           Agent[]
+  invoices         Invoice[]
+  creditTxns       CreditTransaction[]
+  apiKeys          ApiKey[]
+  auditLogs        AuditLog[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+}
+
+// ─── Projects ───
+
+model Project {
+  id             String            @id @default(cuid())
+  name           String
+  description    String?
+  status         ProjectStatus     @default(ACTIVE)
+  methodology    Methodology       @default(WATERFALL)
+  startDate      DateTime?
+  endDate        DateTime?
+  budget         Float?
+  priority       String?
+  category       String?
+  orgId          String
+  org            Organisation      @relation(fields: [orgId], references: [id])
+  members        ProjectMember[]
+  agents         AgentDeployment[]
+  phases         Phase[]
+  tasks          Task[]
+  risks          Risk[]
+  issues         Issue[]
+  changeRequests ChangeRequest[]
+  stakeholders   Stakeholder[]
+  approvals      Approval[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model ProjectMember {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id])
+  role      String  @default("MEMBER")
+
+  @@unique([userId, projectId])
+}
+
+// ─── Agents ───
+
+model Agent {
+  id               String            @id @default(cuid())
+  name             String
+  codename         String
+  status           AgentStatus       @default(IDLE)
+  autonomyLevel    Int               @default(2)
+  personality      Json?
+  gradient         String?
+  orgId            String
+  org              Organisation      @relation(fields: [orgId], references: [id])
+  deployments      AgentDeployment[]
+  decisions        AgentDecision[]
+  activities       AgentActivity[]
+  chatMessages     ChatMessage[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  decommissionedAt DateTime?
+}
+
+model AgentDeployment {
+  id         String   @id @default(cuid())
+  agentId    String
+  agent      Agent    @relation(fields: [agentId], references: [id])
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  isActive   Boolean  @default(true)
+  config     Json?
+  deployedAt DateTime @default(now())
+}
+
+model AgentDecision {
+  id          String         @id @default(cuid())
+  agentId     String
+  agent       Agent          @relation(fields: [agentId], references: [id])
+  type        DecisionType
+  description String
+  reasoning   String         @db.Text
+  confidence  Float
+  status      DecisionStatus @default(PENDING)
+  approvalId  String?        @unique
+  approval    Approval?      @relation(fields: [approvalId], references: [id])
+  createdAt   DateTime       @default(now())
+}
+
+model AgentActivity {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  type      String
+  summary   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  agentId        String
+  agent          Agent    @relation(fields: [agentId], references: [id])
+  conversationId String?
+  role           String
+  content        String   @db.Text
+  metadata       Json?
+  createdAt      DateTime @default(now())
+}
+
+// ─── Approvals (HITL) ───
+
+model Approval {
+  id            String         @id @default(cuid())
+  projectId     String
+  project       Project        @relation(fields: [projectId], references: [id])
+  requestedById String
+  assignedToId  String?
+  assignedTo    User?          @relation(fields: [assignedToId], references: [id])
+  type          ApprovalType
+  title         String
+  description   String         @db.Text
+  impact        Json?
+  status        ApprovalStatus @default(PENDING)
+  decision      AgentDecision?
+  comment       String?        @db.Text
+  resolvedAt    DateTime?
+  createdAt     DateTime       @default(now())
+}
+
+// ─── Project Modules ───
+
+model Phase {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id])
+  name        String
+  order       Int
+  status      String    @default("PENDING")
+  artefacts   Json?
+  approvalReq Boolean   @default(true)
+  criteria    String?
+  startDate   DateTime?
+  endDate     DateTime?
+}
+
+model Task {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id])
+  title        String
+  description  String?   @db.Text
+  status       String    @default("TODO")
+  priority     String?
+  assigneeId   String?
+  phaseId      String?
+  parentId     String?
+  startDate    DateTime?
+  endDate      DateTime?
+  progress     Int       @default(0)
+  storyPoints  Int?
+  dependencies Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Risk {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  title       String
+  description String?  @db.Text
+  probability Int      @default(3)
+  impact      Int      @default(3)
+  score       Int?
+  status      String   @default("OPEN")
+  owner       String?
+  mitigation  String?  @db.Text
+  category    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Issue {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id])
+  title       String
+  description String?   @db.Text
+  priority    String    @default("MEDIUM")
+  status      String    @default("OPEN")
+  assigneeId  String?
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ChangeRequest {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  title       String
+  description String?  @db.Text
+  impact      Json?
+  status      String   @default("SUBMITTED")
+  requestedBy String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Stakeholder {
+  id           String  @id @default(cuid())
+  projectId    String
+  project      Project @relation(fields: [projectId], references: [id])
+  name         String
+  role         String?
+  organisation String?
+  power        Int     @default(50)
+  interest     Int     @default(50)
+  sentiment    String?
+  email        String?
+}
+
+// ─── Billing ───
+
+model CreditTransaction {
+  id              String        @id @default(cuid())
+  orgId           String
+  org             Organisation  @relation(fields: [orgId], references: [id])
+  amount          Int
+  type            CreditTxnType
+  description     String
+  agentId         String?
+  stripePaymentId String?
+  createdAt       DateTime      @default(now())
+}
+
+model Invoice {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organisation @relation(fields: [orgId], references: [id])
+  stripeId  String?      @unique
+  amount    Float
+  currency  String       @default("usd")
+  status    String       @default("draft")
+  pdfUrl    String?
+  createdAt DateTime     @default(now())
+}
+
+model ApiKey {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organisation @relation(fields: [orgId], references: [id])
+  name      String
+  keyHash   String
+  lastFour  String
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime     @default(now())
+}
+
+// ─── Notifications ───
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  isRead    Boolean          @default(false)
+  actionUrl String?
+  metadata  Json?
+  createdAt DateTime         @default(now())
+}
+
+// ─── Audit ───
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organisation @relation(fields: [orgId], references: [id])
+  userId    String?
+  action    String
+  target    String
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+}
+
+// ─── Enums ───
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum Methodology {
+  WATERFALL
+  AGILE_SCRUM
+  AGILE_KANBAN
+  PRINCE2
+  HYBRID
+  SAFE
+}
+
+enum AgentStatus {
+  IDLE
+  ACTIVE
+  PAUSED
+  ERROR
+  DECOMMISSIONED
+}
+
+enum DecisionType {
+  TASK_ASSIGNMENT
+  RISK_RESPONSE
+  SCHEDULE_CHANGE
+  RESOURCE_ALLOCATION
+  ESCALATION
+  BUDGET_CHANGE
+  SCOPE_CHANGE
+}
+
+enum DecisionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DEFERRED
+  AUTO_APPROVED
+  CANCELLED
+}
+
+enum ApprovalType {
+  PHASE_GATE
+  CHANGE_REQUEST
+  BUDGET
+  RISK_RESPONSE
+  SCOPE_CHANGE
+  RESOURCE
+  COMMUNICATION
+  PROCUREMENT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DEFERRED
+  CANCELLED
+}
+
+enum CreditTxnType {
+  PURCHASE
+  SUBSCRIPTION_GRANT
+  USAGE
+  REFUND
+  BONUS
+}
+
+enum NotificationType {
+  AGENT_ALERT
+  APPROVAL_REQUEST
+  BILLING
+  SYSTEM
+  MILESTONE
+  RISK_ESCALATION
+}
