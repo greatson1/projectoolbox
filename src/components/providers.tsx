@@ -2,7 +2,7 @@
 
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -10,12 +10,16 @@ export function Providers({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30 * 1000, // 30s for dashboards
+            staleTime: 30 * 1000,
             refetchOnWindowFocus: false,
           },
         },
       })
   );
+
+  // Prevent hydration mismatch by not rendering until mounted
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -23,9 +27,9 @@ export function Providers({ children }: { children: ReactNode }) {
         attribute="class"
         defaultTheme="dark"
         enableSystem={false}
-        disableTransitionOnChange={false}
+        disableTransitionOnChange
       >
-        {children}
+        {mounted ? children : <div style={{ visibility: "hidden" }}>{children}</div>}
       </ThemeProvider>
     </QueryClientProvider>
   );
