@@ -387,6 +387,7 @@ model Report {
   type        ReportType
   status      ReportStatus @default(DRAFT)
   format      String       @default("PDF")
+  content     String?      @db.Text
   projectId   String?
   project     Project?     @relation(fields: [projectId], references: [id])
   agentId     String?
@@ -399,7 +400,21 @@ model Report {
   creditsUsed Int          @default(0)
   generatedAt DateTime     @default(now())
   publishedAt DateTime?
+  editedAt    DateTime?
+  editedBy    String?
   recipients  String[]
+  versions    DocumentVersion[]
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  reportId    String
+  report      Report   @relation(fields: [reportId], references: [id])
+  version     Int
+  content     String   @db.Text
+  editedBy    String?
+  comment     String?
+  createdAt   DateTime @default(now())
 }
 
 model ReportSchedule {
