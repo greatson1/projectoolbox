@@ -179,7 +179,7 @@ export default function NotificationsPage() {
         priority: (n.priority === "high" ? "high" : "none") as Priority,
         read: n.isRead || false, actions: ["Acknowledge"],
       }))
-    : NOTIFS;
+    : [];
   const [notifications, setNotifications] = useState(initialNotifs);
   const [activeTab, setActiveTab] = useState<NType | "all">("all");
   const [agentFilter, setAgentFilter] = useState<string | null>(null);

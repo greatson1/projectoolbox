@@ -226,7 +226,7 @@ export default function AgentFleetPage() {
   // Map API agents to the Agent shape used by the UI, or fall back to mocks
   const agents: Agent[] = useMemo(() => {
     const raw = apiData?.agents;
-    if (!raw || raw.length === 0) return AGENTS;
+    if (!raw || raw.length === 0) return [];
     return raw.map((a: any, i: number) => {
       const fallbackColors = ["#6366F1", "#22D3EE", "#10B981", "#F97316", "#EC4899"];
       const fallbackGradients = [
@@ -254,7 +254,7 @@ export default function AgentFleetPage() {
 
   const activities: ActivityEvent[] = useMemo(() => {
     const raw = apiData?.activities;
-    if (!raw || raw.length === 0) return ACTIVITY_EVENTS;
+    if (!raw || raw.length === 0) return [];
     return raw.map((a: any, i: number) => ({
       id: i + 1, agentId: a.agentId || "", agentName: a.agentName || "Agent",
       agentColor: a.agentGradient || "#6366F1", agentInitials: (a.agentName || "?")[0].toUpperCase(),
@@ -266,7 +266,7 @@ export default function AgentFleetPage() {
 
   const alerts: Alert[] = useMemo(() => {
     const raw = apiData?.alerts;
-    if (!raw || raw.length === 0) return ALERTS;
+    if (!raw || raw.length === 0) return [];
     return raw.map((a: any, i: number) => ({
       id: i + 1, agentId: "", agentName: "System", agentInitials: "!", agentColor: "#EF4444",
       priority: (a.type === "BUDGET" || a.type === "RISK" ? "critical" : "high") as Alert["priority"],
@@ -307,12 +307,24 @@ export default function AgentFleetPage() {
       </div>
 
       {/* ═══ 2. FLEET OVERVIEW CARDS ═══ */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
-        {agents.map(agent => (
-          <AgentCard key={agent.id} agent={agent} />
-        ))}
-      </div>
+      {agents.length === 0 ? (
+        <Card className="px-5">
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-4" style={{ background: "var(--primary)", opacity: 0.1 }}>🤖</div>
+            <h3 className="text-[16px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No agents deployed yet</h3>
+            <p className="text-[13px] max-w-md mb-4" style={{ color: "var(--muted-foreground)" }}>Deploy your first AI project agent to start managing projects autonomously. Each agent connects to a project and handles tasks, risks, reports, and stakeholder communications.</p>
+            <Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy Your First Agent</Button>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
+          {agents.map(agent => (
+            <AgentCard key={agent.id} agent={agent} />
+          ))}
+        </div>
+      )}
 
+      {agents.length > 0 && (<>
       {/* ═══ 3. FLEET ACTIVITY TIMELINE ═══ */}
       <Card className="px-5">
         <div className="flex items-center justify-between mb-4">
@@ -599,6 +611,7 @@ export default function AgentFleetPage() {
           })}
         </div>
       </Card>
+      </>)}
     </div>
   );
 }
