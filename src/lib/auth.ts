@@ -1,12 +1,19 @@
 import NextAuth from "next-auth";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
 
+let adapter: any = undefined;
+try {
+  const { PrismaAdapter } = require("@auth/prisma-adapter");
+  adapter = PrismaAdapter(db);
+} catch {
+  // Adapter init can fail during build or cold start — auth still works with JWT
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(db),
+  ...(adapter && { adapter }),
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
@@ -44,15 +51,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
-        const dbUser = await db.user.findUnique({
-          where: { id: user.id },
-          select: { role: true, orgId: true, onboardingComplete: true },
-        });
-        token.role = dbUser?.role;
-        token.orgId = dbUser?.orgId;
-        token.onboardingComplete = dbUser?.onboardingComplete;
+        // For Google OAuth — create or link user in DB
+        if (account?.provider === "google") {
+          let dbUser = await db.user.findUnique({ where: { email: user.email! } });
+          if (!dbUser) {
+            // Auto-create user from Google sign-in
+            dbUser = await db.user.create({
+              data: {
+                email: user.email!,
+                name: user.name,
+                image: user.image,
+                emailVerified: new Date(),
+              },
+            });
+          }
+          token.sub = dbUser.id;
+          token.role = dbUser.role;
+          token.orgId = dbUser.orgId;
+          token.onboardingComplete = dbUser.onboardingComplete;
+        } else {
+          // Credentials login
+          const dbUser = await db.user.findUnique({
+            where: { id: user.id },
+            select: { role: true, orgId: true, onboardingComplete: true },
+          });
+          token.role = dbUser?.role;
+          token.orgId = dbUser?.orgId;
+          token.onboardingComplete = dbUser?.onboardingComplete;
+        }
       }
       return token;
     },
