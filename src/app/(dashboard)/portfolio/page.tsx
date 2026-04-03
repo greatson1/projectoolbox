@@ -2,6 +2,8 @@
 // @ts-nocheck
 
 import { cn } from "@/lib/utils";
+import { useProjects } from "@/hooks/use-api";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

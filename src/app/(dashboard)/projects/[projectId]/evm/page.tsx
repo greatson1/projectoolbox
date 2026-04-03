@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useProject } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,12 @@ function Gauge({ value, label, min = 0, max = 1.5}: { value: number; label: stri
 // ================================================================
 
 export default function EVMDashboardPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { data: apiProject } = useProject(projectId);
+
+  // Use project budget from API when available, fall back to mock BAC
+  const projectBudget = (apiProject && apiProject.budget) ? apiProject.budget : BAC;
+
   const mode = "dark";
 
   const metrics = [

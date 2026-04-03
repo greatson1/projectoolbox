@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useProjectTasks } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -181,6 +182,25 @@ function getEpicColor(name: string) {
 // ═══════════════════════════════════════════════════════════════════
 
 export default function AgileBoardPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { data: apiTasks } = useProjectTasks(projectId);
+
+  const ISSUES_DATA: Issue[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any, idx: number) => ({
+    id: t.id || `PTX-${100 + idx}`,
+    title: t.title || t.name || "",
+    type: (t.type === "bug" ? "bug" : t.type === "spike" ? "spike" : t.type === "task" ? "task" : "story") as IssueType,
+    column: (t.status === "done" || t.status === "completed" ? "done" : t.status === "in_review" ? "in_review" : t.status === "in_progress" || t.status === "active" ? "in_progress" : t.status === "todo" ? "todo" : "backlog") as ColumnId,
+    priority: (t.priority === "critical" ? "critical" : t.priority === "high" ? "high" : t.priority === "low" ? "low" : "medium") as Priority,
+    storyPoints: t.storyPoints ?? t.points ?? 0,
+    assignee: t.assignee || t.assigneeName || "",
+    labels: t.labels || [],
+    epic: t.epic || "",
+    dueDate: t.dueDate || t.endDate,
+    blocked: t.blocked || false,
+    subtasks: t.subtasks,
+    description: t.description,
+  })) : ISSUES;
+
   const mode = "dark";
 
   // State
@@ -201,7 +221,7 @@ export default function AgileBoardPage() {
 
   // Filtered issues
   const filteredIssues = useMemo(() => {
-    let result = [...ISSUES];
+    let result = [...ISSUES_DATA];
     if (filterMyItems) result = result.filter(i => i.assignee === "Sarah Chen"); // simulated current user
     if (filterBlocked) result = result.filter(i => i.blocked);
     if (filterBugs) result = result.filter(i => i.type === "bug");
@@ -219,8 +239,8 @@ export default function AgileBoardPage() {
 
   const sprint = SPRINTS.find(s => s.id === selectedSprint)!;
   const daysRemaining = 14 - sprint.daysPassed;
-  const completedSP = ISSUES.filter(i => i.column === "done").reduce((s, i) => s + i.storyPoints, 0);
-  const committedSP = ISSUES.reduce((s, i) => s + i.storyPoints, 0);
+  const completedSP = ISSUES_DATA.filter(i => i.column === "done").reduce((s, i) => s + i.storyPoints, 0);
+  const committedSP = ISSUES_DATA.reduce((s, i) => s + i.storyPoints, 0);
   const lastSprintVelocity = 46;
 
   return (

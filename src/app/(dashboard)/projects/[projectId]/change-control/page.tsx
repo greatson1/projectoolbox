@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useProjectChangeRequests } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,13 +66,35 @@ const DECISIONS = [
 // ================================================================
 
 export default function ChangeControlPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { data: apiChangeRequests } = useProjectChangeRequests(projectId);
+
+  const CRS_DATA: CR[] = (apiChangeRequests && apiChangeRequests.length > 0) ? apiChangeRequests.map((cr: any, idx: number) => ({
+    id: cr.id || `CR-${String(idx + 1).padStart(3, "0")}`,
+    title: cr.title || "",
+    category: cr.category || "scope",
+    priority: cr.priority || "medium",
+    requester: cr.requester || cr.requestedBy || "",
+    date: cr.date || cr.createdAt || "",
+    status: cr.status || "Submitted",
+    impactScore: cr.impactScore ?? 5,
+    decisionDate: cr.decisionDate || "",
+    approver: cr.approver || "",
+    scopeImpact: cr.scopeImpact || "",
+    scheduleDays: cr.scheduleDays ?? 0,
+    costImpact: cr.costImpact ?? 0,
+    riskDelta: cr.riskDelta || "",
+    resourceHours: cr.resourceHours ?? 0,
+    aiSummary: cr.aiSummary || "",
+  })) : CRS;
+
   const mode = "dark";
   const [view, setView] = useState<"kanban" | "table">("kanban");
   const [selectedCR, setSelectedCR] = useState<CR | null>(null);
   const [search, setSearch] = useState("");
 
-  const filtered = CRS.filter((cr) => !search || cr.title.toLowerCase().includes(search.toLowerCase()) || cr.id.toLowerCase().includes(search.toLowerCase()));
-  const pending = CRS.filter((cr) => !["Implementation", "Closed"].includes(cr.status)).length;
+  const filtered = CRS_DATA.filter((cr) => !search || cr.title.toLowerCase().includes(search.toLowerCase()) || cr.id.toLowerCase().includes(search.toLowerCase()));
+  const pending = CRS_DATA.filter((cr) => !["Implementation", "Closed"].includes(cr.status)).length;
   const approved = DECISIONS.filter((d) => d.decision === "approved").length;
 
   return (
@@ -81,7 +104,7 @@ export default function ChangeControlPage() {
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Change Control Board</h1>
           <div className="flex gap-4 mt-1">
-            {[{ l: "Total CRs", v: CRS.length }, { l: "Pending", v: pending }, { l: "Approval Rate", v: `${Math.round((approved / DECISIONS.length) * 100)}%` }].map((s) => (
+            {[{ l: "Total CRs", v: CRS_DATA.length }, { l: "Pending", v: pending }, { l: "Approval Rate", v: `${Math.round((approved / DECISIONS.length) * 100)}%` }].map((s) => (
               <span key={s.l} className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{s.l}: <strong style={{ color: "var(--foreground)" }}>{s.v}</strong></span>
             ))}
           </div>

@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useProjectStakeholders } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,12 +70,32 @@ const COMMS_ICONS: Record<string, string> = { Meeting: "🤝", Email: "📧", Ca
 // ================================================================
 
 export default function StakeholdersPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { data: apiStakeholders } = useProjectStakeholders(projectId);
+
+  const STAKEHOLDERS_DATA: Stakeholder[] = (apiStakeholders && apiStakeholders.length > 0) ? apiStakeholders.map((s: any, idx: number) => ({
+    id: s.id || `s${idx + 1}`,
+    name: s.name || "",
+    role: s.role || "",
+    org: s.org || s.organization || "",
+    power: s.power ?? 3,
+    interest: s.interest ?? 3,
+    sentiment: s.sentiment || "unknown",
+    engagement: s.engagement || "medium",
+    lastContact: s.lastContact || "—",
+    assignedTo: s.assignedTo || "",
+    email: s.email || "",
+    phone: s.phone || "",
+    strategy: s.strategy || "",
+    commPref: s.commPref || s.communicationPreference || "",
+  })) : STAKEHOLDERS;
+
   const mode = "dark";
   const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Stakeholder | null>(null);
 
-  const filtered = STAKEHOLDERS.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.role.toLowerCase().includes(search.toLowerCase()));
+  const filtered = STAKEHOLDERS_DATA.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.role.toLowerCase().includes(search.toLowerCase()));
 
   // Grid quadrant positioning
   function gridPos(s: Stakeholder): { x: number; y: number } {

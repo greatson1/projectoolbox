@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useProjectTasks } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -207,6 +208,22 @@ const STATUS_ORDER: ItemStatus[] = ["todo", "in_progress", "in_review", "done"];
 // ═══════════════════════════════════════════════════════════════════
 
 export default function SprintTrackerPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { data: apiTasks } = useProjectTasks(projectId);
+
+  const SPRINT_ITEMS_DATA: SprintItem[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any) => ({
+    id: t.id,
+    title: t.title || t.name || "",
+    type: (t.type === "bug" ? "bug" : t.type === "spike" ? "spike" : t.type === "task" ? "task" : "story") as IssueType,
+    sp: t.storyPoints ?? t.points ?? 0,
+    status: (t.status === "done" || t.status === "completed" ? "done" : t.status === "in_review" ? "in_review" : t.status === "in_progress" || t.status === "active" ? "in_progress" : t.status === "blocked" ? "blocked" : "todo") as ItemStatus,
+    assignee: t.assignee || t.assigneeName || "",
+    timeInStatus: t.timeInStatus || "—",
+    cycleTime: t.cycleTime,
+    blocked: t.blocked || false,
+    atRisk: t.atRisk || false,
+  })) : SPRINT_ITEMS;
+
   const mode = "dark";
   const [selectedSprint, setSelectedSprint] = useState(7);
   const [standupView, setStandupView] = useState<"today" | "previous">("today");
@@ -218,10 +235,10 @@ export default function SprintTrackerPage() {
   const paceVsAvg = Math.round(((sprint.done / sprint.daysPassed) / (avgVelocity / 10)) * 100);
 
   const filteredBacklog = useMemo(() => {
-    if (backlogFilter === "all") return SPRINT_ITEMS;
-    if (backlogFilter === "at_risk") return SPRINT_ITEMS.filter(i => i.atRisk || i.blocked);
-    if (backlogFilter === "blocked") return SPRINT_ITEMS.filter(i => i.blocked || i.status === "blocked");
-    return SPRINT_ITEMS.filter(i => i.status === backlogFilter);
+    if (backlogFilter === "all") return SPRINT_ITEMS_DATA;
+    if (backlogFilter === "at_risk") return SPRINT_ITEMS_DATA.filter(i => i.atRisk || i.blocked);
+    if (backlogFilter === "blocked") return SPRINT_ITEMS_DATA.filter(i => i.blocked || i.status === "blocked");
+    return SPRINT_ITEMS_DATA.filter(i => i.status === backlogFilter);
   }, [backlogFilter]);
 
   return (

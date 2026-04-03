@@ -2,7 +2,9 @@
 // @ts-nocheck
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-
+import Link from "next/link";
+import { useAgents } from "@/hooks/use-api";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -213,6 +215,13 @@ export default function AgentFleetPage() {
   const mode = "dark";
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
+
+  // Real API data (falls back to mock AGENTS when empty)
+  const { data: apiData, isLoading } = useAgents();
+  const realAgents = apiData?.agents || [];
+  const realActivities = apiData?.activities || [];
+
+  if (isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <Skeleton key={i} className="h-64 rounded-xl" />)}</div></div>;
 
   const totalCreditsToday = AGENTS.reduce((s, a) => s + a.creditsToday, 0);
   const activeCount = AGENTS.filter(a => a.status === "active").length;

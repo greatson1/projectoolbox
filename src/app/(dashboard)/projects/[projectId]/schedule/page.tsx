@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useProjectTasks } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,23 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 };
 
 export default function SchedulePage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const { data: apiTasks } = useProjectTasks(projectId);
+
+  const TASKS_DATA: ScheduleTask[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any) => ({
+    id: t.id,
+    name: t.title || t.name,
+    phase: t.phase || "Execution",
+    start: t.startDate || t.start || "2026-01-06",
+    end: t.endDate || t.end || "2026-01-20",
+    progress: t.progress ?? 0,
+    status: t.status === "completed" || t.status === "done" ? "done" : t.status === "in_progress" || t.status === "active" ? "active" : t.status === "at-risk" ? "at-risk" : t.isMilestone ? "milestone" : "pending" as TaskStatus,
+    dependsOn: t.dependsOn || t.dependencies || [],
+    assignee: t.assignee || t.assigneeName || "",
+    isMilestone: t.isMilestone || false,
+    isCriticalPath: t.isCriticalPath || false,
+  })) : TASKS;
+
   const mode = "dark";
   const [zoom, setZoom] = useState<ZoomLevel>("month");
   const [view, setView] = useState<ViewMode>("gantt");
@@ -120,8 +138,8 @@ export default function SchedulePage() {
 
   // Compute timeline range
   const { timelineStart, timelineEnd, totalDays, dayWidth } = useMemo(() => {
-    const allStarts = TASKS.map(t => parseDate(t.start));
-    const allEnds = TASKS.map(t => parseDate(t.end));
+    const allStarts = TASKS_DATA.map(t => parseDate(t.start));
+    const allEnds = TASKS_DATA.map(t => parseDate(t.end));
     const minDate = new Date(Math.min(...allStarts.map(d => d.getTime())));
     const maxDate = new Date(Math.max(...allEnds.map(d => d.getTime())));
     const ts = addDays(minDate, -7);
@@ -153,7 +171,7 @@ export default function SchedulePage() {
   // Group tasks by phase
   const tasksByPhase = useMemo(() => {
     const map = new Map<string, ScheduleTask[]>();
-    for (const t of TASKS) {
+    for (const t of TASKS_DATA) {
       if (!map.has(t.phase)) map.set(t.phase, []);
       map.get(t.phase)!.push(t);
     }
@@ -161,12 +179,12 @@ export default function SchedulePage() {
   }, []);
 
   // Stats
-  const totalTasks = TASKS.length;
-  const completedTasks = TASKS.filter(t => t.status === "done").length;
-  const milestonesHit = TASKS.filter(t => t.isMilestone && t.status === "done").length;
-  const totalMilestones = TASKS.filter(t => t.isMilestone).length;
-  const criticalTasks = TASKS.filter(t => t.isCriticalPath).length;
-  const overallProgress = Math.round(TASKS.reduce((s, t) => s + t.progress, 0) / totalTasks);
+  const totalTasks = TASKS_DATA.length;
+  const completedTasks = TASKS_DATA.filter(t => t.status === "done").length;
+  const milestonesHit = TASKS_DATA.filter(t => t.isMilestone && t.status === "done").length;
+  const totalMilestones = TASKS_DATA.filter(t => t.isMilestone).length;
+  const criticalTasks = TASKS_DATA.filter(t => t.isCriticalPath).length;
+  const overallProgress = Math.round(TASKS_DATA.reduce((s, t) => s + t.progress, 0) / totalTasks);
 
   const ROW_HEIGHT = 36;
 
@@ -204,7 +222,7 @@ export default function SchedulePage() {
                 </tr>
               </thead>
               <tbody>
-                {TASKS.map(t => {
+                {TASKS_DATA.map(t => {
                   const dur = diffDays(parseDate(t.start), parseDate(t.end)) + 1;
                   return (
                     <tr key={t.id} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}22` }}>
