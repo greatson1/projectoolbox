@@ -56,14 +56,10 @@ export default function LoginPage() {
             </div>
 
             {/* Social login */}
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={() => signIn("google", { callbackUrl: "/dashboard" })} className="text-xs">
+            <div>
+              <Button variant="outline" onClick={() => signIn("google", { callbackUrl: "/dashboard" })} className="text-xs w-full">
                 <span className="w-4 h-4 rounded-sm bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center mr-2">G</span>
-                Google
-              </Button>
-              <Button variant="outline" className="text-xs">
-                <span className="w-4 h-4 rounded-sm bg-sky-600 text-white text-[8px] font-bold flex items-center justify-center mr-2">M</span>
-                Microsoft
+                Continue with Google
               </Button>
             </div>
 

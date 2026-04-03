@@ -141,12 +141,9 @@ function SignupPageInner() {
                 <p className="text-sm text-muted-foreground">Start your 14-day free trial</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" className="text-xs">
-                  <span className="w-4 h-4 rounded-sm bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center mr-2">G</span>Google
-                </Button>
-                <Button variant="outline" className="text-xs">
-                  <span className="w-4 h-4 rounded-sm bg-sky-600 text-white text-[8px] font-bold flex items-center justify-center mr-2">M</span>Microsoft
+              <div>
+                <Button variant="outline" className="text-xs w-full" onClick={() => { import("next-auth/react").then(m => m.signIn("google", { callbackUrl: "/dashboard" })); }}>
+                  <span className="w-4 h-4 rounded-sm bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center mr-2">G</span>Continue with Google
                 </Button>
               </div>
 
