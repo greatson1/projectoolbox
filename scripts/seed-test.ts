@@ -125,7 +125,7 @@ async function main() {
           status,
           projectId: project.id,
           priority: status === "IN_PROGRESS" ? "HIGH" : "MEDIUM",
-          percentComplete: status === "DONE" ? 100 : status === "IN_PROGRESS" ? 50 : 0,
+          progress: status === "DONE" ? 100 : status === "IN_PROGRESS" ? 50 : 0,
         },
       });
     }
@@ -251,7 +251,7 @@ async function main() {
         title: "API endpoint returning 500 intermittently",
         description: "The /api/sync endpoint fails under high load. Investigating connection pool limits.",
         status: "OPEN",
-        severity: "HIGH",
+        priority: "HIGH",
         projectId: project.id,
       },
     });
@@ -260,7 +260,7 @@ async function main() {
         title: "Missing test coverage for payment module",
         description: "Unit test coverage dropped below 80% after recent refactor.",
         status: "IN_PROGRESS",
-        severity: "MEDIUM",
+        priority: "MEDIUM",
         projectId: project.id,
       },
     });
