@@ -102,7 +102,7 @@ export function buildReportPrompt(type: string, sections: string[], data: Awaite
 PROJECT: ${project.name}
 Methodology: ${project.methodology}
 Status: ${project.status}
-Budget: $${(project.budget || 0).toLocaleString()}
+Budget: £${(project.budget || 0).toLocaleString()}
 Start: ${project.startDate || "TBD"} | End: ${project.endDate || "TBD"}
 Agent: ${agent ? `${agent.name} (L${agent.autonomyLevel})` : "None assigned"}
 
@@ -288,7 +288,7 @@ and ${metrics.openIssues} open issue${metrics.openIssues !== 1 ? "s" : ""} requi
 <tr><td>Open Risks</td><td>${metrics.totalRisks} (${metrics.criticalRisks} critical)</td><td>${metrics.criticalRisks > 2 ? "🔴 High" : metrics.criticalRisks > 0 ? "🟡 Medium" : "🟢 Low"}</td></tr>
 <tr><td>Open Issues</td><td>${metrics.openIssues}</td><td>${metrics.openIssues > 5 ? "🟡" : "🟢"}</td></tr>
 <tr><td>Pending Approvals</td><td>${metrics.pendingApprovals}</td><td>${metrics.pendingApprovals > 3 ? "🟡" : "🟢"}</td></tr>
-<tr><td>Budget</td><td>$${(project.budget || 0).toLocaleString()}</td><td>🟢 Within plan</td></tr>
+<tr><td>Budget</td><td>£${(project.budget || 0).toLocaleString()}</td><td>— No spend data</td></tr>
 </tbody>
 </table>
 
