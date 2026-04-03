@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useAppStore } from "@/stores/app";
 import { Bell, Moon, Sun, Search, User } from "lucide-react";
@@ -8,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export function Header() {
-  const { theme, setTheme } = useTheme();
+  const { setTheme, resolvedTheme } = useTheme();
   const { unreadNotifications, sidebarCollapsed } = useAppStore();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   return (
     <header
@@ -33,13 +36,13 @@ export function Header() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
           className="rounded-lg"
         >
-          {theme === "dark" ? (
-            <Sun className="w-4 h-4" />
+          {mounted ? (
+            resolvedTheme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />
           ) : (
-            <Moon className="w-4 h-4" />
+            <span className="w-4 h-4" />
           )}
         </Button>
 
