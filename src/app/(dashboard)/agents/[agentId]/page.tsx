@@ -980,6 +980,52 @@ export default function AgentProfilePage() {
 
         {/* ─── CONFIGURATION ─── */}
         <TabsContent value="configuration" className="space-y-4">
+          {/* Agent Identity — Editable */}
+          <Card className="p-4">
+            <h3 className="mb-4 text-sm font-semibold text-foreground">Agent Identity</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Agent Name</label>
+                <input className="w-full mt-1 px-3 py-2 rounded-lg text-sm bg-background border border-input"
+                  defaultValue={AGENT.name}
+                  id="agent-name-input" />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Codename</label>
+                <input className="w-full mt-1 px-3 py-2 rounded-lg text-sm bg-background border border-input text-muted-foreground"
+                  defaultValue={AGENT.codename || `${AGENT.name.toUpperCase()}-${Math.floor(Date.now() % 100)}`}
+                  disabled />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Avatar Gradient</label>
+                <div className="flex gap-3 mt-2">
+                  {["linear-gradient(135deg, #6366F1, #8B5CF6)", "linear-gradient(135deg, #22D3EE, #06B6D4)", "linear-gradient(135deg, #10B981, #34D399)", "linear-gradient(135deg, #F97316, #FB923C)", "linear-gradient(135deg, #EC4899, #F472B6)", "linear-gradient(135deg, #8B5CF6, #A78BFA)"].map((g, i) => (
+                    <button key={i} className="w-9 h-9 rounded-full transition-all hover:scale-110"
+                      style={{ background: g, outline: AGENT.gradient === g ? "3px solid var(--primary)" : "none", outlineOffset: 3 }}
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/agents/${AGENT.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gradient: g }) });
+                          if (res.ok) window.location.reload();
+                        } catch {}
+                      }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <Button variant="default" className="mt-4" onClick={async () => {
+              const nameInput = document.getElementById("agent-name-input") as HTMLInputElement;
+              if (!nameInput?.value) return;
+              try {
+                const res = await fetch(`/api/agents/${AGENT.id}`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: nameInput.value }),
+                });
+                if (res.ok) { alert("Agent name updated!"); window.location.reload(); }
+                else { const err = await res.json(); alert(err.error || "Failed to update"); }
+              } catch { alert("Network error"); }
+            }}>Save Identity</Button>
+          </Card>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Autonomy slider */}
             <Card className="p-4">
@@ -1035,7 +1081,16 @@ export default function AgentProfilePage() {
                   );
                 })}
               </div>
-              <Button variant="default" className="mt-3 w-full">
+              <Button variant="default" className="mt-3 w-full" onClick={async () => {
+                try {
+                  const res = await fetch(`/api/agents/${AGENT.id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ autonomyLevel: configAutonomy }),
+                  });
+                  if (res.ok) { alert(`Autonomy updated to Level ${configAutonomy}`); window.location.reload(); }
+                  else { const err = await res.json(); alert(err.error || "Failed"); }
+                } catch { alert("Network error"); }
+              }}>
                 Save Autonomy Level
               </Button>
             </Card>
@@ -1100,6 +1155,16 @@ export default function AgentProfilePage() {
                       ? "Balanced professional tone"
                       : "Conversational, uses plain language"}
                 </p>
+                <Button variant="default" size="sm" className="mt-3 w-full" onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/agents/${AGENT.id}`, {
+                      method: "PATCH", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ personality: { formal: personality, detail: 50 } }),
+                    });
+                    if (res.ok) alert("Communication style saved!");
+                    else alert("Failed to save");
+                  } catch { alert("Network error"); }
+                }}>Save Style</Button>
               </Card>
 
               {/* Integrations */}
@@ -1180,7 +1245,14 @@ export default function AgentProfilePage() {
                 <p className="mb-2 text-[11px] text-muted-foreground">
                   Temporarily stop all agent activity. Can be resumed.
                 </p>
-                <Button variant="outline" size="sm" className="border-amber-500/40 text-amber-500 hover:bg-amber-500/10">
+                <Button variant="outline" size="sm" className="border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
+                  onClick={async () => {
+                    if (!confirm("Pause this agent? It will stop all activity.")) return;
+                    try {
+                      await fetch(`/api/agents/${AGENT.id}/pause`, { method: "POST" });
+                      alert("Agent paused"); window.location.reload();
+                    } catch { alert("Failed"); }
+                  }}>
                   <Pause className="mr-1 size-3" /> Pause Agent
                 </Button>
               </div>
@@ -1198,7 +1270,13 @@ export default function AgentProfilePage() {
                 <p className="mb-2 text-[11px] text-muted-foreground">
                   Permanently remove. All data archived. Cannot be undone.
                 </p>
-                <Button variant="destructive" size="sm">
+                <Button variant="destructive" size="sm" onClick={async () => {
+                  if (!confirm("Are you sure? This permanently removes the agent. All history is preserved but the agent will stop all work.")) return;
+                  try {
+                    await fetch(`/api/agents/${AGENT.id}`, { method: "DELETE" });
+                    alert("Agent decommissioned"); window.location.href = "/agents";
+                  } catch { alert("Failed"); }
+                }}>
                   Decommission
                 </Button>
               </div>
