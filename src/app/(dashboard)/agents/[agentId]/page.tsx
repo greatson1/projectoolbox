@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useAgent } from "@/hooks/use-api";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2,
@@ -227,13 +229,39 @@ function ChatBubble({ from, text, agentColor }: { from: "agent" | "user"; text: 
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════
 
-export default function AgentProfilePage() {
+export default function AgentProfilePage({ params }: { params: Promise<{ agentId: string }> }) {
+  const { agentId } = React.use(params);
+  const { data: apiAgent, isLoading } = useAgent(agentId);
+
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [configAutonomy, setConfigAutonomy] = useState(AGENT.autonomyLevel);
   const [personality, setPersonality] = useState(40);
   const [notifs, setNotifs] = useState(NOTIFICATION_PREFS.map((n) => n.enabled));
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
+
+  // Merge real API data over the mock defaults
+  const AGENT_RESOLVED = useMemo(() => {
+    if (!apiAgent) return AGENT;
+    const project = apiAgent.deployments?.[0]?.project;
+    return {
+      ...AGENT,
+      id: apiAgent.id,
+      name: apiAgent.name || AGENT.name,
+      codename: apiAgent.codename || AGENT.codename,
+      initials: (apiAgent.name || AGENT.name)[0].toUpperCase(),
+      gradient: apiAgent.gradient || AGENT.gradient,
+      color: apiAgent.gradient ? "#6366F1" : AGENT.color,
+      project: project?.name || AGENT.project,
+      methodology: project?.methodology || AGENT.methodology,
+      status: (apiAgent.status?.toLowerCase() || AGENT.status) as "active" | "paused" | "idle" | "error",
+      autonomyLevel: apiAgent.autonomyLevel || AGENT.autonomyLevel,
+      autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT.autonomyLevel],
+      performanceScore: apiAgent.performanceScore || AGENT.performanceScore,
+    };
+  }, [apiAgent]);
+
+  if (isLoading) return <div className="space-y-4 max-w-[1400px] mx-auto"><Skeleton className="h-6 w-48" /><Skeleton className="h-28 rounded-xl" /><div className="grid grid-cols-6 gap-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div></div>;
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -243,16 +271,16 @@ export default function AgentProfilePage() {
           Agent Fleet
         </Link>
         <ChevronRight className="size-3 text-muted-foreground" />
-        <span className="font-semibold text-foreground">{AGENT.name}</span>
+        <span className="font-semibold text-foreground">{AGENT_RESOLVED.name}</span>
       </div>
 
       {/* ═══ 1. AGENT HEADER BANNER ═══ */}
       <div
         className="overflow-hidden rounded-[14px] border"
-        style={{ borderColor: AGENT.color + "33" }}
+        style={{ borderColor: AGENT_RESOLVED.color + "33" }}
       >
         {/* Gradient banner */}
-        <div className="relative h-20" style={{ background: AGENT.gradient }}>
+        <div className="relative h-20" style={{ background: AGENT_RESOLVED.gradient }}>
           <div
             className="absolute inset-0"
             style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.4))" }}
@@ -265,16 +293,16 @@ export default function AgentProfilePage() {
             <div
               className="flex size-16 flex-shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white ring-4 ring-card"
               style={{
-                background: AGENT.gradient,
-                boxShadow: `0 0 20px ${AGENT.color}44`,
+                background: AGENT_RESOLVED.gradient,
+                boxShadow: `0 0 20px ${AGENT_RESOLVED.color}44`,
               }}
             >
-              {AGENT.initials}
+              {AGENT_RESOLVED.initials}
             </div>
             <div className="min-w-0 flex-1 pb-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-[22px] font-bold text-foreground">
-                  Agent {AGENT.name}
+                  Agent {AGENT_RESOLVED.name}
                 </h1>
                 <span className="size-2.5 animate-pulse rounded-full bg-emerald-500" />
                 <Badge variant="secondary" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600">
@@ -282,15 +310,15 @@ export default function AgentProfilePage() {
                 </Badge>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">{AGENT.project}</span>
+                <span className="font-semibold text-foreground">{AGENT_RESOLVED.project}</span>
                 <Badge variant="secondary" className="border-blue-500/30 bg-blue-500/10 text-blue-600">
-                  {AGENT.methodology}
+                  {AGENT_RESOLVED.methodology}
                 </Badge>
-                <span>Deployed {AGENT.deployedDate}</span>
+                <span>Deployed {AGENT_RESOLVED.deployedDate}</span>
                 <span>·</span>
-                <span>{AGENT.uptimeDays} days uptime</span>
+                <span>{AGENT_RESOLVED.uptimeDays} days uptime</span>
                 <span>·</span>
-                <span>Level {AGENT.autonomyLevel} — {AGENT.autonomyLabel}</span>
+                <span>Level {AGENT_RESOLVED.autonomyLevel} — {AGENT_RESOLVED.autonomyLabel}</span>
               </div>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
@@ -362,8 +390,8 @@ export default function AgentProfilePage() {
               <div
                 className="flex size-10 flex-shrink-0 items-center justify-center rounded-full text-base font-bold text-white"
                 style={{
-                  background: AGENT.gradient,
-                  boxShadow: `0 0 12px ${AGENT.color}33`,
+                  background: AGENT_RESOLVED.gradient,
+                  boxShadow: `0 0 12px ${AGENT_RESOLVED.color}33`,
                 }}
               >
                 A
@@ -376,7 +404,7 @@ export default function AgentProfilePage() {
                   <span className="size-2 animate-pulse rounded-full bg-emerald-500" />
                 </div>
                 <p className="text-[13px] leading-relaxed text-muted-foreground">
-                  {AGENT.currentTask}
+                  {AGENT_RESOLVED.currentTask}
                 </p>
               </div>
             </div>
@@ -395,7 +423,7 @@ export default function AgentProfilePage() {
                       i === 0 ? "bg-primary/5" : "bg-muted/50"
                     )}
                   >
-                    <span className="text-[10px] font-bold" style={{ color: AGENT.color }}>
+                    <span className="text-[10px] font-bold" style={{ color: AGENT_RESOLVED.color }}>
                       {t.id}
                     </span>
                     <span className="flex-1 truncate text-xs text-foreground">{t.title}</span>
@@ -579,14 +607,14 @@ export default function AgentProfilePage() {
                             </span>
                             <div
                               className="mt-1.5 size-2 flex-shrink-0 rounded-full"
-                              style={{ background: AGENT.color }}
+                              style={{ background: AGENT_RESOLVED.color }}
                             />
                             <div className="flex-1">
                               <span
                                 className="mr-2 rounded px-1.5 py-0.5 text-[9px] font-semibold"
                                 style={{
-                                  background: AGENT.color + "15",
-                                  color: AGENT.color,
+                                  background: AGENT_RESOLVED.color + "15",
+                                  color: AGENT_RESOLVED.color,
                                 }}
                               >
                                 {evt.type}
@@ -620,7 +648,7 @@ export default function AgentProfilePage() {
                         background:
                           v === 0
                             ? "hsl(var(--border) / 0.15)"
-                            : `${AGENT.color}${(20 + v * 18).toString(16)}`,
+                            : `${AGENT_RESOLVED.color}${(20 + v * 18).toString(16)}`,
                       }}
                     />
                   ))}
@@ -636,7 +664,7 @@ export default function AgentProfilePage() {
                           background:
                             v === 0
                               ? "hsl(var(--border) / 0.15)"
-                              : `${AGENT.color}${(20 + v * 18).toString(16)}`,
+                              : `${AGENT_RESOLVED.color}${(20 + v * 18).toString(16)}`,
                         }}
                       />
                     ))}
@@ -667,7 +695,7 @@ export default function AgentProfilePage() {
                           color: "var(--foreground)",
                         }}
                       />
-                      <Bar dataKey="actions" fill={AGENT.color} radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="actions" fill={AGENT_RESOLVED.color} radius={[2, 2, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -682,28 +710,28 @@ export default function AgentProfilePage() {
           <div
             className="flex items-center gap-3 rounded-xl p-4"
             style={{
-              background: AGENT.color + "08",
-              border: `1px solid ${AGENT.color}22`,
+              background: AGENT_RESOLVED.color + "08",
+              border: `1px solid ${AGENT_RESOLVED.color}22`,
             }}
           >
             <div
               className="flex size-10 items-center justify-center rounded-full text-sm font-bold text-white"
               style={{
-                background: AGENT.gradient,
-                boxShadow: `0 0 12px ${AGENT.color}33`,
+                background: AGENT_RESOLVED.gradient,
+                boxShadow: `0 0 12px ${AGENT_RESOLVED.color}33`,
               }}
             >
               AI
             </div>
             <div className="flex-1">
-              <p className="text-[13px] font-semibold" style={{ color: AGENT.color }}>
+              <p className="text-[13px] font-semibold" style={{ color: AGENT_RESOLVED.color }}>
                 Autonomy Recommendation
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Agent Alpha has a{" "}
                 <strong className="text-emerald-500">96.2% decision accuracy</strong> over 156
                 decisions. Current Level 3 (Co-pilot) — consider upgrading to{" "}
-                <strong style={{ color: AGENT.color }}>Level 4 (Autonomous)</strong> for this
+                <strong style={{ color: AGENT_RESOLVED.color }}>Level 4 (Autonomous)</strong> for this
                 project.
               </p>
             </div>
@@ -732,7 +760,7 @@ export default function AgentProfilePage() {
                 <tbody>
                   {DECISIONS.map((d) => (
                     <tr key={d.id} className="border-b border-border/10">
-                      <td className="px-3 py-2.5 font-bold" style={{ color: AGENT.color }}>
+                      <td className="px-3 py-2.5 font-bold" style={{ color: AGENT_RESOLVED.color }}>
                         {d.id}
                       </td>
                       <td className="max-w-[200px] px-3 py-2.5 font-medium">{d.desc}</td>
@@ -740,7 +768,7 @@ export default function AgentProfilePage() {
                         {d.rationale}
                       </td>
                       <td className="px-3 py-2.5">
-                        <ConfidenceBar pct={d.confidence} color={AGENT.color} />
+                        <ConfidenceBar pct={d.confidence} color={AGENT_RESOLVED.color} />
                       </td>
                       <td className="px-3 py-2.5">
                         <Badge
@@ -793,9 +821,9 @@ export default function AgentProfilePage() {
                     <Line
                       type="monotone"
                       dataKey="score"
-                      stroke={AGENT.color}
+                      stroke={AGENT_RESOLVED.color}
                       strokeWidth={2.5}
-                      dot={{ r: 4, fill: AGENT.color }}
+                      dot={{ r: 4, fill: AGENT_RESOLVED.color }}
                       name="Quality %"
                     />
                   </LineChart>
@@ -861,8 +889,8 @@ export default function AgentProfilePage() {
                     />
                     <Radar
                       dataKey="value"
-                      stroke={AGENT.color}
-                      fill={AGENT.color + "33"}
+                      stroke={AGENT_RESOLVED.color}
+                      fill={AGENT_RESOLVED.color + "33"}
                       strokeWidth={2}
                       name="Alpha"
                     />
@@ -880,7 +908,7 @@ export default function AgentProfilePage() {
               </div>
               <div className="flex items-center justify-center gap-4 text-[10px] text-muted-foreground/60">
                 <span className="flex items-center gap-1">
-                  <span className="inline-block h-0.5 w-3" style={{ background: AGENT.color }} />
+                  <span className="inline-block h-0.5 w-3" style={{ background: AGENT_RESOLVED.color }} />
                   Alpha
                 </span>
                 <span className="flex items-center gap-1">
@@ -925,9 +953,9 @@ export default function AgentProfilePage() {
                     <Line
                       type="monotone"
                       dataKey="tasksPerDay"
-                      stroke={AGENT.color}
+                      stroke={AGENT_RESOLVED.color}
                       strokeWidth={2.5}
-                      dot={{ r: 3, fill: AGENT.color }}
+                      dot={{ r: 3, fill: AGENT_RESOLVED.color }}
                       name="Alpha"
                     />
                   </LineChart>
@@ -984,7 +1012,7 @@ export default function AgentProfilePage() {
 
         {/* ─── INBOX ─── */}
         <TabsContent value="inbox" className="space-y-4">
-          <AgentInboxTab agentId={AGENT.id} agentColor={AGENT.color} />
+          <AgentInboxTab agentId={AGENT_RESOLVED.id} agentColor={AGENT_RESOLVED.color} />
         </TabsContent>
 
         {/* ─── CONFIGURATION ─── */}
@@ -996,13 +1024,13 @@ export default function AgentProfilePage() {
               <div>
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Agent Name</label>
                 <input className="w-full mt-1 px-3 py-2 rounded-lg text-sm bg-background border border-input"
-                  defaultValue={AGENT.name}
+                  defaultValue={AGENT_RESOLVED.name}
                   id="agent-name-input" />
               </div>
               <div>
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Codename</label>
                 <input className="w-full mt-1 px-3 py-2 rounded-lg text-sm bg-background border border-input text-muted-foreground"
-                  defaultValue={AGENT.codename || `${AGENT.name.toUpperCase()}-${Math.floor(Date.now() % 100)}`}
+                  defaultValue={AGENT_RESOLVED.codename || `${AGENT_RESOLVED.name.toUpperCase()}-${Math.floor(Date.now() % 100)}`}
                   disabled />
               </div>
               <div className="md:col-span-2">
@@ -1010,10 +1038,10 @@ export default function AgentProfilePage() {
                 <div className="flex gap-3 mt-2">
                   {["linear-gradient(135deg, #6366F1, #8B5CF6)", "linear-gradient(135deg, #22D3EE, #06B6D4)", "linear-gradient(135deg, #10B981, #34D399)", "linear-gradient(135deg, #F97316, #FB923C)", "linear-gradient(135deg, #EC4899, #F472B6)", "linear-gradient(135deg, #8B5CF6, #A78BFA)"].map((g, i) => (
                     <button key={i} className="w-9 h-9 rounded-full transition-all hover:scale-110"
-                      style={{ background: g, outline: AGENT.gradient === g ? "3px solid var(--primary)" : "none", outlineOffset: 3 }}
+                      style={{ background: g, outline: AGENT_RESOLVED.gradient === g ? "3px solid var(--primary)" : "none", outlineOffset: 3 }}
                       onClick={async () => {
                         try {
-                          const res = await fetch(`/api/agents/${AGENT.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gradient: g }) });
+                          const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gradient: g }) });
                           if (res.ok) window.location.reload();
                         } catch {}
                       }} />
@@ -1025,7 +1053,7 @@ export default function AgentProfilePage() {
               const nameInput = document.getElementById("agent-name-input") as HTMLInputElement;
               if (!nameInput?.value) return;
               try {
-                const res = await fetch(`/api/agents/${AGENT.id}`, {
+                const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}`, {
                   method: "PATCH", headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ name: nameInput.value }),
                 });
@@ -1041,7 +1069,7 @@ export default function AgentProfilePage() {
             <p className="text-[11px] text-muted-foreground mb-3">
               Give this agent its own email address. Invite it to meetings, forward project updates, or CC it on correspondence. The agent will extract relevant information and use it to manage projects.
             </p>
-            <AgentEmailSection agentId={AGENT.id} />
+            <AgentEmailSection agentId={AGENT_RESOLVED.id} />
           </Card>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1069,7 +1097,7 @@ export default function AgentProfilePage() {
                               key={d}
                               className="size-2.5 rounded-full"
                               style={{
-                                background: d <= al.level ? AGENT.color : "var(--border)",
+                                background: d <= al.level ? AGENT_RESOLVED.color : "var(--border)",
                                 opacity: d <= al.level ? 1 : 0.4,
                               }}
                             />
@@ -1101,7 +1129,7 @@ export default function AgentProfilePage() {
               </div>
               <Button variant="default" className="mt-3 w-full" onClick={async () => {
                 try {
-                  const res = await fetch(`/api/agents/${AGENT.id}`, {
+                  const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}`, {
                     method: "PATCH", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ autonomyLevel: configAutonomy }),
                   });
@@ -1132,7 +1160,7 @@ export default function AgentProfilePage() {
                           setNotifs(copy);
                         }}
                         style={{
-                          background: notifs[i] ? AGENT.color : "var(--border)",
+                          background: notifs[i] ? AGENT_RESOLVED.color : "var(--border)",
                           opacity: notifs[i] ? 1 : 0.6,
                         }}
                       >
@@ -1161,7 +1189,7 @@ export default function AgentProfilePage() {
                     onChange={(e) => setPersonality(Number(e.target.value))}
                     className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full"
                     style={{
-                      background: `linear-gradient(to right, ${AGENT.color} ${personality}%, var(--border) ${personality}%)`,
+                      background: `linear-gradient(to right, ${AGENT_RESOLVED.color} ${personality}%, var(--border) ${personality}%)`,
                     }}
                   />
                   <span className="text-[11px] font-medium text-muted-foreground">Friendly</span>
@@ -1175,7 +1203,7 @@ export default function AgentProfilePage() {
                 </p>
                 <Button variant="default" size="sm" className="mt-3 w-full" onClick={async () => {
                   try {
-                    const res = await fetch(`/api/agents/${AGENT.id}`, {
+                    const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}`, {
                       method: "PATCH", headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ personality: { formal: personality, detail: 50 } }),
                     });
@@ -1267,7 +1295,7 @@ export default function AgentProfilePage() {
                   onClick={async () => {
                     if (!confirm("Pause this agent? It will stop all activity.")) return;
                     try {
-                      await fetch(`/api/agents/${AGENT.id}/pause`, { method: "POST" });
+                      await fetch(`/api/agents/${AGENT_RESOLVED.id}/pause`, { method: "POST" });
                       alert("Agent paused"); window.location.reload();
                     } catch { alert("Failed"); }
                   }}>
@@ -1291,7 +1319,7 @@ export default function AgentProfilePage() {
                 <Button variant="destructive" size="sm" onClick={async () => {
                   if (!confirm("Are you sure? This permanently removes the agent. All history is preserved but the agent will stop all work.")) return;
                   try {
-                    await fetch(`/api/agents/${AGENT.id}`, { method: "DELETE" });
+                    await fetch(`/api/agents/${AGENT_RESOLVED.id}`, { method: "DELETE" });
                     alert("Agent decommissioned"); window.location.href = "/agents";
                   } catch { alert("Failed"); }
                 }}>
@@ -1309,8 +1337,8 @@ export default function AgentProfilePage() {
         className="fixed bottom-6 right-6 z-40 flex size-14 items-center justify-center rounded-full text-xl text-white shadow-lg transition-all hover:scale-105"
         onClick={() => setChatOpen(!chatOpen)}
         style={{
-          background: AGENT.gradient,
-          boxShadow: `0 4px 20px ${AGENT.color}44`,
+          background: AGENT_RESOLVED.gradient,
+          boxShadow: `0 4px 20px ${AGENT_RESOLVED.color}44`,
         }}
       >
         {chatOpen ? "×" : <MessageSquare className="size-5" />}
@@ -1322,12 +1350,12 @@ export default function AgentProfilePage() {
           className="fixed bottom-24 right-6 z-40 w-[340px] overflow-hidden rounded-[14px] border border-border bg-card shadow-2xl"
         >
           {/* Chat header */}
-          <div className="flex items-center gap-2 px-4 py-3" style={{ background: AGENT.gradient }}>
+          <div className="flex items-center gap-2 px-4 py-3" style={{ background: AGENT_RESOLVED.gradient }}>
             <div className="flex size-7 items-center justify-center rounded-full bg-white/20 text-xs font-bold text-white">
-              {AGENT.initials}
+              {AGENT_RESOLVED.initials}
             </div>
             <div>
-              <p className="text-xs font-semibold text-white">Chat with Agent {AGENT.name}</p>
+              <p className="text-xs font-semibold text-white">Chat with Agent {AGENT_RESOLVED.name}</p>
               <p className="text-[9px] text-white/70">Online · Project Atlas</p>
             </div>
           </div>
@@ -1336,17 +1364,17 @@ export default function AgentProfilePage() {
             <ChatBubble
               from="agent"
               text="Good morning! I'm currently generating the Risk Register v3. Would you like a progress update?"
-              agentColor={AGENT.color}
+              agentColor={AGENT_RESOLVED.color}
             />
             <ChatBubble
               from="user"
               text="Yes, how's it looking?"
-              agentColor={AGENT.color}
+              agentColor={AGENT_RESOLVED.color}
             />
             <ChatBubble
               from="agent"
               text="12 risks identified — 2 rated red (vendor delay, resource conflict). I've drafted mitigation strategies for all. ETA for completion: ~2 hours. Shall I prioritise the red risks for your review?"
-              agentColor={AGENT.color}
+              agentColor={AGENT_RESOLVED.color}
             />
           </div>
           {/* Input */}

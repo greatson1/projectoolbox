@@ -220,21 +220,72 @@ export default function AgentFleetPage() {
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
 
-  // Real API data (falls back to mock AGENTS when empty)
+  // Real API data — falls back to mock AGENTS when no agents deployed yet
   const { data: apiData, isLoading } = useAgents();
-  const realAgents = apiData?.agents || [];
-  const realActivities = apiData?.activities || [];
+
+  // Map API agents to the Agent shape used by the UI, or fall back to mocks
+  const agents: Agent[] = useMemo(() => {
+    const raw = apiData?.agents;
+    if (!raw || raw.length === 0) return AGENTS;
+    return raw.map((a: any, i: number) => {
+      const fallbackColors = ["#6366F1", "#22D3EE", "#10B981", "#F97316", "#EC4899"];
+      const fallbackGradients = [
+        "linear-gradient(135deg, #6366F1, #8B5CF6)", "linear-gradient(135deg, #22D3EE, #06B6D4)",
+        "linear-gradient(135deg, #10B981, #34D399)", "linear-gradient(135deg, #F97316, #FB923C)",
+        "linear-gradient(135deg, #EC4899, #F472B6)",
+      ];
+      const color = fallbackColors[i % 5];
+      const project = a.project || a.deployments?.[0]?.project;
+      return {
+        id: a.id, name: a.name, initials: (a.name || "?")[0].toUpperCase(),
+        gradient: a.gradient || fallbackGradients[i % 5], color,
+        project: project?.name || "Unassigned",
+        methodology: (project?.methodology || "Hybrid") as Methodology,
+        status: (a.status?.toLowerCase() || "idle") as AgentStatus,
+        currentTask: a.currentTask || "Awaiting instructions",
+        autonomyLevel: a.autonomyLevel || 2, autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][a.autonomyLevel || 2],
+        performanceScore: a.performanceScore || 0, creditsToday: a.creditsUsed || 0,
+        creditSparkline: [0, 0, 0, 0, 0, 0, 0, 0],
+        phase: a.currentPhase || "—", health: "green" as RAG,
+        tasksWeek: a._count?.activities || 0, pendingApprovals: 0, totalCredits: a.creditsUsed || 0,
+      };
+    });
+  }, [apiData]);
+
+  const activities: ActivityEvent[] = useMemo(() => {
+    const raw = apiData?.activities;
+    if (!raw || raw.length === 0) return ACTIVITY_EVENTS;
+    return raw.map((a: any, i: number) => ({
+      id: i + 1, agentId: a.agentId || "", agentName: a.agentName || "Agent",
+      agentColor: a.agentGradient || "#6366F1", agentInitials: (a.agentName || "?")[0].toUpperCase(),
+      type: a.type || "System", message: a.summary || "", project: "",
+      time: new Date(a.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+      minutesAgo: Math.round((Date.now() - new Date(a.createdAt).getTime()) / 60000),
+    }));
+  }, [apiData]);
+
+  const alerts: Alert[] = useMemo(() => {
+    const raw = apiData?.alerts;
+    if (!raw || raw.length === 0) return ALERTS;
+    return raw.map((a: any, i: number) => ({
+      id: i + 1, agentId: "", agentName: "System", agentInitials: "!", agentColor: "#EF4444",
+      priority: (a.type === "BUDGET" || a.type === "RISK" ? "critical" : "high") as Alert["priority"],
+      message: a.description || a.title, project: a.project || "",
+      time: new Date(a.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+      actions: ["Review", "Acknowledge"],
+    }));
+  }, [apiData]);
 
   const filteredEvents = useMemo(() => {
-    if (!activityFilter) return ACTIVITY_EVENTS;
-    return ACTIVITY_EVENTS.filter(e => e.agentId === activityFilter);
-  }, [activityFilter]);
+    if (!activityFilter) return activities;
+    return activities.filter(e => e.agentId === activityFilter);
+  }, [activityFilter, activities]);
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <Skeleton key={i} className="h-64 rounded-xl" />)}</div></div>;
 
-  const totalCreditsToday = AGENTS.reduce((s, a) => s + a.creditsToday, 0);
-  const activeCount = AGENTS.filter(a => a.status === "active").length;
-  const pausedCount = AGENTS.filter(a => a.status === "paused").length;
+  const totalCreditsToday = agents.reduce((s, a) => s + a.creditsToday, 0);
+  const activeCount = agents.filter(a => a.status === "active").length;
+  const pausedCount = agents.filter(a => a.status === "paused").length;
 
   return (
     <div className="space-y-6 max-w-[1600px]">
@@ -243,7 +294,7 @@ export default function AgentFleetPage() {
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Agent Fleet</h1>
           <p className="text-[13px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: "var(--muted-foreground)" }}>
-            <span className="font-semibold" style={{ color: "var(--foreground)" }}>{AGENTS.length} Agents Deployed</span>
+            <span className="font-semibold" style={{ color: "var(--foreground)" }}>{agents.length} Agents Deployed</span>
             <Dot />
             <span>{activeCount} Active</span>
             <Dot />
@@ -257,7 +308,7 @@ export default function AgentFleetPage() {
 
       {/* ═══ 2. FLEET OVERVIEW CARDS ═══ */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
-        {AGENTS.map(agent => (
+        {agents.map(agent => (
           <AgentCard key={agent.id} agent={agent} />
         ))}
       </div>
@@ -278,7 +329,7 @@ export default function AgentFleetPage() {
                 color: !activityFilter ? "var(--primary)" : "var(--muted-foreground)",
                 border: `1px solid ${!activityFilter ? "var(--primary)" + "44" : "transparent"}`,
               }}>All</button>
-            {AGENTS.map(a => (
+            {agents.map(a => (
               <button key={a.id} className="flex items-center gap-1 px-2 py-1 rounded-[6px] text-[10px] font-semibold transition-all"
                 onClick={() => setActivityFilter(activityFilter === a.id ? null : a.id)}
                 style={{
@@ -350,7 +401,7 @@ export default function AgentFleetPage() {
               </ResponsiveContainer>
             </div>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
-              {AGENTS.map(a => (
+              {agents.map(a => (
                 <span key={a.id} className="flex items-center gap-1 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
                   <span className="w-2.5 h-2.5 rounded-sm" style={{ background: a.color }} />{a.name}
                 </span>
@@ -405,7 +456,7 @@ export default function AgentFleetPage() {
           <Card className="px-5">
             <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Agent Utilisation</h3>
             <div className="space-y-3">
-              {AGENTS.map(agent => {
+              {agents.map(agent => {
                 const totalAssigned = agent.tasksWeek;
                 const maxTasks = 35; // normalise against highest performer
                 const pct = Math.round((totalAssigned / maxTasks) * 100);
@@ -443,7 +494,7 @@ export default function AgentFleetPage() {
               </tr>
             </thead>
             <tbody>
-              {AGENTS.map(agent => (
+              {agents.map(agent => (
                 <tr key={agent.id} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}11` }}>
                   <td className="py-2.5 px-3 font-semibold">{agent.project}</td>
                   <td className="py-2.5 px-3">
@@ -504,13 +555,13 @@ export default function AgentFleetPage() {
           <div className="flex items-center gap-2">
             <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Alerts & Escalations</h3>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#EF4444" }}>
-              {ALERTS.length}
+              {alerts.length}
             </span>
           </div>
           <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Priority-sorted · Requires human attention</span>
         </div>
         <div className="space-y-2.5">
-          {ALERTS.map(alert => {
+          {alerts.map(alert => {
             const priorityColor = alert.priority === "critical" ? "#EF4444" : alert.priority === "high" ? "#F97316" : "#F59E0B";
             return (
               <div key={alert.id} className="flex items-start gap-3 p-3 rounded-[10px] transition-all"
