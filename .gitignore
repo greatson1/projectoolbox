@@ -45,3 +45,4 @@ next-env.d.ts
 .env.local
 
 .vercel
+cloudflare-email-worker/node_modules/

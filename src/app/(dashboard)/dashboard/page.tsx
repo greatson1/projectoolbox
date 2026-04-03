@@ -149,10 +149,10 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Main Grid ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-        {/* Left: Projects Table */}
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+        {/* Left: Projects Table + Charts */}
         <div className="xl:col-span-3 space-y-6">
-          <Card>
+          <Card className="px-5">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-[15px]">Projects</CardTitle>
               <Link href="/projects">
@@ -205,12 +205,11 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </div>
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Burndown */}
-            <Card>
+            <Card className="px-5">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Sprint Burndown</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
@@ -237,7 +236,7 @@ export default function DashboardPage() {
             </Card>
 
             {/* Risk Distribution */}
-            <Card>
+            <Card className="px-5">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Distribution</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
@@ -257,10 +256,42 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-        {/* Right: Phase Gates + Activity + Agents */}
+          {/* Agent Fleet Summary — in left column to balance heights */}
+          <Card className="px-5">
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-sm">Agent Fleet</CardTitle>
+              <Link href="/agents"><Button variant="ghost" size="sm" className="text-xs">View All</Button></Link>
+            </CardHeader>
+            <CardContent>
+              {agents.length === 0 ? (
+                <div className="text-center py-4">
+                  <Bot className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">No agents deployed yet</p>
+                  <Link href="/agents/deploy"><Button size="sm" className="mt-2">Deploy First Agent</Button></Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {agents.map((a: any) => (
+                    <Link key={a.id} href={`/agents/${a.id}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                        style={{ background: a.gradient || "#6366F1" }}>{a.name[0]}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{a.name}</p>
+                        <p className="text-[10px] text-muted-foreground">L{a.autonomyLevel} · {a.status}</p>
+                      </div>
+                      <span className={`w-2 h-2 rounded-full ${a.status === "ACTIVE" ? "bg-green-400 animate-pulse" : a.status === "PAUSED" ? "bg-amber-400" : "bg-muted-foreground"}`} />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right: Phase Gates + Activity + Credits + Upcoming */}
         <div className="xl:col-span-2 space-y-6">
           {/* Phase Gates */}
-          <Card>
+          <Card className="px-5">
             <CardHeader className="pb-3"><CardTitle className="text-sm">Phase Gates — {projects[0]?.name || "Project"}</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -290,39 +321,8 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Agent Fleet Summary */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-sm">Agent Fleet</CardTitle>
-              <Link href="/agents"><Button variant="ghost" size="sm" className="text-xs">View All</Button></Link>
-            </CardHeader>
-            <CardContent>
-              {agents.length === 0 ? (
-                <div className="text-center py-4">
-                  <Bot className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">No agents deployed yet</p>
-                  <Link href="/agents/deploy"><Button size="sm" className="mt-2">Deploy First Agent</Button></Link>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {agents.map((a: any) => (
-                    <Link key={a.id} href={`/agents/${a.id}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                        style={{ background: a.gradient || "#6366F1" }}>{a.name[0]}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{a.name}</p>
-                        <p className="text-[10px] text-muted-foreground">L{a.autonomyLevel} · {a.status}</p>
-                      </div>
-                      <span className={`w-2 h-2 rounded-full ${a.status === "ACTIVE" ? "bg-green-400 animate-pulse" : a.status === "PAUSED" ? "bg-amber-400" : "bg-muted-foreground"}`} />
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Activity Feed */}
-          <Card>
+          <Card className="px-5">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-sm">Agent Activity</CardTitle>
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -352,7 +352,7 @@ export default function DashboardPage() {
           </Card>
 
           {/* Credits */}
-          <Card>
+          <Card className="px-5">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Credit Balance</span>
@@ -364,7 +364,7 @@ export default function DashboardPage() {
           </Card>
 
           {/* Upcoming */}
-          <Card>
+          <Card className="px-5">
             <CardHeader className="pb-3"><CardTitle className="text-sm">Upcoming</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-2.5">

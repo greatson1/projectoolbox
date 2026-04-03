@@ -165,6 +165,66 @@ Generate the complete report now.`;
 }
 
 /**
+ * Sanitises LLM output — converts any residual markdown to HTML
+ * and strips artifacts that would render badly in TipTap.
+ */
+function sanitiseReportHtml(raw: string): string {
+  let html = raw.trim();
+
+  // Strip wrapping markdown code fences (```html ... ```)
+  html = html.replace(/^```(?:html)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
+
+  // Convert markdown headings → HTML headings
+  html = html.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>");
+  html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
+  html = html.replace(/^####\s+(.+)$/gm, "<h4>$1</h4>");
+  html = html.replace(/^###\s+(.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^##\s+(.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
+
+  // Convert **bold** → <strong>
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  // Convert *italic* / _italic_ → <em> (but not inside HTML tags)
+  html = html.replace(/(?<![<\w])_([^_\n]+?)_(?![>\w])/g, "<em>$1</em>");
+  html = html.replace(/(?<![<\w])\*([^*\n]+?)\*(?![>\w])/g, "<em>$1</em>");
+
+  // Convert markdown bullet lists (- item / * item) that aren't already in <ul>
+  html = html.replace(/(?:^|\n)((?:[ \t]*[-*]\s+.+\n?)+)/g, (_match, block: string) => {
+    // Skip if already inside a <ul> or <li>
+    if (block.includes("<li>")) return block;
+    const items = block.trim().split("\n")
+      .map((line: string) => line.replace(/^[ \t]*[-*]\s+/, "").trim())
+      .filter(Boolean)
+      .map((item: string) => `<li>${item}</li>`)
+      .join("\n");
+    return `\n<ul>\n${items}\n</ul>\n`;
+  });
+
+  // Convert markdown numbered lists (1. item)
+  html = html.replace(/(?:^|\n)((?:\d+\.\s+.+\n?)+)/g, (_match, block: string) => {
+    if (block.includes("<li>")) return block;
+    const items = block.trim().split("\n")
+      .map((line: string) => line.replace(/^\d+\.\s+/, "").trim())
+      .filter(Boolean)
+      .map((item: string) => `<li>${item}</li>`)
+      .join("\n");
+    return `\n<ol>\n${items}\n</ol>\n`;
+  });
+
+  // Convert markdown links [text](url) → <a>
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  // Convert markdown horizontal rules (--- or ***) → <hr>
+  html = html.replace(/^[-*]{3,}\s*$/gm, "<hr>");
+
+  // Wrap bare text blocks (lines not starting with <) in <p> tags
+  html = html.replace(/^(?!<[a-z/]|\s*$)(.+)$/gm, "<p>$1</p>");
+
+  return html;
+}
+
+/**
  * Calls the LLM to generate the report content.
  */
 export async function generateReportContent(type: string, sections: string[], data: Awaited<ReturnType<typeof gatherProjectData>>): Promise<string> {
@@ -189,7 +249,8 @@ export async function generateReportContent(type: string, sections: string[], da
 
       if (response.ok) {
         const result = await response.json();
-        return result.content[0]?.text || "<p>Report generation failed. Please try again.</p>";
+        const raw = result.content[0]?.text || "<p>Report generation failed. Please try again.</p>";
+        return sanitiseReportHtml(raw);
       }
     } catch (e) {
       console.error("Anthropic report generation error:", e);

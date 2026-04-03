@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp,
-  Activity, Brain, Sliders, ChevronRight,
+  Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -1026,6 +1026,15 @@ export default function AgentProfilePage() {
             }}>Save Identity</Button>
           </Card>
 
+          {/* Agent Email Address */}
+          <Card className="p-4">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Agent Email Address</h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Give this agent its own email address. Invite it to meetings, forward project updates, or CC it on correspondence. The agent will extract relevant information and use it to manage projects.
+            </p>
+            <AgentEmailSection agentId={AGENT.id} />
+          </Card>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Autonomy slider */}
             <Card className="p-4">
@@ -1345,6 +1354,77 @@ export default function AgentProfilePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Agent Email Section ───
+function AgentEmailSection({ agentId }: { agentId: string }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/agents/${agentId}/email`).then(r => r.json()).then(j => {
+      setEmail(j.data?.address || null);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [agentId]);
+
+  const generateEmail = async () => {
+    setGenerating(true);
+    try {
+      const r = await fetch(`/api/agents/${agentId}/email`, { method: "POST" });
+      const j = await r.json();
+      if (j.data?.address) setEmail(j.data.address);
+    } catch {}
+    setGenerating(false);
+  };
+
+  const copyEmail = () => {
+    if (email) {
+      navigator.clipboard.writeText(email);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  if (loading) return <div className="animate-pulse h-10 bg-muted rounded" />;
+
+  if (!email) {
+    return (
+      <div className="flex items-center gap-3">
+        <div className="flex-1 rounded-lg border border-dashed border-border p-3 text-center">
+          <Mail className="w-5 h-5 text-muted-foreground mx-auto mb-1.5" />
+          <p className="text-[11px] text-muted-foreground">No email address assigned</p>
+        </div>
+        <Button variant="default" size="sm" onClick={generateEmail} disabled={generating}>
+          <Mail className="mr-1 h-3.5 w-3.5" />
+          {generating ? "Generating..." : "Generate Email"}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 p-2.5 rounded-lg bg-primary/5 border border-primary/10">
+        <Mail className="h-4 w-4 text-primary flex-shrink-0" />
+        <span className="text-sm font-mono font-medium text-primary flex-1">{email}</span>
+        <button onClick={copyEmail} className="p-1.5 rounded-md hover:bg-primary/10 transition-colors">
+          {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
+        </button>
+      </div>
+      <div className="text-[10px] text-muted-foreground space-y-1">
+        <p>Use this email to:</p>
+        <ul className="list-disc list-inside space-y-0.5 ml-1">
+          <li>Invite the agent to meetings (Zoom, Teams, Google Meet)</li>
+          <li>Forward project updates, status emails, or reports</li>
+          <li>CC the agent on stakeholder correspondence</li>
+        </ul>
+        <p className="mt-1">The agent will automatically extract action items, decisions, and risks from incoming emails.</p>
+      </div>
     </div>
   );
 }

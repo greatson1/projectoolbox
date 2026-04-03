@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { db } from "@/lib/db";
 
 let _resend: Resend | null = null;
 
@@ -107,5 +108,118 @@ export class EmailService {
       console.error("Email send failed:", e.message);
       return false;
     }
+  }
+
+  /**
+   * Send an email FROM an agent's email address.
+   * Used for: meeting follow-ups, status updates, stakeholder comms.
+   */
+  static async sendAgentEmail(agentId: string, data: {
+    to: string | string[];
+    subject: string;
+    html: string;
+    replyTo?: string;
+    cc?: string[];
+  }) {
+    try {
+      // Look up agent email address
+      const agentEmail = await db.agentEmail.findUnique({
+        where: { agentId },
+        include: { agent: { select: { name: true } } },
+      });
+
+      if (!agentEmail || !agentEmail.isActive) {
+        throw new Error("Agent has no active email address");
+      }
+
+      const fromAddress = `${agentEmail.agent.name} (AI Agent) <${agentEmail.address}>`;
+
+      await getResend().emails.send({
+        from: fromAddress,
+        to: Array.isArray(data.to) ? data.to : [data.to],
+        subject: data.subject,
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 650px; margin: 0 auto;">
+            ${data.html}
+            <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0 16px;" />
+            <p style="color: #94A3B8; font-size: 11px; line-height: 1.5;">
+              This email was sent by <strong>${agentEmail.agent.name}</strong>, an AI Project Manager powered by
+              <a href="https://projectoolbox.com" style="color: #6366F1;">Projectoolbox</a>.
+              Reply to this email and it will be processed by the agent.
+            </p>
+          </div>
+        `,
+        replyTo: agentEmail.address,
+        ...(data.cc && { cc: data.cc }),
+      });
+
+      // Log activity
+      await db.agentActivity.create({
+        data: {
+          agentId,
+          type: "document",
+          summary: `Sent email: "${data.subject}" to ${Array.isArray(data.to) ? data.to.join(", ") : data.to}`,
+          metadata: { type: "email_sent", to: data.to, subject: data.subject },
+        },
+      });
+
+      return true;
+    } catch (e: any) {
+      console.error("Agent email send failed:", e.message);
+      return false;
+    }
+  }
+
+  /**
+   * Send a meeting follow-up from the agent after processing a transcript.
+   */
+  static async sendMeetingFollowUp(agentId: string, data: {
+    meetingTitle: string;
+    recipients: string[];
+    summary: string;
+    actionItems: { text: string; assignee?: string; deadline?: string }[];
+    decisions: { text: string; by: string }[];
+    projectUrl?: string;
+  }) {
+    const actionHtml = data.actionItems.length > 0
+      ? `<h3 style="color: #0F172A; font-size: 15px; margin: 20px 0 8px;">Action Items</h3>
+         <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+           <thead><tr style="background: #F8FAFC; border-bottom: 1px solid #E2E8F0;">
+             <th style="padding: 8px 12px; text-align: left;">Action</th>
+             <th style="padding: 8px 12px; text-align: left;">Owner</th>
+             <th style="padding: 8px 12px; text-align: left;">Deadline</th>
+           </tr></thead>
+           <tbody>${data.actionItems.map(a => `
+             <tr style="border-bottom: 1px solid #F1F5F9;">
+               <td style="padding: 8px 12px;">${a.text}</td>
+               <td style="padding: 8px 12px; color: #6366F1; font-weight: 600;">${a.assignee || "—"}</td>
+               <td style="padding: 8px 12px;">${a.deadline || "—"}</td>
+             </tr>`).join("")}
+           </tbody>
+         </table>` : "";
+
+    const decisionsHtml = data.decisions.length > 0
+      ? `<h3 style="color: #0F172A; font-size: 15px; margin: 20px 0 8px;">Decisions Made</h3>
+         <ul style="margin: 0; padding-left: 20px;">
+           ${data.decisions.map(d => `<li style="margin-bottom: 6px; font-size: 13px;"><strong>${d.text}</strong> — ${d.by}</li>`).join("")}
+         </ul>` : "";
+
+    return this.sendAgentEmail(agentId, {
+      to: data.recipients,
+      subject: `Meeting Summary: ${data.meetingTitle}`,
+      html: `
+        <div style="background: linear-gradient(135deg, #6366F1, #8B5CF6); padding: 20px 24px; border-radius: 12px 12px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 18px;">Meeting Summary</h1>
+          <p style="color: rgba(255,255,255,0.8); margin: 4px 0 0; font-size: 13px;">${data.meetingTitle}</p>
+        </div>
+        <div style="padding: 24px; background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 0; border-radius: 0 0 12px 12px;">
+          <h3 style="color: #0F172A; font-size: 15px; margin: 0 0 8px;">Summary</h3>
+          <p style="color: #475569; font-size: 13px; line-height: 1.6;">${data.summary}</p>
+          ${actionHtml}
+          ${decisionsHtml}
+          ${data.projectUrl ? `<a href="${data.projectUrl}" style="display: inline-block; margin-top: 20px; background: #6366F1; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">View in Projectoolbox</a>` : ""}
+        </div>
+      `,
+    });
   }
 }

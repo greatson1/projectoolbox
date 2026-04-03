@@ -209,6 +209,97 @@ export function useCreateRisk(projectId: string) {
   });
 }
 
+// ── Meetings ──
+
+export function useMeetings(projectId?: string | null) {
+  return useQuery({
+    queryKey: ["meetings", projectId],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", projectId);
+      return api<any>(`/api/meetings?${params}`);
+    },
+  });
+}
+
+export function useMeeting(id: string | null) {
+  return useQuery({
+    queryKey: ["meeting", id],
+    queryFn: () => api<any>(`/api/meetings/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateMeeting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api("/api/meetings", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["meetings"] }),
+  });
+}
+
+export function useUpdateMeeting(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/meetings/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["meetings"] });
+      qc.invalidateQueries({ queryKey: ["meeting", id] });
+    },
+  });
+}
+
+// ── Calendar ──
+
+export function useCalendarEvents(range?: string, projectId?: string | null) {
+  return useQuery({
+    queryKey: ["calendar", range, projectId],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (range) params.set("range", range);
+      if (projectId) params.set("projectId", projectId);
+      return api<any>(`/api/calendar?${params}`);
+    },
+  });
+}
+
+export function useCreateCalendarEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api("/api/calendar", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["calendar"] }),
+  });
+}
+
+// ── Agent Email ──
+
+export function useAgentEmail(agentId: string | null) {
+  return useQuery({
+    queryKey: ["agent-email", agentId],
+    queryFn: () => api<any>(`/api/agents/${agentId}/email`),
+    enabled: !!agentId,
+  });
+}
+
+export function useGenerateAgentEmail(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api(`/api/agents/${agentId}/email`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-email", agentId] }),
+  });
+}
+
+// ── Agent Inbox ──
+
+export function useAgentInbox(agentId: string | null) {
+  return useQuery({
+    queryKey: ["agent-inbox", agentId],
+    queryFn: () => api<any>(`/api/agents/${agentId}/inbox`),
+    enabled: !!agentId,
+    refetchInterval: 30000,
+  });
+}
+
 // ── Admin ──
 
 export function useTeamMembers() {

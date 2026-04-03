@@ -87,6 +87,9 @@ model Organisation {
   auditLogs        AuditLog[]
   reports          Report[]
   dailyDigests     DailyDigest[]
+  meetings         Meeting[]
+  calendarEvents   CalendarEvent[]
+  agentInbox       AgentInboxMessage[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 }
@@ -116,6 +119,8 @@ model Project {
   stakeholders   Stakeholder[]
   approvals      Approval[]
   reports        Report[]
+  meetings       Meeting[]
+  calendarEvents CalendarEvent[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
@@ -147,6 +152,10 @@ model Agent {
   decisions        AgentDecision[]
   activities       AgentActivity[]
   chatMessages     ChatMessage[]
+  meetings         Meeting[]
+  calendarEvents   CalendarEvent[]
+  agentEmail       AgentEmail?
+  inboxMessages    AgentInboxMessage[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   decommissionedAt DateTime?
@@ -432,6 +441,111 @@ model ReportSchedule {
   createdAt      DateTime @default(now())
 }
 
+// ─── Meetings & Calendar ───
+
+model Meeting {
+  id            String              @id @default(cuid())
+  title         String
+  projectId     String?
+  project       Project?            @relation(fields: [projectId], references: [id])
+  orgId         String
+  org           Organisation        @relation(fields: [orgId], references: [id])
+  platform      String?             // zoom, teams, meet, other
+  scheduledAt   DateTime?
+  endedAt       DateTime?
+  duration      Int?                // minutes
+  status        MeetingStatus       @default(SCHEDULED)
+  attendees     Json?               // [{name, email, role}]
+  agentId       String?
+  agent         Agent?              @relation(fields: [agentId], references: [id])
+  // Transcript & AI processing
+  rawTranscript String?             @db.Text
+  summary       String?             @db.Text
+  topics        Json?               // string[]
+  sentiment     String?             // positive, neutral, concerned, negative
+  speakers      Json?               // [{name, minutes, percentage}]
+  confidence    Int?                // transcription confidence %
+  // Extracted intelligence
+  actionItems   MeetingActionItem[]
+  decisions     Json?               // [{text, by, rationale, time}]
+  risks         Json?               // [{title, description, severity}]
+  processedAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+model MeetingActionItem {
+  id         String   @id @default(cuid())
+  meetingId  String
+  meeting    Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  text       String
+  assignee   String?
+  deadline   String?
+  status     String   @default("PENDING") // PENDING, IN_PROGRESS, DONE
+  taskId     String?  // linked project task if promoted
+  createdAt  DateTime @default(now())
+}
+
+model CalendarEvent {
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organisation @relation(fields: [orgId], references: [id])
+  projectId    String?
+  project      Project?     @relation(fields: [projectId], references: [id])
+  agentId      String?
+  agent        Agent?       @relation(fields: [agentId], references: [id])
+  title        String
+  description  String?      @db.Text
+  startTime    DateTime
+  endTime      DateTime?
+  location     String?
+  meetingUrl   String?
+  attendees    Json?        // [{name, email}]
+  reminders    Json?        // pre/post meeting prompts
+  // Agent intelligence
+  preAgenda    String?      @db.Text  // AI-generated pre-meeting brief
+  postUpdate   String?      @db.Text  // post-meeting update from user
+  externalId   String?      // Google Calendar / external ID
+  source       String       @default("MANUAL") // MANUAL, GOOGLE, OUTLOOK, EMAIL
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model AgentEmail {
+  id           String   @id @default(cuid())
+  agentId      String   @unique
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  address      String   @unique  // e.g. maya@agents.projectoolbox.com
+  forwardTo    String?            // optional human email for copies
+  isActive     Boolean  @default(true)
+  // Inbound log
+  inboundCount Int      @default(0)
+  lastReceived DateTime?
+  createdAt    DateTime @default(now())
+}
+
+model AgentInboxMessage {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  orgId       String
+  org         Organisation @relation(fields: [orgId], references: [id])
+  from        String              // sender email
+  subject     String
+  preview     String   @db.Text   // first 500 chars of content
+  contentHash String?             // for dedup
+  type        String   @default("GENERAL") // GENERAL, MEETING_INVITE, MEETING_NOTES, STATUS_UPDATE
+  status      String   @default("UNREAD")  // UNREAD, READ, PROCESSED, ARCHIVED
+  // What the agent did with it
+  processedAs String?             // "meeting", "calendar_event", "activity_log"
+  linkedId    String?             // ID of the created meeting/event/etc
+  metadata    Json?               // { attachmentCount, hasCalendar, etc }
+  receivedAt  DateTime @default(now())
+
+  @@index([orgId, agentId])
+  @@index([orgId, status])
+}
+
 // ─── Daily Digest (Screen 24) ───
 
 model DailyDigest {
@@ -562,4 +676,11 @@ enum ReportStatus {
   PUBLISHED
   SCHEDULED
   FAILED
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }

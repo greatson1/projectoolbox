@@ -14,6 +14,28 @@ export default function ChatPageWrapper() {
   return <Suspense fallback={null}><AgentChatPage /></Suspense>;
 }
 
+// ── Simple markdown → HTML for chat bubbles ──
+function mdToHtml(text: string): string {
+  let html = text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    // headings
+    .replace(/^### (.+)$/gm, '<strong class="block text-xs font-bold mt-2 mb-1">$1</strong>')
+    .replace(/^## (.+)$/gm, '<strong class="block text-sm font-bold mt-3 mb-1">$1</strong>')
+    .replace(/^# (.+)$/gm, '<strong class="block text-base font-bold mt-3 mb-1">$1</strong>')
+    // bold / italic
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    // bullet lists
+    .replace(/^[-•]\s+(.+)$/gm, '<span class="block pl-3">• $1</span>')
+    // numbered lists
+    .replace(/^(\d+)\.\s+(.+)$/gm, '<span class="block pl-3">$1. $2</span>')
+    // horizontal rules
+    .replace(/^---+$/gm, '<hr class="my-2 border-border/40">')
+    // newlines
+    .replace(/\n/g, "<br>");
+  return html;
+}
+
 // ── Rich message types matching Vite original ──
 type MessageType = "text" | "status" | "artefact" | "risk" | "actions";
 
@@ -138,13 +160,12 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
-  // Default text
+  // Default text — render markdown formatting
   return (
     <div className="flex gap-2">
       {avatar}
-      <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-bl-md bg-muted text-sm leading-relaxed whitespace-pre-line">
-        {msg.content}
-      </div>
+      <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-bl-md bg-muted text-sm leading-relaxed"
+        dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
     </div>
   );
 }

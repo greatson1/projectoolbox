@@ -1,0 +1,12 @@
+name = "projectoolbox-email-worker"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+workers_dev = false
+
+[[routes]]
+pattern = "email-worker.projectoolbox.com/*"
+zone_id = "edd7b5b0d32adb25abae7b5798bdbfe1"
+
+[vars]
+WEBHOOK_URL = "https://projectoolbox.com/api/webhooks/inbound-email"
+# Set WEBHOOK_SECRET via wrangler secret put WEBHOOK_SECRET
