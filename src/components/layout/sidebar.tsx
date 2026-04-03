@@ -92,10 +92,9 @@ const NAV: NavGroup[] = [
   },
   {
     title: "KNOWLEDGE",
-    projectScoped: true,
     items: [
-      { label: "Knowledge Base", href: "/knowledge", icon: Brain, projectScoped: true },
-      { label: "Meetings", href: "/meetings", icon: Video, projectScoped: true },
+      { label: "Knowledge Base", href: "/knowledge", icon: Brain },
+      { label: "Meetings", href: "/meetings", icon: Video },
     ],
   },
   {
