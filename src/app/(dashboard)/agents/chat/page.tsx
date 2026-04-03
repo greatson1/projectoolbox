@@ -6,17 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
-import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight } from "lucide-react";
+import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield } from "lucide-react";
 
 export default function ChatPageWrapper() {
   return <Suspense fallback={null}><AgentChatPage /></Suspense>;
 }
 
+// ── Rich message types matching Vite original ──
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions";
+
 interface Message {
   id: string;
   role: "user" | "agent";
+  type: MessageType;
   content: string;
+  data?: any;
   timestamp: Date;
 }
 
@@ -28,6 +34,163 @@ const QUICK_ACTIONS = [
   { label: "Research", icon: Search, prompt: "Research best practices for our current project methodology.", color: "#8B5CF6" },
 ];
 
+// ── Rich message renderer ──
+function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGradient?: string; agentName?: string }) {
+  if (msg.role === "user") {
+    return (
+      <div className="flex justify-end gap-2">
+        <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-br-md bg-primary text-primary-foreground text-sm leading-relaxed whitespace-pre-line">
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
+  const avatar = (
+    <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
+      style={{ background: agentGradient || "#6366F1" }}>{agentName?.[0] || "A"}</div>
+  );
+
+  // Status card
+  if (msg.type === "status" && msg.data?.items) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="max-w-[80%]">
+          {msg.content && <div className="bg-muted px-4 py-3 rounded-2xl rounded-bl-md text-sm mb-2">{msg.content}</div>}
+          <div className="grid grid-cols-2 gap-2">
+            {msg.data.items.map((item: any, i: number) => (
+              <div key={i} className="px-3 py-2 rounded-xl bg-muted/50 border border-border/30">
+                <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                <p className="text-sm font-semibold">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Artefact card
+  if (msg.type === "artefact" && msg.data) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="max-w-[80%] rounded-2xl rounded-bl-md border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold">{msg.data.title}</span>
+            <Badge variant="secondary" className="text-[9px]">{msg.data.status}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">{msg.data.description}</p>
+          {msg.data.phase && <Badge variant="outline" className="text-[9px]">{msg.data.phase}</Badge>}
+          <div className="flex gap-2 mt-3">
+            <Button size="sm" className="text-xs h-7">Review</Button>
+            <Button variant="outline" size="sm" className="text-xs h-7">Approve</Button>
+            <Button variant="ghost" size="sm" className="text-xs h-7">Request Changes</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Risk card
+  if (msg.type === "risk" && msg.data) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="max-w-[80%] rounded-2xl rounded-bl-md border border-destructive/20 bg-destructive/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Shield className="w-4 h-4 text-destructive" />
+            <span className="text-sm font-bold">{msg.data.title}</span>
+            <Badge variant="destructive" className="text-[9px]">Score: {msg.data.score}</Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
+            <div><span className="text-muted-foreground">Probability:</span> <strong>{msg.data.probability}</strong></div>
+            <div><span className="text-muted-foreground">Impact:</span> <strong>{msg.data.impact}</strong></div>
+          </div>
+          {msg.data.source && <p className="text-[10px] text-muted-foreground mb-1">Source: {msg.data.source}</p>}
+          <p className="text-xs text-muted-foreground">{msg.data.mitigation}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Actions checklist
+  if (msg.type === "actions" && msg.data?.items) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-muted p-4">
+          {msg.data.title && <p className="text-sm font-semibold mb-2">{msg.data.title}</p>}
+          <div className="space-y-1.5">
+            {msg.data.items.map((item: any, i: number) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                {item.done
+                  ? <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                  : <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />}
+                <span className={item.done ? "text-muted-foreground line-through" : ""}>{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default text
+  return (
+    <div className="flex gap-2">
+      {avatar}
+      <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-bl-md bg-muted text-sm leading-relaxed whitespace-pre-line">
+        {msg.content}
+      </div>
+    </div>
+  );
+}
+
+// ── Parse AI response for rich message types ──
+function parseAgentResponse(content: string): Message[] {
+  const messages: Message[] = [];
+
+  // Try to detect structured content from the AI response
+  // Status update pattern
+  if (content.includes("**") && (content.includes("Health") || content.includes("Progress") || content.includes("Budget"))) {
+    const lines = content.split("\n").filter(l => l.includes("**") && l.includes(":"));
+    if (lines.length >= 3) {
+      const items = lines.slice(0, 6).map(l => {
+        const match = l.match(/\*\*([^*]+)\*\*[:\s]*(.+)/);
+        return match ? { label: match[1].trim(), value: match[2].trim() } : null;
+      }).filter(Boolean);
+
+      if (items.length >= 3) {
+        messages.push({ id: `status-${Date.now()}`, role: "agent", type: "status", content: content.split("\n")[0].replace(/[*#]/g, "").trim(), data: { items }, timestamp: new Date() });
+        return messages;
+      }
+    }
+  }
+
+  // Risk pattern
+  if (content.toLowerCase().includes("risk") && content.includes("Score") || content.includes("Probability")) {
+    const titleMatch = content.match(/(?:Risk|RISK)[:\s]*(.+?)(?:\n|$)/);
+    const scoreMatch = content.match(/[Ss]core[:\s]*(\d+)/);
+    if (titleMatch && scoreMatch) {
+      messages.push({ id: `risk-${Date.now()}`, role: "agent", type: "risk", content: "", data: {
+        title: titleMatch[1].replace(/[*#]/g, "").trim(),
+        score: parseInt(scoreMatch[1]),
+        probability: "High", impact: "High",
+        mitigation: content.split("\n").slice(-2).join(" ").replace(/[*#]/g, "").trim(),
+      }, timestamp: new Date() });
+      return messages;
+    }
+  }
+
+  // Default: plain text
+  messages.push({ id: `text-${Date.now()}`, role: "agent", type: "text", content, timestamp: new Date() });
+  return messages;
+}
+
+// ── Main component ──
 function AgentChatPage() {
   const searchParams = useSearchParams();
   const { data: agentData, isLoading: agentsLoading } = useAgents();
@@ -54,7 +217,7 @@ function AgentChatPage() {
     const msg = text || input.trim();
     if (!msg || !activeAgentId) return;
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: msg, timestamp: new Date() };
+    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", type: "text", content: msg, timestamp: new Date() };
     setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), userMsg] }));
     setInput("");
     setSending(true);
@@ -69,16 +232,12 @@ function AgentChatPage() {
       const data = await res.json();
 
       if (res.ok && data.data?.agentMessage) {
-        const agentMsg: Message = {
-          id: data.data.agentMessage.id, role: "agent",
-          content: data.data.agentMessage.content,
-          timestamp: new Date(data.data.agentMessage.createdAt),
-        };
-        setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), agentMsg] }));
+        const richMessages = parseAgentResponse(data.data.agentMessage.content);
+        setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), ...richMessages] }));
       } else {
         setMessagesByAgent(prev => ({
           ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), {
-            id: `err-${Date.now()}`, role: "agent" as const,
+            id: `err-${Date.now()}`, role: "agent" as const, type: "text" as const,
             content: data.error || "Sorry, I encountered an error. Please try again.",
             timestamp: new Date(),
           }]
@@ -87,7 +246,7 @@ function AgentChatPage() {
     } catch {
       setMessagesByAgent(prev => ({
         ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), {
-          id: `err-${Date.now()}`, role: "agent" as const,
+          id: `err-${Date.now()}`, role: "agent" as const, type: "text" as const,
           content: "Connection error. Please check your network and try again.",
           timestamp: new Date(),
         }]
@@ -102,52 +261,64 @@ function AgentChatPage() {
 
   return (
     <div className="flex gap-4 h-[calc(100vh-140px)] max-w-[1400px]">
-      {/* Left: Agent list */}
-      <div className="w-[260px] flex-shrink-0 space-y-1 overflow-y-auto">
-        <h2 className="text-sm font-bold px-2 mb-2">Conversations</h2>
-        {agents.length === 0 ? (
-          <div className="p-4 text-center"><Bot className="w-6 h-6 text-muted-foreground mx-auto mb-2" /><p className="text-xs text-muted-foreground">No agents deployed</p></div>
-        ) : agents.map((agent: any) => {
-          const agentMsgs = messagesByAgent[agent.id] || [];
-          const lastMsg = agentMsgs[agentMsgs.length - 1];
-          return (
-            <button key={agent.id}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all ${activeAgentId === agent.id ? "bg-primary/10 border border-primary/30" : "hover:bg-muted/30"}`}
-              onClick={() => setActiveAgentId(agent.id)}>
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                style={{ background: agent.gradient || "#6366F1" }}>{agent.name[0]}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold truncate">{agent.name}</p>
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${agent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
+      {/* Left: Conversation list */}
+      <div className="w-[280px] flex-shrink-0 flex flex-col" style={{ borderRight: "1px solid var(--border)" }}>
+        <div className="p-3">
+          <input className="w-full px-3 py-1.5 rounded-lg text-xs bg-muted border border-border" placeholder="Search conversations..." />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {agents.length === 0 ? (
+            <div className="p-4 text-center"><Bot className="w-6 h-6 text-muted-foreground mx-auto mb-2" /><p className="text-xs text-muted-foreground">No agents deployed</p></div>
+          ) : agents.map((agent: any) => {
+            const agentMsgs = messagesByAgent[agent.id] || [];
+            const lastMsg = agentMsgs[agentMsgs.length - 1];
+            const active = activeAgentId === agent.id;
+            const project = agent.deployments?.[0]?.project;
+            return (
+              <div key={agent.id}
+                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${active ? "bg-primary/10 border-l-[3px] border-l-primary" : "border-l-[3px] border-l-transparent hover:bg-muted/30"}`}
+                onClick={() => setActiveAgentId(agent.id)}>
+                <div className="relative flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                    style={{ background: agent.gradient || "#6366F1" }}>{agent.name[0]}</div>
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${agent.status === "ACTIVE" ? "bg-green-400" : "bg-amber-400"}`} />
                 </div>
-                <p className="text-[10px] text-muted-foreground truncate">
-                  {lastMsg ? lastMsg.content.slice(0, 40) + "..." : (agent.deployments?.[0]?.project?.name || "No messages yet")}
-                </p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold truncate">{agent.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{agentMsgs.length > 0 ? "now" : ""}</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {lastMsg ? lastMsg.content.slice(0, 45) + (lastMsg.content.length > 45 ? "..." : "") : (project?.name || "No messages yet")}
+                  </p>
+                </div>
+                {agentMsgs.filter(m => m.role === "agent").length > 0 && !active && (
+                  <span className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">
+                    {agentMsgs.filter(m => m.role === "agent").length}
+                  </span>
+                )}
               </div>
-              {agentMsgs.length > 0 && (
-                <span className="text-[9px] text-muted-foreground">L{agent.autonomyLevel}</span>
-              )}
-            </button>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* Middle: Chat */}
-      <Card className="flex-1 flex flex-col overflow-hidden">
-        <CardHeader className="flex flex-row items-center gap-3 pb-3 border-b border-border flex-shrink-0">
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
           {activeAgent ? (
             <>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
                 style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
               <div className="flex-1">
                 <p className="text-sm font-semibold">Agent {activeAgent.name}</p>
-                <p className="text-[10px] text-muted-foreground">L{activeAgent.autonomyLevel} · {activeAgent.deployments?.[0]?.project?.name || "No project"}</p>
+                <p className="text-[10px] text-muted-foreground">L{activeAgent.autonomyLevel} · {activeAgent.deployments?.[0]?.project?.name || "No project"} · {activeAgent.status}</p>
               </div>
               <span className={`w-2 h-2 rounded-full ${activeAgent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
             </>
-          ) : <p className="text-sm text-muted-foreground">Select an agent</p>}
-        </CardHeader>
+          ) : <p className="text-sm text-muted-foreground">Select an agent to start chatting</p>}
+        </div>
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -158,10 +329,10 @@ function AgentChatPage() {
               <h3 className="text-base font-bold mb-1">Chat with Agent {activeAgent.name}</h3>
               <p className="text-sm text-muted-foreground mb-2">
                 {activeAgent.deployments?.[0]?.project?.name
-                  ? `Managing ${activeAgent.deployments[0].project.name} (${activeAgent.deployments[0].project.methodology})`
+                  ? `Managing ${activeAgent.deployments[0].project.name} · L${activeAgent.autonomyLevel}`
                   : "No project assigned"}
               </p>
-              <p className="text-xs text-muted-foreground mb-6">Ask questions or use quick actions below. Each agent only knows about their assigned project.</p>
+              <p className="text-xs text-muted-foreground mb-6">Each agent only knows about their assigned project.</p>
               <div className="flex flex-wrap justify-center gap-2">
                 {QUICK_ACTIONS.map(qa => (
                   <Button key={qa.label} variant="outline" size="sm" className="text-xs gap-1.5" onClick={() => sendMessage(qa.prompt)}>
@@ -172,19 +343,12 @@ function AgentChatPage() {
             </div>
           )}
           {messages.map(msg => (
-            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} gap-2`}>
-              {msg.role === "agent" && activeAgent && (
-                <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
-                  style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
-              )}
-              <div className={`max-w-[70%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${
-                msg.role === "user" ? "bg-primary text-primary-foreground rounded-br-md" : "bg-muted rounded-bl-md"
-              }`}>{msg.content}</div>
-            </div>
+            <RichMessage key={msg.id} msg={msg} agentGradient={activeAgent?.gradient} agentName={activeAgent?.name} />
           ))}
           {sending && (
             <div className="flex gap-2">
-              {activeAgent && <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1" style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>}
+              <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
+                style={{ background: activeAgent?.gradient || "#6366F1" }}>{activeAgent?.name?.[0] || "A"}</div>
               <div className="bg-muted px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -194,68 +358,86 @@ function AgentChatPage() {
           )}
         </div>
 
+        {/* Quick actions row */}
+        {messages.length > 0 && activeAgent && (
+          <div className="px-4 py-2 border-t border-border/30 flex gap-2 overflow-x-auto">
+            {QUICK_ACTIONS.map(qa => (
+              <button key={qa.label} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium whitespace-nowrap bg-muted/50 hover:bg-muted text-muted-foreground transition-colors"
+                onClick={() => sendMessage(qa.prompt)}>
+                <qa.icon className="w-3 h-3" style={{ color: qa.color }} /> {qa.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Input */}
-        <div className="p-4 border-t border-border flex-shrink-0">
+        <div className="p-4 border-t border-border">
           <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
             <Button variant="ghost" size="sm" type="button" className="flex-shrink-0"><Paperclip className="w-4 h-4" /></Button>
             <input value={input} onChange={e => setInput(e.target.value)}
               placeholder={activeAgent ? `Message Agent ${activeAgent.name}...` : "Select an agent"}
               disabled={!activeAgent || sending}
-              className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border outline-none focus:border-primary transition-colors" />
+              className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border outline-none focus:border-primary transition-colors"
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} />
             <Button type="submit" disabled={!input.trim() || !activeAgent || sending} size="sm"><Send className="w-4 h-4" /></Button>
           </form>
         </div>
-      </Card>
+      </div>
 
       {/* Right: Context panel */}
       {activeAgent && (
-        <div className="w-[240px] flex-shrink-0 space-y-3 overflow-y-auto">
+        <div className="w-[260px] flex-shrink-0 space-y-3 overflow-y-auto border-l border-border pl-4">
+          {/* Agent info */}
           <Card>
-            <CardContent className="pt-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
+            <CardContent className="pt-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"
                   style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
                 <div>
-                  <p className="text-xs font-semibold">{activeAgent.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{activeAgent.codename}</p>
+                  <p className="text-sm font-bold">{activeAgent.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{activeAgent.codename || `${activeAgent.name.toUpperCase()}-${activeAgent.autonomyLevel}`}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                {[1,2,3,4,5].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= activeAgent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />)}
-                <span className="text-[9px] ml-1 text-muted-foreground">L{activeAgent.autonomyLevel}</span>
+                {[1, 2, 3, 4, 5].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= activeAgent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />)}
+                <span className="text-[9px] ml-1 text-muted-foreground">Level {activeAgent.autonomyLevel}</span>
               </div>
             </CardContent>
           </Card>
 
+          {/* Project context */}
           {activeAgent.deployments?.[0]?.project && (
             <Card>
               <CardContent className="pt-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Project Context</p>
-                <p className="text-xs font-semibold">{activeAgent.deployments[0].project.name}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Project Context</p>
+                <p className="text-sm font-bold">{activeAgent.deployments[0].project.name}</p>
                 <Badge variant="outline" className="text-[9px] mt-1">{activeAgent.deployments[0].project.methodology}</Badge>
-                <p className="text-[10px] text-muted-foreground mt-2">This agent exclusively manages this project. All responses are based on this project&apos;s data.</p>
+                {activeAgent.deployments[0].project.budget && (
+                  <p className="text-xs text-muted-foreground mt-2">Budget: ${activeAgent.deployments[0].project.budget.toLocaleString()}</p>
+                )}
               </CardContent>
             </Card>
           )}
 
+          {/* Stats */}
           <Card>
             <CardContent className="pt-4 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Stats</p>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Actions</span>
-                <span className="font-semibold">{activeAgent._count?.activities || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Decisions</span>
-                <span className="font-semibold">{activeAgent._count?.decisions || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Credits Used</span>
-                <span className="font-semibold">{activeAgent.creditsUsed || 0}</span>
-              </div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Agent Stats</p>
+              {[
+                { label: "Actions", value: activeAgent._count?.activities || 0 },
+                { label: "Decisions", value: activeAgent._count?.decisions || 0 },
+                { label: "Messages", value: activeAgent._count?.chatMessages || 0 },
+                { label: "Credits Used", value: activeAgent.creditsUsed || 0 },
+              ].map(s => (
+                <div key={s.label} className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{s.label}</span>
+                  <span className="font-semibold">{s.value}</span>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
+          {/* Artefacts (if project has them) */}
           <Card>
             <CardContent className="pt-4">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Quick Actions</p>
@@ -264,8 +446,8 @@ function AgentChatPage() {
                   <button key={qa.label} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs hover:bg-muted/50 transition-colors text-left"
                     onClick={() => sendMessage(qa.prompt)}>
                     <qa.icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: qa.color }} />
-                    <span className="text-muted-foreground">{qa.label}</span>
-                    <ChevronRight className="w-3 h-3 text-muted-foreground ml-auto" />
+                    <span className="text-muted-foreground flex-1">{qa.label}</span>
+                    <ChevronRight className="w-3 h-3 text-muted-foreground" />
                   </button>
                 ))}
               </div>
