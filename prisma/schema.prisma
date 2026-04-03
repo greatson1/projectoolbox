@@ -85,6 +85,8 @@ model Organisation {
   creditTxns       CreditTransaction[]
   apiKeys          ApiKey[]
   auditLogs        AuditLog[]
+  reports          Report[]
+  dailyDigests     DailyDigest[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 }
@@ -113,6 +115,7 @@ model Project {
   changeRequests ChangeRequest[]
   stakeholders   Stakeholder[]
   approvals      Approval[]
+  reports        Report[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
@@ -376,6 +379,59 @@ model AuditLog {
   createdAt DateTime @default(now())
 }
 
+// ─── Reports (Screen 23) ───
+
+model Report {
+  id          String       @id @default(cuid())
+  title       String
+  type        ReportType
+  status      ReportStatus @default(DRAFT)
+  format      String       @default("PDF")
+  projectId   String?
+  project     Project?     @relation(fields: [projectId], references: [id])
+  agentId     String?
+  orgId       String
+  org         Organisation @relation(fields: [orgId], references: [id])
+  templateId  String?
+  sections    Json?
+  fileUrl     String?
+  pageCount   Int?
+  creditsUsed Int          @default(0)
+  generatedAt DateTime     @default(now())
+  publishedAt DateTime?
+  recipients  String[]
+}
+
+model ReportSchedule {
+  id             String   @id @default(cuid())
+  name           String
+  templateId     String
+  projectId      String?
+  orgId          String
+  frequency      String   @default("WEEKLY")
+  cronExpression String
+  nextRunAt      DateTime
+  recipients     String[]
+  isActive       Boolean  @default(true)
+  lastRunAt      DateTime?
+  createdAt      DateTime @default(now())
+}
+
+// ─── Daily Digest (Screen 24) ───
+
+model DailyDigest {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organisation @relation(fields: [orgId], references: [id])
+  date        DateTime @db.Date
+  summary     String   @db.Text
+  highlights  Json?
+  stats       Json?
+  generatedAt DateTime @default(now())
+
+  @@unique([orgId, date])
+}
+
 // ─── Enums ───
 
 enum UserRole {
@@ -470,4 +526,25 @@ enum NotificationType {
   SYSTEM
   MILESTONE
   RISK_ESCALATION
+}
+
+enum ReportType {
+  STATUS
+  WEEKLY_DIGEST
+  EVM
+  RISK
+  SPRINT_REVIEW
+  EXECUTIVE
+  STAKEHOLDER
+  BUDGET
+  PHASE_GATE
+  CUSTOM
+}
+
+enum ReportStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PUBLISHED
+  SCHEDULED
+  FAILED
 }

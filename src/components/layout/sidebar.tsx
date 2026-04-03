@@ -38,6 +38,7 @@ const NAV: NavGroup[] = [
     title: "AI AGENTS",
     items: [
       { label: "Fleet Overview", href: "/agents", icon: Bot },
+      { label: "Activity Log", href: "/activity", icon: Bot },
       { label: "Chat with Agent", href: "/agents/chat", icon: Bot },
       { label: "Deploy Agent", href: "/agents/deploy", icon: Bot },
     ],
