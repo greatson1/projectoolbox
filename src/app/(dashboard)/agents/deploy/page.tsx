@@ -261,7 +261,7 @@ export default function ProjectWizardPage() {
           <div className="space-y-5">
             <StepHeader title="Project Details" subtitle="Tell us about your project" />
 
-            <Card>
+            <Card className="px-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FieldGroup label="Project Name" required>
                   <StyledInput value={data.projectName} onChange={v => upd({ projectName: v })} placeholder="e.g. CRM Migration to Salesforce" />
@@ -379,7 +379,7 @@ export default function ProjectWizardPage() {
             <StepHeader title="Phase Gates & Governance" subtitle="Configure lifecycle stages and human-in-the-loop controls" />
 
             {/* Phases */}
-            <Card>
+            <Card className="px-5">
               <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Lifecycle Phases</h3>
               <div className="space-y-3">
                 {data.phases.map((phase, pi) => (
@@ -419,7 +419,7 @@ export default function ProjectWizardPage() {
             </Card>
 
             {/* HITL Settings */}
-            <Card>
+            <Card className="px-5">
               <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Human-in-the-Loop Controls</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <HitlToggle label="Phase gate approvals" desc="Require human sign-off at every phase gate" checked={data.hitlePhaseGates} onChange={v => upd({ hitlePhaseGates: v })} color={g.color} />
@@ -452,7 +452,7 @@ export default function ProjectWizardPage() {
             <StepHeader title="Team & Stakeholders" subtitle="Add team members and key stakeholders" />
 
             {/* Team */}
-            <Card>
+            <Card className="px-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Team Members</h3>
                 <Button variant="ghost" size="sm" onClick={() => upd({ team: [...data.team, { name: "", email: "", role: "Dev" }] })}>+ Add Member</Button>
@@ -505,7 +505,7 @@ export default function ProjectWizardPage() {
             </Card>
 
             {/* Stakeholders */}
-            <Card>
+            <Card className="px-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Key Stakeholders</h3>
                 <Button variant="ghost" size="sm" onClick={() => upd({ stakeholders: [...data.stakeholders, { name: "", role: "", org: "", power: 50, interest: 50 }] })}>+ Add Stakeholder</Button>
@@ -563,7 +563,7 @@ export default function ProjectWizardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
               <div className="space-y-4">
                 {/* Name + Avatar */}
-                <Card>
+                <Card className="px-5">
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-14 h-14 rounded-full flex items-center justify-center text-[22px] font-bold text-white"
                       style={{ background: g.gradient, boxShadow: `0 0 20px ${g.color}33` }}>
@@ -595,7 +595,7 @@ export default function ProjectWizardPage() {
                 </Card>
 
                 {/* Personality */}
-                <Card>
+                <Card className="px-5">
                   <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Communication Style</h3>
                   <div className="space-y-4">
                     <SliderField label="Tone" value={data.personalityFormal} onChange={v => upd({ personalityFormal: v })} color={g.color} labelLeft="Formal" labelRight="Friendly" />
@@ -604,7 +604,7 @@ export default function ProjectWizardPage() {
                 </Card>
 
                 {/* Reporting + Notifications + Integrations */}
-                <Card>
+                <Card className="px-5">
                   <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Reporting & Integrations</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <FieldGroup label="Report Schedule">
@@ -705,7 +705,7 @@ export default function ProjectWizardPage() {
             </div>
 
             {/* Credit estimate */}
-            <Card>
+            <Card className="px-5">
               <div className="flex items-center gap-6">
                 <div style={{ width: 120, height: 120 }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -908,7 +908,7 @@ function SliderField({ label, value, onChange, color, labelLeft, labelRight }: {
 
 function SummaryCard({ title, items,  }: { title: string; items: [string, string][] }) {
   return (
-    <Card>
+    <Card className="px-5">
       <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>{title}</p>
       <div className="space-y-1">
         {items.map(([k, v], i) => (

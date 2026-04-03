@@ -190,15 +190,19 @@ const ALERTS: Alert[] = [
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
-const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string; pulseColor: "green" | "amber" | "red" | "blue"; badge: "default" | "amber" | "gray" | "red" }> = {
-  active: { label: "Active", color: "#10B981", pulseColor: "green", badge: "green" },
-  paused: { label: "Paused", color: "#F59E0B", pulseColor: "amber", badge: "amber" },
-  idle: { label: "Idle", color: "#64748B", pulseColor: "blue", badge: "outline" },
-  error: { label: "Error", color: "#EF4444", pulseColor: "red", badge: "destructive" },
+const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string; pulseColor: string; badgeCn: string }> = {
+  active: { label: "Active", color: "#10B981", pulseColor: "green", badgeCn: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600" },
+  paused: { label: "Paused", color: "#F59E0B", pulseColor: "amber", badgeCn: "border-amber-500/30 bg-amber-500/10 text-amber-600" },
+  idle: { label: "Idle", color: "#64748B", pulseColor: "blue", badgeCn: "" },
+  error: { label: "Error", color: "#EF4444", pulseColor: "red", badgeCn: "border-red-500/30 bg-red-500/10 text-red-600" },
 };
 
-const METHODOLOGY_BADGE: Record<Methodology, "blue" | "purple" | "gray" | "amber" | "green"> = {
-  "PRINCE2": "outline", "Scrum": "secondary", "Waterfall": "outline", "Kanban": "secondary", "Hybrid": "default",
+const METHODOLOGY_CN: Record<Methodology, string> = {
+  "PRINCE2": "border-blue-500/30 bg-blue-500/10 text-blue-600",
+  "Scrum": "border-purple-500/30 bg-purple-500/10 text-purple-600",
+  "Waterfall": "border-slate-500/30 bg-slate-500/10 text-slate-600",
+  "Kanban": "border-amber-500/30 bg-amber-500/10 text-amber-600",
+  "Hybrid": "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
 };
 
 const EVENT_ICONS: Record<string, string> = {
@@ -248,7 +252,7 @@ export default function AgentFleetPage() {
             <span className="font-semibold" style={{ color: "var(--primary)" }}>{totalCreditsToday} credits today</span>
           </p>
         </div>
-        <Button variant="default" size="sm" icon={<span>🚀</span>}>Deploy New Agent</Button>
+        <Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy New Agent</Button>
       </div>
 
       {/* ═══ 2. FLEET OVERVIEW CARDS ═══ */}
@@ -259,7 +263,7 @@ export default function AgentFleetPage() {
       </div>
 
       {/* ═══ 3. FLEET ACTIVITY TIMELINE ═══ */}
-      <Card>
+      <Card className="px-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Fleet Activity Timeline</h3>
@@ -328,7 +332,7 @@ export default function AgentFleetPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Left: Comparison + Credit area */}
         <div className="space-y-4">
-          <Card>
+          <Card className="px-5">
             <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Agent Comparison (This Week)</h3>
             <div style={{ height: 220 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -354,7 +358,7 @@ export default function AgentFleetPage() {
             </div>
           </Card>
 
-          <Card>
+          <Card className="px-5">
             <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Credit Consumption (30 Days)</h3>
             <div style={{ height: 200 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -376,7 +380,7 @@ export default function AgentFleetPage() {
 
         {/* Right: Fleet radar + utilisation */}
         <div className="space-y-4">
-          <Card>
+          <Card className="px-5">
             <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Fleet Health</h3>
             <div style={{ height: 230 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -388,16 +392,17 @@ export default function AgentFleetPage() {
                 </RadarChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex items-center justify-between text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+            <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-[10px] mt-2" style={{ color: "var(--muted-foreground)" }}>
               {FLEET_RADAR.map(r => (
-                <span key={r.axis}>
-                  <span className="font-semibold" style={{ color: r.value >= 85 ? "#10B981" : r.value >= 75 ? "#F59E0B" : "#EF4444" }}>{r.value}%</span> {r.axis}
+                <span key={r.axis} className="flex items-center gap-1">
+                  <span className="font-semibold" style={{ color: r.value >= 85 ? "#10B981" : r.value >= 75 ? "#F59E0B" : "#EF4444" }}>{r.value}%</span>
+                  <span className="truncate">{r.axis}</span>
                 </span>
               ))}
             </div>
           </Card>
 
-          <Card>
+          <Card className="px-5">
             <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Agent Utilisation</h3>
             <div className="space-y-3">
               {AGENTS.map(agent => {
@@ -410,7 +415,7 @@ export default function AgentFleetPage() {
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ background: agent.color }} />
                         <span className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{agent.name}</span>
-                        <Badge variant={STATUS_CONFIG[agent.status].badge}>{agent.status}</Badge>
+                        <Badge variant="secondary" className={STATUS_CONFIG[agent.status].badgeCn}>{agent.status}</Badge>
                       </div>
                       <span className="text-[11px] font-semibold" style={{ color: agent.color }}>{agent.tasksWeek} tasks/wk</span>
                     </div>
@@ -426,7 +431,7 @@ export default function AgentFleetPage() {
       </div>
 
       {/* ═══ 5. PROJECT-AGENT MATRIX ═══ */}
-      <Card>
+      <Card className="px-5">
         <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Project-Agent Matrix</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]" style={{ color: "var(--foreground)" }}>
@@ -449,7 +454,7 @@ export default function AgentFleetPage() {
                       <span className="font-medium">{agent.name}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-3"><Badge variant={METHODOLOGY_BADGE[agent.methodology]}>{agent.methodology}</Badge></td>
+                  <td className="py-2.5 px-3"><Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology]}>{agent.methodology}</Badge></td>
                   <td className="py-2.5 px-3" style={{ color: "var(--muted-foreground)" }}>{agent.phase}</td>
                   <td className="py-2.5 px-3">
                     <RAGDot rag={agent.health} />
@@ -494,7 +499,7 @@ export default function AgentFleetPage() {
       </Card>
 
       {/* ═══ 6. ALERTS & ESCALATIONS ═══ */}
-      <Card>
+      <Card className="px-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Alerts & Escalations</h3>
@@ -517,7 +522,11 @@ export default function AgentFleetPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-[12px] font-semibold" style={{ color: alert.agentColor }}>{alert.agentName}</span>
-                    <Badge variant={alert.priority === "critical" ? "critical" : alert.priority === "high" ? "high" : "medium"}>
+                    <Badge variant="secondary" className={
+                      alert.priority === "critical" ? "border-red-500/30 bg-red-500/10 text-red-600" :
+                      alert.priority === "high" ? "border-orange-500/30 bg-orange-500/10 text-orange-600" :
+                      "border-amber-500/30 bg-amber-500/10 text-amber-600"
+                    }>
                       {alert.priority}
                     </Badge>
                     <span className="text-[10px] ml-auto" style={{ color: "var(--muted-foreground)" }}>{alert.time}</span>
@@ -527,7 +536,7 @@ export default function AgentFleetPage() {
                     <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{alert.project}</span>
                     <div className="flex items-center gap-1.5 ml-auto">
                       {alert.actions.map(action => (
-                        <Button key={action} variant={action === "Approve" || action === "Auto-fix" || action === "Resume" ? "primary" : "ghost"} size="sm">
+                        <Button key={action} variant={action === "Approve" || action === "Auto-fix" || action === "Resume" ? "default" : "ghost"} size="sm">
                           {action}
                         </Button>
                       ))}
@@ -568,12 +577,12 @@ function AgentCard({ agent,  }: { agent: Agent }) {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{agent.name}</span>
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              {isActive && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
             </div>
             <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{agent.project}</span>
           </div>
         </div>
-        <Badge variant={METHODOLOGY_BADGE[agent.methodology]}>{agent.methodology}</Badge>
+        <Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology]}>{agent.methodology}</Badge>
       </div>
 
       {/* Current task */}
@@ -620,7 +629,7 @@ function AgentCard({ agent,  }: { agent: Agent }) {
         <ActionBtn icon="💬" tooltip="Chat" />
         <ActionBtn icon="⚙" tooltip="Settings" />
         <div className="ml-auto">
-          <Badge variant={statusCfg.badge}>{statusCfg.label}</Badge>
+          <Badge variant="secondary" className={statusCfg.badgeCn}>{statusCfg.label}</Badge>
         </div>
       </div>
     </div>
