@@ -221,16 +221,16 @@ export default function AgentFleetPage() {
   const realAgents = apiData?.agents || [];
   const realActivities = apiData?.activities || [];
 
+  const filteredEvents = useMemo(() => {
+    if (!activityFilter) return ACTIVITY_EVENTS;
+    return ACTIVITY_EVENTS.filter(e => e.agentId === activityFilter);
+  }, [activityFilter]);
+
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <Skeleton key={i} className="h-64 rounded-xl" />)}</div></div>;
 
   const totalCreditsToday = AGENTS.reduce((s, a) => s + a.creditsToday, 0);
   const activeCount = AGENTS.filter(a => a.status === "active").length;
   const pausedCount = AGENTS.filter(a => a.status === "paused").length;
-
-  const filteredEvents = useMemo(() => {
-    if (!activityFilter) return ACTIVITY_EVENTS;
-    return ACTIVITY_EVENTS.filter(e => e.agentId === activityFilter);
-  }, [activityFilter]);
 
   return (
     <div className="space-y-6 max-w-[1600px]">
