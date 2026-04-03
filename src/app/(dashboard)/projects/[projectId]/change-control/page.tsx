@@ -95,7 +95,7 @@ export default function ChangeControlPage() {
 
   const filtered = CRS_DATA.filter((cr) => !search || cr.title.toLowerCase().includes(search.toLowerCase()) || cr.id.toLowerCase().includes(search.toLowerCase()));
   const pending = CRS_DATA.filter((cr) => !["Implementation", "Closed"].includes(cr.status)).length;
-  const approved = DECISIONS.filter((d) => d.decision === "approved").length;
+  const approved = ([] as any[]).filter((d) => d.decision === "approved").length;
 
   return (
     <div className="space-y-5">
@@ -104,7 +104,7 @@ export default function ChangeControlPage() {
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Change Control Board</h1>
           <div className="flex gap-4 mt-1">
-            {[{ l: "Total CRs", v: CRS_DATA.length }, { l: "Pending", v: pending }, { l: "Approval Rate", v: `${Math.round((approved / DECISIONS.length) * 100)}%` }].map((s) => (
+            {[{ l: "Total CRs", v: CRS_DATA.length }, { l: "Pending", v: pending }, { l: "Approval Rate", v: `${Math.round((approved / 0) * 100)}%` }].map((s) => (
               <span key={s.l} className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{s.l}: <strong style={{ color: "var(--foreground)" }}>{s.v}</strong></span>
             ))}
           </div>
@@ -205,11 +205,11 @@ export default function ChangeControlPage() {
           <Card>
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>CRs by Category</p>
             <ResponsiveContainer width="100%" height={130}>
-              <PieChart><Pie data={CAT_PIE} dataKey="value" cx="50%" cy="50%" outerRadius={50} innerRadius={25}>
-                {CAT_PIE.map((e, i) => <Cell key={i} fill={e.color} />)}
+              <PieChart><Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" outerRadius={50} innerRadius={25}>
+                {([] as any[]).map((e, i) => <Cell key={i} fill={e.color} />)}
               </Pie></PieChart>
             </ResponsiveContainer>
-            <div className="space-y-1 mt-1">{CAT_PIE.map((c) => (
+            <div className="space-y-1 mt-1">{([] as any[]).map((c) => (
               <div key={c.name} className="flex items-center justify-between text-[10px]">
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} /><span style={{ color: "var(--muted-foreground)" }}>{c.name}</span></div>
                 <span style={{ color: "var(--foreground)" }}>{c.value}</span>
@@ -219,9 +219,9 @@ export default function ChangeControlPage() {
           <Card>
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>CRs by Priority</p>
             <ResponsiveContainer width="100%" height={100}>
-              <BarChart data={PRIORITY_BAR} layout="vertical" barSize={14}>
+              <BarChart data={[] as any[]} layout="vertical" barSize={14}>
                 <XAxis type="number" hide /><YAxis type="category" dataKey="name" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} width={50} axisLine={false} tickLine={false} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]}>{PRIORITY_BAR.map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar>
+                <Bar dataKey="count" radius={[0, 4, 4, 0]}>{([] as any[]).map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar>
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -232,9 +232,9 @@ export default function ChangeControlPage() {
                 <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
                   <circle cx="18" cy="18" r="14" fill="none" stroke={"var(--border)"} strokeWidth="3" />
                   <circle cx="18" cy="18" r="14" fill="none" stroke={"#10B981"} strokeWidth="3" strokeLinecap="round"
-                    strokeDasharray={`${Math.round((approved / DECISIONS.length) * 100)} ${100 - Math.round((approved / DECISIONS.length) * 100)}`} />
+                    strokeDasharray={`${Math.round((approved / 0) * 100)} ${100 - Math.round((approved / 0) * 100)}`} />
                 </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{Math.round((approved / DECISIONS.length) * 100)}%</span>
+                <span className="absolute inset-0 flex items-center justify-center text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{Math.round((approved / 0) * 100)}%</span>
               </div>
             </div>
           </Card>
@@ -286,8 +286,8 @@ export default function ChangeControlPage() {
           {/* Decision log */}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CCB Decision History</CardTitle></CardHeader><CardContent>
             <div className="space-y-3">
-              {DECISIONS.map((d, i) => (
-                <div key={i} className="flex gap-3 pb-3" style={{ borderBottom: i < DECISIONS.length - 1 ? `1px solid ${"var(--border)"}` : undefined }}>
+              {([] as any[]).map((d, i) => (
+                <div key={i} className="flex gap-3 pb-3" style={{ borderBottom: i < 0 - 1 ? `1px solid ${"var(--border)"}` : undefined }}>
                   <div className="w-8 h-8 rounded-[8px] flex items-center justify-center text-[12px] flex-shrink-0"
                     style={{ backgroundColor: d.decision === "approved" ? "rgba(16,185,129,0.12)" : d.decision === "rejected" ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)" }}>
                     {d.decision === "approved" ? "✓" : d.decision === "rejected" ? "✗" : "⏸"}
@@ -314,7 +314,7 @@ export default function ChangeControlPage() {
           {/* Trend */}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CR Submission Trend</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={130}>
-              <AreaChart data={TREND}>
+              <AreaChart data={[] as any[]}>
                 <defs><linearGradient id="crGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={"var(--primary)"} stopOpacity={0.3} /><stop offset="95%" stopColor={"var(--primary)"} stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />

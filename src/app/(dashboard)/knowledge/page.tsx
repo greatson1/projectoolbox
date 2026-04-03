@@ -231,7 +231,7 @@ export default function KnowledgeBasePage() {
   const [selected, setSelected] = useState<string | null>("k1");
   const [rightTab, setRightTab] = useState<"document" | "graph">("document");
 
-  const filtered = ITEMS.filter((item) => {
+  const filtered = ([] as KnowledgeItem[]).filter((item) => {
     if (
       search &&
       !item.title.toLowerCase().includes(search.toLowerCase()) &&
@@ -248,17 +248,17 @@ export default function KnowledgeBasePage() {
     return true;
   });
 
-  const selectedItem = ITEMS.find((i) => i.id === selected);
+  const selectedItem = filtered.find((i) => i.id === selected);
 
-  const totalLinks = ITEMS.reduce((s, i) => s + i.linkCount, 0);
-  const mostConnected = [...ITEMS].sort((a, b) => b.linkCount - a.linkCount)[0];
+  const totalLinks = filtered.reduce((s, i) => s + i.linkCount, 0);
+  const mostConnected = [...filtered].sort((a, b) => b.linkCount - a.linkCount)[0];
 
   return (
     <div className="space-y-5">
       {/* Stats bar */}
       <div className="flex gap-4 flex-wrap">
         {[
-          { label: "Documents", value: ITEMS.length },
+          { label: "Documents", value: filtered.length },
           { label: "Total Links", value: totalLinks },
           { label: "Added This Week", value: 4 },
           {
@@ -317,7 +317,7 @@ export default function KnowledgeBasePage() {
               <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-muted-foreground">
                 Daily Journal
               </p>
-              {ITEMS.filter((i) => i.type === "daily")
+              {([] as KnowledgeItem[]).filter((i) => i.type === "daily")
                 .slice(0, 2)
                 .map((item) => (
                   <div
@@ -501,7 +501,7 @@ export default function KnowledgeBasePage() {
                   </p>
                   <div className="space-y-1.5">
                     {selectedItem.backlinks.map((blId) => {
-                      const bl = ITEMS.find((i) => i.id === blId);
+                      const bl = filtered.find((i) => i.id === blId);
                       if (!bl) return null;
                       return (
                         <div
@@ -539,7 +539,7 @@ export default function KnowledgeBasePage() {
           {rightTab === "graph" && (
             <div className="flex-1 p-5">
               <GraphView
-                items={ITEMS}
+                items={filtered}
                 onSelect={(id) => {
                   setSelected(id);
                   setRightTab("document");

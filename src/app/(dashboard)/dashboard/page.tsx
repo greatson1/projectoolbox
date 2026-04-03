@@ -213,7 +213,7 @@ export default function DashboardPage() {
               <CardHeader className="pb-2"><CardTitle className="text-sm">Sprint Burndown</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={BURNDOWN}>
+                  <AreaChart data={[] as any[]}>
                     <defs>
                       <linearGradient id="gradPlanned" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
@@ -240,13 +240,13 @@ export default function DashboardPage() {
               <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Distribution</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={RISK_DIST} barSize={28}>
+                  <BarChart data={[] as any[]} barSize={28}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                     <XAxis dataKey="category" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--foreground)", fontSize: 12 }} />
                     <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                      {RISK_DIST.map((entry, i) => (
+                      {([] as any[]).map((entry, i) => (
                         <Cell key={i} fill={entry.fill} />
                       ))}
                     </Bar>
@@ -295,7 +295,7 @@ export default function DashboardPage() {
             <CardHeader className="pb-3"><CardTitle className="text-sm">Phase Gates — {projects[0]?.name || "Project"}</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {PHASES.map((p, i) => (
+                {([] as any[]).map((p, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${
                       p.status === "done" ? "bg-green-500 text-white" :
@@ -368,7 +368,7 @@ export default function DashboardPage() {
             <CardHeader className="pb-3"><CardTitle className="text-sm">Upcoming</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-2.5">
-                {UPCOMING.map((u, i) => (
+                {([] as any[]).map((u, i) => (
                   <div key={i} className="flex items-center justify-between py-1">
                     <div className="flex items-center gap-3">
                       <span className="text-[11px] font-medium w-[80px] text-muted-foreground">{u.time}</span>

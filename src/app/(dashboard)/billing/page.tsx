@@ -187,7 +187,7 @@ export default function BillingPage() {
   const customPrice = Math.round(topupCustom * 0.018);
 
   // Use real invoices if available, fall back to mock
-  const invoices = invoicesFromAPI.length > 0 ? invoicesFromAPI : MOCK_INVOICES;
+  const invoices = invoicesFromAPI.length > 0 ? invoicesFromAPI : [];
 
   return (
     <div className="space-y-6 max-w-[1200px]">
@@ -514,7 +514,7 @@ export default function BillingPage() {
           <CardContent>
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={SPEND_MONTHLY}>
+                <AreaChart data={[] as any[]}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} className="text-muted-foreground" />
@@ -548,7 +548,7 @@ export default function BillingPage() {
           <CardContent>
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={CREDIT_USAGE} barGap={2}>
+                <BarChart data={[] as any[]} barGap={2}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
                   <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />

@@ -289,7 +289,7 @@ export default function NotificationsPage() {
           style={{ background: !agentFilter ? `${"var(--primary)"}22` : "transparent", color: !agentFilter ? "var(--primary)" : "var(--muted-foreground)", border: `1px solid ${!agentFilter ? "var(--primary)" + "44" : "transparent"}` }}>
           All
         </button>
-        {AGENTS.map(a => (
+        {([] as any[]).map((a: any) => (
           <button key={a.id} className="flex items-center gap-1 px-2 py-1 rounded-full transition-all"
             onClick={() => setAgentFilter(agentFilter === a.id ? null : a.id)}
             style={{
@@ -506,7 +506,7 @@ export default function NotificationsPage() {
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Agent Mute</p>
               <div className="space-y-2">
-                {AGENTS.map(a => (
+                {([] as any[]).map((a: any) => (
                   <div key={a.id} className="flex items-center justify-between py-1">
                     <div className="flex items-center gap-2">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white" style={{ background: a.color }}>{a.initials}</div>

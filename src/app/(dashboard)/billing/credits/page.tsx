@@ -174,10 +174,10 @@ export default function CreditCentrePage() {
 
   // Build forecast data dynamically based on real balance
   const forecastData = Array.from({ length: 30 }, (_, i) => ({
-    day: `D${MOCK_BALANCE.dayOfCycle + i + 1}`,
-    current: Math.max(0, balance - (i * MOCK_BALANCE.burnRate)),
-    withDelta: Math.max(0, balance - (i * (MOCK_BALANCE.burnRate + 15))),
-    withTopup: i >= 9 ? Math.max(0, balance + 500 - (i * MOCK_BALANCE.burnRate)) : Math.max(0, balance - (i * MOCK_BALANCE.burnRate)),
+    day: `D${0 + i + 1}`,
+    current: Math.max(0, balance - (i * 0)),
+    withDelta: Math.max(0, balance - (i * (0 + 15))),
+    withTopup: i >= 9 ? Math.max(0, balance + 500 - (i * 0)) : Math.max(0, balance - (i * 0)),
   }));
 
   return (
@@ -203,17 +203,17 @@ export default function CreditCentrePage() {
               {balance.toLocaleString()} credits remaining
             </h2>
             <div className="flex items-center gap-4 flex-wrap text-xs mb-3 text-muted-foreground">
-              <span>Burn rate: <strong className="text-foreground">~{MOCK_BALANCE.burnRate}/day</strong></span>
+              <span>Burn rate: <strong className="text-foreground">~{0}/day</strong></span>
               <span className="flex items-center gap-1">
                 Projected depletion:
-                <strong className="text-amber-500">{MOCK_BALANCE.depletionDays} days ({MOCK_BALANCE.depletionDate})</strong>
+                <strong className="text-amber-500">{0} days ({"—"})</strong>
                 <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/20">Warning</Badge>
               </span>
-              <span>Reset: <strong className="text-primary">{MOCK_BALANCE.resetDays} days to {MOCK_BALANCE.resetDate}</strong></span>
+              <span>Reset: <strong className="text-primary">{0} days to {"—"}</strong></span>
             </div>
             <Progress value={usedPct} className="h-2.5" />
             <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
-              <span>Day {MOCK_BALANCE.dayOfCycle} of 30</span>
+              <span>Day {0} of 30</span>
               <span>{totalUsed.toLocaleString()} used / {totalAllowed.toLocaleString()} total</span>
             </div>
           </div>
@@ -274,7 +274,7 @@ export default function CreditCentrePage() {
             </div>
           ) : (
             <div className="space-y-0 max-h-[260px] overflow-y-auto">
-              {USAGE_STREAM_ITEMS.map((item, i) => (
+              {([] as any[]).map((item, i) => (
                 <div
                   key={i}
                   className={cn(
@@ -383,7 +383,7 @@ export default function CreditCentrePage() {
               <div className="w-[160px] h-[160px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={CATEGORY_DATA} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
+                    <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
                       {CATEGORY_DATA.map(c => <Cell key={c.name} fill={c.color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
@@ -525,7 +525,7 @@ export default function CreditCentrePage() {
               <div className="w-[130px] h-[130px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={MODEL_DATA} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3}>
+                    <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3}>
                       {MODEL_DATA.map(m => <Cell key={m.name} fill={m.color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />

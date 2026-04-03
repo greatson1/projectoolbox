@@ -132,7 +132,7 @@ export default function SchedulePage() {
   const [zoom, setZoom] = useState<ZoomLevel>("month");
   const [view, setView] = useState<ViewMode>("gantt");
   const [showCriticalPath, setShowCriticalPath] = useState(true);
-  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set(PHASES_SUMMARY.map(p => p.name)));
+  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set<string>());
   const timelineRef = useRef<HTMLDivElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
 
@@ -509,7 +509,7 @@ function PhaseGatesSidebar({  }: { mode: string }) {
       <Card>
         <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Phase Gates</h3>
         <div className="space-y-2">
-          {PHASES_SUMMARY.map(p => (
+          {([] as any[]).map(p => (
             <div key={p.name} className="p-2 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)" }}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{p.name}</span>

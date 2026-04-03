@@ -283,7 +283,7 @@ export default function EVMDashboardPage() {
         <div className="space-y-4">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">EAC Trend</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={130}>
-              <LineChart data={EAC_TREND}>
+              <LineChart data={[] as any[]}>
                 <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
                 <XAxis dataKey="period" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis domain={["dataMin - 30", "dataMax + 30"]} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `£${v}K`} />
@@ -294,7 +294,7 @@ export default function EVMDashboardPage() {
             </ResponsiveContainer>
           </CardContent></Card>
           <div className="grid grid-cols-3 gap-2">
-            {SCENARIOS.map((s) => (
+            {([] as any[]).map((s) => (
               <div key={s.label} className="p-3 rounded-[10px] text-center" style={{ backgroundColor: "rgba(99,102,241,0.08)", border: `1px solid ${"var(--border)"}` }}>
                 <p className="text-[10px] font-semibold uppercase" style={{ color: "var(--primary)" }}>{s.label}</p>
                 <p className="text-[16px] font-bold mt-1" style={{ color: "var(--primary)" }}>{fmt(s.value)}</p>
@@ -324,7 +324,7 @@ export default function EVMDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {WORK_PACKAGES.map((wp, i) => {
+              {([] as any[]).map((wp, i) => {
                 const sv = wp.ev - wp.pv; const cv = wp.ev - wp.ac;
                 const spi = wp.pv > 0 ? +(wp.ev / wp.pv).toFixed(2) : 0;
                 const cpi = wp.ac > 0 ? +(wp.ev / wp.ac).toFixed(2) : 0;

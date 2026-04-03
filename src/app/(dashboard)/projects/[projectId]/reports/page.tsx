@@ -219,7 +219,7 @@ export default function ReportsHubPage() {
             <CardContent>
               <div style={{ height: 160 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={USAGE_DATA}>
+                  <BarChart data={[] as any[]}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                     <XAxis dataKey="month" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
                     <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
@@ -236,7 +236,7 @@ export default function ReportsHubPage() {
       {/* Schedules Tab */}
       {activeTab === "schedules" && (
         <div className="space-y-3">
-          {SCHEDULES.map(s => (
+          {([] as any[]).map(s => (
             <Card key={s.id}>
               <CardContent className="pt-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">

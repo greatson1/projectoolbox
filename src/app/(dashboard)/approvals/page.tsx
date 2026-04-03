@@ -112,7 +112,19 @@ const FILTERS = ["All", "High Priority", "Artefacts", "Phase Gates", "Communicat
 
 export default function ApprovalsPage() {
   const mode = "dark";
-  const [items, setItems] = useState(ITEMS);
+  const { data: apiApprovals } = useApprovals();
+  const [items, setItems] = useState<ApprovalItem[]>([]);
+  useEffect(() => {
+    if (apiApprovals && apiApprovals.length > 0) {
+      setItems(apiApprovals.map((a: any) => ({
+        id: a.id, type: a.type?.toLowerCase() === "phase_gate" ? "gate" : "artefact",
+        title: a.title, priority: "high" as const, project: a.project?.name || "",
+        agent: "Agent", timestamp: new Date(a.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+        description: a.description || "", changes: [], sources: [],
+        confidence: 90, confidenceLabel: "High",
+      })));
+    }
+  }, [apiApprovals]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const [removing, setRemoving] = useState<string | null>(null);

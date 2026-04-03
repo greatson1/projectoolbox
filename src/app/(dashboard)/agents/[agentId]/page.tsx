@@ -252,13 +252,67 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       initials: (apiAgent.name || AGENT.name)[0].toUpperCase(),
       gradient: apiAgent.gradient || AGENT.gradient,
       color: apiAgent.gradient ? "#6366F1" : AGENT.color,
-      project: project?.name || AGENT.project,
-      methodology: project?.methodology || AGENT.methodology,
+      project: project?.name || "No project assigned",
+      methodology: project?.methodology || "",
       status: (apiAgent.status?.toLowerCase() || AGENT.status) as "active" | "paused" | "idle" | "error",
       autonomyLevel: apiAgent.autonomyLevel || AGENT.autonomyLevel,
       autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT.autonomyLevel],
-      performanceScore: apiAgent.performanceScore || AGENT.performanceScore,
+      performanceScore: apiAgent.performanceScore || 0,
+      currentTask: apiAgent.activities?.[0]?.summary || "",
+      deployedDate: apiAgent.createdAt ? new Date(apiAgent.createdAt).toISOString().split("T")[0] : "",
+      uptimeDays: apiAgent.createdAt ? Math.floor((Date.now() - new Date(apiAgent.createdAt).getTime()) / 86400000) : 0,
     };
+  }, [apiAgent]);
+
+  // Derive real stats from API data
+  const resolvedStats = useMemo(() => {
+    const counts = apiAgent?._count || { activities: 0, decisions: 0, chatMessages: 0 };
+    const creditsUsed = apiAgent?.creditsUsed || 0;
+    const actionCount = apiAgent?.actionCount || 0;
+    return [
+      { label: "Tasks Completed", value: String(actionCount), icon: "✅", color: "#6366F1" },
+      { label: "Documents Generated", value: "0", icon: "📄", color: "#22D3EE" },
+      { label: "Decisions Made", value: String(counts.decisions), icon: "✓", color: "#10B981" },
+      { label: "Chat Messages", value: String(counts.chatMessages), icon: "💬", color: "#F59E0B" },
+      { label: "Activities Logged", value: String(counts.activities), icon: "📊", color: "#EF4444" },
+      { label: "Credits Consumed", value: creditsUsed.toLocaleString(), icon: "⚡", color: "#8B5CF6" },
+    ];
+  }, [apiAgent]);
+
+  // Derive activity timeline from real data
+  const resolvedActivityEvents = useMemo(() => {
+    const activities = apiAgent?.activities || [];
+    if (activities.length === 0) return [];
+    // Group by date
+    const grouped: Record<string, { time: string; type: string; msg: string }[]> = {};
+    for (const a of activities) {
+      const d = new Date(a.createdAt);
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      let dateLabel: string;
+      if (d.toDateString() === today.toDateString()) dateLabel = "Today";
+      else if (d.toDateString() === yesterday.toDateString()) dateLabel = "Yesterday";
+      else dateLabel = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      if (!grouped[dateLabel]) grouped[dateLabel] = [];
+      grouped[dateLabel].push({
+        time: d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+        type: a.type || "System",
+        msg: a.summary,
+      });
+    }
+    return Object.entries(grouped).map(([date, items]) => ({ date, items }));
+  }, [apiAgent]);
+
+  // Derive decisions from real data
+  const resolvedDecisions = useMemo(() => {
+    return (apiAgent?.decisions || []).map((d: any, i: number) => ({
+      id: `D-${String(i + 1).padStart(3, "0")}`,
+      desc: d.description,
+      rationale: d.reasoning,
+      confidence: Math.round((d.confidence || 0) * 100),
+      outcome: d.status === "APPROVED" ? "Approved" : d.status === "IMPLEMENTED" ? "Implemented" : d.status === "REJECTED" ? "Rejected" : "Pending",
+    }));
   }, [apiAgent]);
 
   if (isLoading) return <div className="space-y-4 max-w-[1400px] mx-auto"><Skeleton className="h-6 w-48" /><Skeleton className="h-28 rounded-xl" /><div className="grid grid-cols-6 gap-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div></div>;
@@ -311,12 +365,18 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <span className="font-semibold text-foreground">{AGENT_RESOLVED.project}</span>
-                <Badge variant="secondary" className="border-blue-500/30 bg-blue-500/10 text-blue-600">
-                  {AGENT_RESOLVED.methodology}
-                </Badge>
-                <span>Deployed {AGENT_RESOLVED.deployedDate}</span>
-                <span>·</span>
-                <span>{AGENT_RESOLVED.uptimeDays} days uptime</span>
+                {AGENT_RESOLVED.methodology && (
+                  <Badge variant="secondary" className="border-blue-500/30 bg-blue-500/10 text-blue-600">
+                    {AGENT_RESOLVED.methodology}
+                  </Badge>
+                )}
+                {AGENT_RESOLVED.deployedDate && <span>Deployed {AGENT_RESOLVED.deployedDate}</span>}
+                {AGENT_RESOLVED.uptimeDays > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>{AGENT_RESOLVED.uptimeDays} days uptime</span>
+                  </>
+                )}
                 <span>·</span>
                 <span>Level {AGENT_RESOLVED.autonomyLevel} — {AGENT_RESOLVED.autonomyLabel}</span>
               </div>
@@ -341,7 +401,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
       {/* ═══ 2. STATS ROW ═══ */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        {STATS.map((s) => (
+        {resolvedStats.map((s) => (
           <Card key={s.label} className="p-3">
             <div className="mb-1 flex items-start justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
@@ -404,7 +464,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   <span className="size-2 animate-pulse rounded-full bg-emerald-500" />
                 </div>
                 <p className="text-[13px] leading-relaxed text-muted-foreground">
-                  {AGENT_RESOLVED.currentTask}
+                  {AGENT_RESOLVED.currentTask || "No active task right now."}
                 </p>
               </div>
             </div>
@@ -414,101 +474,24 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             {/* Task queue */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Active Task Queue</h3>
-              <div className="space-y-2">
-                {ACTIVE_QUEUE.map((t, i) => (
-                  <div
-                    key={t.id}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg p-2",
-                      i === 0 ? "bg-primary/5" : "bg-muted/50"
-                    )}
-                  >
-                    <span className="text-[10px] font-bold" style={{ color: AGENT_RESOLVED.color }}>
-                      {t.id}
-                    </span>
-                    <span className="flex-1 truncate text-xs text-foreground">{t.title}</span>
-                    <span
-                      className={cn(
-                        "rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                        t.status === "in_progress"
-                          ? "bg-primary/15 text-primary"
-                          : "bg-border/20 text-muted-foreground/60"
-                      )}
-                    >
-                      {t.status === "in_progress" ? "Running" : "Queued"}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground/60">{t.eta}</span>
-                  </div>
-                ))}
+              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
+                No tasks in queue
               </div>
             </Card>
 
             {/* Recent artefacts */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Recent Artefacts</h3>
-              <div className="space-y-2">
-                {RECENT_ARTEFACTS.map((a) => (
-                  <div
-                    key={a.name}
-                    className="flex items-center gap-2 border-b border-border/10 py-1.5"
-                  >
-                    <span className="flex-1 truncate text-xs font-medium text-foreground">
-                      {a.name}
-                    </span>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        a.status === "approved"
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                          : "border-amber-500/30 bg-amber-500/10 text-amber-600"
-                      )}
-                    >
-                      {a.status}
-                    </Badge>
-                    <span className="text-[10px] text-muted-foreground/60">{a.date}</span>
-                  </div>
-                ))}
+              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
+                No artefacts generated yet
               </div>
             </Card>
 
             {/* AI Model usage pie */}
             <Card className="p-4">
               <h3 className="mb-2 text-sm font-semibold text-foreground">AI Model Usage</h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={MODEL_USAGE}
-                      dataKey="value"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={65}
-                      paddingAngle={3}
-                    >
-                      {MODEL_USAGE.map((m) => (
-                        <Cell key={m.name} fill={m.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        fontSize: 11,
-                        color: "var(--foreground)",
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex items-center justify-center gap-4 text-[10px]">
-                {MODEL_USAGE.map((m) => (
-                  <span key={m.name} className="flex items-center gap-1 text-muted-foreground">
-                    <span className="size-2.5 rounded-sm" style={{ background: m.color }} />
-                    {m.name} {m.value}%
-                  </span>
-                ))}
+              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+                No model usage data yet
               </div>
             </Card>
           </div>
@@ -516,40 +499,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           {/* Project progress */}
           <Card className="p-4">
             <h3 className="mb-3 text-sm font-semibold text-foreground">Project Progress</h3>
-            <div className="space-y-2">
-              {[
-                { phase: "Pre-Project", pct: 100 },
-                { phase: "Initiation", pct: 100 },
-                { phase: "Planning", pct: 100 },
-                { phase: "Execution", pct: 45 },
-                { phase: "Closing", pct: 0 },
-              ].map((p) => (
-                <div key={p.phase} className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      "w-[100px] text-xs font-medium",
-                      p.pct === 100
-                        ? "text-emerald-500"
-                        : p.pct > 0
-                          ? "text-primary"
-                          : "text-muted-foreground/60"
-                    )}
-                  >
-                    {p.phase}
-                  </span>
-                  <div className="flex-1">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-border/30">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{ width: `${p.pct}%` }}
-                      />
-                    </div>
-                  </div>
-                  <span className="w-10 text-right text-[11px] font-semibold text-muted-foreground">
-                    {p.pct}%
-                  </span>
-                </div>
-              ))}
+            <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
+              No project progress data available yet
             </div>
           </Card>
         </TabsContent>
@@ -583,7 +534,11 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             <div className="lg:col-span-2">
               <Card className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-foreground">Activity Timeline</h3>
-                {ACTIVITY_EVENTS.map((day) => {
+                {resolvedActivityEvents.length === 0 ? (
+                  <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+                    No activity recorded yet
+                  </div>
+                ) : resolvedActivityEvents.map((day) => {
                   const filtered = activityFilter
                     ? day.items.filter((i) => i.type === activityFilter)
                     : day.items;
@@ -636,40 +591,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 <h3 className="mb-2 text-[13px] font-semibold text-foreground">
                   Activity Heatmap (90 Days)
                 </h3>
-                <div
-                  className="grid gap-[2px]"
-                  style={{ gridTemplateColumns: "repeat(13, 1fr)" }}
-                >
-                  {HEATMAP_DATA.flat().map((v, i) => (
-                    <div
-                      key={i}
-                      className="aspect-square rounded-[2px]"
-                      style={{
-                        background:
-                          v === 0
-                            ? "hsl(var(--border) / 0.15)"
-                            : `${AGENT_RESOLVED.color}${(20 + v * 18).toString(16)}`,
-                      }}
-                    />
-                  ))}
-                </div>
-                <div className="mt-2 flex items-center justify-between text-[9px] text-muted-foreground/60">
-                  <span>Less</span>
-                  <div className="flex gap-[2px]">
-                    {[0, 1, 2, 3, 4].map((v) => (
-                      <div
-                        key={v}
-                        className="size-2.5 rounded-[2px]"
-                        style={{
-                          background:
-                            v === 0
-                              ? "hsl(var(--border) / 0.15)"
-                              : `${AGENT_RESOLVED.color}${(20 + v * 18).toString(16)}`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span>More</span>
+                <div className="flex items-center justify-center py-8 text-[11px] text-muted-foreground">
+                  Not enough data for heatmap
                 </div>
               </Card>
 
@@ -677,27 +600,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 <h3 className="mb-2 text-[13px] font-semibold text-foreground">
                   Hourly Distribution
                 </h3>
-                <div className="h-[120px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={HOURLY_DIST}>
-                      <XAxis
-                        dataKey="hour"
-                        tick={{ fontSize: 8, fill: "var(--muted-foreground)" }}
-                        interval={3}
-                      />
-                      <YAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
-                      <Tooltip
-                        contentStyle={{
-                          background: "var(--card)",
-                          border: "1px solid var(--border)",
-                          borderRadius: 8,
-                          fontSize: 11,
-                          color: "var(--foreground)",
-                        }}
-                      />
-                      <Bar dataKey="actions" fill={AGENT_RESOLVED.color} radius={[2, 2, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="flex items-center justify-center py-8 text-[11px] text-muted-foreground">
+                  Not enough data for distribution chart
                 </div>
               </Card>
             </div>
@@ -707,88 +611,91 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
         {/* ─── DECISIONS ─── */}
         <TabsContent value="decisions" className="space-y-4">
           {/* AI autonomy recommendation */}
-          <div
-            className="flex items-center gap-3 rounded-xl p-4"
-            style={{
-              background: AGENT_RESOLVED.color + "08",
-              border: `1px solid ${AGENT_RESOLVED.color}22`,
-            }}
-          >
+          {resolvedDecisions.length > 0 && (
             <div
-              className="flex size-10 items-center justify-center rounded-full text-sm font-bold text-white"
+              className="flex items-center gap-3 rounded-xl p-4"
               style={{
-                background: AGENT_RESOLVED.gradient,
-                boxShadow: `0 0 12px ${AGENT_RESOLVED.color}33`,
+                background: AGENT_RESOLVED.color + "08",
+                border: `1px solid ${AGENT_RESOLVED.color}22`,
               }}
             >
-              AI
+              <div
+                className="flex size-10 items-center justify-center rounded-full text-sm font-bold text-white"
+                style={{
+                  background: AGENT_RESOLVED.gradient,
+                  boxShadow: `0 0 12px ${AGENT_RESOLVED.color}33`,
+                }}
+              >
+                AI
+              </div>
+              <div className="flex-1">
+                <p className="text-[13px] font-semibold" style={{ color: AGENT_RESOLVED.color }}>
+                  Autonomy Recommendation
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Agent {AGENT_RESOLVED.name} has made{" "}
+                  <strong className="text-emerald-500">{resolvedDecisions.length} decisions</strong>.
+                  Current Level {AGENT_RESOLVED.autonomyLevel} ({AGENT_RESOLVED.autonomyLabel}).
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-[13px] font-semibold" style={{ color: AGENT_RESOLVED.color }}>
-                Autonomy Recommendation
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Agent Alpha has a{" "}
-                <strong className="text-emerald-500">96.2% decision accuracy</strong> over 156
-                decisions. Current Level 3 (Co-pilot) — consider upgrading to{" "}
-                <strong style={{ color: AGENT_RESOLVED.color }}>Level 4 (Autonomous)</strong> for this
-                project.
-              </p>
-            </div>
-            <Button variant="default" size="sm">
-              Upgrade to L4
-            </Button>
-          </div>
+          )}
 
           {/* Decision log */}
           <Card className="p-4">
             <h3 className="mb-3 text-sm font-semibold text-foreground">Decision Log</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-foreground">
-                <thead>
-                  <tr className="border-b border-border">
-                    {["ID", "Decision", "Rationale", "Confidence", "Outcome"].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-muted-foreground/60"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {DECISIONS.map((d) => (
-                    <tr key={d.id} className="border-b border-border/10">
-                      <td className="px-3 py-2.5 font-bold" style={{ color: AGENT_RESOLVED.color }}>
-                        {d.id}
-                      </td>
-                      <td className="max-w-[200px] px-3 py-2.5 font-medium">{d.desc}</td>
-                      <td className="max-w-[250px] px-3 py-2.5 text-muted-foreground">
-                        {d.rationale}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <ConfidenceBar pct={d.confidence} color={AGENT_RESOLVED.color} />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            d.outcome === "Implemented"
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                              : d.outcome === "Approved"
-                                ? "border-blue-500/30 bg-blue-500/10 text-blue-600"
-                                : "border-border bg-muted text-muted-foreground"
-                          )}
+            {resolvedDecisions.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+                No decisions logged yet
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-foreground">
+                  <thead>
+                    <tr className="border-b border-border">
+                      {["ID", "Decision", "Rationale", "Confidence", "Outcome"].map((h) => (
+                        <th
+                          key={h}
+                          className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-muted-foreground/60"
                         >
-                          {d.outcome}
-                        </Badge>
-                      </td>
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {resolvedDecisions.map((d) => (
+                      <tr key={d.id} className="border-b border-border/10">
+                        <td className="px-3 py-2.5 font-bold" style={{ color: AGENT_RESOLVED.color }}>
+                          {d.id}
+                        </td>
+                        <td className="max-w-[200px] px-3 py-2.5 font-medium">{d.desc}</td>
+                        <td className="max-w-[250px] px-3 py-2.5 text-muted-foreground">
+                          {d.rationale}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <ConfidenceBar pct={d.confidence} color={AGENT_RESOLVED.color} />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              d.outcome === "Implemented"
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                : d.outcome === "Approved"
+                                  ? "border-blue-500/30 bg-blue-500/10 text-blue-600"
+                                  : "border-border bg-muted text-muted-foreground"
+                            )}
+                          >
+                            {d.outcome}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -797,65 +704,16 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               <h3 className="mb-2 text-sm font-semibold text-foreground">
                 Decision Quality Trend
               </h3>
-              <div className="h-[180px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={DECISION_QUALITY}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                    <XAxis
-                      dataKey="week"
-                      tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                    />
-                    <YAxis
-                      domain={[80, 100]}
-                      tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        fontSize: 11,
-                        color: "var(--foreground)",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="score"
-                      stroke={AGENT_RESOLVED.color}
-                      strokeWidth={2.5}
-                      dot={{ r: 4, fill: AGENT_RESOLVED.color }}
-                      name="Quality %"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+                Not enough data for quality trend
               </div>
             </Card>
 
             {/* Escalation history */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Escalation History</h3>
-              <div className="space-y-2">
-                {ESCALATION_HISTORY.map((e, i) => (
-                  <div key={i} className="rounded-lg bg-muted/50 p-2.5">
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-xs font-medium text-foreground">{e.issue}</span>
-                      <span className="text-[10px] text-muted-foreground/60">{e.date}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                      <span>→ {e.escalatedTo}</span>
-                      <span>·</span>
-                      <span>{e.resolution}</span>
-                      <span
-                        className={cn(
-                          "ml-auto font-semibold",
-                          e.daysToResolve <= 1 ? "text-emerald-500" : "text-amber-500"
-                        )}
-                      >
-                        {e.daysToResolve}d
-                      </span>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
+                No escalations recorded yet
               </div>
             </Card>
           </div>
@@ -867,54 +725,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             {/* 8-axis radar */}
             <Card className="p-4">
               <h3 className="mb-2 text-sm font-semibold text-foreground">Performance Radar</h3>
-              <div className="h-[280px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={PERF_RADAR} cx="50%" cy="50%" outerRadius="70%">
-                    <PolarGrid stroke="var(--border)" opacity={0.4} />
-                    <PolarAngleAxis
-                      dataKey="axis"
-                      tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                    />
-                    <PolarRadiusAxis
-                      tick={{ fontSize: 8, fill: "var(--muted-foreground)" }}
-                      domain={[0, 100]}
-                    />
-                    <Radar
-                      dataKey="fleet"
-                      stroke="#64748B"
-                      fill="#64748B22"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
-                      name="Fleet Avg"
-                    />
-                    <Radar
-                      dataKey="value"
-                      stroke={AGENT_RESOLVED.color}
-                      fill={AGENT_RESOLVED.color + "33"}
-                      strokeWidth={2}
-                      name="Alpha"
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        fontSize: 11,
-                        color: "var(--foreground)",
-                      }}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex items-center justify-center gap-4 text-[10px] text-muted-foreground/60">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-0.5 w-3" style={{ background: AGENT_RESOLVED.color }} />
-                  Alpha
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block h-0.5 w-3 border-t border-dashed border-slate-500" />
-                  Fleet Avg
-                </span>
+              <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
+                Not enough data for performance metrics
               </div>
             </Card>
 
@@ -923,89 +735,16 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               <h3 className="mb-2 text-sm font-semibold text-foreground">
                 Efficiency Trend (Tasks/Day)
               </h3>
-              <div className="h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={EFFICIENCY_TREND}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                    <XAxis
-                      dataKey="week"
-                      tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                    />
-                    <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        fontSize: 11,
-                        color: "var(--foreground)",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="fleetAvg"
-                      stroke="#64748B"
-                      strokeDasharray="4 4"
-                      dot={false}
-                      strokeWidth={1.5}
-                      name="Fleet Avg"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="tasksPerDay"
-                      stroke={AGENT_RESOLVED.color}
-                      strokeWidth={2.5}
-                      dot={{ r: 3, fill: AGENT_RESOLVED.color }}
-                      name="Alpha"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
+                Not enough data for efficiency trend
               </div>
 
               <h3 className="mb-2 mt-4 text-sm font-semibold text-foreground">
                 Credit Efficiency (Credits/Task)
               </h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={CREDIT_EFFICIENCY}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                    <XAxis
-                      dataKey="week"
-                      tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                    />
-                    <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--card)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        fontSize: 11,
-                        color: "var(--foreground)",
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="fleetAvg"
-                      stroke="#64748B"
-                      fill="none"
-                      strokeDasharray="4 4"
-                      strokeWidth={1.5}
-                      name="Fleet Avg"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="creditsPerTask"
-                      stroke="#10B981"
-                      fill="#10B98115"
-                      strokeWidth={2}
-                      name="Alpha"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
+                Not enough data for credit efficiency chart
               </div>
-              <p className="mt-1 text-center text-[11px] text-emerald-500">
-                ↓ Improving — 28% more efficient than Week 1
-              </p>
             </Card>
           </div>
         </TabsContent>

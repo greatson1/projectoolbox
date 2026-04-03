@@ -204,7 +204,7 @@ export default function StakeholdersPage() {
             </CardHeader>
             <CardContent>
             <div className="space-y-3">
-              {COMMS_LOG.map((c, i) => (
+              {([] as any[]).map((c, i) => (
                 <div key={i} className="flex gap-3">
                   <div className="flex flex-col items-center">
                     <div className="w-8 h-8 rounded-[8px] flex items-center justify-center text-[14px]" style={{ backgroundColor: "rgba(99,102,241,0.12)" }}>{COMMS_ICONS[c.type]}</div>
@@ -232,7 +232,7 @@ export default function StakeholdersPage() {
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Sentiment Distribution</p>
             <ResponsiveContainer width="100%" height={140}>
               <PieChart>
-                <Pie data={SENTIMENT_DATA} dataKey="value" cx="50%" cy="50%" outerRadius={55} innerRadius={30}>
+                <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" outerRadius={55} innerRadius={30}>
                   {SENTIMENT_DATA.map((e, i) => <Cell key={i} fill={e.color} />)}
                 </Pie>
               </PieChart>
@@ -251,7 +251,7 @@ export default function StakeholdersPage() {
           <Card>
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Engagement Dimensions</p>
             <ResponsiveContainer width="100%" height={200}>
-              <RadarChart data={RADAR_DATA}>
+              <RadarChart data={[] as any[]}>
                 <PolarGrid stroke={"var(--border)"} />
                 <PolarAngleAxis dataKey="dim" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
                 <Radar dataKey="value" stroke={"var(--primary)"} fill={"var(--primary)"} fillOpacity={0.2} strokeWidth={2} />

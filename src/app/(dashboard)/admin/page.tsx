@@ -160,7 +160,11 @@ export default function AdminSettingsPage() {
   const [auditSearch, setAuditSearch] = useState("");
   const [auditTypeFilter, setAuditTypeFilter] = useState<string | null>(null);
 
-  const filteredAudit = AUDIT_LOG.filter(e => {
+  const { data: apiTeam } = useTeamMembers();
+  const { data: apiAudit } = useAuditLog();
+  const members = apiTeam || [];
+  const auditLog = apiAudit || [];
+  const filteredAudit = auditLog.filter((e: any) => {
     if (auditSearch && !e.action.toLowerCase().includes(auditSearch.toLowerCase()) && !e.user.toLowerCase().includes(auditSearch.toLowerCase()) && !e.target.toLowerCase().includes(auditSearch.toLowerCase())) return false;
     if (auditTypeFilter === "agents" && !e.user.includes("Agent")) return false;
     if (auditTypeFilter === "users" && e.user.includes("Agent")) return false;
@@ -223,7 +227,7 @@ export default function AdminSettingsPage() {
         {tab === "team" && (
           <>
             <div className="flex items-center justify-between">
-              <TabHeader title="Team Management" desc={`${MEMBERS.length} members · ${PENDING_INVITES.length} pending invitations`} />
+              <TabHeader title="Team Management" desc={`${members.length} members · ${0} pending invitations`} />
               <Button variant="default" size="sm" onClick={() => setShowInviteModal(true)}>+ Invite Member</Button>
             </div>
 
@@ -237,7 +241,7 @@ export default function AdminSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {MEMBERS.map(m => (
+                  {members.map(m => (
                     <tr key={m.email} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}11` }}>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
@@ -269,7 +273,7 @@ export default function AdminSettingsPage() {
             <Card>
               <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Pending Invitations</h3>
               <div className="space-y-2">
-                {PENDING_INVITES.map(inv => (
+                {([] as any[]).map(inv => (
                   <div key={inv.email} className="flex items-center justify-between py-2 px-3 rounded-[8px]"
                     style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
                     <div>
@@ -334,7 +338,7 @@ export default function AdminSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {PERMISSIONS.map(p => (
+                  {([] as any[]).map(p => (
                     <tr key={p.feature} style={{ borderBottom: `1px solid ${"var(--border)"}08` }}>
                       <td className="py-2 px-4 font-medium">{p.feature}</td>
                       {ROLES.map(r => (
@@ -438,7 +442,7 @@ export default function AdminSettingsPage() {
             <Card>
               <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Active Sessions</h3>
               <div className="space-y-2">
-                {SESSIONS.map((s, i) => (
+                {([] as any[]).map((s, i) => (
                   <div key={i} className="flex items-center justify-between py-2.5 px-3 rounded-[8px]"
                     style={{ background: s.current ? `${"var(--primary)"}06` : "transparent", border: `1px solid ${s.current ? "var(--primary)" + "22" : "var(--border)" + "11"}` }}>
                     <div className="flex items-center gap-3">
@@ -466,7 +470,7 @@ export default function AdminSettingsPage() {
 
             <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Connected</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-              {INTEGRATIONS_CONNECTED.map(int => (
+              {([] as any[]).map(int => (
                 <Card key={int.name}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -488,7 +492,7 @@ export default function AdminSettingsPage() {
 
             <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--primary)" }}>Available</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-              {INTEGRATIONS_AVAILABLE.map(int => (
+              {([] as any[]).map(int => (
                 <Card key={int.name}>
                   <div className="flex items-center gap-3 mb-2">
                     <span className="text-[20px]">{int.icon}</span>
@@ -502,7 +506,7 @@ export default function AdminSettingsPage() {
 
             <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Coming Soon</h4>
             <div className="flex gap-3">
-              {INTEGRATIONS_SOON.map(int => (
+              {([] as any[]).map(int => (
                 <div key={int.name} className="flex items-center gap-2 px-3 py-2 rounded-[8px]" style={{ background: `${"var(--border)"}11`, border: `1px solid ${"var(--border)"}22` }}>
                   <span className="text-[16px]">{int.icon}</span>
                   <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{int.name}</span>
@@ -525,7 +529,7 @@ export default function AdminSettingsPage() {
                   <Button variant="ghost" size="sm">+ Create Key</Button>
                 </div>
                 <div className="space-y-2">
-                  {API_KEYS.map(k => (
+                  {([] as any[]).map(k => (
                     <div key={k.name} className="p-3 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{k.name}</span>
@@ -553,7 +557,7 @@ export default function AdminSettingsPage() {
                 <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>API Usage (7 Days)</h3>
                 <div style={{ height: 180 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={API_USAGE}>
+                    <BarChart data={[] as any[]}>
                       <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
                       <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                       <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
@@ -562,7 +566,7 @@ export default function AdminSettingsPage() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <p className="text-[10px] text-center mt-1" style={{ color: "var(--muted-foreground)" }}>Total: {API_USAGE.reduce((s, d) => s + d.calls, 0).toLocaleString()} calls this week</p>
+                <p className="text-[10px] text-center mt-1" style={{ color: "var(--muted-foreground)" }}>Total: {([] as any[]).reduce((s, d) => s + d.calls, 0).toLocaleString()} calls this week</p>
               </Card>
             </div>
 
@@ -573,7 +577,7 @@ export default function AdminSettingsPage() {
                 <Button variant="ghost" size="sm">+ Add Endpoint</Button>
               </div>
               <div className="space-y-2">
-                {WEBHOOKS.map((wh, i) => (
+                {([] as any[]).map((wh, i) => (
                   <div key={i} className="p-3 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
                     <div className="flex items-center justify-between mb-1">
                       <code className="text-[11px] font-mono" style={{ color: "var(--primary)" }}>{wh.url}</code>
@@ -637,7 +641,7 @@ export default function AdminSettingsPage() {
               <Card>
                 <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Compliance Certifications</h3>
                 <div className="space-y-2">
-                  {COMPLIANCE_BADGES.map(b => (
+                  {([] as any[]).map(b => (
                     <div key={b.name} className="flex items-center justify-between py-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[16px]">{b.icon}</span>

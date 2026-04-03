@@ -174,7 +174,7 @@ function getLabelColor(name: string) {
   return LABELS.find(l => l.name === name)?.color || "#64748B";
 }
 function getEpicColor(name: string) {
-  return EPICS.find(e => e.name === name)?.color || "#64748B";
+  return ([]).find(e => e.name === name)?.color || "#64748B";
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -237,7 +237,7 @@ export default function AgileBoardPage() {
 
   const hasActiveFilters = filterMyItems || filterBlocked || filterBugs || filterUnassigned || filterAssignee || filterLabel || searchQuery;
 
-  const sprint = SPRINTS.find(s => s.id === selectedSprint)!;
+  const sprint = ([] as any[]).find(s => s.id === selectedSprint)!;
   const daysRemaining = 14 - sprint.daysPassed;
   const completedSP = ISSUES_DATA.filter(i => i.column === "done").reduce((s, i) => s + i.storyPoints, 0);
   const committedSP = ISSUES_DATA.reduce((s, i) => s + i.storyPoints, 0);
@@ -264,7 +264,7 @@ export default function AgileBoardPage() {
             <select className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold"
               value={selectedSprint} onChange={e => setSelectedSprint(Number(e.target.value))}
               style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
-              {SPRINTS.map(s => (
+              {([] as any[]).map(s => (
                 <option key={s.id} value={s.id}>{s.name} — {s.start.slice(5)} to {s.end.slice(5)}</option>
               ))}
             </select>
@@ -322,16 +322,16 @@ export default function AgileBoardPage() {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Capacity</span>
                 <span className="text-[11px] font-semibold" style={{ color: "var(--foreground)" }}>
-                  {TEAM.reduce((s, t) => s + t.assigned, 0)}/{TEAM.reduce((s, t) => s + t.capacity, 0)} SP
+                  {([] as any[]).reduce((s, t) => s + t.assigned, 0)}/{([] as any[]).reduce((s, t) => s + t.capacity, 0)} SP
                 </span>
               </div>
-              <Progress value={Math.round((TEAM.reduce((s, t) => s + t.assigned, 0) / TEAM.reduce((s, t) => s + t.capacity, 0)) * 100)} className="h-1.5" />
+              <Progress value={Math.round((([] as any[]).reduce((s, t) => s + t.assigned, 0) / ([] as any[]).reduce((s, t) => s + t.capacity, 0)) * 100)} className="h-1.5" />
             </div>
 
             {/* Mini burndown sparkline */}
             <div className="w-[100px] h-[36px] flex-shrink-0">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={MINI_BURNDOWN.map((v, i) => ({ d: i, v }))}>
+                <LineChart data={([] as any[]).map((v, i) => ({ d: i, v }))}>
                   <Line type="monotone" dataKey="v" stroke={"var(--primary)"} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -351,7 +351,7 @@ export default function AgileBoardPage() {
         <div className="w-px h-5" style={{ background: "var(--border)" }} />
 
         {/* Assignee pills */}
-        {TEAM.map(m => (
+        {([] as any[]).map(m => (
           <button key={m.name} className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-all"
             onClick={() => setFilterAssignee(filterAssignee === m.name ? null : m.name)}
             style={{
@@ -419,7 +419,7 @@ export default function AgileBoardPage() {
               <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Sprint Burndown</h3>
               <div style={{ height: 130 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={BURNDOWN}>
+                  <AreaChart data={[] as any[]}>
                     <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}44`} />
                     <XAxis dataKey="day" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
                     <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
@@ -436,7 +436,7 @@ export default function AgileBoardPage() {
               <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Velocity (Last 5)</h3>
               <div style={{ height: 110 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={VELOCITY} barGap={2}>
+                  <BarChart data={[] as any[]} barGap={2}>
                     <XAxis dataKey="sprint" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
                     <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
                     <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
@@ -462,7 +462,7 @@ export default function AgileBoardPage() {
             <Card>
               <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Team Workload</h3>
               <div className="space-y-2">
-                {TEAM.map(m => {
+                {([] as any[]).map(m => {
                   const pct = Math.round((m.assigned / m.capacity) * 100);
                   const overloaded = pct > 90;
                   return (
