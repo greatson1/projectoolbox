@@ -84,6 +84,15 @@ export default function MeetingsPage() {
           </div>
           <div className="flex items-center gap-2">
             {meeting.confidence && <Badge variant="default">Confidence {meeting.confidence}%</Badge>}
+            {meeting.summary && meeting.agentId && (
+              <Button variant="default" size="sm" onClick={async () => {
+                const r = await fetch(`/api/meetings/${meeting.id}/follow-up`, { method: "POST" });
+                if (r.ok) alert("Follow-up email sent to attendees!");
+                else alert("Failed to send follow-up");
+              }}>
+                <Mail className="h-3.5 w-3.5 mr-1" /> Send Follow-up
+              </Button>
+            )}
             <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5 mr-1" /> Export</Button>
           </div>
         </div>

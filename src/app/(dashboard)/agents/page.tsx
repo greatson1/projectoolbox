@@ -586,9 +586,17 @@ function AgentCard({ agent,  }: { agent: Agent }) {
       </div>
 
       {/* Current task */}
-      <p className="text-[11px] leading-[15px] mb-3 line-clamp-2" style={{ color: "var(--muted-foreground)" }}>
+      <p className="text-[11px] leading-[15px] mb-2 line-clamp-2" style={{ color: "var(--muted-foreground)" }}>
         {agent.currentTask}
       </p>
+
+      {/* Agent email */}
+      {(agent as any).email && (
+        <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-md" style={{ background: `${agent.color}08` }}>
+          <span className="text-[10px]">📧</span>
+          <span className="text-[10px] font-mono truncate" style={{ color: agent.color }}>{(agent as any).email}</span>
+        </div>
+      )}
 
       {/* Autonomy level */}
       <div className="flex items-center justify-between mb-3">

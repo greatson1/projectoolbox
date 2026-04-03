@@ -16,6 +16,7 @@ export async function GET() {
       where: { orgId, status: { not: "DECOMMISSIONED" } },
       include: {
         deployments: { where: { isActive: true }, include: { project: { select: { id: true, name: true, methodology: true } } } },
+        agentEmail: { select: { address: true, isActive: true } },
         _count: { select: { activities: true, decisions: true, chatMessages: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -50,6 +51,7 @@ export async function GET() {
         ...a,
         project: a.deployments[0]?.project || null,
         creditsUsed: creditMap[a.id] || 0,
+        email: a.agentEmail?.isActive ? a.agentEmail.address : null,
       })),
       activities: recentActivities.map(a => ({
         id: a.id,
