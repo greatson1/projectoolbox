@@ -27,8 +27,9 @@ const S_CURVE = MONTHS.map((m, i) => {
   const pct = (i + 1) / 18;
   const sPct = 3 * pct * pct - 2 * pct * pct * pct; // S-curve formula
   const pvVal = Math.round(BAC * sPct);
-  const evFactor = i < 10 ? 0.92 + Math.random() * 0.06 : 0.85 + Math.random() * 0.05;
-  const acFactor = i < 10 ? 1.0 + Math.random() * 0.08 : 1.05 + Math.random() * 0.1;
+  // Deterministic variation using sin (no Math.random — prevents hydration mismatch)
+  const evFactor = i < 10 ? 0.92 + Math.abs(Math.sin(i * 3.7)) * 0.06 : 0.85 + Math.abs(Math.sin(i * 2.3)) * 0.05;
+  const acFactor = i < 10 ? 1.0 + Math.abs(Math.sin(i * 5.1)) * 0.08 : 1.05 + Math.abs(Math.sin(i * 4.2)) * 0.1;
   const evVal = Math.round(pvVal * evFactor);
   const acVal = Math.round(evVal * acFactor);
   return {

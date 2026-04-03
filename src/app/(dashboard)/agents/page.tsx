@@ -156,13 +156,15 @@ const COMPARISON_DATA = [
   { metric: "Risks", Alpha: 6, Bravo: 4, Charlie: 7, Delta: 3, Echo: 5 },
 ];
 
+// Deterministic pseudo-random using sin seed (no Math.random — prevents hydration mismatch)
+const _s = (seed: number) => Math.abs(Math.round((Math.sin(seed) + 1) * 50));
 const CREDIT_30D = Array.from({ length: 30 }, (_, i) => ({
   day: `D${i + 1}`,
-  Alpha: 60 + Math.round(Math.random() * 40),
-  Bravo: 50 + Math.round(Math.random() * 35),
-  Charlie: 40 + Math.round(Math.random() * 30),
-  Delta: i > 20 ? 10 + Math.round(Math.random() * 15) : 45 + Math.round(Math.random() * 25),
-  Echo: 55 + Math.round(Math.random() * 35),
+  Alpha: 60 + _s(i * 7 + 1) % 40,
+  Bravo: 50 + _s(i * 11 + 2) % 35,
+  Charlie: 40 + _s(i * 13 + 3) % 30,
+  Delta: i > 20 ? 10 + _s(i * 17 + 4) % 15 : 45 + _s(i * 17 + 4) % 25,
+  Echo: 55 + _s(i * 19 + 5) % 35,
 }));
 
 const FLEET_RADAR = [

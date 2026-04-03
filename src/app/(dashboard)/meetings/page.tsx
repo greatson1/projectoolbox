@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Circle,
 } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 // ================================================================
 // DATA
@@ -347,42 +348,33 @@ export default function MeetingsPage() {
                   <p className="text-[11px] font-semibold uppercase tracking-wider mb-3 text-muted-foreground">
                     Speaker Breakdown
                   </p>
-                  {/* Simple bar chart instead of recharts PieChart */}
-                  <div className="space-y-2.5 mb-3">
-                    {meeting.speakers.map((s) => {
-                      const totalMins = meeting.speakers.reduce(
-                        (sum, sp) => sum + sp.mins,
-                        0
-                      );
-                      const pct = Math.round((s.mins / totalMins) * 100);
-                      return (
-                        <div key={s.name}>
-                          <div className="flex items-center justify-between text-[11px] mb-1">
+                  {/* Speaker time PieChart */}
+                  <div className="flex items-center gap-4">
+                    <div style={{ width: 120, height: 120 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={meeting.speakers.map(s => ({ name: s.name, value: s.mins, color: s.color }))}
+                            dataKey="value" cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={3}>
+                            {meeting.speakers.map((s, i) => <Cell key={i} fill={s.color} />)}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      {meeting.speakers.map((s) => {
+                        const totalMins = meeting.speakers.reduce((sum, sp) => sum + sp.mins, 0);
+                        const pct = Math.round((s.mins / totalMins) * 100);
+                        return (
+                          <div key={s.name} className="flex items-center justify-between text-[11px]">
                             <div className="flex items-center gap-1.5">
-                              <span
-                                className="w-2 h-2 rounded-full"
-                                style={{ backgroundColor: s.color }}
-                              />
-                              <span className="text-foreground">
-                                {s.name}
-                              </span>
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                              <span>{s.name}</span>
                             </div>
-                            <span className="text-muted-foreground">
-                              {s.mins} min
-                            </span>
+                            <span className="text-muted-foreground">{s.mins}m ({pct}%)</span>
                           </div>
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: s.color,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
