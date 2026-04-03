@@ -192,7 +192,7 @@ function parseAgentResponse(content: string): Message[] {
   }
 
   // Risk pattern
-  if (content.toLowerCase().includes("risk") && content.includes("Score") || content.includes("Probability")) {
+  if (content.toLowerCase().includes("risk") && (content.includes("Score") || content.includes("Probability"))) {
     const titleMatch = content.match(/(?:Risk|RISK)[:\s]*(.+?)(?:\n|$)/);
     const scoreMatch = content.match(/[Ss]core[:\s]*(\d+)/);
     if (titleMatch && scoreMatch) {

@@ -25,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 // ═══════════════════════════════════════════════════════════════════
 
 const AGENT = {
+  id: "mock-alpha", codename: "ALPHA-03",
   name: "Alpha", initials: "A",
   gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1",
   project: "Project Atlas", methodology: "PRINCE2" as const,
@@ -344,6 +345,9 @@ export default function AgentProfilePage() {
           </TabsTrigger>
           <TabsTrigger value="performance" className="text-[13px] font-semibold">
             <TrendingUp className="mr-1 size-3.5" /> Performance
+          </TabsTrigger>
+          <TabsTrigger value="inbox" className="text-[13px] font-semibold">
+            <Mail className="mr-1 size-3.5" /> Inbox
           </TabsTrigger>
           <TabsTrigger value="configuration" className="text-[13px] font-semibold">
             <Sliders className="mr-1 size-3.5" /> Configuration
@@ -978,6 +982,11 @@ export default function AgentProfilePage() {
           </div>
         </TabsContent>
 
+        {/* ─── INBOX ─── */}
+        <TabsContent value="inbox" className="space-y-4">
+          <AgentInboxTab agentId={AGENT.id} agentColor={AGENT.color} />
+        </TabsContent>
+
         {/* ─── CONFIGURATION ─── */}
         <TabsContent value="configuration" className="space-y-4">
           {/* Agent Identity — Editable */}
@@ -1425,6 +1434,103 @@ function AgentEmailSection({ agentId }: { agentId: string }) {
         </ul>
         <p className="mt-1">The agent will automatically extract action items, decisions, and risks from incoming emails.</p>
       </div>
+    </div>
+  );
+}
+
+// ─── Agent Inbox Tab ───
+function AgentInboxTab({ agentId, agentColor }: { agentId: string; agentColor: string }) {
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filter) params.set("type", filter);
+    fetch(`/api/agents/${agentId}/inbox?${params}`).then(r => r.json()).then(j => {
+      setMsgs(j.data?.messages || []);
+      setUnread(j.data?.unreadCount || 0);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [agentId, filter]);
+
+  const markRead = async (ids: string[]) => {
+    await fetch(`/api/agents/${agentId}/inbox`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageIds: ids, status: "READ" }),
+    });
+    setMsgs(msgs.map(m => ids.includes(m.id) ? { ...m, status: "READ" } : m));
+    setUnread(Math.max(0, unread - ids.length));
+  };
+
+  const typeIcons: Record<string, string> = {
+    MEETING_INVITE: "📅", MEETING_NOTES: "📝", STATUS_UPDATE: "📊", GENERAL: "📧",
+  };
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Agent Inbox</h3>
+          <p className="text-[11px] text-muted-foreground">{unread > 0 ? `${unread} unread` : "All caught up"}</p>
+        </div>
+        {unread > 0 && (
+          <Button variant="outline" size="sm" onClick={() => markRead(msgs.filter(m => m.status === "UNREAD").map((m: any) => m.id))}>
+            Mark all read
+          </Button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-1.5">
+        {[{ id: null, label: "All" }, { id: "MEETING_INVITE", label: "Invites" }, { id: "MEETING_NOTES", label: "Notes" }, { id: "STATUS_UPDATE", label: "Updates" }, { id: "GENERAL", label: "General" }].map(f => (
+          <button key={f.id || "all"} onClick={() => setFilter(f.id)}
+            className={cn("px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all",
+              filter === f.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground")}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Messages */}
+      {msgs.length === 0 ? (
+        <div className="text-center py-12">
+          <Mail className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm font-medium mb-1">No emails received</p>
+          <p className="text-[11px] text-muted-foreground">Emails sent to this agent&apos;s address will appear here.</p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {msgs.map((m: any) => (
+            <div key={m.id} onClick={() => m.status === "UNREAD" && markRead([m.id])}
+              className={cn("flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all",
+                m.status === "UNREAD" ? "bg-primary/5 border border-primary/10" : "hover:bg-muted/50")}>
+              <span className="text-base mt-0.5">{typeIcons[m.type] || "📧"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className={cn("text-[12px] font-semibold truncate", m.status === "UNREAD" ? "text-foreground" : "text-muted-foreground")}>{m.from}</span>
+                  {m.status === "UNREAD" && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: agentColor }} />}
+                  <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">
+                    {new Date(m.receivedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+                <p className={cn("text-[12px] truncate", m.status === "UNREAD" ? "font-medium text-foreground" : "text-muted-foreground")}>{m.subject}</p>
+                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{m.preview?.slice(0, 120)}</p>
+                {m.processedAs && (
+                  <Badge variant="secondary" className="text-[9px] mt-1.5">
+                    Processed → {m.processedAs.replace("_", " ")}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
