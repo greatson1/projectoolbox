@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp,

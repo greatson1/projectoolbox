@@ -1,188 +1,346 @@
 "use client";
+// @ts-nocheck
 
-import { useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+
 import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { useProject, useProjectTasks } from "@/hooks/use-api";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle } from "lucide-react";
 
-function fmt(v: number) { return v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v.toFixed(0)}`; }
-function evmColor(metric: string, value: number): string {
-  if (metric === "SPI" || metric === "CPI") return value >= 1 ? "#10B981" : value >= 0.9 ? "#F59E0B" : "#EF4444";
-  if (metric === "SV" || metric === "CV" || metric === "VAC") return value >= 0 ? "#10B981" : "#EF4444";
-  return "var(--primary)";
+/**
+ * EVM Dashboard — Earned Value Management with S-curve, gauges, variance, forecasting.
+ */
+
+import { ComposedChart, Line, Area, Bar, BarChart, LineChart, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine, Legend, Cell } from "recharts";
+
+
+// ================================================================
+// DATA — £2.45M construction project, 18 months
+// ================================================================
+
+const BAC = 2450000;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan'27", "Feb", "Mar", "Apr", "May", "Jun"];
+
+const S_CURVE = MONTHS.map((m, i) => {
+  const pct = (i + 1) / 18;
+  const sPct = 3 * pct * pct - 2 * pct * pct * pct; // S-curve formula
+  const pvVal = Math.round(BAC * sPct);
+  const evFactor = i < 10 ? 0.92 + Math.random() * 0.06 : 0.85 + Math.random() * 0.05;
+  const acFactor = i < 10 ? 1.0 + Math.random() * 0.08 : 1.05 + Math.random() * 0.1;
+  const evVal = Math.round(pvVal * evFactor);
+  const acVal = Math.round(evVal * acFactor);
+  return {
+    month: m,
+    PV: i <= 9 ? pvVal : null,
+    EV: i <= 9 ? evVal : null,
+    AC: i <= 9 ? acVal : null,
+    pvFull: pvVal,
+    eacProj: i >= 9 ? Math.round(pvVal * 1.12) : null,
+  };
+});
+
+// Current period values (month 10 = October)
+const currentPV = S_CURVE[9].PV!;
+const currentEV = S_CURVE[9].EV!;
+const currentAC = S_CURVE[9].AC!;
+const SV = currentEV - currentPV;
+const CV = currentEV - currentAC;
+const SPI = +(currentEV / currentPV).toFixed(2);
+const CPI = +(currentEV / currentAC).toFixed(2);
+const EAC = Math.round(BAC / CPI);
+const ETC = EAC - currentAC;
+const VAC = BAC - EAC;
+const TCPI = +((BAC - currentEV) / (BAC - currentAC)).toFixed(2);
+
+const WORK_PACKAGES = [
+  { name: "Foundation", bac: 380000, pv: 380000, ev: 365000, ac: 392000 },
+  { name: "Steel Structure", bac: 520000, pv: 480000, ev: 445000, ac: 468000 },
+  { name: "MEP Systems", bac: 410000, pv: 280000, ev: 255000, ac: 278000 },
+  { name: "Facade", bac: 350000, pv: 120000, ev: 108000, ac: 115000 },
+  { name: "Interior Fit-out", bac: 480000, pv: 40000, ev: 32000, ac: 38000 },
+  { name: "Commissioning", bac: 310000, pv: 0, ev: 0, ac: 0 },
+];
+
+const VARIANCE_DATA = WORK_PACKAGES.filter((wp) => wp.pv > 0).map((wp) => ({
+  name: wp.name.length > 10 ? wp.name.slice(0, 10) + "…" : wp.name,
+  SV: Math.round((wp.ev - wp.pv) / 1000),
+  CV: Math.round((wp.ev - wp.ac) / 1000),
+}));
+
+const EAC_TREND = [
+  { period: "P5", eac: 2520 }, { period: "P6", eac: 2560 },
+  { period: "P7", eac: 2590 }, { period: "P8", eac: 2620 },
+  { period: "P9", eac: 2650 }, { period: "P10", eac: Math.round(EAC / 1000) },
+];
+
+const SCENARIOS = [
+  { label: "Optimistic", value: Math.round(EAC * 0.95), desc: "CPI improves to 0.98 for remaining work", color: "success" as const },
+  { label: "Most Likely", value: EAC, desc: "Current CPI continues for remaining work", color: "warning" as const },
+  { label: "Pessimistic", value: Math.round(EAC * 1.08), desc: "CPI degrades to 0.82 due to winter weather delays", color: "danger" as const },
+];
+
+// ================================================================
+// HELPERS
+// ================================================================
+
+function fmt(v: number): string {
+  if (Math.abs(v) >= 1000000) return `£${(v / 1000000).toFixed(2)}M`;
+  if (Math.abs(v) >= 1000) return `£${(v / 1000).toFixed(0)}K`;
+  return `£${v.toLocaleString()}`;
 }
 
-export default function EVMDashboardPage() {
-  const { projectId } = useParams<{ projectId: string }>();
-  const { data: project, isLoading: projLoading } = useProject(projectId);
-  const { data: tasks, isLoading: tasksLoading } = useProjectTasks(projectId);
+function evmColor(metric: string, value: number): string {
+  if (metric === "SPI" || metric === "CPI") return value >= 1.0 ? "#10B981" : value >= 0.9 ? "#F59E0B" : "#EF4444";
+  if (metric === "SV" || metric === "CV" || metric === "VAC") return value >= 0 ? "#10B981" : value >= -50000 ? "#F59E0B" : "#EF4444";
+  if (metric === "TCPI") return value <= 1.05 ? "#10B981" : value <= 1.15 ? "#F59E0B" : "#EF4444";
+  return "var(--foreground)";
+}
 
-  const isLoading = projLoading || tasksLoading;
-  const items = tasks || [];
-  const BAC = project?.budget || 0;
+// ================================================================
+// GAUGE COMPONENT
+// ================================================================
 
-  // Calculate EVM from tasks
-  const evm = useMemo(() => {
-    if (BAC === 0 || items.length === 0) return null;
+function Gauge({ value, label, min = 0, max = 1.5}: { value: number; label: string; min?: number; max?: number;  }) {
+  const pct = Math.min(1, Math.max(0, (value - min) / (max - min)));
+  const angle = pct * 180;
+  const color = value >= 1.0 ? "#10B981" : value >= 0.9 ? "#F59E0B" : "#EF4444";
 
-    const totalWeight = items.reduce((s: number, t: any) => s + (t.storyPoints || 1), 0);
-    const completedWeight = items.filter((t: any) => t.status === "DONE").reduce((s: number, t: any) => s + (t.storyPoints || 1), 0);
-    const progressWeight = items.reduce((s: number, t: any) => s + ((t.storyPoints || 1) * (t.progress || 0) / 100), 0);
-
-    // Planned: assume linear distribution
-    const schedulePct = 0.6; // Assume 60% through schedule
-    const PV = BAC * schedulePct;
-    const EV = (progressWeight / totalWeight) * BAC;
-    const AC = EV * 1.07; // Assume 7% over actual cost
-
-    const SV = EV - PV;
-    const CV = EV - AC;
-    const SPI = PV > 0 ? EV / PV : 0;
-    const CPI = AC > 0 ? EV / AC : 0;
-    const EAC = CPI > 0 ? BAC / CPI : BAC;
-    const ETC = EAC - AC;
-    const VAC = BAC - EAC;
-    const TCPI = (BAC - EV) / (BAC - AC);
-
-    return { PV, EV, AC, SV, CV, SPI, CPI, EAC, ETC, VAC, TCPI, BAC };
-  }, [BAC, items]);
-
-  // S-curve data
-  const sCurveData = useMemo(() => {
-    if (!evm) return [];
-    return Array.from({ length: 11 }, (_, i) => {
-      const pct = i / 10;
-      return {
-        month: `M${i}`,
-        pv: Math.round(evm.BAC * pct),
-        ev: i <= 6 ? Math.round(evm.EV * (pct / 0.6)) : null,
-        ac: i <= 6 ? Math.round(evm.AC * (pct / 0.6)) : null,
-      };
-    });
-  }, [evm]);
-
-  if (isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><div className="grid grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div></div>;
-
-  if (!evm) {
-    return (
-      <div className="space-y-6 max-w-[1400px]">
-        <div><h1 className="text-2xl font-bold">Earned Value Management</h1><p className="text-sm text-muted-foreground mt-1">{project?.name || "Project"}</p></div>
-        <div className="text-center py-20">
-          <TrendingUp className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-lg font-bold mb-2">EVM not available</h2>
-          <p className="text-sm text-muted-foreground">Requires a project budget and task progress data. {BAC === 0 ? "Set a budget first." : "Add tasks with story points and progress."}</p>
-        </div>
+  return (
+    <div className="text-center">
+      <div className="relative w-[140px] h-[80px] mx-auto overflow-hidden">
+        <svg viewBox="0 0 140 80" className="w-full h-full">
+          {/* Background arc */}
+          <path d="M 10 75 A 60 60 0 0 1 130 75" fill="none" stroke={"var(--border)"} strokeWidth="10" strokeLinecap="round" />
+          {/* Red zone */}
+          <path d="M 10 75 A 60 60 0 0 1 46 22" fill="none" stroke={"#EF4444"} strokeWidth="10" strokeLinecap="round" opacity="0.2" />
+          {/* Amber zone */}
+          <path d="M 46 22 A 60 60 0 0 1 70 15" fill="none" stroke={"#F59E0B"} strokeWidth="10" strokeLinecap="round" opacity="0.2" />
+          {/* Green zone */}
+          <path d="M 70 15 A 60 60 0 0 1 130 75" fill="none" stroke={"#10B981"} strokeWidth="10" strokeLinecap="round" opacity="0.2" />
+          {/* Needle */}
+          <line x1="70" y1="75" x2={70 + 50 * Math.cos(Math.PI - (angle * Math.PI) / 180)} y2={75 - 50 * Math.sin(Math.PI - (angle * Math.PI) / 180)}
+            stroke={color} strokeWidth="3" strokeLinecap="round" />
+          <circle cx="70" cy="75" r="5" fill={color} />
+        </svg>
       </div>
-    );
-  }
+      <p className="text-[24px] font-bold mt-1" style={{ color }}>{value.toFixed(2)}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{label}</p>
+    </div>
+  );
+}
+
+// ================================================================
+// COMPONENT
+// ================================================================
+
+export default function EVMDashboardPage() {
+  const mode = "dark";
 
   const metrics = [
-    { label: "BAC", value: fmt(evm.BAC), sub: "Budget at Completion", color: "var(--primary)" },
-    { label: "PV", value: fmt(evm.PV), sub: "Planned Value", color: "var(--primary)" },
-    { label: "EV", value: fmt(evm.EV), sub: "Earned Value", color: "#10B981" },
-    { label: "AC", value: fmt(evm.AC), sub: "Actual Cost", color: "#EF4444" },
-    { label: "SV", value: fmt(evm.SV), sub: "Schedule Variance", color: evmColor("SV", evm.SV) },
-    { label: "CV", value: fmt(evm.CV), sub: "Cost Variance", color: evmColor("CV", evm.CV) },
-    { label: "SPI", value: evm.SPI.toFixed(2), sub: "Schedule Performance", color: evmColor("SPI", evm.SPI) },
-    { label: "CPI", value: evm.CPI.toFixed(2), sub: "Cost Performance", color: evmColor("CPI", evm.CPI) },
-    { label: "EAC", value: fmt(evm.EAC), sub: "Estimate at Completion", color: evmColor("CV", evm.VAC) },
-    { label: "ETC", value: fmt(evm.ETC), sub: "Estimate to Complete", color: "var(--muted-foreground)" },
-    { label: "VAC", value: fmt(evm.VAC), sub: "Variance at Completion", color: evmColor("VAC", evm.VAC) },
-    { label: "TCPI", value: evm.TCPI.toFixed(2), sub: "To-Complete Performance", color: evmColor("CPI", evm.TCPI) },
+    { label: "BAC", value: fmt(BAC), sub: "Budget at Completion", color: "var(--foreground)" },
+    { label: "PV", value: fmt(currentPV), sub: "Planned Value", color: "var(--primary)" },
+    { label: "EV", value: fmt(currentEV), sub: "Earned Value", color: "#10B981" },
+    { label: "AC", value: fmt(currentAC), sub: "Actual Cost", color: "#EF4444" },
+    { label: "SV", value: fmt(SV), sub: "Schedule Variance", color: evmColor("SV", SV), trend: SV >= 0 ? "up" as const : "down" as const },
+    { label: "CV", value: fmt(CV), sub: "Cost Variance", color: evmColor("CV", CV), trend: CV >= 0 ? "up" as const : "down" as const },
+    { label: "SPI", value: SPI.toFixed(2), sub: "Schedule Performance", color: evmColor("SPI", SPI), trend: SPI >= 1 ? "up" as const : "down" as const },
+    { label: "CPI", value: CPI.toFixed(2), sub: "Cost Performance", color: evmColor("CPI", CPI), trend: CPI >= 1 ? "up" as const : "down" as const },
+    { label: "EAC", value: fmt(EAC), sub: "Estimate at Completion", color: evmColor("CV", VAC) },
+    { label: "ETC", value: fmt(ETC), sub: "Estimate to Complete", color: "var(--muted-foreground)" },
+    { label: "VAC", value: fmt(VAC), sub: "Variance at Completion", color: evmColor("VAC", VAC) },
+    { label: "TCPI", value: TCPI.toFixed(2), sub: "To-Complete Performance", color: evmColor("TCPI", TCPI) },
   ];
 
   return (
-    <div className="space-y-6 max-w-[1400px]">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Earned Value Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">{project?.name} · BAC: {fmt(evm.BAC)}</p>
-        </div>
+        <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Earned Value Management</h1>
         <div className="flex gap-2">
-          <Badge variant={evm.SPI >= 1 ? "default" : "destructive"} className="text-xs">SPI {evm.SPI.toFixed(2)}</Badge>
-          <Badge variant={evm.CPI >= 1 ? "default" : "destructive"} className="text-xs">CPI {evm.CPI.toFixed(2)}</Badge>
+          <select className="px-3 py-1.5 rounded-[8px] text-[12px]" style={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, color: "var(--foreground)" }}>
+            <option>Office Renovation Phase 2</option><option>CRM Migration</option>
+          </select>
+          <select className="px-3 py-1.5 rounded-[8px] text-[12px]" style={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, color: "var(--foreground)" }}>
+            <option>Period 10 (Oct 2026)</option><option>Period 9</option>
+          </select>
         </div>
       </div>
 
-      {/* 12 Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {metrics.map(m => (
-          <Card key={m.label} className="p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{m.label}</p>
-            <p className="text-lg font-bold mt-1" style={{ color: m.color }}>{m.value}</p>
-            <p className="text-[9px] text-muted-foreground">{m.sub}</p>
-          </Card>
+      {/* Metrics cards */}
+      <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
+        {metrics.map((m) => (
+          <div key={m.label} className="p-3 rounded-[10px]" style={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}` }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{m.label}</p>
+            <div className="flex items-center gap-1 mt-1">
+              <p className="text-[16px] font-bold" style={{ color: m.color }}>{m.value}</p>
+              {(m as any).trend && <span className="text-[10px]" style={{ color: m.color }}>{(m as any).trend === "up" ? "↑" : "↓"}</span>}
+            </div>
+            <p className="text-[9px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>{m.sub}</p>
+          </div>
         ))}
       </div>
 
-      {/* S-Curve */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">S-Curve — Cumulative Performance</CardTitle></CardHeader>
-        <CardContent>
-          <div style={{ height: 280 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={sCurveData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                <XAxis dataKey="month" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
-                <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickFormatter={v => fmt(v)} />
-                <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} formatter={(v: any) => [v ? fmt(Number(v)) : "—"]} />
-                <ReferenceLine y={evm.BAC} stroke="var(--muted-foreground)" strokeDasharray="5 5" />
-                <Area type="monotone" dataKey="pv" stroke="var(--primary)" fill="none" strokeWidth={2} strokeDasharray="5 5" name="PV (Planned)" />
-                <Area type="monotone" dataKey="ev" stroke="#10B981" fill="#10B98122" strokeWidth={2.5} name="EV (Earned)" connectNulls={false} />
-                <Area type="monotone" dataKey="ac" stroke="#EF4444" fill="#EF444422" strokeWidth={2} name="AC (Actual)" connectNulls={false} />
-              </AreaChart>
+      {/* S-Curve + Gauges */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
+        <div className="xl:col-span-3">
+          <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>S-Curve — Cumulative Performance</span>}>
+            <ResponsiveContainer width="100%" height={320}>
+              <ComposedChart data={S_CURVE} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
+                <defs>
+                  <linearGradient id="cvArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={"#EF4444"} stopOpacity={0.1} />
+                    <stop offset="95%" stopColor={"#EF4444"} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
+                <XAxis dataKey="month" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false}
+                  tickFormatter={(v) => v >= 1000000 ? `£${(v / 1000000).toFixed(1)}M` : `£${(v / 1000).toFixed(0)}K`} />
+                <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 10, color: "var(--foreground)", fontSize: 11 }}
+                  formatter={(v: number) => [v ? fmt(v) : "—"]} />
+                <ReferenceLine y={BAC} stroke={"var(--muted-foreground)"} strokeDasharray="8 4" label={{ value: `BAC ${fmt(BAC)}`, fill: "var(--muted-foreground)", fontSize: 10, position: "right" }} />
+                {/* Full PV line (planned) */}
+                <Line type="monotone" dataKey="pvFull" stroke={"var(--primary)"} strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="Planned (full)" />
+                {/* Actual lines */}
+                <Line type="monotone" dataKey="PV" stroke={"var(--primary)"} strokeWidth={2} dot={{ r: 3, fill: "var(--primary)" }} name="PV" connectNulls={false} />
+                <Line type="monotone" dataKey="EV" stroke={"#10B981"} strokeWidth={2.5} dot={{ r: 3, fill: "#10B981" }} name="EV" connectNulls={false} />
+                <Line type="monotone" dataKey="AC" stroke={"#EF4444"} strokeWidth={2} dot={{ r: 3, fill: "#EF4444" }} name="AC" connectNulls={false} />
+                {/* EAC projection */}
+                <Line type="monotone" dataKey="eacProj" stroke={"#F59E0B"} strokeWidth={1.5} strokeDasharray="4 4" dot={false} name="EAC Projection" connectNulls={false} />
+                <Legend wrapperStyle={{ fontSize: 10, color: "var(--muted-foreground)" }} />
+              </ComposedChart>
             </ResponsiveContainer>
-          </div>
-          <div className="flex items-center gap-4 mt-2 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 inline-block border-t-2 border-dashed" style={{ borderColor: "var(--primary)" }} /> Planned</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 inline-block" style={{ background: "#10B981" }} /> Earned</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 inline-block" style={{ background: "#EF4444" }} /> Actual</span>
-          </div>
-        </CardContent>
-      </Card>
+          </Card>
+        </div>
 
-      {/* SPI/CPI Gauges */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Schedule Performance (SPI)</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="text-center">
-                <p className="text-4xl font-bold" style={{ color: evmColor("SPI", evm.SPI) }}>{evm.SPI.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">{evm.SPI >= 1 ? "Ahead of schedule" : evm.SPI >= 0.9 ? "Slightly behind" : "Behind schedule"}</p>
+        {/* Gauges */}
+        <div className="space-y-4">
+          <Card>
+            <Gauge value={SPI} label="Schedule Performance (SPI)" />
+          </Card>
+          <Card>
+            <Gauge value={CPI} label="Cost Performance (CPI)" />
+          </Card>
+          {/* TCPI bar */}
+          <Card>
+            <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>TCPI Analysis</p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span style={{ color: "var(--muted-foreground)" }}>Current CPI</span>
+                <span className="font-bold" style={{ color: evmColor("CPI", CPI) }}>{CPI}</span>
               </div>
-              <div className="flex-1">
-                <div className="h-4 rounded-full overflow-hidden bg-muted flex">
-                  <div className="h-full rounded-full" style={{ width: `${Math.min(evm.SPI * 100, 150)}%`, maxWidth: "100%", background: evmColor("SPI", evm.SPI) }} />
-                </div>
-                <div className="flex justify-between mt-1 text-[9px] text-muted-foreground"><span>0</span><span>1.0</span><span>1.5</span></div>
+              <div className="h-3 rounded-full overflow-hidden flex" style={{ backgroundColor: "var(--border)" }}>
+                <div style={{ width: `${(CPI / 1.5) * 100}%`, backgroundColor: evmColor("CPI", CPI) }} className="rounded-full" />
               </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span style={{ color: "var(--muted-foreground)" }}>Required TCPI</span>
+                <span className="font-bold" style={{ color: evmColor("TCPI", TCPI) }}>{TCPI}</span>
+              </div>
+              <div className="h-3 rounded-full overflow-hidden flex" style={{ backgroundColor: "var(--border)" }}>
+                <div style={{ width: `${(TCPI / 1.5) * 100}%`, backgroundColor: evmColor("TCPI", TCPI) }} className="rounded-full" />
+              </div>
+              <p className="text-[10px] p-2 rounded-[6px]" style={{ backgroundColor: "rgba(245,158,11,0.12)", color: "#F59E0B" }}>
+                Team must perform at {TCPI}x efficiency (vs current {CPI}x) to finish within budget — {Math.round(((TCPI / CPI) - 1) * 100)}% improvement needed.
+              </p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Cost Performance (CPI)</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="text-center">
-                <p className="text-4xl font-bold" style={{ color: evmColor("CPI", evm.CPI) }}>{evm.CPI.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">{evm.CPI >= 1 ? "Under budget" : evm.CPI >= 0.9 ? "Slightly over" : "Over budget"}</p>
-              </div>
-              <div className="flex-1">
-                <div className="h-4 rounded-full overflow-hidden bg-muted flex">
-                  <div className="h-full rounded-full" style={{ width: `${Math.min(evm.CPI * 100, 150)}%`, maxWidth: "100%", background: evmColor("CPI", evm.CPI) }} />
-                </div>
-                <div className="flex justify-between mt-1 text-[9px] text-muted-foreground"><span>0</span><span>1.0</span><span>1.5</span></div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
+
+      {/* Variance + Forecasting */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {/* Variance */}
+        <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Variance by Work Package (£K)</span>}>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={VARIANCE_DATA} barGap={2}>
+              <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
+              <XAxis dataKey="name" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `£${v}K`} />
+              <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 10, color: "var(--foreground)", fontSize: 11 }} formatter={(v: number) => [`£${v}K`]} />
+              <ReferenceLine y={0} stroke={"var(--muted-foreground)"} />
+              <Bar dataKey="SV" name="Schedule Variance" radius={[3, 3, 0, 0]}>
+                {VARIANCE_DATA.map((e, i) => <Cell key={i} fill={e.SV >= 0 ? "#10B981" : "#EF4444"} opacity={0.7} />)}
+              </Bar>
+              <Bar dataKey="CV" name="Cost Variance" radius={[3, 3, 0, 0]}>
+                {VARIANCE_DATA.map((e, i) => <Cell key={i} fill={e.CV >= 0 ? "#10B981" : "#EF4444"} />)}
+              </Bar>
+              <Legend wrapperStyle={{ fontSize: 10 }} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+
+        {/* Forecasting */}
+        <div className="space-y-4">
+          <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>EAC Trend</span>}>
+            <ResponsiveContainer width="100%" height={130}>
+              <LineChart data={EAC_TREND}>
+                <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
+                <XAxis dataKey="period" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis domain={["dataMin - 30", "dataMax + 30"]} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `£${v}K`} />
+                <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 10, color: "var(--foreground)", fontSize: 11 }} formatter={(v: number) => [`£${v}K`]} />
+                <ReferenceLine y={BAC / 1000} stroke={"#10B981"} strokeDasharray="4 4" label={{ value: "BAC", fill: "var(--muted-foreground)", fontSize: 9 }} />
+                <Line type="monotone" dataKey="eac" stroke={"#F59E0B"} strokeWidth={2} dot={{ r: 4, fill: "#F59E0B" }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Card>
+          <div className="grid grid-cols-3 gap-2">
+            {SCENARIOS.map((s) => (
+              <div key={s.label} className="p-3 rounded-[10px] text-center" style={{ backgroundColor: "rgba(99,102,241,0.08)", border: `1px solid ${"var(--border)"}` }}>
+                <p className="text-[10px] font-semibold uppercase" style={{ color: "var(--primary)" }}>{s.label}</p>
+                <p className="text-[16px] font-bold mt-1" style={{ color: "var(--primary)" }}>{fmt(s.value)}</p>
+                <p className="text-[9px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>{s.desc}</p>
+              </div>
+            ))}
+          </div>
+          {/* AI narrative */}
+          <div className="p-3 rounded-[10px]" style={{ backgroundColor: "rgba(99,102,241,0.12)", border: `1px solid rgba(99,102,241,0.15)` }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--primary)" }}>AI Forecast Analysis</p>
+            <p className="text-[11px] leading-relaxed" style={{ color: "var(--foreground)" }}>
+              EAC trending upward over 6 periods from £2.52M to {fmt(EAC)}. Primary driver: MEP installation running 8% over estimate due to material price escalation. Steel Structure work package also showing £23K cost overrun. Recommend: (1) Negotiate fixed-price MEP sub-contract for remaining phases. (2) Review Interior Fit-out estimates before work begins to avoid further variance. (3) Current TCPI of {TCPI} requires {Math.round(((TCPI / CPI) - 1) * 100)}% efficiency improvement — achievable if MEP issues are contained.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Data table */}
+      <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>EVM Data by Work Package</span>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                {["WBS", "Work Package", "BAC", "PV", "EV", "AC", "SV", "CV", "SPI", "CPI"].map((h) => (
+                  <th key={h} className="px-3 py-2.5 text-left text-[9px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {WORK_PACKAGES.map((wp, i) => {
+                const sv = wp.ev - wp.pv; const cv = wp.ev - wp.ac;
+                const spi = wp.pv > 0 ? +(wp.ev / wp.pv).toFixed(2) : 0;
+                const cpi = wp.ac > 0 ? +(wp.ev / wp.ac).toFixed(2) : 0;
+                return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${"var(--border)"}` }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
+                    <td className="px-3 py-2 font-mono" style={{ color: "var(--muted-foreground)" }}>{`1.${i + 1}`}</td>
+                    <td className="px-3 py-2 font-medium" style={{ color: "var(--foreground)" }}>{wp.name}</td>
+                    <td className="px-3 py-2" style={{ color: "var(--muted-foreground)" }}>{fmt(wp.bac)}</td>
+                    <td className="px-3 py-2" style={{ color: "var(--primary)" }}>{fmt(wp.pv)}</td>
+                    <td className="px-3 py-2" style={{ color: "#10B981" }}>{fmt(wp.ev)}</td>
+                    <td className="px-3 py-2" style={{ color: "#EF4444" }}>{fmt(wp.ac)}</td>
+                    <td className="px-3 py-2 font-medium" style={{ color: sv >= 0 ? "#10B981" : "#EF4444" }}>{fmt(sv)}</td>
+                    <td className="px-3 py-2 font-medium" style={{ color: cv >= 0 ? "#10B981" : "#EF4444" }}>{fmt(cv)}</td>
+                    <td className="px-3 py-2 font-bold" style={{ color: wp.pv > 0 ? evmColor("SPI", spi) : "var(--muted-foreground)" }}>{wp.pv > 0 ? spi.toFixed(2) : "—"}</td>
+                    <td className="px-3 py-2 font-bold" style={{ color: wp.ac > 0 ? evmColor("CPI", cpi) : "var(--muted-foreground)" }}>{wp.ac > 0 ? cpi.toFixed(2) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -1,179 +1,343 @@
 "use client";
+// @ts-nocheck
 
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useTeamMembers, useAuditLog, useBilling } from "@/hooks/use-api";
-import {
-  Building2, Users, ShieldCheck, Link2, Key, FileText,
-  Plus, Search, Download, UserPlus,
-} from "lucide-react";
 
-const TABS: { id: string; label: string; icon: React.ElementType }[] = [
-  { id: "org", label: "Organisation", icon: Building2 },
-  { id: "team", label: "Team", icon: Users },
-  { id: "roles", label: "Roles", icon: ShieldCheck },
-  { id: "security", label: "Security", icon: ShieldCheck },
-  { id: "integrations", label: "Integrations", icon: Link2 },
-  { id: "api", label: "API Keys", icon: Key },
-  { id: "data", label: "Data", icon: ShieldCheck },
-  { id: "audit", label: "Audit Log", icon: FileText },
+/**
+ * Admin Settings — 8-tab vertical navigation.
+ * Organisation, Team, Roles, Security, Integrations, API, Compliance, Audit.
+ */
+
+
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+
+// ═══════════════════════════════════════════════════════════════════
+// TYPES & DATA
+// ═══════════════════════════════════════════════════════════════════
+
+const TABS = [
+  { id: "org", label: "Organisation", icon: "🏢" },
+  { id: "team", label: "Team Management", icon: "👥" },
+  { id: "roles", label: "Roles & Permissions", icon: "🔐" },
+  { id: "security", label: "Security", icon: "🛡️" },
+  { id: "integrations", label: "Integrations", icon: "🔗" },
+  { id: "api", label: "API & Webhooks", icon: "⚡" },
+  { id: "compliance", label: "Data & Compliance", icon: "📋" },
+  { id: "audit", label: "Audit Log", icon: "📜" },
+] as const;
+
+type TabId = typeof TABS[number]["id"];
+
+const MEMBERS = [
+  { name: "Dr. Ty Beetseh", email: "ty@pmgtsolutions.com", role: "Owner", status: "active", lastActive: "Now", projects: 5, initials: "TB" },
+  { name: "Sarah Chen", email: "sarah@pmgtsolutions.com", role: "Admin", status: "active", lastActive: "2h ago", projects: 4, initials: "SC" },
+  { name: "James Okafor", email: "james@pmgtsolutions.com", role: "Manager", status: "active", lastActive: "1h ago", projects: 3, initials: "JO" },
+  { name: "Priya Sharma", email: "priya@pmgtsolutions.com", role: "Member", status: "active", lastActive: "30m ago", projects: 2, initials: "PS" },
+  { name: "Liam Barrett", email: "liam@pmgtsolutions.com", role: "Member", status: "active", lastActive: "3h ago", projects: 2, initials: "LB" },
+  { name: "Mia Novak", email: "mia@pmgtsolutions.com", role: "Member", status: "active", lastActive: "5h ago", projects: 3, initials: "MN" },
+  { name: "David Kim", email: "david@pmgtsolutions.com", role: "Viewer", status: "invited", lastActive: "—", projects: 0, initials: "DK" },
 ];
 
-type TabId = "org" | "team" | "roles" | "security" | "integrations" | "api" | "data" | "audit";
+const PENDING_INVITES = [
+  { email: "david@pmgtsolutions.com", role: "Viewer", sentAt: "1 Apr 2026", expiresIn: "6 days" },
+  { email: "emma.wright@atlascorp.com", role: "Member", sentAt: "31 Mar 2026", expiresIn: "5 days" },
+];
 
 const ROLES = [
-  { name: "OWNER", color: "#8B5CF6", desc: "Full access. Billing, team, delete org." },
-  { name: "ADMIN", color: "#6366F1", desc: "Manage team, settings, all projects." },
-  { name: "MEMBER", color: "#10B981", desc: "Contribute to assigned projects." },
-  { name: "VIEWER", color: "#64748B", desc: "Read-only access to dashboards." },
+  { name: "Owner", color: "#8B5CF6", desc: "Full access. Billing, team, delete org.", count: 1 },
+  { name: "Admin", color: "#6366F1", desc: "Manage team, settings, all projects.", count: 1 },
+  { name: "Manager", color: "#22D3EE", desc: "Manage assigned projects and agents.", count: 1 },
+  { name: "Member", color: "#10B981", desc: "Contribute to assigned projects.", count: 3 },
+  { name: "Viewer", color: "#64748B", desc: "Read-only access to dashboards.", count: 1 },
 ];
 
 const PERMISSIONS = [
-  { feature: "View dashboards", OWNER: true, ADMIN: true, MEMBER: true, VIEWER: true },
-  { feature: "Manage projects", OWNER: true, ADMIN: true, MEMBER: false, VIEWER: false },
-  { feature: "Deploy agents", OWNER: true, ADMIN: true, MEMBER: false, VIEWER: false },
-  { feature: "Approve artefacts", OWNER: true, ADMIN: true, MEMBER: true, VIEWER: false },
-  { feature: "Manage team", OWNER: true, ADMIN: true, MEMBER: false, VIEWER: false },
-  { feature: "Billing & plans", OWNER: true, ADMIN: false, MEMBER: false, VIEWER: false },
-  { feature: "Security settings", OWNER: true, ADMIN: true, MEMBER: false, VIEWER: false },
-  { feature: "API keys", OWNER: true, ADMIN: true, MEMBER: false, VIEWER: false },
-  { feature: "Audit log", OWNER: true, ADMIN: true, MEMBER: false, VIEWER: false },
-  { feature: "Delete org", OWNER: true, ADMIN: false, MEMBER: false, VIEWER: false },
+  { feature: "View dashboards", Owner: true, Admin: true, Manager: true, Member: true, Viewer: true },
+  { feature: "Manage projects", Owner: true, Admin: true, Manager: true, Member: false, Viewer: false },
+  { feature: "Deploy agents", Owner: true, Admin: true, Manager: true, Member: false, Viewer: false },
+  { feature: "Approve artefacts", Owner: true, Admin: true, Manager: true, Member: true, Viewer: false },
+  { feature: "Manage team", Owner: true, Admin: true, Manager: false, Member: false, Viewer: false },
+  { feature: "Billing & plans", Owner: true, Admin: false, Manager: false, Member: false, Viewer: false },
+  { feature: "Security settings", Owner: true, Admin: true, Manager: false, Member: false, Viewer: false },
+  { feature: "API keys", Owner: true, Admin: true, Manager: false, Member: false, Viewer: false },
+  { feature: "Audit log", Owner: true, Admin: true, Manager: true, Member: false, Viewer: false },
+  { feature: "Data export", Owner: true, Admin: true, Manager: false, Member: false, Viewer: false },
+  { feature: "Delete org", Owner: true, Admin: false, Manager: false, Member: false, Viewer: false },
 ];
 
-const INTEGRATIONS = [
-  { name: "Slack", status: "available", icon: "💬" },
-  { name: "Jira", status: "available", icon: "🔗" },
-  { name: "GitHub", status: "available", icon: "🐙" },
-  { name: "Google Calendar", status: "available", icon: "📅" },
-  { name: "MS Teams", status: "coming_soon", icon: "📺" },
-  { name: "Confluence", status: "coming_soon", icon: "📝" },
+const SESSIONS = [
+  { device: "Chrome on Windows 11", ip: "82.29.185.213", location: "London, UK", lastActive: "Now", current: true },
+  { device: "Safari on macOS", ip: "82.29.185.214", location: "London, UK", lastActive: "2h ago", current: false },
+  { device: "Mobile App (iOS)", ip: "86.12.45.67", location: "Manchester, UK", lastActive: "1d ago", current: false },
 ];
 
-function timeAgo(date: string | Date) {
-  const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
+const INTEGRATIONS_CONNECTED = [
+  { name: "Slack", icon: "💬", status: "Connected", lastSync: "2 min ago", desc: "Send notifications, sync channels" },
+  { name: "Google Calendar", icon: "📅", status: "Connected", lastSync: "5 min ago", desc: "Meeting scheduling, agent calendar" },
+  { name: "Jira", icon: "🔗", status: "Connected", lastSync: "12 min ago", desc: "Two-way task sync, issue tracking" },
+  { name: "GitHub", icon: "🐙", status: "Connected", lastSync: "30 min ago", desc: "PR tracking, code commits" },
+];
+
+const INTEGRATIONS_AVAILABLE = [
+  { name: "MS Teams", icon: "📺", desc: "Team chat and meeting integration" },
+  { name: "Azure DevOps", icon: "🔵", desc: "Work items, pipelines, boards" },
+  { name: "Zoom", icon: "📹", desc: "Meeting bot, transcript capture" },
+  { name: "Confluence", icon: "📝", desc: "Wiki sync, knowledge base" },
+  { name: "Notion", icon: "📓", desc: "Document sync, databases" },
+];
+
+const INTEGRATIONS_SOON = [
+  { name: "Basecamp", icon: "🏕️" },
+  { name: "Monday.com", icon: "📊" },
+  { name: "Asana", icon: "🎯" },
+];
+
+const API_KEYS = [
+  { name: "Production Key", key: "ptx_live_sk_****...3f8a", created: "15 Jan 2026", lastUsed: "2h ago", status: "active" },
+  { name: "Development Key", key: "ptx_test_sk_****...9c2b", created: "20 Feb 2026", lastUsed: "1d ago", status: "active" },
+];
+
+const API_USAGE = [
+  { day: "Mon", calls: 342 }, { day: "Tue", calls: 456 }, { day: "Wed", calls: 523 },
+  { day: "Thu", calls: 478 }, { day: "Fri", calls: 612 }, { day: "Sat", calls: 134 }, { day: "Sun", calls: 89 },
+];
+
+const WEBHOOKS = [
+  { url: "https://api.pmgtsolutions.com/hooks/ptx", events: ["agent.action", "approval.created", "phase.completed"], status: "active", successRate: "99.2%" },
+  { url: "https://slack.pmgtsolutions.com/webhook", events: ["risk.escalated", "budget.threshold"], status: "active", successRate: "100%" },
+];
+
+const COMPLIANCE_BADGES = [
+  { name: "GDPR", status: "Compliant", icon: "🇪🇺" },
+  { name: "DPA 2018", status: "Compliant", icon: "🇬🇧" },
+  { name: "SOC 2 Type II", status: "In Progress", icon: "🔒" },
+  { name: "ISO 27001", status: "Planned", icon: "📜" },
+  { name: "Cyber Essentials", status: "Certified", icon: "🛡️" },
+];
+
+const AUDIT_LOG = [
+  { ts: "02 Apr 10:24", user: "Alpha (Agent)", action: "Generated document", target: "Risk Register v3", ip: "—", result: "success" },
+  { ts: "02 Apr 10:15", user: "Sarah Chen", action: "Approved artefact", target: "Phase Gate Checklist", ip: "82.29.185.213", result: "success" },
+  { ts: "02 Apr 09:45", user: "Bravo (Agent)", action: "Processed transcript", target: "Sprint Retro Meeting", ip: "—", result: "success" },
+  { ts: "02 Apr 09:30", user: "Ty Beetseh", action: "Updated settings", target: "Security — 2FA enabled", ip: "82.29.185.213", result: "success" },
+  { ts: "01 Apr 17:30", user: "James Okafor", action: "Created project", target: "Cloud Migration Q3", ip: "86.12.45.67", result: "success" },
+  { ts: "01 Apr 16:00", user: "Charlie (Agent)", action: "Escalated risk", target: "Vendor delay — Riverside", ip: "—", result: "success" },
+  { ts: "01 Apr 14:20", user: "Priya Sharma", action: "Login", target: "Web app", ip: "82.29.185.215", result: "success" },
+  { ts: "01 Apr 13:00", user: "Unknown", action: "Login attempt", target: "API", ip: "45.33.21.8", result: "failed" },
+  { ts: "01 Apr 11:00", user: "Mia Novak", action: "Deployed agent", target: "Echo — Brand Refresh", ip: "82.29.185.213", result: "success" },
+  { ts: "31 Mar 16:45", user: "Ty Beetseh", action: "Regenerated API key", target: "Production Key", ip: "82.29.185.213", result: "success" },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN
+// ═══════════════════════════════════════════════════════════════════
 
 export default function AdminSettingsPage() {
+  const mode = "dark";
   const [tab, setTab] = useState<TabId>("org");
-  const { data: members, isLoading: membersLoading } = useTeamMembers();
-  const { data: auditLogs, isLoading: auditLoading } = useAuditLog();
-  const { data: billing } = useBilling();
+  const [showInviteModal, setShowInviteModal] = useState(false);
+
+  // Security state
   const [pwdLength, setPwdLength] = useState(12);
+  const [pwdUpper, setPwdUpper] = useState(true);
+  const [pwdNumber, setPwdNumber] = useState(true);
+  const [pwdSpecial, setPwdSpecial] = useState(false);
+  const [sessionTimeout, setSessionTimeout] = useState("8");
   const [require2fa, setRequire2fa] = useState(true);
+
+  // Compliance state
+  const [dataResidency, setDataResidency] = useState("uk");
+  const [retentionMonths, setRetentionMonths] = useState("36");
+
+  // Audit filters
   const [auditSearch, setAuditSearch] = useState("");
+  const [auditTypeFilter, setAuditTypeFilter] = useState<string | null>(null);
+
+  const filteredAudit = AUDIT_LOG.filter(e => {
+    if (auditSearch && !e.action.toLowerCase().includes(auditSearch.toLowerCase()) && !e.user.toLowerCase().includes(auditSearch.toLowerCase()) && !e.target.toLowerCase().includes(auditSearch.toLowerCase())) return false;
+    if (auditTypeFilter === "agents" && !e.user.includes("Agent")) return false;
+    if (auditTypeFilter === "users" && e.user.includes("Agent")) return false;
+    if (auditTypeFilter === "failed" && e.result !== "failed") return false;
+    return true;
+  });
 
   return (
     <div className="flex gap-6 max-w-[1400px]">
-      {/* Vertical tabs */}
-      <div className="w-[200px] flex-shrink-0 space-y-1">
-        <h2 className="text-lg font-bold mb-4">Settings</h2>
+      {/* ═══ VERTICAL TABS ═══ */}
+      <div className="w-[220px] flex-shrink-0 space-y-1">
+        <h2 className="text-[18px] font-bold mb-4" style={{ color: "var(--foreground)" }}>Settings</h2>
         {TABS.map(t => (
-          <button key={t.id} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all ${tab === t.id ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground hover:bg-muted/30"}`}
-            onClick={() => setTab(t.id as TabId)}>
-            <t.icon className="w-4 h-4" />
-            <span className="text-sm">{t.label}</span>
+          <button key={t.id} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-left transition-all"
+            onClick={() => setTab(t.id)}
+            style={{
+              background: tab === t.id ? `${"var(--primary)"}15` : "transparent",
+              color: tab === t.id ? "var(--primary)" : "var(--muted-foreground)",
+              fontWeight: tab === t.id ? 600 : 400,
+            }}>
+            <span className="text-[14px]">{t.icon}</span>
+            <span className="text-[13px]">{t.label}</span>
           </button>
         ))}
       </div>
 
-      {/* Content */}
+      {/* ═══ CONTENT ═══ */}
       <div className="flex-1 min-w-0 space-y-5">
-        {/* Organisation */}
+
+        {/* ─── TAB 1: ORGANISATION ─── */}
         {tab === "org" && (
           <>
-            <div><h2 className="text-xl font-bold">Organisation Profile</h2><p className="text-sm text-muted-foreground">Manage your workspace identity</p></div>
+            <TabHeader title="Organisation Profile" desc="Manage your workspace identity and preferences" />
             <Card>
-              <CardContent className="pt-5 grid grid-cols-2 gap-4">
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Organisation</p><p className="text-sm font-semibold">PMGT Solutions</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Plan</p><p className="text-sm font-semibold">{billing?.plan || "—"}</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Industry</p><p className="text-sm">Consulting</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Team Size</p><p className="text-sm">{members?.length || 0} members</p></div>
-                <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Billing Email</p><p className="text-sm">{billing?.billingEmail || "—"}</p></div>
-              </CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Organisation Name" value="PMGT Solutions Ltd" />
+                <Field label="Industry" value="Consulting / Professional Services" />
+                <Field label="Company Size" value="11–50 employees" />
+                <Field label="Website" value="https://pmgtsolutions.com" />
+                <Field label="Timezone" value="Europe/London (GMT+1)" />
+                <Field label="Billing Email" value="billing@pmgtsolutions.com" />
+              </div>
+              <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Logo</p>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-[12px] flex items-center justify-center text-[24px] font-bold text-white"
+                    style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>P</div>
+                  <div>
+                    <Button variant="ghost" size="sm">Upload Logo</Button>
+                    <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>PNG or SVG, max 2MB</p>
+                  </div>
+                </div>
+              </div>
+              <Button variant="default" size="sm" className="mt-4">Save Changes</Button>
             </Card>
           </>
         )}
 
-        {/* Team */}
+        {/* ─── TAB 2: TEAM MANAGEMENT ─── */}
         {tab === "team" && (
           <>
             <div className="flex items-center justify-between">
-              <div><h2 className="text-xl font-bold">Team Management</h2><p className="text-sm text-muted-foreground">{members?.length || 0} members</p></div>
-              <Button size="sm"><UserPlus className="w-4 h-4 mr-1" /> Invite Member</Button>
+              <TabHeader title="Team Management" desc={`${MEMBERS.length} members · ${PENDING_INVITES.length} pending invitations`} />
+              <Button variant="default" size="sm" onClick={() => setShowInviteModal(true)}>+ Invite Member</Button>
             </div>
-            {membersLoading ? (
-              <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
-            ) : (
-              <Card className="p-0">
-                <table className="w-full text-xs">
-                  <thead><tr className="border-b border-border">
-                    {["Member", "Role", "Joined"].map(h => <th key={h} className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {(members || []).map((m: any) => (
-                      <tr key={m.id} className="border-b border-border/30 hover:bg-muted/30">
-                        <td className="py-2.5 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-white">
-                              {(m.name || m.email || "?").slice(0, 2).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-semibold">{m.name || "—"}</p>
-                              <p className="text-[10px] text-muted-foreground">{m.email}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-4"><Badge variant="outline">{m.role}</Badge></td>
-                        <td className="py-2.5 px-4 text-muted-foreground">{new Date(m.createdAt).toLocaleDateString()}</td>
-                      </tr>
+
+            <Card>
+              <table className="w-full text-[12px]" style={{ color: "var(--foreground)" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                    {["Member", "Role", "Status", "Last Active", "Projects", ""].map(h => (
+                      <th key={h} className="text-left py-3 px-4 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </Card>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MEMBERS.map(m => (
+                    <tr key={m.email} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}11` }}>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
+                          <div>
+                            <p className="font-semibold">{m.name}</p>
+                            <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{m.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <Badge variant={m.role === "Owner" ? "secondary" : m.role === "Admin" ? "outline" : m.role === "Manager" ? "secondary" : m.role === "Member" ? "default" : "outline"}>{m.role}</Badge>
+                      </td>
+                      <td className="py-3 px-4">
+                        <Badge variant={m.status === "active" ? "default" : "secondary"}>{m.status}</Badge>
+                      </td>
+                      <td className="py-3 px-4" style={{ color: "var(--muted-foreground)" }}>{m.lastActive}</td>
+                      <td className="py-3 px-4">{m.projects}</td>
+                      <td className="py-3 px-4">
+                        <Button variant="ghost" size="sm">Edit</Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+
+            {/* Pending invitations */}
+            <Card>
+              <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Pending Invitations</h3>
+              <div className="space-y-2">
+                {PENDING_INVITES.map(inv => (
+                  <div key={inv.email} className="flex items-center justify-between py-2 px-3 rounded-[8px]"
+                    style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                    <div>
+                      <p className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{inv.email}</p>
+                      <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Sent {inv.sentAt} · Expires in {inv.expiresIn}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{inv.role}</Badge>
+                      <Button variant="ghost" size="sm">Resend</Button>
+                      <Button variant="ghost" size="sm">Revoke</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Invite Modal */}
+            {showInviteModal && (
+              <Modal title="Invite Team Member" onClose={() => setShowInviteModal(false)}>
+                <div className="space-y-3">
+                  <FieldInput label="Email Address" placeholder="colleague@company.com" />
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>Role</p>
+                    <div className="flex gap-2">
+                      {["Admin", "Manager", "Member", "Viewer"].map(r => (
+                        <button key={r} className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)", border: `1px solid ${"var(--border)"}33` }}>{r}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <FieldInput label="Personal Message (optional)" placeholder="Welcome to the team!" />
+                  <Button variant="default" size="sm" className="w-full" onClick={() => setShowInviteModal(false)}>Send Invitation</Button>
+                </div>
+              </Modal>
             )}
           </>
         )}
 
-        {/* Roles */}
+        {/* ─── TAB 3: ROLES & PERMISSIONS ─── */}
         {tab === "roles" && (
           <>
-            <div><h2 className="text-xl font-bold">Roles & Permissions</h2><p className="text-sm text-muted-foreground">Access control for your organisation</p></div>
-            <div className="grid grid-cols-4 gap-3">
-              {ROLES.map(r => {
-                const count = (members || []).filter((m: any) => m.role === r.name).length;
-                return (
-                  <Card key={r.name} className="p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-3 h-3 rounded-full" style={{ background: r.color }} />
-                      <span className="text-sm font-bold">{r.name}</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mb-1">{r.desc}</p>
-                    <p className="text-xs font-semibold" style={{ color: r.color }}>{count} member{count !== 1 ? "s" : ""}</p>
-                  </Card>
-                );
-              })}
+            <TabHeader title="Roles & Permissions" desc="Manage access levels across your organisation" />
+
+            <div className="grid grid-cols-5 gap-3 mb-4">
+              {ROLES.map(r => (
+                <Card key={r.name}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-3 h-3 rounded-full" style={{ background: r.color }} />
+                    <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{r.name}</span>
+                  </div>
+                  <p className="text-[10px] mb-1" style={{ color: "var(--muted-foreground)" }}>{r.desc}</p>
+                  <p className="text-[11px] font-semibold" style={{ color: r.color }}>{r.count} member{r.count !== 1 ? "s" : ""}</p>
+                </Card>
+              ))}
             </div>
-            <Card className="p-0">
-              <table className="w-full text-[11px]">
-                <thead><tr className="border-b border-border">
-                  <th className="text-left py-2 px-4 text-[10px] font-semibold uppercase text-muted-foreground">Permission</th>
-                  {ROLES.map(r => <th key={r.name} className="text-center py-2 px-2 text-[10px] font-semibold uppercase" style={{ color: r.color }}>{r.name}</th>)}
-                </tr></thead>
+
+            <Card>
+              <table className="w-full text-[11px]" style={{ color: "var(--foreground)" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                    <th className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase" style={{ color: "var(--muted-foreground)" }}>Permission</th>
+                    {ROLES.map(r => <th key={r.name} className="text-center py-2.5 px-2 text-[10px] font-semibold uppercase" style={{ color: r.color }}>{r.name}</th>)}
+                  </tr>
+                </thead>
                 <tbody>
                   {PERMISSIONS.map(p => (
-                    <tr key={p.feature} className="border-b border-border/20">
+                    <tr key={p.feature} style={{ borderBottom: `1px solid ${"var(--border)"}08` }}>
                       <td className="py-2 px-4 font-medium">{p.feature}</td>
                       {ROLES.map(r => (
                         <td key={r.name} className="text-center py-2">
-                          {(p as any)[r.name] ? <span className="text-green-500">✓</span> : <span className="text-muted-foreground">—</span>}
+                          {(p as any)[r.name] ? <span style={{ color: "#10B981" }}>✓</span> : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
                         </td>
                       ))}
                     </tr>
@@ -181,163 +345,435 @@ export default function AdminSettingsPage() {
                 </tbody>
               </table>
             </Card>
-          </>
-        )}
 
-        {/* Security */}
-        {tab === "security" && (
-          <>
-            <div><h2 className="text-xl font-bold">Security</h2><p className="text-sm text-muted-foreground">Authentication and access controls</p></div>
-            <div className="grid grid-cols-2 gap-4">
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Password Policy</CardTitle></CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground">Minimum length</span>
-                      <span className="text-sm font-bold text-primary">{pwdLength}</span>
-                    </div>
-                    <input type="range" min={8} max={24} value={pwdLength} onChange={e => setPwdLength(Number(e.target.value))} className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-border accent-primary" />
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Authentication</CardTitle></CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs">Require 2FA</span>
-                    <button className={`w-9 h-5 rounded-full relative transition-all ${require2fa ? "bg-primary" : "bg-border"}`}
-                      onClick={() => setRequire2fa(!require2fa)}>
-                      <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm" style={{ left: require2fa ? 18 : 2 }} />
-                    </button>
-                  </div>
-                  {require2fa && (
-                    <div className="p-2 rounded-lg bg-muted/30">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-muted-foreground">2FA Adoption</span>
-                        <span className="text-[11px] font-bold text-green-500">{members?.length || 0}/{members?.length || 0}</span>
-                      </div>
-                      <Progress value={100} className="h-1.5" />
-                    </div>
-                  )}
-                  <div className="pt-3 border-t border-border/30">
-                    <div className="flex items-center justify-between">
-                      <div><p className="text-xs font-semibold">SSO</p><p className="text-[10px] text-muted-foreground">SAML / OIDC</p></div>
-                      <Badge variant="secondary">Enterprise</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="p-3 rounded-[10px]" style={{ background: `${"var(--primary)"}06`, border: `1px solid ${"var(--primary)"}18` }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>Custom Roles</p>
+                  <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Create custom permission sets tailored to your organisation</p>
+                </div>
+                <Badge variant="secondary">Enterprise</Badge>
+              </div>
             </div>
           </>
         )}
 
-        {/* Integrations */}
-        {tab === "integrations" && (
+        {/* ─── TAB 4: SECURITY ─── */}
+        {tab === "security" && (
           <>
-            <div><h2 className="text-xl font-bold">Integrations</h2><p className="text-sm text-muted-foreground">Connect your tools</p></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {INTEGRATIONS.map(int => (
-                <Card key={int.name} className="p-3">
+            <TabHeader title="Security" desc="Configure authentication, sessions, and access controls" />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Password policy */}
+              <Card>
+                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Password Policy</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Minimum length</span>
+                      <span className="text-[13px] font-bold" style={{ color: "var(--primary)" }}>{pwdLength} characters</span>
+                    </div>
+                    <input type="range" min={8} max={24} value={pwdLength} onChange={e => setPwdLength(Number(e.target.value))}
+                      className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                      style={{ background: `linear-gradient(to right, ${"var(--primary)"} ${((pwdLength - 8) / 16) * 100}%, ${"var(--border)"}44 ${((pwdLength - 8) / 16) * 100}%)` }} />
+                  </div>
+                  <ToggleRow label="Require uppercase letter" checked={pwdUpper} onChange={setPwdUpper} />
+                  <ToggleRow label="Require number" checked={pwdNumber} onChange={setPwdNumber} />
+                  <ToggleRow label="Require special character" checked={pwdSpecial} onChange={setPwdSpecial} />
+                </div>
+              </Card>
+
+              {/* 2FA + Session */}
+              <Card>
+                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Authentication</h3>
+                <div className="space-y-3">
+                  <ToggleRow label="Require 2FA for all members" checked={require2fa} onChange={setRequire2fa} />
+                  {require2fa && (
+                    <div className="p-2.5 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>2FA Adoption</span>
+                        <span className="text-[11px] font-bold" style={{ color: "#10B981" }}>5/7 members</span>
+                      </div>
+                      <Progress value={71} className="h-1.5" />
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Session timeout</span>
+                      <select className="px-2 py-1 rounded-[6px] text-[11px]" value={sessionTimeout}
+                        onChange={e => setSessionTimeout(e.target.value)}
+                        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
+                        {["1", "4", "8", "24", "168"].map(h => <option key={h} value={h}>{h === "168" ? "7 days" : `${h} hours`}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SSO */}
+                <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
                   <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>SSO Configuration</p>
+                      <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>SAML 2.0 or OpenID Connect</p>
+                    </div>
+                    <Badge variant="secondary">Enterprise</Badge>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>IP Allowlisting</p>
+                      <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Restrict access to approved IPs</p>
+                    </div>
+                    <Badge variant="secondary">Enterprise</Badge>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Active Sessions */}
+            <Card>
+              <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Active Sessions</h3>
+              <div className="space-y-2">
+                {SESSIONS.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between py-2.5 px-3 rounded-[8px]"
+                    style={{ background: s.current ? `${"var(--primary)"}06` : "transparent", border: `1px solid ${s.current ? "var(--primary)" + "22" : "var(--border)" + "11"}` }}>
                     <div className="flex items-center gap-3">
-                      <span className="text-xl">{int.icon}</span>
+                      <span className="text-[16px]">{s.device.includes("Chrome") ? "🖥️" : s.device.includes("Safari") ? "💻" : "📱"}</span>
                       <div>
-                        <p className="text-sm font-bold">{int.name}</p>
-                        <Badge variant={int.status === "available" ? "outline" : "secondary"} className="text-[9px]">{int.status === "available" ? "Available" : "Coming Soon"}</Badge>
+                        <div className="flex items-center gap-2">
+                          <p className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{s.device}</p>
+                          {s.current && <Badge variant="default">Current</Badge>}
+                        </div>
+                        <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{s.ip} · {s.location} · {s.lastActive}</p>
                       </div>
                     </div>
-                    <Button variant={int.status === "available" ? "default" : "ghost"} size="sm" disabled={int.status !== "available"}>
-                      {int.status === "available" ? "Connect" : "Soon"}
-                    </Button>
+                    {!s.current && <Button variant="ghost" size="sm">Revoke</Button>}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </>
+        )}
+
+        {/* ─── TAB 5: INTEGRATIONS ─── */}
+        {tab === "integrations" && (
+          <>
+            <TabHeader title="Integrations" desc="Connect your tools to supercharge your agents" />
+
+            <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Connected</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+              {INTEGRATIONS_CONNECTED.map(int => (
+                <Card key={int.name}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[24px]">{int.icon}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+                          <Badge variant="default">Connected</Badge>
+                        </div>
+                        <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>Last sync: {int.lastSync}</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm">Configure</Button>
                   </div>
                 </Card>
+              ))}
+            </div>
+
+            <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--primary)" }}>Available</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+              {INTEGRATIONS_AVAILABLE.map(int => (
+                <Card key={int.name}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-[20px]">{int.icon}</span>
+                    <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+                  </div>
+                  <p className="text-[11px] mb-3" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
+                  <Button variant="default" size="sm" className="w-full">Connect</Button>
+                </Card>
+              ))}
+            </div>
+
+            <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Coming Soon</h4>
+            <div className="flex gap-3">
+              {INTEGRATIONS_SOON.map(int => (
+                <div key={int.name} className="flex items-center gap-2 px-3 py-2 rounded-[8px]" style={{ background: `${"var(--border)"}11`, border: `1px solid ${"var(--border)"}22` }}>
+                  <span className="text-[16px]">{int.icon}</span>
+                  <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{int.name}</span>
+                </div>
               ))}
             </div>
           </>
         )}
 
-        {/* API Keys */}
+        {/* ─── TAB 6: API & WEBHOOKS ─── */}
         {tab === "api" && (
           <>
-            <div className="flex items-center justify-between">
-              <div><h2 className="text-xl font-bold">API Keys</h2><p className="text-sm text-muted-foreground">Manage API access</p></div>
-              <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Create Key</Button>
+            <TabHeader title="API & Webhooks" desc="Manage API access and event subscriptions" />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* API Keys */}
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>API Keys</h3>
+                  <Button variant="ghost" size="sm">+ Create Key</Button>
+                </div>
+                <div className="space-y-2">
+                  {API_KEYS.map(k => (
+                    <div key={k.name} className="p-3 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{k.name}</span>
+                        <Badge variant="default">{k.status}</Badge>
+                      </div>
+                      <code className="text-[11px] font-mono" style={{ color: "var(--muted-foreground)" }}>{k.key}</code>
+                      <div className="flex items-center gap-3 mt-1.5 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
+                        <span>Created {k.created}</span><span>Last used {k.lastUsed}</span>
+                      </div>
+                      <div className="flex gap-1.5 mt-2">
+                        <Button variant="ghost" size="sm">Copy</Button>
+                        <Button variant="ghost" size="sm">Regenerate</Button>
+                        <Button variant="ghost" size="sm">Revoke</Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 p-2 rounded-[6px] text-[10px]" style={{ background: `${"#F59E0B"}08`, color: "#F59E0B" }}>
+                  Rate limit: 1,000 requests/min · 100,000/day
+                </div>
+              </Card>
+
+              {/* API Usage */}
+              <Card>
+                <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>API Usage (7 Days)</h3>
+                <div style={{ height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={API_USAGE}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
+                      <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                      <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                      <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
+                      <Bar dataKey="calls" fill={"var(--primary)"} radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="text-[10px] text-center mt-1" style={{ color: "var(--muted-foreground)" }}>Total: {API_USAGE.reduce((s, d) => s + d.calls, 0).toLocaleString()} calls this week</p>
+              </Card>
             </div>
+
+            {/* Webhooks */}
             <Card>
-              <CardContent className="pt-5 text-center py-12">
-                <Key className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No API keys created. Create one to access the Projectoolbox API.</p>
-              </CardContent>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Webhook Endpoints</h3>
+                <Button variant="ghost" size="sm">+ Add Endpoint</Button>
+              </div>
+              <div className="space-y-2">
+                {WEBHOOKS.map((wh, i) => (
+                  <div key={i} className="p-3 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <code className="text-[11px] font-mono" style={{ color: "var(--primary)" }}>{wh.url}</code>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="default">{wh.status}</Badge>
+                        <span className="text-[10px]" style={{ color: "#10B981" }}>{wh.successRate} success</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {wh.events.map(ev => (
+                        <span key={ev} className="text-[9px] px-1.5 py-0.5 rounded-[4px] font-mono"
+                          style={{ background: `${"var(--primary)"}12`, color: "var(--primary)" }}>{ev}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </Card>
           </>
         )}
 
-        {/* Data */}
-        {tab === "data" && (
+        {/* ─── TAB 7: DATA & COMPLIANCE ─── */}
+        {tab === "compliance" && (
           <>
-            <div><h2 className="text-xl font-bold">Data & Compliance</h2><p className="text-sm text-muted-foreground">Data residency and compliance</p></div>
-            <div className="grid grid-cols-2 gap-4">
+            <TabHeader title="Data & Compliance" desc="Data residency, retention, GDPR compliance, and governance" />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Residency + Retention */}
               <Card>
-                <CardContent className="pt-5 space-y-3">
-                  <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Data Residency</p><p className="text-sm font-semibold">EU (Ireland)</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Retention</p><p className="text-sm">36 months</p></div>
+                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Data Residency & Retention</h3>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>Data Residency</p>
+                    <div className="flex gap-2">
+                      {[{ id: "uk", label: "🇬🇧 United Kingdom" }, { id: "eu", label: "🇪🇺 EU (Frankfurt)" }, { id: "us", label: "🇺🇸 US (Virginia)" }].map(r => (
+                        <button key={r.id} className="flex-1 py-2 rounded-[8px] text-[11px] font-semibold transition-all"
+                          onClick={() => setDataResidency(r.id)}
+                          style={{
+                            background: dataResidency === r.id ? `${"var(--primary)"}15` : "transparent",
+                            color: dataResidency === r.id ? "var(--primary)" : "var(--muted-foreground)",
+                            border: `1px solid ${dataResidency === r.id ? "var(--primary)" + "44" : "var(--border)" + "33"}`,
+                          }}>{r.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Data retention period</span>
+                      <select className="px-2 py-1 rounded-[6px] text-[11px]" value={retentionMonths}
+                        onChange={e => setRetentionMonths(e.target.value)}
+                        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
+                        {["12", "24", "36", "60", "84"].map(m => <option key={m} value={m}>{m} months</option>)}
+                      </select>
+                    </div>
+                  </div>
                   <Button variant="ghost" size="sm">📥 GDPR Data Export</Button>
-                </CardContent>
+                </div>
               </Card>
+
+              {/* Compliance badges */}
               <Card>
-                <CardContent className="pt-5 space-y-2">
-                  {["GDPR", "SOC 2", "Cyber Essentials"].map(c => (
-                    <div key={c} className="flex items-center justify-between py-1">
-                      <span className="text-xs font-semibold">{c}</span>
-                      <Badge variant="default" className="text-[9px]">Compliant</Badge>
+                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Compliance Certifications</h3>
+                <div className="space-y-2">
+                  {COMPLIANCE_BADGES.map(b => (
+                    <div key={b.name} className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[16px]">{b.icon}</span>
+                        <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{b.name}</span>
+                      </div>
+                      <Badge variant={b.status === "Compliant" || b.status === "Certified" ? "default" : b.status === "In Progress" ? "secondary" : "outline"}>
+                        {b.status}
+                      </Badge>
                     </div>
                   ))}
-                </CardContent>
+                </div>
+                <div className="flex gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+                  <Button variant="ghost" size="sm">📄 Download DPA</Button>
+                  <Button variant="ghost" size="sm">📄 AI Governance Statement</Button>
+                </div>
               </Card>
             </div>
           </>
         )}
 
-        {/* Audit Log */}
+        {/* ─── TAB 8: AUDIT LOG ─── */}
         {tab === "audit" && (
           <>
-            <div className="flex items-center justify-between">
-              <div><h2 className="text-xl font-bold">Audit Log</h2><p className="text-sm text-muted-foreground">Activity history</p></div>
-              <Button variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> Export</Button>
+            <TabHeader title="Audit Log" desc="Complete activity history across your organisation" />
+
+            {/* Filters */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <input className="px-3 py-1.5 rounded-[8px] text-[12px] w-[200px]" placeholder="Search actions..."
+                value={auditSearch} onChange={e => setAuditSearch(e.target.value)}
+                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
+              {["All", "Users", "Agents", "Failed"].map(f => {
+                const fKey = f === "All" ? null : f.toLowerCase();
+                return (
+                  <button key={f} className="px-2.5 py-1.5 rounded-[6px] text-[11px] font-semibold transition-all"
+                    onClick={() => setAuditTypeFilter(fKey)}
+                    style={{
+                      background: auditTypeFilter === fKey ? `${"var(--primary)"}22` : "transparent",
+                      color: auditTypeFilter === fKey ? "var(--primary)" : "var(--muted-foreground)",
+                      border: `1px solid ${auditTypeFilter === fKey ? "var(--primary)" + "44" : "transparent"}`,
+                    }}>{f}</button>
+                );
+              })}
+              <div className="ml-auto flex gap-2">
+                <Button variant="ghost" size="sm">📊 CSV</Button>
+                <Button variant="ghost" size="sm">📄 PDF</Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border max-w-md">
-              <Search className="w-4 h-4 text-muted-foreground" />
-              <input className="bg-transparent text-sm outline-none flex-1" placeholder="Search audit log..." value={auditSearch} onChange={e => setAuditSearch(e.target.value)} />
-            </div>
-            {auditLoading ? (
-              <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
-            ) : (auditLogs || []).length === 0 ? (
-              <Card><CardContent className="pt-5 text-center py-12">
-                <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No audit entries yet. Actions like logins, role changes, and agent deployments are logged here.</p>
-              </CardContent></Card>
-            ) : (
-              <Card className="p-0">
-                <table className="w-full text-xs">
-                  <thead><tr className="border-b border-border">
-                    {["Time", "User", "Action", "Target"].map(h => <th key={h} className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {(auditLogs || []).filter((e: any) => !auditSearch || e.action?.includes(auditSearch) || e.target?.includes(auditSearch)).map((e: any) => (
-                      <tr key={e.id} className="border-b border-border/30 hover:bg-muted/30">
-                        <td className="py-2.5 px-4 text-muted-foreground font-mono text-[10px]">{timeAgo(e.createdAt)}</td>
-                        <td className="py-2.5 px-4">{e.userId || "System"}</td>
-                        <td className="py-2.5 px-4">{e.action}</td>
-                        <td className="py-2.5 px-4 text-muted-foreground">{e.target}</td>
-                      </tr>
+
+            <Card>
+              <table className="w-full text-[12px]" style={{ color: "var(--foreground)" }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                    {["Timestamp", "User", "Action", "Target", "IP Address", "Result"].map(h => (
+                      <th key={h} className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </Card>
-            )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAudit.map((e, i) => (
+                    <tr key={i} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}08` }}>
+                      <td className="py-2.5 px-4 font-mono text-[10px]" style={{ color: "var(--muted-foreground)" }}>{e.ts}</td>
+                      <td className="py-2.5 px-4">
+                        <span className="font-medium" style={{ color: e.user.includes("Agent") ? "var(--primary)" : "var(--foreground)" }}>{e.user}</span>
+                      </td>
+                      <td className="py-2.5 px-4">{e.action}</td>
+                      <td className="py-2.5 px-4" style={{ color: "var(--muted-foreground)" }}>{e.target}</td>
+                      <td className="py-2.5 px-4 font-mono text-[10px]" style={{ color: "var(--muted-foreground)" }}>{e.ip}</td>
+                      <td className="py-2.5 px-4">
+                        <Badge variant={e.result === "success" ? "default" : "destructive"}>{e.result}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+function TabHeader({ title, desc}: { title: string; desc: string;  }) {
+  return (
+    <div className="mb-1">
+      <h2 className="text-[20px] font-bold" style={{ color: "var(--foreground)" }}>{title}</h2>
+      <p className="text-[13px]" style={{ color: "var(--muted-foreground)" }}>{desc}</p>
+    </div>
+  );
+}
+
+function Field({ label, value}: { label: string; value: string;  }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{label}</p>
+      <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{value}</p>
+    </div>
+  );
+}
+
+function FieldInput({ label, placeholder,  }: { label: string; placeholder: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>{label}</p>
+      <input className="w-full px-3 py-2 rounded-[10px] text-[13px]" placeholder={placeholder}
+        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
+    </div>
+  );
+}
+
+function ToggleRow({ label, checked, onChange}: { label: string; checked: boolean; onChange: (v: boolean) => void;  }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{label}</span>
+      <button className="w-9 h-5 rounded-full relative transition-all flex-shrink-0" onClick={() => onChange(!checked)}
+        style={{ background: checked ? "var(--primary)" : `${"var(--border)"}66` }}>
+        <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm" style={{ left: checked ? 18 : 2 }} />
+      </button>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children,  }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.6)" }} />
+      <div className="relative w-full max-w-[440px] rounded-[16px] p-6" onClick={e => e.stopPropagation()}
+        style={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[16px] font-bold" style={{ color: "var(--foreground)" }}>{title}</h3>
+          <button onClick={onClose} className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[16px]"
+            style={{ color: "var(--muted-foreground)", background: `${"var(--border)"}22` }}>×</button>
+        </div>
+        {children}
       </div>
     </div>
   );

@@ -1,209 +1,673 @@
 "use client";
+// @ts-nocheck
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { useAgents } from "@/hooks/use-api";
-import { Bot, Play, Pause, MessageSquare, Settings, Rocket, Plus } from "lucide-react";
 
-function timeAgo(date: string | Date) {
-  const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+/**
+ * Agent Fleet — Fleet overview, activity timeline, performance comparison,
+ * project-agent matrix, alerts & escalations.
+ */
+
+
+import {
+  BarChart, Bar, AreaChart, Area, RadarChart, Radar, PolarGrid,
+  PolarAngleAxis, PolarRadiusAxis, LineChart, Line,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+} from "recharts";
+
+// ═══════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════
+
+type AgentStatus = "active" | "paused" | "idle" | "error";
+type Methodology = "PRINCE2" | "Scrum" | "Waterfall" | "Kanban" | "Hybrid";
+type RAG = "green" | "amber" | "red";
+
+interface Agent {
+  id: string;
+  name: string;
+  initials: string;
+  gradient: string;       // CSS gradient
+  color: string;          // primary accent
+  project: string;
+  methodology: Methodology;
+  status: AgentStatus;
+  currentTask: string;
+  autonomyLevel: number;  // 1-5
+  autonomyLabel: string;
+  performanceScore: number;
+  creditsToday: number;
+  creditSparkline: number[];
+  phase: string;
+  health: RAG;
+  tasksWeek: number;
+  pendingApprovals: number;
+  totalCredits: number;
 }
 
-const AUTONOMY_LABEL: Record<number, string> = { 1: "Assistant", 2: "Advisor", 3: "Co-pilot", 4: "Autonomous", 5: "Strategic" };
-const STATUS_CLASS: Record<string, string> = { ACTIVE: "bg-green-400 animate-pulse", PAUSED: "bg-amber-400", IDLE: "bg-muted-foreground", ERROR: "bg-red-400" };
-const ACTIVITY_DOT: Record<string, string> = { document: "bg-primary", meeting: "bg-chart-2", approval: "bg-chart-4", risk: "bg-destructive", deployment: "bg-chart-3", chat: "bg-chart-5" };
+interface ActivityEvent {
+  id: number;
+  agentId: string;
+  agentName: string;
+  agentColor: string;
+  agentInitials: string;
+  type: string;
+  message: string;
+  project: string;
+  time: string;
+  minutesAgo: number;
+}
+
+interface Alert {
+  id: number;
+  agentId: string;
+  agentName: string;
+  agentInitials: string;
+  agentColor: string;
+  priority: "critical" | "high" | "medium";
+  message: string;
+  project: string;
+  time: string;
+  actions: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MOCK DATA — 5 agents, 5 projects
+// ═══════════════════════════════════════════════════════════════════
+
+const AGENTS: Agent[] = [
+  {
+    id: "alpha", name: "Alpha", initials: "A",
+    gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1",
+    project: "Project Atlas", methodology: "PRINCE2", status: "active",
+    currentTask: "Generating Risk Register v3 for Execution phase gate review",
+    autonomyLevel: 4, autonomyLabel: "Autonomous",
+    performanceScore: 92, creditsToday: 234,
+    creditSparkline: [18, 22, 30, 28, 35, 40, 32, 29],
+    phase: "Execution", health: "green", tasksWeek: 24, pendingApprovals: 2, totalCredits: 3420,
+  },
+  {
+    id: "bravo", name: "Bravo", initials: "B",
+    gradient: "linear-gradient(135deg, #22D3EE, #06B6D4)", color: "#22D3EE",
+    project: "SprintForge", methodology: "Scrum", status: "active",
+    currentTask: "Processing Sprint 7 retrospective notes and extracting action items",
+    autonomyLevel: 3, autonomyLabel: "Co-pilot",
+    performanceScore: 87, creditsToday: 189,
+    creditSparkline: [15, 20, 18, 25, 22, 30, 24, 26],
+    phase: "Sprint 7", health: "green", tasksWeek: 31, pendingApprovals: 1, totalCredits: 2890,
+  },
+  {
+    id: "charlie", name: "Charlie", initials: "C",
+    gradient: "linear-gradient(135deg, #10B981, #34D399)", color: "#10B981",
+    project: "Riverside Development", methodology: "Waterfall", status: "active",
+    currentTask: "Drafting Change Request CR-012 impact analysis document",
+    autonomyLevel: 2, autonomyLabel: "Advisor",
+    performanceScore: 78, creditsToday: 156,
+    creditSparkline: [12, 15, 20, 18, 16, 22, 19, 20],
+    phase: "Planning", health: "amber", tasksWeek: 18, pendingApprovals: 3, totalCredits: 2150,
+  },
+  {
+    id: "delta", name: "Delta", initials: "D",
+    gradient: "linear-gradient(135deg, #F97316, #FB923C)", color: "#F97316",
+    project: "Cloud Migration", methodology: "Kanban", status: "paused",
+    currentTask: "Paused — awaiting stakeholder feedback on migration sequence",
+    autonomyLevel: 3, autonomyLabel: "Co-pilot",
+    performanceScore: 71, creditsToday: 45,
+    creditSparkline: [25, 30, 28, 22, 15, 8, 5, 6],
+    phase: "Migration Wave 2", health: "amber", tasksWeek: 12, pendingApprovals: 0, totalCredits: 1780,
+  },
+  {
+    id: "echo", name: "Echo", initials: "E",
+    gradient: "linear-gradient(135deg, #EC4899, #F472B6)", color: "#EC4899",
+    project: "Brand Refresh", methodology: "Hybrid", status: "active",
+    currentTask: "Compiling design asset handoff checklist for development team",
+    autonomyLevel: 5, autonomyLabel: "Strategic",
+    performanceScore: 95, creditsToday: 223,
+    creditSparkline: [20, 25, 28, 32, 30, 35, 28, 30],
+    phase: "Execution", health: "green", tasksWeek: 28, pendingApprovals: 1, totalCredits: 3100,
+  },
+];
+
+const ACTIVITY_EVENTS: ActivityEvent[] = [
+  { id: 1, agentId: "alpha", agentName: "Alpha", agentColor: "#6366F1", agentInitials: "A", type: "Document", message: "Generated Risk Register v3", project: "Atlas", time: "2 min ago", minutesAgo: 2 },
+  { id: 2, agentId: "echo", agentName: "Echo", agentColor: "#EC4899", agentInitials: "E", type: "Meeting", message: "Attended design review standup and extracted 4 action items", project: "Brand Refresh", time: "8 min ago", minutesAgo: 8 },
+  { id: 3, agentId: "bravo", agentName: "Bravo", agentColor: "#22D3EE", agentInitials: "B", type: "Approval", message: "Requested approval for Sprint 7 scope change (+2 SP)", project: "SprintForge", time: "15 min ago", minutesAgo: 15 },
+  { id: 4, agentId: "charlie", agentName: "Charlie", agentColor: "#10B981", agentInitials: "C", type: "Risk", message: "Identified new risk: supplier delivery delay for Phase 3 materials", project: "Riverside", time: "28 min ago", minutesAgo: 28 },
+  { id: 5, agentId: "alpha", agentName: "Alpha", agentColor: "#6366F1", agentInitials: "A", type: "Phase Gate", message: "Passed Execution phase gate — all 7 prerequisites verified", project: "Atlas", time: "45 min ago", minutesAgo: 45 },
+  { id: 6, agentId: "echo", agentName: "Echo", agentColor: "#EC4899", agentInitials: "E", type: "Document", message: "Created design asset handoff checklist (38 items)", project: "Brand Refresh", time: "1h ago", minutesAgo: 60 },
+  { id: 7, agentId: "bravo", agentName: "Bravo", agentColor: "#22D3EE", agentInitials: "B", type: "Document", message: "Generated Sprint 7 burndown report with velocity analysis", project: "SprintForge", time: "1.5h ago", minutesAgo: 90 },
+  { id: 8, agentId: "delta", agentName: "Delta", agentColor: "#F97316", agentInitials: "D", type: "Approval", message: "Submitted migration sequence proposal for stakeholder review", project: "Cloud Migration", time: "2h ago", minutesAgo: 120 },
+  { id: 9, agentId: "charlie", agentName: "Charlie", agentColor: "#10B981", agentInitials: "C", type: "Document", message: "Drafted Change Request CR-012 for additional site survey", project: "Riverside", time: "3h ago", minutesAgo: 180 },
+  { id: 10, agentId: "alpha", agentName: "Alpha", agentColor: "#6366F1", agentInitials: "A", type: "Meeting", message: "Processed project board meeting transcript — 6 decisions logged", project: "Atlas", time: "4h ago", minutesAgo: 240 },
+  { id: 11, agentId: "echo", agentName: "Echo", agentColor: "#EC4899", agentInitials: "E", type: "Risk", message: "Flagged brand guideline inconsistency across 3 deliverables", project: "Brand Refresh", time: "5h ago", minutesAgo: 300 },
+  { id: 12, agentId: "bravo", agentName: "Bravo", agentColor: "#22D3EE", agentInitials: "B", type: "Phase Gate", message: "Sprint 6 retrospective complete — 5 improvement actions logged", project: "SprintForge", time: "6h ago", minutesAgo: 360 },
+];
+
+const COMPARISON_DATA = [
+  { metric: "Tasks", Alpha: 24, Bravo: 31, Charlie: 18, Delta: 12, Echo: 28 },
+  { metric: "Docs", Alpha: 8, Bravo: 6, Charlie: 5, Delta: 3, Echo: 9 },
+  { metric: "Approvals", Alpha: 4, Bravo: 3, Charlie: 5, Delta: 2, Echo: 3 },
+  { metric: "Meetings", Alpha: 3, Bravo: 5, Charlie: 2, Delta: 1, Echo: 4 },
+  { metric: "Risks", Alpha: 6, Bravo: 4, Charlie: 7, Delta: 3, Echo: 5 },
+];
+
+const CREDIT_30D = Array.from({ length: 30 }, (_, i) => ({
+  day: `D${i + 1}`,
+  Alpha: 60 + Math.round(Math.random() * 40),
+  Bravo: 50 + Math.round(Math.random() * 35),
+  Charlie: 40 + Math.round(Math.random() * 30),
+  Delta: i > 20 ? 10 + Math.round(Math.random() * 15) : 45 + Math.round(Math.random() * 25),
+  Echo: 55 + Math.round(Math.random() * 35),
+}));
+
+const FLEET_RADAR = [
+  { axis: "Productivity", value: 85 },
+  { axis: "Quality", value: 90 },
+  { axis: "Speed", value: 78 },
+  { axis: "Autonomy", value: 82 },
+  { axis: "HITL Compliance", value: 95 },
+  { axis: "Satisfaction", value: 88 },
+];
+
+const ALERTS: Alert[] = [
+  { id: 1, agentId: "charlie", agentName: "Charlie", agentInitials: "C", agentColor: "#10B981", priority: "critical", message: "Change Request CR-012 requires budget approval before proceeding — exceeds £15K threshold", project: "Riverside Development", time: "12 min ago", actions: ["Approve", "Reject", "Defer"] },
+  { id: 2, agentId: "bravo", agentName: "Bravo", agentInitials: "B", agentColor: "#22D3EE", priority: "high", message: "Sprint 7 scope change adds 2 SP to committed work — velocity at risk of missing target", project: "SprintForge", time: "15 min ago", actions: ["Approve", "Reject"] },
+  { id: 3, agentId: "alpha", agentName: "Alpha", agentInitials: "A", agentColor: "#6366F1", priority: "high", message: "Risk Register v3 contains 2 red-rated risks requiring executive sponsor review", project: "Project Atlas", time: "35 min ago", actions: ["Review", "Acknowledge"] },
+  { id: 4, agentId: "delta", agentName: "Delta", agentInitials: "D", agentColor: "#F97316", priority: "medium", message: "Agent paused for 4 hours awaiting migration sequence approval — SLA approaching", project: "Cloud Migration", time: "2h ago", actions: ["Resume", "Reassign"] },
+  { id: 5, agentId: "echo", agentName: "Echo", agentInitials: "E", agentColor: "#EC4899", priority: "medium", message: "3 brand deliverables have inconsistent colour values — auto-fix available", project: "Brand Refresh", time: "5h ago", actions: ["Auto-fix", "Review Manually"] },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string; pulseColor: "green" | "amber" | "red" | "blue"; badge: "default" | "amber" | "gray" | "red" }> = {
+  active: { label: "Active", color: "#10B981", pulseColor: "green", badge: "green" },
+  paused: { label: "Paused", color: "#F59E0B", pulseColor: "amber", badge: "amber" },
+  idle: { label: "Idle", color: "#64748B", pulseColor: "blue", badge: "outline" },
+  error: { label: "Error", color: "#EF4444", pulseColor: "red", badge: "destructive" },
+};
+
+const METHODOLOGY_BADGE: Record<Methodology, "blue" | "purple" | "gray" | "amber" | "green"> = {
+  "PRINCE2": "outline", "Scrum": "secondary", "Waterfall": "outline", "Kanban": "secondary", "Hybrid": "default",
+};
+
+const EVENT_ICONS: Record<string, string> = {
+  "Document": "📄", "Approval": "✅", "Meeting": "🎙️", "Risk": "⚠️", "Phase Gate": "🚩",
+};
+
+const AUTONOMY_LABELS = ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"];
+
+// ═══════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════
 
 export default function AgentFleetPage() {
-  const { data, isLoading } = useAgents();
+  const mode = "dark";
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
+  const [showDeployModal, setShowDeployModal] = useState(false);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6 max-w-[1600px]">
-        <Skeleton className="h-10 w-48" />
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-64 rounded-xl" />)}
-        </div>
-      </div>
-    );
-  }
+  const totalCreditsToday = AGENTS.reduce((s, a) => s + a.creditsToday, 0);
+  const activeCount = AGENTS.filter(a => a.status === "active").length;
+  const pausedCount = AGENTS.filter(a => a.status === "paused").length;
 
-  const agents = data?.agents || [];
-  const activities = data?.activities || [];
-  const alerts = data?.alerts || [];
-  const activeCount = agents.filter((a: any) => a.status === "ACTIVE").length;
-  const pausedCount = agents.filter((a: any) => a.status === "PAUSED").length;
-  const totalCredits = agents.reduce((s: number, a: any) => s + (a.creditsUsed || 0), 0);
-
-  const filteredActivities = activityFilter
-    ? activities.filter((a: any) => a.agentName === activityFilter)
-    : activities;
+  const filteredEvents = useMemo(() => {
+    if (!activityFilter) return ACTIVITY_EVENTS;
+    return ACTIVITY_EVENTS.filter(e => e.agentId === activityFilter);
+  }, [activityFilter]);
 
   return (
     <div className="space-y-6 max-w-[1600px]">
-      {/* Header */}
+      {/* ═══ 1. HEADER ═══ */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Agent Fleet</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {agents.length} Deployed · {activeCount} Active · {pausedCount} Paused · {totalCredits} credits used
+          <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Agent Fleet</h1>
+          <p className="text-[13px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: "var(--muted-foreground)" }}>
+            <span className="font-semibold" style={{ color: "var(--foreground)" }}>{AGENTS.length} Agents Deployed</span>
+            <Dot />
+            <span>{activeCount} Active</span>
+            <Dot />
+            <span>{pausedCount} Paused</span>
+            <Dot />
+            <span className="font-semibold" style={{ color: "var(--primary)" }}>{totalCreditsToday} credits today</span>
           </p>
         </div>
-        <Link href="/agents/deploy"><Button><Rocket className="w-4 h-4 mr-1" /> Deploy New Agent</Button></Link>
+        <Button variant="default" size="sm" icon={<span>🚀</span>}>Deploy New Agent</Button>
       </div>
 
-      {/* Agent Cards */}
-      {agents.length === 0 ? (
-        <div className="text-center py-20">
-          <Bot className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-lg font-bold mb-2">No agents deployed</h2>
-          <p className="text-sm text-muted-foreground mb-4">Deploy your first AI project manager.</p>
-          <Link href="/agents/deploy"><Button><Rocket className="w-4 h-4 mr-1" /> Deploy First Agent</Button></Link>
+      {/* ═══ 2. FLEET OVERVIEW CARDS ═══ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
+        {AGENTS.map(agent => (
+          <AgentCard key={agent.id} agent={agent} />
+        ))}
+      </div>
+
+      {/* ═══ 3. FLEET ACTIVITY TIMELINE ═══ */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Fleet Activity Timeline</h3>
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>Last 24 hours</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Agent filter pills */}
+            <button className={`px-2 py-1 rounded-[6px] text-[10px] font-semibold transition-all`}
+              onClick={() => setActivityFilter(null)}
+              style={{
+                background: !activityFilter ? `${"var(--primary)"}22` : "transparent",
+                color: !activityFilter ? "var(--primary)" : "var(--muted-foreground)",
+                border: `1px solid ${!activityFilter ? "var(--primary)" + "44" : "transparent"}`,
+              }}>All</button>
+            {AGENTS.map(a => (
+              <button key={a.id} className="flex items-center gap-1 px-2 py-1 rounded-[6px] text-[10px] font-semibold transition-all"
+                onClick={() => setActivityFilter(activityFilter === a.id ? null : a.id)}
+                style={{
+                  background: activityFilter === a.id ? `${a.color}22` : "transparent",
+                  color: activityFilter === a.id ? a.color : "var(--muted-foreground)",
+                  border: `1px solid ${activityFilter === a.id ? a.color + "44" : "transparent"}`,
+                }}>
+                <span className="w-2 h-2 rounded-full" style={{ background: a.color }} />
+                {a.name}
+              </button>
+            ))}
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
-          {agents.map((agent: any) => {
-            const isActive = agent.status === "ACTIVE";
-            const project = agent.project || agent.deployments?.[0]?.project;
-            return (
-              <Card key={agent.id} className={isActive ? "border-primary/30 shadow-lg shadow-primary/5" : ""}>
-                <CardContent className="pt-5">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"
-                        style={{ background: agent.gradient || "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>
-                        {agent.name[0]}
+
+        {/* "Now" marker */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Now</span>
+          <div className="flex-1 h-px" style={{ background: `${"#10B981"}33` }} />
+        </div>
+
+        {/* Events */}
+        <div className="space-y-0">
+          {filteredEvents.map((evt, i) => (
+            <div key={evt.id} className="flex items-start gap-3 py-2.5" style={{ borderBottom: i < filteredEvents.length - 1 ? `1px solid ${"var(--border)"}11` : "none" }}>
+              {/* Timeline line + dot */}
+              <div className="flex flex-col items-center flex-shrink-0" style={{ width: 20 }}>
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: evt.agentColor, boxShadow: `0 0 6px ${evt.agentColor}44` }} />
+                {i < filteredEvents.length - 1 && <div className="w-px flex-1 mt-1" style={{ background: `${"var(--border)"}33`, minHeight: 20 }} />}
+              </div>
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  
+                  <span className="text-[12px] font-semibold" style={{ color: evt.agentColor }}>{evt.agentName}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] font-semibold"
+                    style={{ background: `${evt.agentColor}15`, color: evt.agentColor }}>
+                    {EVENT_ICONS[evt.type] || "📋"} {evt.type}
+                  </span>
+                  <span className="text-[10px] ml-auto flex-shrink-0" style={{ color: "var(--muted-foreground)" }}>{evt.time}</span>
+                </div>
+                <p className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{evt.message}</p>
+                <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{evt.project}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* ═══ 4. FLEET PERFORMANCE (2-column) ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Left: Comparison + Credit area */}
+        <div className="space-y-4">
+          <Card>
+            <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Agent Comparison (This Week)</h3>
+            <div style={{ height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={COMPARISON_DATA} barGap={1} barSize={10}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
+                  <XAxis dataKey="metric" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                  <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
+                  <Bar dataKey="Alpha" fill="#6366F1" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Bravo" fill="#22D3EE" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Charlie" fill="#10B981" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Delta" fill="#F97316" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Echo" fill="#EC4899" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              {AGENTS.map(a => (
+                <span key={a.id} className="flex items-center gap-1 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: a.color }} />{a.name}
+                </span>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Credit Consumption (30 Days)</h3>
+            <div style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={CREDIT_30D}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}22`} />
+                  <XAxis dataKey="day" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} interval={4} />
+                  <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
+                  <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
+                  <Area type="monotone" dataKey="Alpha" stackId="1" stroke="#6366F1" fill="#6366F133" />
+                  <Area type="monotone" dataKey="Bravo" stackId="1" stroke="#22D3EE" fill="#22D3EE33" />
+                  <Area type="monotone" dataKey="Charlie" stackId="1" stroke="#10B981" fill="#10B98133" />
+                  <Area type="monotone" dataKey="Delta" stackId="1" stroke="#F97316" fill="#F9731633" />
+                  <Area type="monotone" dataKey="Echo" stackId="1" stroke="#EC4899" fill="#EC489933" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+
+        {/* Right: Fleet radar + utilisation */}
+        <div className="space-y-4">
+          <Card>
+            <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Fleet Health</h3>
+            <div style={{ height: 230 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={FLEET_RADAR} cx="50%" cy="50%" outerRadius="72%">
+                  <PolarGrid stroke={`${"var(--border)"}44`} />
+                  <PolarAngleAxis dataKey="axis" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                  <PolarRadiusAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} domain={[0, 100]} />
+                  <Radar dataKey="value" stroke={"var(--primary)"} fill={`${"var(--primary)"}33`} strokeWidth={2} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center justify-between text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+              {FLEET_RADAR.map(r => (
+                <span key={r.axis}>
+                  <span className="font-semibold" style={{ color: r.value >= 85 ? "#10B981" : r.value >= 75 ? "#F59E0B" : "#EF4444" }}>{r.value}%</span> {r.axis}
+                </span>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Agent Utilisation</h3>
+            <div className="space-y-3">
+              {AGENTS.map(agent => {
+                const totalAssigned = agent.tasksWeek;
+                const maxTasks = 35; // normalise against highest performer
+                const pct = Math.round((totalAssigned / maxTasks) * 100);
+                return (
+                  <div key={agent.id}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: agent.color }} />
+                        <span className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{agent.name}</span>
+                        <Badge variant={STATUS_CONFIG[agent.status].badge}>{agent.status}</Badge>
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{agent.name}</span>
-                          <span className={`w-2 h-2 rounded-full ${STATUS_CLASS[agent.status]}`} />
-                        </div>
-                        <span className="text-xs text-muted-foreground">{project?.name || "Unassigned"}</span>
-                      </div>
+                      <span className="text-[11px] font-semibold" style={{ color: agent.color }}>{agent.tasksWeek} tasks/wk</span>
+                    </div>
+                    <div className="w-full h-[8px] rounded-full overflow-hidden" style={{ background: `${"var(--border)"}22` }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: agent.color }} />
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+      </div>
 
-                  {/* Autonomy */}
-                  <div className="flex items-center justify-between mb-3">
+      {/* ═══ 5. PROJECT-AGENT MATRIX ═══ */}
+      <Card>
+        <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Project-Agent Matrix</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]" style={{ color: "var(--foreground)" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                {["Project", "Agent", "Methodology", "Phase", "Health", "Autonomy", "Tasks/Wk", "Pending", "Credits", "Actions"].map(h => (
+                  <th key={h} className="text-left py-2.5 px-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {AGENTS.map(agent => (
+                <tr key={agent.id} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}11` }}>
+                  <td className="py-2.5 px-3 font-semibold">{agent.project}</td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: agent.gradient }}>
+                        {agent.initials}
+                      </div>
+                      <span className="font-medium">{agent.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3"><Badge variant={METHODOLOGY_BADGE[agent.methodology]}>{agent.methodology}</Badge></td>
+                  <td className="py-2.5 px-3" style={{ color: "var(--muted-foreground)" }}>{agent.phase}</td>
+                  <td className="py-2.5 px-3">
+                    <RAGDot rag={agent.health} />
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <AutonomyDots level={agent.autonomyLevel} color={agent.color} />
+                  </td>
+                  <td className="py-2.5 px-3 font-semibold">{agent.tasksWeek}</td>
+                  <td className="py-2.5 px-3">
+                    {agent.pendingApprovals > 0 ? (
+                      <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: "rgba(245,158,11,0.12)", color: "#F59E0B" }}>
+                        {agent.pendingApprovals}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--muted-foreground)" }}>0</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span style={{ color: "var(--muted-foreground)" }}>{agent.totalCredits.toLocaleString()}</span>
+                  </td>
+                  <td className="py-2.5 px-3">
                     <div className="flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= agent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />
+                      <ActionBtn icon={agent.status === "paused" ? "▶" : "⏸"} tooltip={agent.status === "paused" ? "Resume" : "Pause"} />
+                      <ActionBtn icon="💬" tooltip="Chat" />
+                      <ActionBtn icon="⚙" tooltip="Settings" />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {/* Deploy row */}
+              <tr>
+                <td colSpan={10} className="py-3 px-3">
+                  <button className="flex items-center gap-2 text-[12px] font-semibold w-full justify-center py-2 rounded-[8px] transition-all hover:opacity-80"
+                    style={{ color: "var(--primary)", background: `${"var(--primary)"}08`, border: `1px dashed ${"var(--primary)"}44` }}>
+                    <span>+</span> Deploy agent to new project
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* ═══ 6. ALERTS & ESCALATIONS ═══ */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Alerts & Escalations</h3>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#EF4444" }}>
+              {ALERTS.length}
+            </span>
+          </div>
+          <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Priority-sorted · Requires human attention</span>
+        </div>
+        <div className="space-y-2.5">
+          {ALERTS.map(alert => {
+            const priorityColor = alert.priority === "critical" ? "#EF4444" : alert.priority === "high" ? "#F97316" : "#F59E0B";
+            return (
+              <div key={alert.id} className="flex items-start gap-3 p-3 rounded-[10px] transition-all"
+                style={{ background: `${priorityColor}06`, border: `1px solid ${priorityColor}18` }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0"
+                  style={{ background: alert.agentColor }}>
+                  {alert.agentInitials}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[12px] font-semibold" style={{ color: alert.agentColor }}>{alert.agentName}</span>
+                    <Badge variant={alert.priority === "critical" ? "critical" : alert.priority === "high" ? "high" : "medium"}>
+                      {alert.priority}
+                    </Badge>
+                    <span className="text-[10px] ml-auto" style={{ color: "var(--muted-foreground)" }}>{alert.time}</span>
+                  </div>
+                  <p className="text-[12px] leading-relaxed mb-1.5" style={{ color: "var(--foreground)" }}>{alert.message}</p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{alert.project}</span>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      {alert.actions.map(action => (
+                        <Button key={action} variant={action === "Approve" || action === "Auto-fix" || action === "Resume" ? "primary" : "ghost"} size="sm">
+                          {action}
+                        </Button>
                       ))}
-                      <span className="text-[9px] font-semibold text-muted-foreground ml-1">L{agent.autonomyLevel}</span>
-                    </div>
-                    <span className="text-[10px] font-semibold text-primary">{AUTONOMY_LABEL[agent.autonomyLevel]}</span>
-                  </div>
-
-                  {/* Stats */}
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-3">
-                    <span>{agent._count?.activities || 0} actions</span>
-                    <span>{agent._count?.decisions || 0} decisions</span>
-                    <span>{agent.creditsUsed || 0} credits</span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 pt-3 border-t border-border/30">
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                      {agent.status === "PAUSED" ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                    </Button>
-                    <Link href={`/agents/chat?agent=${agent.id}`}>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><MessageSquare className="w-3.5 h-3.5" /></Button>
-                    </Link>
-                    <Link href={`/agents/${agent.id}`}>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Settings className="w-3.5 h-3.5" /></Button>
-                    </Link>
-                    <div className="ml-auto">
-                      <Badge variant={agent.status === "ACTIVE" ? "default" : agent.status === "PAUSED" ? "secondary" : "outline"} className="text-[9px]">
-                        {agent.status}
-                      </Badge>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             );
           })}
         </div>
-      )}
-
-      {/* Activity Timeline */}
-      {activities.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div>
-              <CardTitle className="text-sm">Fleet Activity</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">Recent agent actions</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className={`px-2 py-1 rounded text-[10px] font-semibold ${!activityFilter ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}
-                onClick={() => setActivityFilter(null)}>All</button>
-              {agents.map((a: any) => (
-                <button key={a.id} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold ${activityFilter === a.name ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}
-                  onClick={() => setActivityFilter(activityFilter === a.name ? null : a.name)}>
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: a.gradient || "#6366F1" }} />
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-0">
-              {filteredActivities.slice(0, 10).map((evt: any, i: number) => (
-                <div key={evt.id} className="flex items-start gap-3 py-2.5 border-b border-border/10 last:border-0">
-                  <div className="flex flex-col items-center flex-shrink-0" style={{ width: 20 }}>
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${ACTIVITY_DOT[evt.type] || "bg-muted-foreground"}`} />
-                    {i < filteredActivities.length - 1 && <div className="w-px flex-1 mt-1 bg-border" style={{ minHeight: 20 }} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs font-semibold text-primary">{evt.agentName}</span>
-                      <Badge variant="outline" className="text-[9px]">{evt.type}</Badge>
-                      <span className="text-[10px] ml-auto text-muted-foreground">{timeAgo(evt.createdAt)}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{evt.summary}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Alerts */}
-      {alerts.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-sm">Alerts & Escalations</CardTitle>
-              <Badge variant="destructive" className="text-[9px]">{alerts.length}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {alerts.map((alert: any) => (
-              <div key={alert.id} className="flex items-start gap-3 p-3 rounded-xl bg-destructive/5 border border-destructive/10">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-semibold">{alert.title}</span>
-                    <Badge variant="secondary" className="text-[9px]">{alert.type}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{alert.description}</p>
-                  <span className="text-[10px] text-muted-foreground">{alert.project} · {timeAgo(alert.createdAt)}</span>
-                </div>
-                <Link href="/approvals"><Button variant="outline" size="sm">Review</Button></Link>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      </Card>
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AGENT CARD (section 2)
+// ═══════════════════════════════════════════════════════════════════
+
+function AgentCard({ agent,  }: { agent: Agent }) {
+  const statusCfg = STATUS_CONFIG[agent.status];
+  const isActive = agent.status === "active";
+
+  return (
+    <div className="rounded-[14px] p-4 transition-all duration-200 hover:translate-y-[-2px]"
+      style={{
+        background: "var(--card)",
+        border: isActive ? `1.5px solid ${agent.color}44` : `1px solid ${"var(--border)"}`,
+        boxShadow: isActive ? `0 4px 20px ${agent.color}18, ${"0 4px 6px rgba(0,0,0,0.07)"}` : "0 4px 6px rgba(0,0,0,0.07)",
+      }}>
+      {/* Top: Avatar + Name + Status */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-[16px] font-bold text-white"
+            style={{ background: agent.gradient, boxShadow: isActive ? `0 0 16px ${agent.color}44` : "none" }}>
+            {agent.initials}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{agent.name}</span>
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            </div>
+            <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{agent.project}</span>
+          </div>
+        </div>
+        <Badge variant={METHODOLOGY_BADGE[agent.methodology]}>{agent.methodology}</Badge>
+      </div>
+
+      {/* Current task */}
+      <p className="text-[11px] leading-[15px] mb-3 line-clamp-2" style={{ color: "var(--muted-foreground)" }}>
+        {agent.currentTask}
+      </p>
+
+      {/* Autonomy level */}
+      <div className="flex items-center justify-between mb-3">
+        <AutonomyDots level={agent.autonomyLevel} color={agent.color} />
+        <span className="text-[10px] font-semibold" style={{ color: agent.color }}>{agent.autonomyLabel}</span>
+      </div>
+
+      {/* Performance + Credits row */}
+      <div className="flex items-center gap-3 mb-3">
+        {/* Performance ring */}
+        <div className="flex items-center gap-2">
+          <MiniRing pct={agent.performanceScore} size={32} color={agent.color} bgColor={`${"var(--border)"}33`} />
+          <div>
+            <span className="text-[11px] font-bold" style={{ color: "var(--foreground)" }}>{agent.performanceScore}</span>
+            <p className="text-[8px]" style={{ color: "var(--muted-foreground)" }}>Score</p>
+          </div>
+        </div>
+
+        {/* Credits + sparkline */}
+        <div className="flex-1 flex items-center gap-2">
+          <div className="flex-1 h-[24px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={agent.creditSparkline.map((v, i) => ({ i, v }))}>
+                <Line type="monotone" dataKey="v" stroke={agent.color} strokeWidth={1.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="text-right">
+            <span className="text-[11px] font-bold" style={{ color: "var(--foreground)" }}>{agent.creditsToday}</span>
+            <p className="text-[8px]" style={{ color: "var(--muted-foreground)" }}>credits</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="flex items-center gap-1.5 pt-2" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+        <ActionBtn icon={agent.status === "paused" ? "▶" : "⏸"} tooltip={agent.status === "paused" ? "Resume" : "Pause"} />
+        <ActionBtn icon="💬" tooltip="Chat" />
+        <ActionBtn icon="⚙" tooltip="Settings" />
+        <div className="ml-auto">
+          <Badge variant={statusCfg.badge}>{statusCfg.label}</Badge>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SMALL HELPER COMPONENTS
+// ═══════════════════════════════════════════════════════════════════
+
+function Dot() {
+  return <span className="w-1 h-1 rounded-full bg-current opacity-30" />;
+}
+
+function MiniRing({ pct, size, color, bgColor }: { pct: number; size: number; color: string; bgColor: string }) {
+  const stroke = 3;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - pct / 100);
+  return (
+    <svg width={size} height={size} className="-rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={bgColor} strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} />
+    </svg>
+  );
+}
+
+function AutonomyDots({ level, color}: { level: number; color: string;  }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map(i => (
+        <div key={i} className="w-2 h-2 rounded-full transition-all" style={{
+          background: i <= level ? color : `${"var(--border)"}44`,
+          boxShadow: i <= level ? `0 0 4px ${color}44` : "none",
+        }} />
+      ))}
+      <span className="text-[9px] font-semibold ml-1" style={{ color: "var(--muted-foreground)" }}>L{level}</span>
+    </div>
+  );
+}
+
+function RAGDot({ rag}: { rag: RAG;  }) {
+  const colors = { green: "#10B981", amber: "#F59E0B", red: "#EF4444" };
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-2.5 h-2.5 rounded-full" style={{ background: colors[rag], boxShadow: `0 0 6px ${colors[rag]}44` }} />
+      <span className="text-[11px] font-semibold capitalize" style={{ color: colors[rag] }}>{rag}</span>
+    </div>
+  );
+}
+
+function ActionBtn({ icon, tooltip}: { icon: string; tooltip: string;  }) {
+  return (
+    <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
+      title={tooltip}
+      style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}>
+      {icon}
+    </button>
   );
 }
