@@ -176,12 +176,12 @@ export default function StakeholdersPage() {
           )}
 
           {/* Comms Log */}
-          <Card header={
-            <div className="flex items-center justify-between">
-              <span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Communications Log</span>
+          <Card>
+            <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm">Communications Log</CardTitle>
               <Button variant="ghost" size="sm">Log Communication</Button>
-            </div>
-          }>
+            </CardHeader>
+            <CardContent>
             <div className="space-y-3">
               {COMMS_LOG.map((c, i) => (
                 <div key={i} className="flex gap-3">
@@ -201,7 +201,7 @@ export default function StakeholdersPage() {
                 </div>
               ))}
             </div>
-          </Card>
+          </CardContent></Card>
         </div>
 
         {/* Right panel */}

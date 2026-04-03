@@ -129,7 +129,7 @@ export default function PortfolioPage() {
       </div>
 
       {/* Timeline */}
-      <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Portfolio Timeline</span>}>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Portfolio Timeline</CardTitle></CardHeader><CardContent>
         <div className="overflow-x-auto">
           <div style={{ minWidth: 700 }}>
             {/* Month headers */}
@@ -161,11 +161,11 @@ export default function PortfolioPage() {
             ))}
           </div>
         </div>
-      </Card>
+      </CardContent></Card>
 
       <div className="grid grid-cols-2 gap-5">
         {/* Resource Heatmap */}
-        <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Resource Allocation Heatmap</span>}>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Resource Allocation Heatmap</CardTitle></CardHeader><CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-[10px]">
               <thead>
@@ -197,10 +197,10 @@ export default function PortfolioPage() {
               </tbody>
             </table>
           </div>
-        </Card>
+        </CardContent></Card>
 
         {/* Risk Matrix */}
-        <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Cross-Project Risk Matrix</span>}>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Cross-Project Risk Matrix</CardTitle></CardHeader><CardContent>
           <ResponsiveContainer width="100%" height={220}>
             <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
               <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
@@ -228,21 +228,23 @@ export default function PortfolioPage() {
               </div>
             ))}
           </div>
-        </Card>
+        </CardContent></Card>
       </div>
 
       {/* Budget */}
-      <Card header={
-        <div className="flex items-center justify-between">
-          <span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Budget Overview</span>
-          <div className="flex items-center gap-3">
-            <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Total Burn Rate:</span>
-            <span className="text-[13px] font-bold" style={{ color: totalSpent / totalBudget > 0.7 ? "#EF4444" : "#10B981" }}>
-              {Math.round((totalSpent / totalBudget) * 100)}%
-            </span>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm">Budget Overview</CardTitle>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-muted-foreground">Total Burn Rate:</span>
+              <span className="text-[13px] font-bold" style={{ color: totalSpent / totalBudget > 0.7 ? "#EF4444" : "#10B981" }}>
+                {Math.round((totalSpent / totalBudget) * 100)}%
+              </span>
+            </div>
           </div>
-        </div>
-      }>
+        </CardHeader>
+        <CardContent>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={BUDGET_DATA} barGap={4}>
             <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
@@ -256,7 +258,7 @@ export default function PortfolioPage() {
             <Bar dataKey="forecast" name="Forecast" fill={"#F59E0B"} opacity={0.6} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
-      </Card>
+      </CardContent></Card>
 
       {/* Exec report modal */}
       {showExecReport && (

@@ -261,7 +261,7 @@ export default function ChangeControlPage() {
           )}
 
           {/* Decision log */}
-          <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>CCB Decision History</span>}>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CCB Decision History</CardTitle></CardHeader><CardContent>
             <div className="space-y-3">
               {DECISIONS.map((d, i) => (
                 <div key={i} className="flex gap-3 pb-3" style={{ borderBottom: i < DECISIONS.length - 1 ? `1px solid ${"var(--border)"}` : undefined }}>
@@ -286,10 +286,10 @@ export default function ChangeControlPage() {
                 </div>
               ))}
             </div>
-          </Card>
+          </CardContent></Card>
 
           {/* Trend */}
-          <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>CR Submission Trend</span>}>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CR Submission Trend</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={130}>
               <AreaChart data={TREND}>
                 <defs><linearGradient id="crGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={"var(--primary)"} stopOpacity={0.3} /><stop offset="95%" stopColor={"var(--primary)"} stopOpacity={0} /></linearGradient></defs>
@@ -299,7 +299,7 @@ export default function ChangeControlPage() {
                 <Area type="monotone" dataKey="crs" stroke={"var(--primary)"} fill="url(#crGrad)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
-          </Card>
+          </CardContent></Card>
         </div>
       </div>
     </div>

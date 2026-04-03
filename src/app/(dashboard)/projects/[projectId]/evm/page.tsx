@@ -185,7 +185,7 @@ export default function EVMDashboardPage() {
       {/* S-Curve + Gauges */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
         <div className="xl:col-span-3">
-          <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>S-Curve — Cumulative Performance</span>}>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">S-Curve — Cumulative Performance</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={S_CURVE} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                 <defs>
@@ -212,7 +212,7 @@ export default function EVMDashboardPage() {
                 <Legend wrapperStyle={{ fontSize: 10, color: "var(--muted-foreground)" }} />
               </ComposedChart>
             </ResponsiveContainer>
-          </Card>
+          </CardContent></Card>
         </div>
 
         {/* Gauges */}
@@ -252,7 +252,7 @@ export default function EVMDashboardPage() {
       {/* Variance + Forecasting */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         {/* Variance */}
-        <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Variance by Work Package (£K)</span>}>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Variance by Work Package (£K)</CardTitle></CardHeader><CardContent>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={VARIANCE_DATA} barGap={2}>
               <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
@@ -269,11 +269,11 @@ export default function EVMDashboardPage() {
               <Legend wrapperStyle={{ fontSize: 10 }} />
             </BarChart>
           </ResponsiveContainer>
-        </Card>
+        </CardContent></Card>
 
         {/* Forecasting */}
         <div className="space-y-4">
-          <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>EAC Trend</span>}>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">EAC Trend</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={130}>
               <LineChart data={EAC_TREND}>
                 <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
@@ -284,7 +284,7 @@ export default function EVMDashboardPage() {
                 <Line type="monotone" dataKey="eac" stroke={"#F59E0B"} strokeWidth={2} dot={{ r: 4, fill: "#F59E0B" }} />
               </LineChart>
             </ResponsiveContainer>
-          </Card>
+          </CardContent></Card>
           <div className="grid grid-cols-3 gap-2">
             {SCENARIOS.map((s) => (
               <div key={s.label} className="p-3 rounded-[10px] text-center" style={{ backgroundColor: "rgba(99,102,241,0.08)", border: `1px solid ${"var(--border)"}` }}>
@@ -305,7 +305,7 @@ export default function EVMDashboardPage() {
       </div>
 
       {/* Data table */}
-      <Card header={<span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>EVM Data by Work Package</span>}>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm">EVM Data by Work Package</CardTitle></CardHeader><CardContent>
         <div className="overflow-x-auto">
           <table className="w-full text-[11px]">
             <thead>
@@ -340,7 +340,7 @@ export default function EVMDashboardPage() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </CardContent></Card>
     </div>
   );
 }
