@@ -11,8 +11,35 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   FolderKanban, CheckCircle2, FileWarning, AlertTriangle,
-  TrendingUp, ArrowRight, Bot, Zap, Loader2,
+  TrendingUp, ArrowRight, Bot, Zap,
 } from "lucide-react";
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid, Cell,
+} from "recharts";
+
+// Charts mock data (will be replaced with real data when tasks/sprints are populated)
+const BURNDOWN = [
+  { day: "Mon", planned: 42, actual: 42 }, { day: "Tue", planned: 38, actual: 40 },
+  { day: "Wed", planned: 34, actual: 37 }, { day: "Thu", planned: 30, actual: 33 },
+  { day: "Fri", planned: 26, actual: 30 }, { day: "Sat", planned: 22, actual: 28 },
+  { day: "Sun", planned: 18, actual: 25 },
+];
+const RISK_DIST = [
+  { category: "Technical", count: 4, fill: "#6366F1" }, { category: "Schedule", count: 3, fill: "#F59E0B" },
+  { category: "Budget", count: 2, fill: "#EF4444" }, { category: "Resource", count: 1, fill: "#22D3EE" },
+  { category: "External", count: 1, fill: "#8B5CF6" },
+];
+const PHASES = [
+  { name: "Pre-Project", pct: 100, status: "done" }, { name: "Initiation", pct: 100, status: "done" },
+  { name: "Planning", pct: 65, status: "active" }, { name: "Execution", pct: 0, status: "pending" },
+  { name: "Closing", pct: 0, status: "pending" },
+];
+const UPCOMING = [
+  { time: "Today 3pm", title: "Sprint Review — Mobile App", badge: "default" as const },
+  { time: "Tomorrow 10am", title: "Gate Review: CRM Planning", badge: "secondary" as const },
+  { time: "Thu", title: "Risk Register review due", badge: "destructive" as const },
+];
 
 function timeAgo(date: string | Date) {
   const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -180,8 +207,89 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Right: Activity + Agents */}
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Burndown */}
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Sprint Burndown</CardTitle></CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={BURNDOWN}>
+                    <defs>
+                      <linearGradient id="gradPlanned" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradActual" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                    <XAxis dataKey="day" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--foreground)", fontSize: 12 }} />
+                    <Area type="monotone" dataKey="planned" stroke="var(--primary)" fill="url(#gradPlanned)" strokeWidth={2} strokeDasharray="5 5" />
+                    <Area type="monotone" dataKey="actual" stroke="var(--chart-2)" fill="url(#gradActual)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Risk Distribution */}
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Distribution</CardTitle></CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={RISK_DIST} barSize={28}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                    <XAxis dataKey="category" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--foreground)", fontSize: 12 }} />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                      {RISK_DIST.map((entry, i) => (
+                        <Cell key={i} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+        {/* Right: Phase Gates + Activity + Agents */}
         <div className="xl:col-span-2 space-y-6">
+          {/* Phase Gates */}
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Phase Gates — {projects[0]?.name || "Project"}</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {PHASES.map((p, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${
+                      p.status === "done" ? "bg-green-500 text-white" :
+                      p.status === "active" ? "bg-primary text-white" :
+                      "bg-muted text-muted-foreground"
+                    }`}>
+                      {p.status === "done" ? "✓" : p.status === "active" ? "●" : i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-[13px] font-medium ${p.status === "pending" ? "text-muted-foreground" : ""}`}>{p.name}</span>
+                        <span className={`text-[11px] font-semibold ${
+                          p.status === "done" ? "text-green-500" :
+                          p.status === "active" ? "text-primary" :
+                          "text-muted-foreground"
+                        }`}>{p.pct}%</span>
+                      </div>
+                      <Progress value={p.pct} className="h-1.5" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Agent Fleet Summary */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -252,6 +360,24 @@ export default function DashboardPage() {
               </div>
               <p className="text-2xl font-bold">{stats?.creditBalance?.toLocaleString() || 0}</p>
               <Link href="/billing/credits"><Button variant="ghost" size="sm" className="text-xs mt-2 p-0 h-auto">View Credit Centre →</Button></Link>
+            </CardContent>
+          </Card>
+
+          {/* Upcoming */}
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Upcoming</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-2.5">
+                {UPCOMING.map((u, i) => (
+                  <div key={i} className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-medium w-[80px] text-muted-foreground">{u.time}</span>
+                      <span className="text-[13px] font-medium">{u.title}</span>
+                    </div>
+                    <Badge variant={u.badge} className="text-[10px] capitalize">{u.badge === "default" ? "meeting" : u.badge === "secondary" ? "approval" : "deadline"}</Badge>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
