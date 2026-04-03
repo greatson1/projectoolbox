@@ -10,5 +10,8 @@ export async function GET() {
     nextauthUrl: process.env.NEXTAUTH_URL || "MISSING",
     hasDbUrl: !!process.env.DATABASE_URL,
     nodeEnv: process.env.NODE_ENV,
+    zoomClientId: process.env.ZOOM_CLIENT_ID?.slice(0, 10) || "MISSING",
+    hasZoomSecret: !!process.env.ZOOM_CLIENT_SECRET,
+    zoomRedirectUri: process.env.ZOOM_REDIRECT_URI || "MISSING",
   });
 }
