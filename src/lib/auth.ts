@@ -1,29 +1,18 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
+import Google from "next-auth/providers/google";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
 
-let adapter: any = undefined;
-try {
-  const { PrismaAdapter } = require("@auth/prisma-adapter");
-  adapter = PrismaAdapter(db);
-} catch {
-  // Adapter init can fail during build or cold start — auth still works with JWT
-}
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  ...(adapter && { adapter }),
   session: { strategy: "jwt" },
+  trustHost: true,
   pages: {
     signIn: "/login",
     newUser: "/onboarding",
   },
   providers: [
-    ...(process.env.GOOGLE_CLIENT_ID ? [GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-    })] : []),
+    Google,
     CredentialsProvider({
       name: "credentials",
       credentials: {
@@ -53,11 +42,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {
-        // For Google OAuth — create or link user in DB
         if (account?.provider === "google") {
           let dbUser = await db.user.findUnique({ where: { email: user.email! } });
           if (!dbUser) {
-            // Auto-create user from Google sign-in
             dbUser = await db.user.create({
               data: {
                 email: user.email!,
@@ -72,7 +59,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.orgId = dbUser.orgId;
           token.onboardingComplete = dbUser.onboardingComplete;
         } else {
-          // Credentials login
           const dbUser = await db.user.findUnique({
             where: { id: user.id },
             select: { role: true, orgId: true, onboardingComplete: true },
