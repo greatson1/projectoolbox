@@ -13,10 +13,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     newUser: "/onboarding",
   },
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
+    ...(process.env.GOOGLE_CLIENT_ID ? [GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+    })] : []),
     CredentialsProvider({
       name: "credentials",
       credentials: {

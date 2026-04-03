@@ -120,7 +120,7 @@ export default function StakeholdersPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
         {/* Main area */}
         <div className="xl:col-span-2 space-y-5">
           {/* Power/Interest Grid */}

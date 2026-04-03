@@ -199,7 +199,7 @@ export default function ChangeControlPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
         {/* Stats */}
         <div className="space-y-4">
           <Card>

@@ -67,7 +67,7 @@ export default function RiskRegisterPage() {
           <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Add First Risk</Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
           <div className="xl:col-span-2">
             {/* Matrix view */}
             {view === "matrix" && (

@@ -155,7 +155,7 @@ export default function CreditCentrePage() {
           <Skeleton className="h-80 rounded-xl" />
         </div>
         <Skeleton className="h-48 rounded-xl" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
           <Skeleton className="h-64 rounded-xl lg:col-span-2" />
           <Skeleton className="h-64 rounded-xl" />
         </div>
@@ -459,7 +459,7 @@ export default function CreditCentrePage() {
       </Card>
 
       {/* ═══ 6. DAILY USAGE TREND + 7. HOURLY DISTRIBUTION ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="pb-2">

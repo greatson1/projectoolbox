@@ -410,7 +410,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             </div>
           </Card>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 items-start">
             {/* Task queue */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Active Task Queue</h3>
@@ -578,7 +578,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 items-start">
             {/* Timeline */}
             <div className="lg:col-span-2">
               <Card className="p-4">

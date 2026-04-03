@@ -191,7 +191,7 @@ export default function EVMDashboardPage() {
       </div>
 
       {/* S-Curve + Gauges */}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5 items-start">
         <div className="xl:col-span-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">S-Curve — Cumulative Performance</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={320}>

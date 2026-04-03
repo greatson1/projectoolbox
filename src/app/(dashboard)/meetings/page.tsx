@@ -110,7 +110,7 @@ export default function MeetingsPage() {
 
         {/* SUMMARY */}
         {detailTab === "summary" && (
-          <div className="grid grid-cols-3 gap-5">
+          <div className="grid grid-cols-3 gap-5 items-start">
             <div className="col-span-2 space-y-4">
               <Card className="px-5">
                 <CardContent>

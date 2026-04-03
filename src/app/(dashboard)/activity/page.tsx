@@ -119,7 +119,7 @@ export default function ActivityLogPage() {
         <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">Meetings</p><p className="text-2xl font-bold text-chart-2">{stats.meetings || 0}</p></Card>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         {/* Left: Timeline */}
         <div className="xl:col-span-2 space-y-4">
           {activities.length === 0 ? (
