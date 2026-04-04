@@ -239,8 +239,8 @@ export default function BillingPage() {
           </div>
         </div>
         <div className="flex gap-2 mt-4">
-          <Link href="/billing"><Button onClick={() => toast.info("Coming soon")}>Upgrade Plan</Button></Link>
-          <Link href="/billing"><Button variant="ghost" onClick={() => toast.info("Coming soon")}>Manage Subscription</Button></Link>
+          <Button onClick={async () => { try { const res = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "subscription", planId: "PROFESSIONAL" }) }); const data = await res.json(); if (data.data?.checkoutUrl) window.location.href = data.data.checkoutUrl; else toast.error("Could not start checkout"); } catch { toast.error("Checkout failed"); } }}>Upgrade Plan</Button>
+          <Button variant="ghost" onClick={async () => { try { const res = await fetch("/api/billing/portal", { method: "POST", headers: {"Content-Type":"application/json"} }); const data = await res.json(); if (data.data?.portalUrl) window.location.href = data.data.portalUrl; else toast.error("Could not open portal"); } catch { toast.error("Portal unavailable"); } }}>Manage Subscription</Button>
           <Link href="/billing/credits">
             <Button variant="outline"><Zap className="w-4 h-4 mr-1" /> Credit Centre</Button>
           </Link>

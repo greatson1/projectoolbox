@@ -245,34 +245,99 @@ function AgentChatPage() {
     setSending(true);
     scrollToBottom();
 
+    // Create a placeholder streaming message
+    const streamId = `stream-${Date.now()}`;
+    const streamMsg: Message = { id: streamId, role: "agent", type: "text", content: "", timestamp: new Date() };
+    setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), streamMsg] }));
+
     try {
-      const res = await fetch(`/api/agents/${activeAgentId}/chat`, {
+      // Try SSE streaming first
+      const res = await fetch(`/api/agents/${activeAgentId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: msg }),
       });
-      const data = await res.json();
 
-      if (res.ok && data.data?.agentMessage) {
-        const richMessages = parseAgentResponse(data.data.agentMessage.content);
-        setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), ...richMessages] }));
+      if (res.ok && res.headers.get("content-type")?.includes("text/event-stream")) {
+        // Stream tokens
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.token) {
+                fullContent += data.token;
+                setMessagesByAgent(prev => ({
+                  ...prev,
+                  [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
+                    m.id === streamId ? { ...m, content: fullContent } : m
+                  ),
+                }));
+                scrollToBottom();
+              }
+            } catch {}
+          }
+        }
+
+        // If streaming produced no content, parse the final message
+        if (!fullContent) throw new Error("Empty stream");
       } else {
-        setMessagesByAgent(prev => ({
-          ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), {
-            id: `err-${Date.now()}`, role: "agent" as const, type: "text" as const,
-            content: data.error || "Sorry, I encountered an error. Please try again.",
-            timestamp: new Date(),
-          }]
-        }));
+        // Fallback to regular API
+        const data = await res.json();
+        if (data.data?.agentMessage) {
+          const richMessages = parseAgentResponse(data.data.agentMessage.content);
+          // Replace the placeholder with parsed messages
+          setMessagesByAgent(prev => ({
+            ...prev,
+            [activeAgentId!]: [
+              ...(prev[activeAgentId!] || []).filter(m => m.id !== streamId),
+              ...richMessages,
+            ],
+          }));
+        } else {
+          setMessagesByAgent(prev => ({
+            ...prev,
+            [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
+              m.id === streamId ? { ...m, content: data.error || "Sorry, I encountered an error." } : m
+            ),
+          }));
+        }
       }
     } catch {
-      setMessagesByAgent(prev => ({
-        ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), {
-          id: `err-${Date.now()}`, role: "agent" as const, type: "text" as const,
-          content: "Connection error. Please check your network and try again.",
-          timestamp: new Date(),
-        }]
-      }));
+      // Fallback: try non-streaming endpoint
+      try {
+        const res2 = await fetch(`/api/agents/${activeAgentId}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: msg }),
+        });
+        const data2 = await res2.json();
+        if (data2.data?.agentMessage) {
+          const richMessages = parseAgentResponse(data2.data.agentMessage.content);
+          setMessagesByAgent(prev => ({
+            ...prev,
+            [activeAgentId!]: [
+              ...(prev[activeAgentId!] || []).filter(m => m.id !== streamId),
+              ...richMessages,
+            ],
+          }));
+        }
+      } catch {
+        setMessagesByAgent(prev => ({
+          ...prev,
+          [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
+            m.id === streamId ? { ...m, content: "Connection error. Please try again." } : m
+          ),
+        }));
+      }
     }
 
     setSending(false);

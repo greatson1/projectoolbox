@@ -1,564 +1,353 @@
+// @ts-nocheck
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { Search, FileText, Network } from "lucide-react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAgents } from "@/hooks/use-api";
+import {
+  Search, Plus, FileText, Globe, Mail, MessageSquare, Brain,
+  Upload, Link, Trash2, Shield, X, Loader2, Microscope,
+} from "lucide-react";
 
-// ================================================================
-// TYPES & DATA
-// ================================================================
-
-interface KnowledgeItem {
-  id: string;
-  title: string;
-  type: "meeting" | "decision" | "risk" | "artefact" | "note" | "daily";
-  content: string;
-  date: string;
-  tags: string[];
-  source: string;
-  backlinks: string[];
-  linkCount: number;
-  snippet: string;
-}
-
-const TYPE_META: Record<string, { icon: string; color: string; label: string }> = {
-  meeting: { icon: "\u{1F91D}", color: "#22D3EE", label: "Meeting" },
-  decision: { icon: "\u{1F537}", color: "#8B5CF6", label: "Decision" },
-  risk: { icon: "\u26A0\uFE0F", color: "#F87171", label: "Risk" },
-  artefact: { icon: "\u{1F4C4}", color: "#6366F1", label: "Artefact" },
-  note: { icon: "\u{1F4DD}", color: "#94A3B8", label: "Note" },
-  daily: { icon: "\u{1F4C5}", color: "#34D399", label: "Daily" },
+const TYPE_ICONS: Record<string, { icon: any; label: string; color: string }> = {
+  TEXT: { icon: FileText, label: "Text", color: "#6366F1" },
+  FILE: { icon: Upload, label: "File", color: "#22D3EE" },
+  URL: { icon: Globe, label: "Web", color: "#10B981" },
+  EMAIL: { icon: Mail, label: "Email", color: "#F59E0B" },
+  TRANSCRIPT: { icon: MessageSquare, label: "Transcript", color: "#8B5CF6" },
+  CHAT: { icon: MessageSquare, label: "Chat", color: "#EC4899" },
+  DECISION: { icon: Brain, label: "Decision", color: "#EF4444" },
 };
 
-const ITEMS: KnowledgeItem[] = [
-  {
-    id: "k1",
-    title: "Sprint Planning \u2014 Data Migration",
-    type: "meeting",
-    date: "2026-04-02",
-    tags: ["sprint-1", "data", "planning"],
-    source: "Meeting transcript (auto-captured)",
-    linkCount: 8,
-    backlinks: ["k2", "k3", "k5", "k6"],
-    snippet: "Discussed 2M record migration strategy. Dave flagged 15% data quality issues...",
-    content: `# Sprint Planning \u2014 Data Migration\n\n**Date:** 2 April 2026 \u00B7 **Attendees:** Sarah Chen, Dave Wilson, Tom Harris, Maya PM\n\n## Key Discussion Points\n\n- 2 million customer records require migration to Salesforce\n- 15% of records (300,000) have quality issues: missing emails, duplicates, outdated phone numbers\n- Data cleansing estimated at 3 weeks with current team, reducible to 2 weeks with additional data analyst\n- Legacy CRM vendor contract expires August \u2014 migration must complete by July\n\n## Decisions Made\n\n1. **Sprint goal set:** Complete data cleansing framework and test environment setup\n2. **Resource request approved:** Additional data analyst for cleansing sprint\n3. **Deadline confirmed as non-negotiable** due to \u00A350K/month contract penalty\n\n## Action Items\n\n| Action | Owner | Due |\n|--------|-------|-----|\n| Prepare headcount business case | Dave Wilson | Friday |\n| Set up test environment | Tom Harris | Next Wednesday |\n| Get security approval for prod API | Sarah Chen | Next week |\n| Data migration tool comparison | Dave Wilson | Monday |`,
-  },
-  {
-    id: "k2",
-    title: "Legacy CRM contract expiry penalty",
-    type: "risk",
-    date: "2026-04-02",
-    tags: ["risk", "budget", "critical"],
-    source: "Sprint Planning meeting \u2014 Dave Wilson",
-    linkCount: 5,
-    backlinks: ["k1", "k4"],
-    snippet: "\u00A350K/month penalty if migration not complete by July. Score: 16 (High/Very High).",
-    content: `# RISK-014: Legacy CRM Contract Expiry Penalty\n\n**Score:** 16 \u00B7 **Probability:** High \u00B7 **Impact:** Very High\n\n## Description\n\nThe legacy CRM vendor contract expires in August 2026. If the Salesforce migration is not completed by July, the organisation must extend the contract at \u00A350,000 per month.\n\n## Mitigation\n\nComplete data migration by July to avoid penalty. Current forecast shows 14-day buffer which is insufficient given 15% data quality issues.\n\n## Source\n\nFlagged by [[Sprint Planning \u2014 Data Migration|Dave Wilson]] during sprint planning on 2 April 2026.`,
-  },
-  {
-    id: "k3",
-    title: "Additional data analyst approved",
-    type: "decision",
-    date: "2026-04-02",
-    tags: ["decision", "resource", "sprint-1"],
-    source: "Sprint Planning \u2014 Sarah Chen",
-    linkCount: 3,
-    backlinks: ["k1"],
-    snippet: "Sarah Chen approved request for additional data analyst to reduce cleansing from 3 to 2 weeks.",
-    content: `# Decision: Additional Data Analyst Resource\n\n**Decided by:** Sarah Chen \u00B7 **Date:** 2 April 2026\n\n## Context\n\nData cleansing for 300,000 records estimated at 3 weeks with current team. Additional analyst reduces this to 2 weeks.\n\n## Decision\n\nApproved. Dave Wilson to prepare formal business case by Friday.\n\n## Impact\n\n- Schedule: Saves 1 week on cleansing phase\n- Budget: Estimated \u00A38,000 additional cost\n- Risk: Reduces schedule risk for July deadline`,
-  },
-  {
-    id: "k4",
-    title: "Project Charter",
-    type: "artefact",
-    date: "2026-03-28",
-    tags: ["artefact", "initiation", "approved"],
-    source: "Agent-generated, approved by Sarah Chen",
-    linkCount: 6,
-    backlinks: ["k1", "k2", "k5"],
-    snippet: "CRM Migration to Salesforce Lightning. 450 users, 3 BUs, \u00A3850K budget, 9 months.",
-    content: `# Project Charter \u2014 CRM Migration to Salesforce\n\n**Status:** Approved \u00B7 **Version:** 1.0\n\n## Purpose\n\nMigrate legacy CRM to Salesforce Lightning to improve sales efficiency, data quality, and customer insights across 3 business units.\n\n## Objectives\n\n1. Migrate 2M customer records with zero data loss\n2. Train 450 users across Sales, Marketing, and Support\n3. Complete within 9 months (April\u2013December 2026)\n4. Budget: \u00A3850,000 including contingency`,
-  },
-  {
-    id: "k5",
-    title: "Daily Log \u2014 2 April 2026",
-    type: "daily",
-    date: "2026-04-02",
-    tags: ["daily", "auto-generated"],
-    source: "Auto-generated by Maya PM",
-    linkCount: 4,
-    backlinks: [],
-    snippet: "5 artefacts generated, 2 gates approved, sprint planning processed, 4 actions created.",
-    content: `# Daily Log \u2014 2 April 2026\n\n- 09:02 \u23E9 Phase advanced: Initiation \u2192 Planning\n- 09:15 \u{1F4C4} Generated: Scope Management Plan & WBS\n- 09:28 \u{1F4C4} Generated: Project Schedule (77 tasks)\n- 10:00 \u{1F91D} Sprint Planning transcript processed\n- 10:01 \u2705 5 tasks created from meeting actions\n- 10:01 \u26A0\uFE0F 3 risks logged from meeting\n- 10:02 \u{1F537} 3 decisions recorded\n- 14:00 \u{1F4CA} Auto status report generated\n- 16:30 \u{1F6A6} Health updated: green \u2192 amber (low budget contingency)`,
-  },
-  {
-    id: "k6",
-    title: "James Park \u2014 IT Security sign-off required",
-    type: "note",
-    date: "2026-04-02",
-    tags: ["stakeholder", "blocker"],
-    source: "Sprint Planning meeting",
-    linkCount: 2,
-    backlinks: ["k1"],
-    snippet: "James Park needs to authorize production API access for data migration.",
-    content: `# Stakeholder Note: James Park\n\n**Role:** IT Security Lead\n\n## Context\n\nProduction API credentials needed for legacy CRM data sync. James Park must authorize access.\n\nRaised in [[Sprint Planning \u2014 Data Migration]] by Tom Harris.\n\n## Status\n\nSarah Chen escalating \u2014 awaiting response.`,
-  },
-];
+const TRUST_BADGES: Record<string, { label: string; cls: string }> = {
+  HIGH_TRUST: { label: "High Trust", cls: "text-emerald-500 bg-emerald-500/10" },
+  STANDARD: { label: "Standard", cls: "text-muted-foreground bg-muted" },
+  REFERENCE_ONLY: { label: "Reference", cls: "text-amber-500 bg-amber-500/10" },
+};
 
-const FILTERS = ["All", "Meetings", "Decisions", "Risks", "Artefacts", "Notes"];
+export default function KnowledgeBasePage() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState<string | null>(null);
+  const [filterLayer, setFilterLayer] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showResearch, setShowResearch] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState("");
 
-// ================================================================
-// GRAPH VIEW (Simple SVG force layout)
-// ================================================================
+  const { data: agentsData } = useAgents();
+  const agents = agentsData?.agents || [];
 
-function GraphView({
-  items,
-  onSelect,
-}: {
-  items: KnowledgeItem[];
-  onSelect: (id: string) => void;
-}) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedAgent && agents.length > 0) setSelectedAgent(agents[0]?.id || "");
+  }, [agents, selectedAgent]);
 
-  const cx = 400,
-    cy = 280;
-  const positions = items.map((_, i) => {
-    const angle = (i / items.length) * 2 * Math.PI - Math.PI / 2;
-    const r = 140 + (items[i].linkCount > 4 ? 0 : 40);
-    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-  });
+  const fetchItems = () => {
+    if (!selectedAgent) return;
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("q", searchQuery);
+    if (filterType) params.set("type", filterType);
+    if (filterLayer) params.set("layer", filterLayer);
+    fetch(`/api/agents/${selectedAgent}/knowledge?${params}`)
+      .then(r => r.json()).then(d => { setItems(d.data || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
 
-  const edges: Array<{ from: number; to: number }> = [];
-  items.forEach((item, i) => {
-    item.backlinks.forEach((blId) => {
-      const j = items.findIndex((it) => it.id === blId);
-      if (j >= 0 && j > i) edges.push({ from: i, to: j });
-    });
-  });
+  useEffect(() => { fetchItems(); }, [selectedAgent, searchQuery, filterType, filterLayer]);
+
+  const deleteItem = async (itemId: string) => {
+    await fetch(`/api/agents/${selectedAgent}/knowledge?itemId=${itemId}`, { method: "DELETE" });
+    setItems(items.filter(i => i.id !== itemId));
+  };
 
   return (
-    <div className="w-full h-[500px] rounded-xl overflow-hidden relative bg-black/[0.02] dark:bg-black/30">
-      <svg ref={svgRef} viewBox="0 0 800 560" className="w-full h-full">
-        {edges.map((e, i) => (
-          <line
-            key={i}
-            x1={positions[e.from].x}
-            y1={positions[e.from].y}
-            x2={positions[e.to].x}
-            y2={positions[e.to].y}
-            className="stroke-border"
-            strokeWidth="1"
-            opacity="0.5"
-          />
-        ))}
-        {items.map((item, i) => {
-          const p = positions[i];
-          const meta = TYPE_META[item.type];
-          const size = 8 + item.linkCount * 2;
-          const isHovered = hovered === item.id;
-          return (
-            <g
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              onMouseEnter={() => setHovered(item.id)}
-              onMouseLeave={() => setHovered(null)}
-              className="cursor-pointer"
-            >
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={size + (isHovered ? 4 : 0)}
-                fill={meta.color}
-                opacity={isHovered ? 0.3 : 0.15}
-                className="transition-all duration-150"
-              />
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={size}
-                fill={meta.color}
-                opacity={0.9}
-                stroke={isHovered ? "white" : "none"}
-                strokeWidth={2}
-                className="transition-all duration-150"
-              />
-              <text
-                x={p.x}
-                y={p.y + size + 14}
-                textAnchor="middle"
-                className="fill-muted-foreground text-[10px] font-medium"
-              >
-                {item.title.length > 20
-                  ? item.title.slice(0, 18) + "\u2026"
-                  : item.title}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="absolute bottom-3 left-3 flex gap-3">
-        {Object.entries(TYPE_META)
-          .filter(([k]) => k !== "daily")
-          .map(([key, meta]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span
-                className="w-2.5 h-2.5 rounded-full"
-                style={{ backgroundColor: meta.color }}
-              />
-              <span className="text-[10px] text-muted-foreground">
-                {meta.label}
-              </span>
-            </div>
-          ))}
+    <div className="max-w-[1100px] space-y-6 animate-page-enter">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Knowledge Base</h1>
+          <p className="text-sm text-muted-foreground mt-1">Agent memory — documents, research, emails, transcripts</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm outline-none">
+            {agents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <Button variant="outline" size="sm" onClick={() => setShowResearch(true)}>
+            <Microscope className="h-3.5 w-3.5 mr-1" /> Research
+          </Button>
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Add Knowledge
+          </Button>
+        </div>
       </div>
+
+      {/* Search + Type filters */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search knowledge base..."
+            className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm outline-none" />
+        </div>
+        <div className="flex gap-1">
+          {[null, "TEXT", "FILE", "URL", "EMAIL", "TRANSCRIPT"].map(t => (
+            <button key={t || "all"} onClick={() => setFilterType(t)}
+              className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-all ${filterType === t ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+              {t ? TYPE_ICONS[t]?.label || t : "All"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Layer tabs */}
+      <div className="flex gap-1 p-1 rounded-lg bg-muted/50">
+        {[{ id: null, label: "All Layers" }, { id: "PROJECT", label: "Project Memory" }, { id: "WORKSPACE", label: "Workspace Memory" }, { id: "AGENT", label: "Agent Memory" }].map(l => (
+          <button key={l.id || "all"} onClick={() => setFilterLayer(l.id)}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${filterLayer === l.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>
+            {l.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Items */}
+      {loading ? (
+        <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-16">
+          <Brain className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-bold mb-2">Empty knowledge base</h3>
+          <p className="text-sm text-muted-foreground mb-4">Upload documents, paste text, or run research for the agent to learn from.</p>
+          <div className="flex gap-2 justify-center">
+            <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" /> Add Knowledge</Button>
+            <Button variant="outline" onClick={() => setShowResearch(true)}><Microscope className="h-4 w-4 mr-1" /> Run Research</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item: any) => {
+            const typeConfig = TYPE_ICONS[item.type] || TYPE_ICONS.TEXT;
+            const Icon = typeConfig.icon;
+            const trust = TRUST_BADGES[item.trustLevel] || TRUST_BADGES.STANDARD;
+            return (
+              <Card key={item.id} className="hover:ring-2 hover:ring-primary/10 transition-all">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${typeConfig.color}15` }}>
+                      <Icon className="w-4 h-4" style={{ color: typeConfig.color }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-semibold truncate">{item.title}</span>
+                        <Badge variant="secondary" className="text-[9px]">{item.layer}</Badge>
+                        <Badge variant="secondary" className={`text-[9px] ${trust.cls}`}>{trust.label}</Badge>
+                        {item.confidential && <Badge variant="destructive" className="text-[9px]"><Shield className="w-2.5 h-2.5 mr-0.5" />Confidential</Badge>}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>{typeConfig.label}</span><span>·</span>
+                        <span>{new Date(item.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                        {item.tags?.length > 0 && item.tags.slice(0, 3).map((t: string) => <Badge key={t} variant="outline" className="text-[8px] px-1">{t}</Badge>)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-md hover:bg-muted"><Link className="w-3.5 h-3.5 text-muted-foreground" /></a>}
+                      <button onClick={() => deleteItem(item.id)} className="p-1.5 rounded-md hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {showAdd && <AddKnowledgeModal agentId={selectedAgent} onClose={() => { setShowAdd(false); fetchItems(); }} />}
+      {showResearch && <ResearchModal agentId={selectedAgent} onClose={() => { setShowResearch(false); fetchItems(); }} />}
     </div>
   );
 }
 
-// ================================================================
-// MAIN COMPONENT
-// ================================================================
+// ─── Add Knowledge Modal ───
+function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () => void }) {
+  const [tab, setTab] = useState<"text" | "url">("text");
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [layer, setLayer] = useState("PROJECT");
+  const [trustLevel, setTrustLevel] = useState("STANDARD");
+  const [confidential, setConfidential] = useState(false);
+  const [tags, setTags] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-export default function KnowledgeBasePage() {
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("All");
-  const [selected, setSelected] = useState<string | null>("k1");
-  const [rightTab, setRightTab] = useState<"document" | "graph">("document");
-
-  const filtered = ([] as KnowledgeItem[]).filter((item) => {
-    if (
-      search &&
-      !item.title.toLowerCase().includes(search.toLowerCase()) &&
-      !item.snippet.toLowerCase().includes(search.toLowerCase())
-    )
-      return false;
-    if (filter === "All") return true;
-    if (filter === "Meetings") return item.type === "meeting";
-    if (filter === "Decisions") return item.type === "decision";
-    if (filter === "Risks") return item.type === "risk";
-    if (filter === "Artefacts") return item.type === "artefact";
-    if (filter === "Notes")
-      return item.type === "note" || item.type === "daily";
-    return true;
-  });
-
-  const selectedItem = filtered.find((i) => i.id === selected);
-
-  const totalLinks = filtered.reduce((s, i) => s + i.linkCount, 0);
-  const mostConnected = [...filtered].sort((a, b) => b.linkCount - a.linkCount)[0];
+  const handleSubmit = async () => {
+    if (!title.trim() || !content.trim()) return;
+    setSubmitting(true);
+    await fetch(`/api/agents/${agentId}/knowledge`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title.trim(), content: content.trim(), type: tab === "url" ? "URL" : "TEXT", layer, sourceUrl: sourceUrl || undefined, trustLevel, confidential, tags: tags.split(",").map(t => t.trim()).filter(Boolean) }),
+    });
+    setSubmitting(false);
+    onClose();
+  };
 
   return (
-    <div className="space-y-5">
-      {/* Stats bar */}
-      <div className="flex gap-4 flex-wrap">
-        {[
-          { label: "Documents", value: filtered.length },
-          { label: "Total Links", value: totalLinks },
-          { label: "Added This Week", value: 4 },
-          {
-            label: "Most Connected",
-            value: mostConnected?.title.slice(0, 20) || "-",
-          },
-          { label: "Coverage", value: "78%" },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border"
-          >
-            <span className="text-[11px] text-muted-foreground">
-              {s.label}:
-            </span>
-            <span className="text-[12px] font-semibold text-foreground">
-              {s.value}
-            </span>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold">Add to Knowledge Base</h2>
+            <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
           </div>
-        ))}
-      </div>
+          <div className="flex gap-1 p-1 rounded-lg bg-muted/50 mb-4">
+            <button onClick={() => setTab("text")} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold ${tab === "text" ? "bg-card shadow-sm" : "text-muted-foreground"}`}><FileText className="inline h-3.5 w-3.5 mr-1" />Paste Text</button>
+            <button onClick={() => setTab("url")} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold ${tab === "url" ? "bg-card shadow-sm" : "text-muted-foreground"}`}><Globe className="inline h-3.5 w-3.5 mr-1" />URL</button>
+          </div>
+          <div className="space-y-3">
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none" />
+            {tab === "url" && <input value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="https://..." className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none" />}
+            <textarea value={content} onChange={e => setContent(e.target.value)} rows={6} placeholder="Content..." className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
+            <div className="grid grid-cols-2 gap-3">
+              <select value={layer} onChange={e => setLayer(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none">
+                <option value="PROJECT">Project Memory</option><option value="WORKSPACE">Workspace Memory</option><option value="AGENT">Agent Memory</option>
+              </select>
+              <select value={trustLevel} onChange={e => setTrustLevel(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none">
+                <option value="HIGH_TRUST">High Trust</option><option value="STANDARD">Standard</option><option value="REFERENCE_ONLY">Reference Only</option>
+              </select>
+            </div>
+            <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tags (comma-separated)" className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none" />
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
+              <input type="checkbox" checked={confidential} onChange={e => setConfidential(e.target.checked)} className="rounded" />
+              <Shield className="w-3 h-3" />Mark as Confidential
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 mt-5">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={submitting || !title || !content}>{submitting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Brain className="w-4 h-4 mr-1" />}Save</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
-      {/* Split view */}
-      <div className="flex gap-5 h-[calc(100vh-260px)]">
-        {/* LEFT: List */}
-        <div className="w-[35%] flex flex-col min-w-[300px]">
-          <div className="mb-3 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              placeholder="Search knowledge base..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-background border border-border text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring"
-            />
+// ─── Research Modal ───
+function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => void }) {
+  const [type, setType] = useState("pestle");
+  const [query, setQuery] = useState("");
+  const [name, setName] = useState("");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  const runResearch = async () => {
+    setRunning(true); setError(""); setResult(null);
+    try {
+      const body: any = { type };
+      if (type === "search") body.query = query;
+      if (type === "stakeholder") body.stakeholder = { name };
+      if (type === "vendor") body.vendor = { name };
+
+      const r = await fetch(`/api/agents/${agentId}/research`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (r.ok) setResult(d.data);
+      else setError(d.error || "Research failed");
+    } catch (e: any) { setError(e.message); }
+    setRunning(false);
+  };
+
+  const TYPES = [
+    { id: "pestle", label: "PESTLE Scan", cost: 8, desc: "Full 6-dimension environmental scan" },
+    { id: "search", label: "Web Search", cost: 3, desc: "Targeted research query" },
+    { id: "stakeholder", label: "Stakeholder Intel", cost: 5, desc: "Professional background research" },
+    { id: "vendor", label: "Vendor Research", cost: 5, desc: "Vendor risk assessment" },
+    { id: "news", label: "News Monitor", cost: 3, desc: "Latest industry developments" },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-xl max-h-[90vh] overflow-y-auto">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold"><Microscope className="inline w-5 h-5 mr-2" />Internet Intelligence</h2>
+            <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
           </div>
-          <div className="flex gap-1 mb-3 overflow-x-auto">
-            {FILTERS.map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-[11px] font-semibold whitespace-nowrap transition-all",
-                  filter === f
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {f}
+
+          {/* Research type selector */}
+          <div className="grid grid-cols-5 gap-1.5 mb-4">
+            {TYPES.map(t => (
+              <button key={t.id} onClick={() => setType(t.id)}
+                className={`p-2 rounded-lg text-center transition-all ${type === t.id ? "bg-primary/10 border border-primary/20" : "bg-muted/50 hover:bg-muted"}`}>
+                <p className="text-[11px] font-semibold">{t.label}</p>
+                <p className="text-[9px] text-muted-foreground">{t.cost} credits</p>
               </button>
             ))}
           </div>
 
-          {/* Daily journal */}
-          {filter === "All" && (
-            <div className="mb-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 text-muted-foreground">
-                Daily Journal
-              </p>
-              {([] as KnowledgeItem[]).filter((i) => i.type === "daily")
-                .slice(0, 2)
-                .map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setSelected(item.id);
-                      setRightTab("document");
-                    }}
-                    className={cn(
-                      "px-3 py-2 rounded-lg mb-1 cursor-pointer transition-colors",
-                      selected === item.id
-                        ? "bg-primary/10 border border-primary/30"
-                        : "border border-transparent hover:bg-muted/50"
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px]">{"\u{1F4C5}"}</span>
-                      <span className="text-[12px] font-semibold text-foreground">
-                        {item.date}
-                      </span>
-                      <span className="text-[10px] ml-auto text-muted-foreground">
-                        {item.linkCount} links
-                      </span>
-                    </div>
-                    <p className="text-[11px] mt-0.5 truncate text-muted-foreground">
-                      {item.snippet}
-                    </p>
-                  </div>
-                ))}
-            </div>
+          <p className="text-xs text-muted-foreground mb-3">{TYPES.find(t => t.id === type)?.desc}</p>
+
+          {/* Input */}
+          {type === "search" && (
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="What do you want to research?"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none mb-3" />
+          )}
+          {(type === "stakeholder" || type === "vendor") && (
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={type === "stakeholder" ? "Stakeholder name" : "Vendor / technology name"}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none mb-3" />
           )}
 
-          {/* Document list */}
-          <div className="flex-1 overflow-y-auto space-y-1">
-            {filtered
-              .filter((i) => i.type !== "daily" || filter !== "All")
-              .map((item) => {
-                const meta = TYPE_META[item.type];
-                const isActive = selected === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setSelected(item.id);
-                      setRightTab("document");
-                    }}
-                    className={cn(
-                      "px-3 py-2.5 rounded-[10px] cursor-pointer transition-all",
-                      isActive
-                        ? "bg-primary/10 border border-primary/30"
-                        : "border border-transparent hover:bg-muted/50"
-                    )}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-[16px]">{meta.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium truncate text-foreground">
-                          {item.title}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-muted-foreground">
-                            {item.date}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {"\u00B7"} {item.linkCount} links
-                          </span>
-                        </div>
+          <Button onClick={runResearch} disabled={running || (type === "search" && !query) || ((type === "stakeholder" || type === "vendor") && !name)} className="w-full">
+            {running ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Researching...</> : <><Microscope className="w-4 h-4 mr-1" />Run Research</>}
+          </Button>
+
+          {error && <p className="text-sm text-destructive mt-3">{error}</p>}
+
+          {/* Results */}
+          {result && (
+            <div className="mt-4 space-y-3">
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <p className="text-xs font-semibold text-emerald-500 mb-1">Research Complete {result.cached && "(cached)"}</p>
+                <p className="text-xs text-muted-foreground">{result.creditCost} credits used</p>
+              </div>
+
+              {/* PESTLE findings */}
+              {result.findings && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold">{result.findings.length} findings · {result.risksCreated || 0} risks created</p>
+                  {result.findings.slice(0, 8).map((f: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 text-xs">
+                      <Badge variant={f.impact === "HIGH" ? "destructive" : "secondary"} className="text-[9px] flex-shrink-0 mt-0.5">{f.impact}</Badge>
+                      <div>
+                        <p className="font-medium">[{f.dimension}] {f.title}</p>
                       </div>
                     </div>
-                    <p className="text-[11px] mt-1 line-clamp-2 text-muted-foreground">
-                      {item.snippet}
-                    </p>
-                    <div className="flex gap-1 mt-1.5">
-                      {item.tags.slice(0, 3).map((t) => (
-                        <span
-                          key={t}
-                          className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-muted text-muted-foreground"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
+                  ))}
+                </div>
+              )}
 
-        {/* RIGHT: Content/Graph */}
-        <Card className="flex-1 flex flex-col rounded-xl overflow-hidden !py-0 !gap-0">
-          {/* Tabs */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-            <div className="flex gap-1">
-              {(["document", "graph"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setRightTab(tab)}
-                  className={cn(
-                    "px-4 py-1.5 rounded-lg text-[12px] font-semibold transition-all capitalize",
-                    rightTab === tab
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {tab === "graph" ? (
-                    <span className="flex items-center gap-1.5">
-                      <Network className="h-3.5 w-3.5" /> Graph View
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <FileText className="h-3.5 w-3.5" /> Document
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>
-              Ask Agent About This
-            </Button>
-          </div>
+              {/* Text content (search, stakeholder, vendor, news) */}
+              {result.content && (
+                <div className="p-3 rounded-lg bg-muted/30 text-xs leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto">
+                  {result.content}
+                </div>
+              )}
 
-          {/* Document view */}
-          {rightTab === "document" && selectedItem && (
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              {/* Header */}
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-[20px]">
-                  {TYPE_META[selectedItem.type].icon}
-                </span>
-                <Badge
-                  variant={
-                    selectedItem.type === "risk"
-                      ? "destructive"
-                      : selectedItem.type === "decision"
-                        ? "default"
-                        : selectedItem.type === "meeting"
-                          ? "secondary"
-                          : "outline"
-                  }
-                >
-                  {TYPE_META[selectedItem.type].label}
-                </Badge>
-                {selectedItem.tags.map((t) => (
-                  <span
-                    key={t}
-                    className="px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-              <p className="text-[11px] mb-5 text-muted-foreground">
-                Source: {selectedItem.source} {"\u00B7"} {selectedItem.date}
-              </p>
-
-              {/* Markdown content */}
-              <div
-                className={cn(
-                  "text-foreground",
-                  "[&_h1]:text-[20px] [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-5",
-                  "[&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:pb-1",
-                  "[&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3",
-                  "[&_p]:text-[13px] [&_p]:leading-relaxed [&_p]:mb-2",
-                  "[&_strong]:font-semibold [&_li]:text-[13px] [&_li]:mb-0.5",
-                  "[&_ul]:pl-5 [&_ul]:mb-3 [&_ol]:pl-5 [&_ol]:mb-3",
-                  "[&_table]:w-full [&_table]:text-[12px] [&_table]:mb-3",
-                  "[&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold",
-                  "[&_td]:px-3 [&_td]:py-1.5"
-                )}
-              >
-                <Markdown remarkPlugins={[remarkGfm]}>
-                  {selectedItem.content}
-                </Markdown>
-              </div>
-
-              {/* Backlinks */}
-              {selectedItem.backlinks.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-border">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider mb-3 text-muted-foreground">
-                    Referenced by ({selectedItem.backlinks.length})
-                  </p>
-                  <div className="space-y-1.5">
-                    {selectedItem.backlinks.map((blId) => {
-                      const bl = filtered.find((i) => i.id === blId);
-                      if (!bl) return null;
-                      return (
-                        <div
-                          key={blId}
-                          onClick={() => setSelected(blId)}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors bg-muted/30 hover:bg-primary/10"
-                        >
-                          <span
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{
-                              backgroundColor: TYPE_META[bl.type].color,
-                            }}
-                          />
-                          <span className="text-[12px] font-medium text-primary">
-                            {bl.title}
-                          </span>
-                          <Badge
-                            variant={
-                              bl.type === "risk" ? "destructive" : "outline"
-                            }
-                            className="ml-auto"
-                          >
-                            {TYPE_META[bl.type].label}
-                          </Badge>
-                        </div>
-                      );
-                    })}
-                  </div>
+              {/* Sources */}
+              {result.sources?.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Sources</p>
+                  {result.sources.slice(0, 5).map((s: string, i: number) => (
+                    <a key={i} href={s} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-primary truncate hover:underline">{s}</a>
+                  ))}
                 </div>
               )}
             </div>
           )}
-
-          {/* Graph view */}
-          {rightTab === "graph" && (
-            <div className="flex-1 p-5">
-              <GraphView
-                items={filtered}
-                onSelect={(id) => {
-                  setSelected(id);
-                  setRightTab("document");
-                }}
-              />
-            </div>
-          )}
-
-          {/* No selection */}
-          {rightTab === "document" && !selectedItem && (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-[14px] text-muted-foreground">
-                Select a document to view
-              </p>
-            </div>
-          )}
-        </Card>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

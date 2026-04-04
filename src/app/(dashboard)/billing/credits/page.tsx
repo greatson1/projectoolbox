@@ -222,9 +222,9 @@ export default function CreditCentrePage() {
           {/* Quick actions */}
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>+200</Button>
-              <Button size="sm" onClick={() => toast.info("Coming soon")}>+500</Button>
-              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>+1000</Button>
+              <Button variant="ghost" size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_500" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+200</Button>
+              <Button size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_500" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+500</Button>
+              <Button variant="ghost" size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_2000" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+1000</Button>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">Auto top-up</span>

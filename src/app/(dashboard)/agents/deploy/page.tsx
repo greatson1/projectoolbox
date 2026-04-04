@@ -48,7 +48,8 @@ interface WizardState {
   // Step 4
   team: TeamMember[]; stakeholders: Stakeholder[];
   // Step 5
-  agentName: string; agentGradient: number;
+  agentName: string; agentTitle: string; agentGradient: number;
+  domainTags: string; defaultGreeting: string; monthlyBudget: string;
   personalityFormal: number; personalityConcise: number;
   autonomyLevel: number; reportSchedule: string;
   notifSlack: boolean; notifEmail: boolean; notifTelegram: boolean;
@@ -69,7 +70,8 @@ const INIT_STATE: WizardState = {
     { name: "Dr. Emma Wright", role: "Executive Sponsor", org: "Atlas Corp", power: 90, interest: 70 },
     { name: "Mark Phillips", role: "Programme Director", org: "Atlas Corp", power: 75, interest: 85 },
   ],
-  agentName: "Alpha", agentGradient: 0, personalityFormal: 35, personalityConcise: 50,
+  agentName: "Alpha", agentTitle: "", agentGradient: 0, domainTags: "", defaultGreeting: "", monthlyBudget: "",
+  personalityFormal: 35, personalityConcise: 50,
   autonomyLevel: 3, reportSchedule: "weekly",
   notifSlack: true, notifEmail: true, notifTelegram: false,
   intJira: true, intGithub: true, intConfluence: false,
@@ -246,12 +248,16 @@ export default function ProjectWizardPage() {
       await advanceStage(2);
       const agent = await createAgent.mutateAsync({
         name: data.agentName || "Agent",
+        title: data.agentTitle || undefined,
         autonomyLevel: data.autonomyLevel || 3,
         personality: {
           formalityLevel: data.personalityFormal,
           conciseness: data.personalityConcise,
         },
         gradient: GRADIENT_PRESETS[data.agentGradient]?.gradient,
+        domainTags: data.domainTags ? data.domainTags.split(",").map((t: string) => t.trim()).filter(Boolean) : [],
+        defaultGreeting: data.defaultGreeting || undefined,
+        monthlyBudget: data.monthlyBudget ? parseInt(data.monthlyBudget) : undefined,
       });
 
       // Stage 3: Deploy agent to project
@@ -649,6 +655,26 @@ export default function ProjectWizardPage() {
                       </FieldGroup>
                     </div>
                   </div>
+                  {/* Agent Title */}
+                  <FieldGroup label="Agent Title (Role)">
+                    <StyledInput value={data.agentTitle || ""} onChange={v => upd({ agentTitle: v })} placeholder="e.g. Senior Project Analyst, Agile Delivery Lead" />
+                  </FieldGroup>
+
+                  {/* Domain Tags */}
+                  <FieldGroup label="Domain / Specialism Tags">
+                    <StyledInput value={data.domainTags || ""} onChange={v => upd({ domainTags: v })} placeholder="e.g. Agile, PRINCE2, Construction, IT Ops (comma-separated)" />
+                  </FieldGroup>
+
+                  {/* Default Greeting */}
+                  <FieldGroup label="Default Greeting (optional)">
+                    <StyledInput value={data.defaultGreeting || ""} onChange={v => upd({ defaultGreeting: v })} placeholder="e.g. Good morning! I'm ready to manage your project." />
+                  </FieldGroup>
+
+                  {/* Monthly Credit Budget */}
+                  <FieldGroup label="Monthly Credit Budget">
+                    <StyledInput value={data.monthlyBudget || ""} onChange={v => upd({ monthlyBudget: v })} placeholder="e.g. 500 (leave empty for unlimited)" />
+                  </FieldGroup>
+
                   {/* Gradient picker */}
                   <FieldGroup label="Avatar Colour">
                     <div className="flex gap-2">

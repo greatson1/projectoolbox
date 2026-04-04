@@ -521,7 +521,7 @@ export default function NotificationsPage() {
             </div>
           </div>
 
-          <Button variant="default" size="sm" className="mt-4" onClick={() => toast.info("Coming soon")}>Save Preferences</Button>
+          <Button variant="default" size="sm" className="mt-4" onClick={async () => { try { await fetch("/api/notifications/preferences", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ prefToggles, deliveryEmail, deliverySlack, deliveryPush, quietStart, quietEnd }) }); toast.success("Preferences saved"); } catch { toast.error("Failed to save"); } }}>Save Preferences</Button>
         </Card>
       )}
     </div>

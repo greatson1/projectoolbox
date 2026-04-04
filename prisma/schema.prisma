@@ -53,6 +53,7 @@ model User {
   image              String?
   role               UserRole        @default(MEMBER)
   onboardingComplete Boolean         @default(false)
+  notificationPrefs  Json?
   orgId              String?
   org                Organisation?   @relation(fields: [orgId], references: [id])
   accounts           Account[]
@@ -60,6 +61,7 @@ model User {
   projects           ProjectMember[]
   approvals          Approval[]
   notifications      Notification[]
+  decisions          Decision[]
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 }
@@ -122,6 +124,7 @@ model Project {
   reports        Report[]
   meetings       Meeting[]
   calendarEvents CalendarEvent[]
+  decisions      Decision[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
@@ -657,6 +660,23 @@ model KnowledgeBaseItem {
 
   @@index([orgId, layer])
   @@index([agentId, type])
+  @@index([projectId])
+}
+
+// ─── Project Decisions ───
+
+model Decision {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  text      String
+  decidedBy String?
+  rationale String?  @db.Text
+  meetingId String?
+  createdAt DateTime @default(now())
+
   @@index([projectId])
 }
 

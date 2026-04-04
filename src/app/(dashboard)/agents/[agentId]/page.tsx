@@ -383,7 +383,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               </div>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>
+              <Button variant="ghost" size="sm" onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}>
                 <Pause className="mr-1 size-3.5" /> Pause
               </Button>
               <Link href="/agents/chat">
@@ -391,10 +391,12 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   <MessageSquare className="mr-1 size-3.5" /> Chat
                 </Button>
               </Link>
-              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>
-                <RefreshCw className="mr-1 size-3.5" /> Reassign
-              </Button>
-              <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>
+              <Link href="/agents/deploy">
+                <Button variant="ghost" size="sm">
+                  <RefreshCw className="mr-1 size-3.5" /> Reassign
+                </Button>
+              </Link>
+              <Button variant="default" size="sm" onClick={() => { const el = document.querySelector('[value="configuration"]'); if (el) (el as HTMLElement).click(); }}>
                 <Settings className="mr-1 size-3.5" /> Configure
               </Button>
             </div>
