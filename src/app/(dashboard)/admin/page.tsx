@@ -36,20 +36,7 @@ const TABS = [
 
 type TabId = typeof TABS[number]["id"];
 
-const MEMBERS = [
-  { name: "Dr. Ty Beetseh", email: "ty@pmgtsolutions.com", role: "Owner", status: "active", lastActive: "Now", projects: 5, initials: "TB" },
-  { name: "Sarah Chen", email: "sarah@pmgtsolutions.com", role: "Admin", status: "active", lastActive: "2h ago", projects: 4, initials: "SC" },
-  { name: "James Okafor", email: "james@pmgtsolutions.com", role: "Manager", status: "active", lastActive: "1h ago", projects: 3, initials: "JO" },
-  { name: "Priya Sharma", email: "priya@pmgtsolutions.com", role: "Member", status: "active", lastActive: "30m ago", projects: 2, initials: "PS" },
-  { name: "Liam Barrett", email: "liam@pmgtsolutions.com", role: "Member", status: "active", lastActive: "3h ago", projects: 2, initials: "LB" },
-  { name: "Mia Novak", email: "mia@pmgtsolutions.com", role: "Member", status: "active", lastActive: "5h ago", projects: 3, initials: "MN" },
-  { name: "David Kim", email: "david@pmgtsolutions.com", role: "Viewer", status: "invited", lastActive: "—", projects: 0, initials: "DK" },
-];
-
-const PENDING_INVITES = [
-  { email: "david@pmgtsolutions.com", role: "Viewer", sentAt: "1 Apr 2026", expiresIn: "6 days" },
-  { email: "emma.wright@atlascorp.com", role: "Member", sentAt: "31 Mar 2026", expiresIn: "5 days" },
-];
+// No mock data — all from API
 
 const ROLES = [
   { name: "Owner", color: "#8B5CF6", desc: "Full access. Billing, team, delete org.", count: 1 },
@@ -73,67 +60,18 @@ const PERMISSIONS = [
   { feature: "Delete org", Owner: true, Admin: false, Manager: false, Member: false, Viewer: false },
 ];
 
-const SESSIONS = [
-  { device: "Chrome on Windows 11", ip: "82.29.185.213", location: "London, UK", lastActive: "Now", current: true },
-  { device: "Safari on macOS", ip: "82.29.185.214", location: "London, UK", lastActive: "2h ago", current: false },
-  { device: "Mobile App (iOS)", ip: "86.12.45.67", location: "Manchester, UK", lastActive: "1d ago", current: false },
-];
-
-const INTEGRATIONS_CONNECTED = [
-  { name: "Slack", icon: "💬", status: "Connected", lastSync: "2 min ago", desc: "Send notifications, sync channels" },
-  { name: "Google Calendar", icon: "📅", status: "Connected", lastSync: "5 min ago", desc: "Meeting scheduling, agent calendar" },
-  { name: "Jira", icon: "🔗", status: "Connected", lastSync: "12 min ago", desc: "Two-way task sync, issue tracking" },
-  { name: "GitHub", icon: "🐙", status: "Connected", lastSync: "30 min ago", desc: "PR tracking, code commits" },
-];
-
-const INTEGRATIONS_AVAILABLE = [
-  { name: "MS Teams", icon: "📺", desc: "Team chat and meeting integration" },
-  { name: "Azure DevOps", icon: "🔵", desc: "Work items, pipelines, boards" },
-  { name: "Zoom", icon: "📹", desc: "Meeting bot, transcript capture" },
-  { name: "Confluence", icon: "📝", desc: "Wiki sync, knowledge base" },
-  { name: "Notion", icon: "📓", desc: "Document sync, databases" },
-];
-
-const INTEGRATIONS_SOON = [
-  { name: "Basecamp", icon: "🏕️" },
-  { name: "Monday.com", icon: "📊" },
-  { name: "Asana", icon: "🎯" },
-];
-
-const API_KEYS = [
-  { name: "Production Key", key: "ptx_live_sk_****...3f8a", created: "15 Jan 2026", lastUsed: "2h ago", status: "active" },
-  { name: "Development Key", key: "ptx_test_sk_****...9c2b", created: "20 Feb 2026", lastUsed: "1d ago", status: "active" },
-];
-
-const API_USAGE = [
-  { day: "Mon", calls: 342 }, { day: "Tue", calls: 456 }, { day: "Wed", calls: 523 },
-  { day: "Thu", calls: 478 }, { day: "Fri", calls: 612 }, { day: "Sat", calls: 134 }, { day: "Sun", calls: 89 },
-];
-
-const WEBHOOKS = [
-  { url: "https://api.pmgtsolutions.com/hooks/ptx", events: ["agent.action", "approval.created", "phase.completed"], status: "active", successRate: "99.2%" },
-  { url: "https://slack.pmgtsolutions.com/webhook", events: ["risk.escalated", "budget.threshold"], status: "active", successRate: "100%" },
-];
-
-const COMPLIANCE_BADGES = [
-  { name: "GDPR", status: "Compliant", icon: "🇪🇺" },
-  { name: "DPA 2018", status: "Compliant", icon: "🇬🇧" },
-  { name: "SOC 2 Type II", status: "In Progress", icon: "🔒" },
-  { name: "ISO 27001", status: "Planned", icon: "📜" },
-  { name: "Cyber Essentials", status: "Certified", icon: "🛡️" },
-];
-
-const AUDIT_LOG = [
-  { ts: "02 Apr 10:24", user: "Alpha (Agent)", action: "Generated document", target: "Risk Register v3", ip: "—", result: "success" },
-  { ts: "02 Apr 10:15", user: "Sarah Chen", action: "Approved artefact", target: "Phase Gate Checklist", ip: "82.29.185.213", result: "success" },
-  { ts: "02 Apr 09:45", user: "Bravo (Agent)", action: "Processed transcript", target: "Sprint Retro Meeting", ip: "—", result: "success" },
-  { ts: "02 Apr 09:30", user: "Ty Beetseh", action: "Updated settings", target: "Security — 2FA enabled", ip: "82.29.185.213", result: "success" },
-  { ts: "01 Apr 17:30", user: "James Okafor", action: "Created project", target: "Cloud Migration Q3", ip: "86.12.45.67", result: "success" },
-  { ts: "01 Apr 16:00", user: "Charlie (Agent)", action: "Escalated risk", target: "Vendor delay — Riverside", ip: "—", result: "success" },
-  { ts: "01 Apr 14:20", user: "Priya Sharma", action: "Login", target: "Web app", ip: "82.29.185.215", result: "success" },
-  { ts: "01 Apr 13:00", user: "Unknown", action: "Login attempt", target: "API", ip: "45.33.21.8", result: "failed" },
-  { ts: "01 Apr 11:00", user: "Mia Novak", action: "Deployed agent", target: "Echo — Brand Refresh", ip: "82.29.185.213", result: "success" },
-  { ts: "31 Mar 16:45", user: "Ty Beetseh", action: "Regenerated API key", target: "Production Key", ip: "82.29.185.213", result: "success" },
+// Reference data only — not tenant-specific
+const ALL_INTEGRATIONS = [
+  { name: "Slack", icon: "💬", desc: "Send notifications to project channels", configKey: "slackWebhookUrl" },
+  { name: "Google Calendar", icon: "📅", desc: "Meeting scheduling, agent calendar", configKey: "googleCalendarConnected" },
+  { name: "Zoom", icon: "📹", desc: "Meeting creation, transcript capture", configKey: "zoomConnected" },
+  { name: "Resend", icon: "📧", desc: "Agent email addresses, notifications", configKey: "resendConnected", alwaysOn: true },
+  { name: "Perplexity", icon: "🔍", desc: "Web research, PESTLE scanning", configKey: "perplexityConnected" },
+  { name: "Jira", icon: "🔗", desc: "Two-way task sync, issue tracking", configKey: "jiraConnected" },
+  { name: "GitHub", icon: "🐙", desc: "PR tracking, code commits", configKey: "githubConnected" },
+  { name: "MS Teams", icon: "📺", desc: "Team chat and meeting integration", configKey: "teamsConnected" },
+  { name: "Confluence", icon: "📝", desc: "Wiki sync, knowledge base", configKey: "confluenceConnected" },
+  { name: "Notion", icon: "📓", desc: "Document sync, databases", configKey: "notionConnected" },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -167,7 +105,7 @@ export default function AdminSettingsPage() {
   const { data: apiAudit } = useAuditLog();
   const org = orgSettings || {};
   const members = apiTeam || [];
-  const rawAudit = (apiAudit || []).map((e: any) => ({
+  const auditLog = (apiAudit || []).map((e: any) => ({
     ts: e.createdAt ? new Date(e.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—",
     user: e.userId || "System",
     action: e.action || "",
@@ -175,7 +113,6 @@ export default function AdminSettingsPage() {
     ip: e.ip || "—",
     result: "success",
   }));
-  const auditLog = rawAudit.length > 0 ? rawAudit : AUDIT_LOG; // Fallback to mock if empty
   const filteredAudit = auditLog.filter((e: any) => {
     if (auditSearch && !e.action.toLowerCase().includes(auditSearch.toLowerCase()) && !(e.user || "").toLowerCase().includes(auditSearch.toLowerCase()) && !e.target.toLowerCase().includes(auditSearch.toLowerCase())) return false;
     if (auditTypeFilter === "agents" && !(e.user || "").includes("Agent")) return false;
@@ -454,80 +391,67 @@ export default function AdminSettingsPage() {
             {/* Active Sessions */}
             <Card>
               <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Active Sessions</h3>
-              <div className="space-y-2">
-                {([] as any[]).map((s, i) => (
-                  <div key={i} className="flex items-center justify-between py-2.5 px-3 rounded-[8px]"
-                    style={{ background: s.current ? `${"var(--primary)"}06` : "transparent", border: `1px solid ${s.current ? "var(--primary)" + "22" : "var(--border)" + "11"}` }}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[16px]">{s.device.includes("Chrome") ? "🖥️" : s.device.includes("Safari") ? "💻" : "📱"}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{s.device}</p>
-                          {s.current && <Badge variant="default">Current</Badge>}
-                        </div>
-                        <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{s.ip} · {s.location} · {s.lastActive}</p>
-                      </div>
-                    </div>
-                    {!s.current && <Button variant="ghost" size="sm" disabled title="Coming soon">Revoke</Button>}
-                  </div>
-                ))}
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">Your current session is active. Session management will show all active browser sessions once NextAuth session tracking is enabled.</p>
               </div>
+              <Button variant="default" size="sm" onClick={() => { saveOrg.mutate({ securityPolicy: { pwdLength, pwdUpper, pwdNumber, pwdSpecial, require2fa, sessionTimeout } }); toast.success("Security settings saved"); }}>Save Security Settings</Button>
             </Card>
           </>
         )}
 
         {/* ─── TAB 5: INTEGRATIONS ─── */}
-        {tab === "integrations" && (
-          <>
-            <TabHeader title="Integrations" desc="Connect your tools to supercharge your agents" />
+        {tab === "integrations" && (() => {
+          const orgMeta = (org as any)?.autoTopUp || {};
+          const connected = ALL_INTEGRATIONS.filter(i => i.alwaysOn || orgMeta[i.configKey]);
+          const available = ALL_INTEGRATIONS.filter(i => !i.alwaysOn && !orgMeta[i.configKey]);
+          return (
+            <>
+              <TabHeader title="Integrations" desc="Connect your tools to supercharge your agents" />
 
-            <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Connected</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-              {([] as any[]).map(int => (
-                <Card key={int.name}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[24px]">{int.icon}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
-                          <Badge variant="default">Connected</Badge>
+              {connected.length > 0 && (
+                <>
+                  <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Connected ({connected.length})</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+                    {connected.map(int => (
+                      <Card key={int.name}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="text-[24px]">{int.icon}</span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+                                <Badge variant="default">Connected</Badge>
+                              </div>
+                              <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
-                        <p className="text-[10px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>Last sync: {int.lastSync}</p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm" disabled title="Coming soon">Configure</Button>
+                      </Card>
+                    ))}
                   </div>
-                </Card>
-              ))}
-            </div>
+                </>
+              )}
 
-            <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--primary)" }}>Available</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-              {([] as any[]).map(int => (
-                <Card key={int.name}>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-[20px]">{int.icon}</span>
-                    <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+              {available.length > 0 && (
+                <>
+                  <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--primary)" }}>Available ({available.length})</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {available.map(int => (
+                      <Card key={int.name}>
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-[20px]">{int.icon}</span>
+                          <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+                        </div>
+                        <p className="text-[11px] mb-3" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
+                        <Button variant="outline" size="sm" className="w-full" onClick={() => toast.info(`Contact support to connect ${int.name}`)}>Connect</Button>
+                      </Card>
+                    ))}
                   </div>
-                  <p className="text-[11px] mb-3" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
-                  <Button variant="default" size="sm" className="w-full" disabled title="Coming soon">Connect</Button>
-                </Card>
-              ))}
-            </div>
-
-            <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Coming Soon</h4>
-            <div className="flex gap-3">
-              {([] as any[]).map(int => (
-                <div key={int.name} className="flex items-center gap-2 px-3 py-2 rounded-[8px]" style={{ background: `${"var(--border)"}11`, border: `1px solid ${"var(--border)"}22` }}>
-                  <span className="text-[16px]">{int.icon}</span>
-                  <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{int.name}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+                </>
+              )}
+            </>
+          );
+        })()}
 
         {/* ─── TAB 6: API & WEBHOOKS ─── */}
         {tab === "api" && (
@@ -540,40 +464,20 @@ export default function AdminSettingsPage() {
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>API Keys</h3>
                 </div>
-                <div className="space-y-2">
-                  {([] as any[]).map(k => (
-                    <div key={k.name} className="p-3 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{k.name}</span>
-                        <Badge variant="default">{k.status}</Badge>
-                      </div>
-                      <code className="text-[11px] font-mono" style={{ color: "var(--muted-foreground)" }}>{k.key}</code>
-                      <div className="flex items-center gap-3 mt-1.5 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
-                        <span>Created {k.created}</span><span>Last used {k.lastUsed}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <ApiKeysSection orgId={org?.id} />
                 <div className="mt-3 p-2 rounded-[6px] text-[10px]" style={{ background: `${"#F59E0B"}08`, color: "#F59E0B" }}>
                   Rate limit: 1,000 requests/min · 100,000/day
                 </div>
               </Card>
 
-              {/* API Usage */}
+              {/* Credit Usage */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>API Usage (7 Days)</h3>
-                <div style={{ height: 180 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[] as any[]}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
-                      <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                      <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                      <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
-                      <Bar dataKey="calls" fill={"var(--primary)"} radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Credit Usage</h3>
+                <div className="p-4 text-center">
+                  <p className="text-3xl font-bold" style={{ color: "var(--primary)" }}>{org?.creditBalance?.toLocaleString() || 0}</p>
+                  <p className="text-xs text-muted-foreground mt-1">credits remaining</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Plan: {org?.plan || "FREE"}</p>
                 </div>
-                <p className="text-[10px] text-center mt-1" style={{ color: "var(--muted-foreground)" }}>Total: {([] as any[]).reduce((s, d) => s + d.calls, 0).toLocaleString()} calls this week</p>
               </Card>
             </div>
 
@@ -582,24 +486,9 @@ export default function AdminSettingsPage() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Webhook Endpoints</h3>
               </div>
-              <div className="space-y-2">
-                {([] as any[]).map((wh, i) => (
-                  <div key={i} className="p-3 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <code className="text-[11px] font-mono" style={{ color: "var(--primary)" }}>{wh.url}</code>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="default">{wh.status}</Badge>
-                        <span className="text-[10px]" style={{ color: "#10B981" }}>{wh.successRate} success</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {wh.events.map(ev => (
-                        <span key={ev} className="text-[9px] px-1.5 py-0.5 rounded-[4px] font-mono"
-                          style={{ background: `${"var(--primary)"}12`, color: "var(--primary)" }}>{ev}</span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">No webhook endpoints configured. Webhooks allow external systems to receive real-time events from Projectoolbox (agent actions, approvals, phase completions).</p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => toast.info("Webhook configuration coming soon")}>Add Webhook</Button>
               </div>
             </Card>
           </>
@@ -642,21 +531,25 @@ export default function AdminSettingsPage() {
                 </div>
               </Card>
 
-              {/* Compliance badges */}
+              {/* Compliance */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Compliance Certifications</h3>
+                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Compliance</h3>
                 <div className="space-y-2">
-                  {([] as any[]).map(b => (
-                    <div key={b.name} className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[16px]">{b.icon}</span>
-                        <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{b.name}</span>
-                      </div>
-                      <Badge variant={b.status === "Compliant" || b.status === "Certified" ? "default" : b.status === "In Progress" ? "secondary" : "outline"}>
-                        {b.status}
-                      </Badge>
+                  <div className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[16px]">🇪🇺</span>
+                      <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>GDPR</span>
                     </div>
-                  ))}
+                    <Badge variant="default">Compliant</Badge>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[16px]">🇬🇧</span>
+                      <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>UK DPA 2018</span>
+                    </div>
+                    <Badge variant="default">Compliant</Badge>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-2">Data is stored in {dataResidency === "uk" ? "UK (London)" : dataResidency === "eu" ? "EU (Frankfurt)" : "US (Virginia)"} via Supabase. All data encrypted at rest and in transit.</p>
                 </div>
               </Card>
             </div>
@@ -800,6 +693,53 @@ function Modal({ title, onClose, children,  }: { title: string; onClose: () => v
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+// API Keys section — reads from ApiKey table
+function ApiKeysSection({ orgId }: { orgId?: string }) {
+  const [keys, setKeys] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!orgId) { setLoading(false); return; }
+    fetch("/api/admin/api-keys").then(r => r.json()).then(d => {
+      setKeys(d.data || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [orgId]);
+
+  if (loading) return <div className="animate-pulse h-16 bg-muted rounded" />;
+
+  if (keys.length === 0) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-xs text-muted-foreground">No API keys generated yet.</p>
+        <Button variant="outline" size="sm" className="mt-2" onClick={async () => {
+          const r = await fetch("/api/admin/api-keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Default Key" }) });
+          const d = await r.json();
+          if (d.data) { setKeys([d.data]); toast.success("API key generated"); }
+        }}>Generate API Key</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {keys.map((k: any) => (
+        <div key={k.id} className="p-3 rounded-lg bg-muted/30">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold">{k.name}</span>
+            <Badge variant={k.revokedAt ? "destructive" : "default"}>{k.revokedAt ? "Revoked" : "Active"}</Badge>
+          </div>
+          <code className="text-[11px] font-mono text-muted-foreground">****{k.lastFour}</code>
+          <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+            <span>Created {new Date(k.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+            {k.lastUsed && <span>Last used {new Date(k.lastUsed).toLocaleDateString("en-GB")}</span>}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
