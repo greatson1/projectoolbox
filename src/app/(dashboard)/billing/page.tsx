@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useBilling } from "@/hooks/use-api";
 import { cn, PLAN_LIMITS } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   CreditCard, Download, ChevronLeft, ChevronRight, Zap,
   Crown, Mail, Bell, FileText, Shield, Receipt,
@@ -238,8 +239,8 @@ export default function BillingPage() {
           </div>
         </div>
         <div className="flex gap-2 mt-4">
-          <Button>Upgrade Plan</Button>
-          <Button variant="ghost">Manage Subscription</Button>
+          <Link href="/billing"><Button onClick={() => toast.info("Coming soon")}>Upgrade Plan</Button></Link>
+          <Link href="/billing"><Button variant="ghost" onClick={() => toast.info("Coming soon")}>Manage Subscription</Button></Link>
           <Link href="/billing/credits">
             <Button variant="outline"><Zap className="w-4 h-4 mr-1" /> Credit Centre</Button>
           </Link>

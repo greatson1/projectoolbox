@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 /**
  * Admin Settings — 8-tab vertical navigation.
@@ -212,13 +213,9 @@ export default function AdminSettingsPage() {
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-[12px] flex items-center justify-center text-[24px] font-bold text-white"
                     style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>P</div>
-                  <div>
-                    <Button variant="ghost" size="sm">Upload Logo</Button>
-                    <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>PNG or SVG, max 2MB</p>
-                  </div>
                 </div>
               </div>
-              <Button variant="default" size="sm" className="mt-4">Save Changes</Button>
+              <Button variant="default" size="sm" className="mt-4" onClick={() => toast.info("Coming soon")}>Save Changes</Button>
             </Card>
           </>
         )}
@@ -261,7 +258,7 @@ export default function AdminSettingsPage() {
                       <td className="py-3 px-4" style={{ color: "var(--muted-foreground)" }}>{m.lastActive}</td>
                       <td className="py-3 px-4">{m.projects}</td>
                       <td className="py-3 px-4">
-                        <Button variant="ghost" size="sm">Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Edit</Button>
                       </td>
                     </tr>
                   ))}
@@ -282,8 +279,7 @@ export default function AdminSettingsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary">{inv.role}</Badge>
-                      <Button variant="ghost" size="sm">Resend</Button>
-                      <Button variant="ghost" size="sm" disabled title="Coming soon">Revoke</Button>
+                      <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Resend</Button>
                     </div>
                   </div>
                 ))}
@@ -526,7 +522,6 @@ export default function AdminSettingsPage() {
               <Card>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>API Keys</h3>
-                  <Button variant="ghost" size="sm">+ Create Key</Button>
                 </div>
                 <div className="space-y-2">
                   {([] as any[]).map(k => (
@@ -538,11 +533,6 @@ export default function AdminSettingsPage() {
                       <code className="text-[11px] font-mono" style={{ color: "var(--muted-foreground)" }}>{k.key}</code>
                       <div className="flex items-center gap-3 mt-1.5 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
                         <span>Created {k.created}</span><span>Last used {k.lastUsed}</span>
-                      </div>
-                      <div className="flex gap-1.5 mt-2">
-                        <Button variant="ghost" size="sm">Copy</Button>
-                        <Button variant="ghost" size="sm" disabled title="Coming soon">Regenerate</Button>
-                        <Button variant="ghost" size="sm" disabled title="Coming soon">Revoke</Button>
                       </div>
                     </div>
                   ))}
@@ -574,7 +564,6 @@ export default function AdminSettingsPage() {
             <Card>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Webhook Endpoints</h3>
-                <Button variant="ghost" size="sm">+ Add Endpoint</Button>
               </div>
               <div className="space-y-2">
                 {([] as any[]).map((wh, i) => (
@@ -633,7 +622,6 @@ export default function AdminSettingsPage() {
                       </select>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm">📥 GDPR Data Export (Coming Soon)</Button>
                 </div>
               </Card>
 
@@ -652,10 +640,6 @@ export default function AdminSettingsPage() {
                       </Badge>
                     </div>
                   ))}
-                </div>
-                <div className="flex gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
-                  <Button variant="ghost" size="sm">📄 Download DPA (Coming Soon)</Button>
-                  <Button variant="ghost" size="sm">📄 AI Governance Statement</Button>
                 </div>
               </Card>
             </div>
@@ -684,10 +668,6 @@ export default function AdminSettingsPage() {
                     }}>{f}</button>
                 );
               })}
-              <div className="ml-auto flex gap-2">
-                <Button variant="ghost" size="sm">📊 CSV</Button>
-                <Button variant="ghost" size="sm">📄 PDF</Button>
-              </div>
             </div>
 
             <Card>

@@ -36,13 +36,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     responseContent = `I encountered an error processing your request. Please try again. (${e.message})`;
   }
 
-  // Save agent response
+  // Detect if the response contains an action proposal
+  // LLM may include [ACTION_PROPOSAL] markers or structured JSON
+  let actionProposal = null;
+  const actionMatch = responseContent.match(/\[ACTION_PROPOSAL\]([\s\S]*?)\[\/ACTION_PROPOSAL\]/);
+  if (actionMatch) {
+    try {
+      actionProposal = JSON.parse(actionMatch[1].trim());
+      // Remove the proposal markers from the visible response
+      responseContent = responseContent.replace(/\[ACTION_PROPOSAL\][\s\S]*?\[\/ACTION_PROPOSAL\]/, "").trim();
+    } catch {}
+  }
+
+  // Also detect action-like language and auto-classify
+  const lowerMsg = message.toLowerCase();
+  const isActionRequest = lowerMsg.includes("move") || lowerMsg.includes("reschedule") ||
+    lowerMsg.includes("reassign") || lowerMsg.includes("create") || lowerMsg.includes("update") ||
+    lowerMsg.includes("send") || lowerMsg.includes("generate report") || lowerMsg.includes("change");
+
+  // Save agent response with metadata
   const agentMsg = await db.chatMessage.create({
-    data: { agentId, conversationId, role: "agent", content: responseContent },
+    data: {
+      agentId, conversationId, role: "agent", content: responseContent,
+      metadata: {
+        ...(actionProposal && { actionProposal }),
+        ...(isActionRequest && { isActionRequest: true }),
+      },
+    },
   });
 
   // Deduct credit (1 for simple chat, 5 for complex analysis)
-  const isComplex = message.length > 200 || message.toLowerCase().includes("analyse") || message.toLowerCase().includes("generate") || message.toLowerCase().includes("report");
+  const isComplex = message.length > 200 || lowerMsg.includes("analyse") || lowerMsg.includes("generate") || lowerMsg.includes("report");
   const creditCost = isComplex ? 5 : 1;
   await CreditService.deduct(orgId, creditCost, `Chat: ${isComplex ? "complex analysis" : "query"}`, agentId);
 

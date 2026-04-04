@@ -89,6 +89,14 @@ export async function GET(req: NextRequest) {
                 autonomyLevel: dep.agent.autonomyLevel,
               });
             }
+            // Run proactive alerts alongside autonomous actions
+            try {
+              const { runProactiveAlerts } = await import("@/lib/agents/proactive-alerts");
+              await runProactiveAlerts(dep.agentId, dep.projectId, dep.agent.org?.id || dep.agent.orgId, dep.agent.autonomyLevel);
+            } catch (e) {
+              console.error(`Proactive alerts failed for agent ${dep.agentId}:`, e);
+            }
+
             inlineProcessed++;
 
             // Update last cycle time

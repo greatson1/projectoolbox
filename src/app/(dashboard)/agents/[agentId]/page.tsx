@@ -14,6 +14,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -382,16 +383,18 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               </div>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>
                 <Pause className="mr-1 size-3.5" /> Pause
               </Button>
-              <Button variant="ghost" size="sm">
-                <MessageSquare className="mr-1 size-3.5" /> Chat
-              </Button>
-              <Button variant="ghost" size="sm">
+              <Link href="/agents/chat">
+                <Button variant="ghost" size="sm">
+                  <MessageSquare className="mr-1 size-3.5" /> Chat
+                </Button>
+              </Link>
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>
                 <RefreshCw className="mr-1 size-3.5" /> Reassign
               </Button>
-              <Button variant="default" size="sm">
+              <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>
                 <Settings className="mr-1 size-3.5" /> Configure
               </Button>
             </div>

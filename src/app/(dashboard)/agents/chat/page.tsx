@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
+import { toast } from "sonner";
 import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield } from "lucide-react";
 
 export default function ChatPageWrapper() {
@@ -107,9 +108,9 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
           <p className="text-xs text-muted-foreground mb-3">{msg.data.description}</p>
           {msg.data.phase && <Badge variant="outline" className="text-[9px]">{msg.data.phase}</Badge>}
           <div className="flex gap-2 mt-3">
-            <Button size="sm" className="text-xs h-7">Review</Button>
-            <Button variant="outline" size="sm" className="text-xs h-7">Approve</Button>
-            <Button variant="ghost" size="sm" className="text-xs h-7">Request Changes</Button>
+            <Button size="sm" className="text-xs h-7" onClick={() => toast.info("Coming soon")}>Review</Button>
+            <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => toast.info("Coming soon")}>Approve</Button>
+            <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => toast.info("Coming soon")}>Request Changes</Button>
           </div>
         </div>
       </div>

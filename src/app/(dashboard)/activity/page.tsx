@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { toast } from "sonner";
 import { Activity, FileText, AlertTriangle, CheckCircle2, MessageSquare, Bot, Download, ChevronDown, ChevronRight, Calendar, Filter } from "lucide-react";
 
 function timeAgo(date: string | Date) {
@@ -84,7 +85,7 @@ export default function ActivityLogPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" disabled title="Coming soon"><Download className="w-4 h-4 mr-1" /> Export</Button>
-          <Link href="/agents/chat"><Button size="sm"><MessageSquare className="w-4 h-4 mr-1" /> Request Digest</Button></Link>
+          <Link href="/agents/chat"><Button size="sm"><MessageSquare className="w-4 h-4 mr-1" /> Open Chat</Button></Link>
         </div>
       </div>
 
@@ -199,7 +200,7 @@ export default function ActivityLogPage() {
                   <Bot className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
                   <p className="text-xs text-muted-foreground mb-3">No digest for today yet. Digests are generated at end of day.</p>
                   <Link href="/agents/chat">
-                    <Button variant="outline" size="sm"><MessageSquare className="w-3.5 h-3.5 mr-1" /> Request via Chat</Button>
+                    <Button variant="outline" size="sm"><MessageSquare className="w-3.5 h-3.5 mr-1" /> Open Chat</Button>
                   </Link>
                 </div>
               )}

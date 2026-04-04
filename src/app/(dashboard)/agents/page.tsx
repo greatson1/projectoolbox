@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 /**
  * Agent Fleet — Fleet overview, activity timeline, performance comparison,
@@ -303,7 +304,7 @@ export default function AgentFleetPage() {
             <span className="font-semibold" style={{ color: "var(--primary)" }}>{totalCreditsToday} credits today</span>
           </p>
         </div>
-        <Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy New Agent</Button>
+        <Link href="/agents/deploy"><Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy New Agent</Button></Link>
       </div>
 
       {/* ═══ 2. FLEET OVERVIEW CARDS ═══ */}
@@ -313,7 +314,7 @@ export default function AgentFleetPage() {
             <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-4" style={{ background: "var(--primary)", opacity: 0.1 }}>🤖</div>
             <h3 className="text-[16px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No agents deployed yet</h3>
             <p className="text-[13px] max-w-md mb-4" style={{ color: "var(--muted-foreground)" }}>Deploy your first AI project agent to start managing projects autonomously. Each agent connects to a project and handles tasks, risks, reports, and stakeholder communications.</p>
-            <Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy Your First Agent</Button>
+            <Link href="/agents/deploy"><Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy Your First Agent</Button></Link>
           </div>
         </Card>
       ) : (
@@ -550,10 +551,10 @@ export default function AgentFleetPage() {
               {/* Deploy row */}
               <tr>
                 <td colSpan={10} className="py-3 px-3">
-                  <button className="flex items-center gap-2 text-[12px] font-semibold w-full justify-center py-2 rounded-[8px] transition-all hover:opacity-80"
+                  <Link href="/agents/deploy" className="flex items-center gap-2 text-[12px] font-semibold w-full justify-center py-2 rounded-[8px] transition-all hover:opacity-80"
                     style={{ color: "var(--primary)", background: `${"var(--primary)"}08`, border: `1px dashed ${"var(--primary)"}44` }}>
                     <span>+</span> Deploy agent to new project
-                  </button>
+                  </Link>
                 </td>
               </tr>
             </tbody>

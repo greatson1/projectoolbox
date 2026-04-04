@@ -107,7 +107,21 @@ export async function processActionProposal(
     }
   }
 
-  // 6. Execute or route to HITL
+  // 6. Check for multi-agent conflicts
+  try {
+    const { checkConflicts } = await import("./conflict-resolver");
+    const conflict = await checkConflicts(proposal, context.agentId, context.projectId);
+    if (conflict.hasConflict) {
+      // Force to HITL with conflict info
+      proposal.suggestedAlternatives = [
+        ...(proposal.suggestedAlternatives || []),
+        { description: `Conflict: ${conflict.resolution}` },
+      ];
+      return routeToApproval(proposal, { ...classification, canAutoExecute: false, requiresApproval: true }, context, creditCost);
+    }
+  } catch {}
+
+  // 7. Execute or route to HITL
   if (classification.canAutoExecute) {
     return autoExecute(proposal, classification, context, creditCost);
   } else {
