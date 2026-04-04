@@ -308,7 +308,70 @@ export default function AdminSettingsPage() {
           </>
         )}
 
-        {/* ─── TAB 4: AUDIT LOG ─── */}
+        {/* ─── TAB 4: INTEGRATIONS ─── */}
+        {tab === "integrations" && (() => {
+          const orgMeta = (org as any)?.autoTopUp || {};
+          const connected = ALL_INTEGRATIONS.filter(i => i.alwaysOn || orgMeta[(i as any).configKey]);
+          const available = ALL_INTEGRATIONS.filter(i => !i.alwaysOn && !orgMeta[(i as any).configKey]);
+
+          const startOAuth = (provider: string, query?: string) => {
+            const orgId = org?.id || "default";
+            const url = `/api/oauth/${provider}/start?clientId=${orgId}${query ? `&${query}` : ""}`;
+            window.open(url, "oauth", "width=600,height=700,popup=1");
+          };
+
+          return (
+            <>
+              <TabHeader title="Integrations" desc="Connect your tools to supercharge your agents" />
+
+              {connected.length > 0 && (
+                <>
+                  <p className="text-xs font-bold text-emerald-500 uppercase tracking-wider mb-2">Connected ({connected.length})</p>
+                  <div className="space-y-2 mb-6">
+                    {connected.map(i => (
+                      <Card key={i.name} className="px-4">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{i.icon}</span>
+                          <div className="flex-1">
+                            <span className="text-sm font-bold">{i.name}</span>
+                            <Badge variant="secondary" className="ml-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 text-[9px]">Connected</Badge>
+                            <p className="text-xs text-muted-foreground">{i.desc}</p>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <p className="text-xs font-bold text-primary uppercase tracking-wider mb-2">Available ({available.length})</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {available.map(i => (
+                  <Card key={i.name} className="px-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-2xl">{i.icon}</span>
+                        <span className="text-sm font-bold">{i.name}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">{i.desc}</p>
+                    </div>
+                    {(i as any).oauth ? (
+                      <Button variant="default" size="sm" className="w-full" onClick={() => startOAuth((i as any).oauth, (i as any).oauthQuery)}>
+                        Connect
+                      </Button>
+                    ) : (
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => toast.info(`${i.name} integration requires API key configuration`)}>
+                        Configure
+                      </Button>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            </>
+          );
+        })()}
+
+        {/* ─── TAB 5: AUDIT LOG ─── */}
         {tab === "audit" && (
           <>
             <TabHeader title="Audit Log" desc="Complete activity history across your organisation" />
