@@ -209,6 +209,45 @@ const CAPABILITY_MATRIX: Record<string, [CapabilityAction, CapabilityAction, Cap
   "corrective_action_plan": ["—", "Draft", "HITL", "Auto", "Auto"],
   "cross_project_optimization": ["—", "—", "—", "—", "Auto"],
   "portfolio_health_mapping": ["—", "—", "—", "—", "Auto"],
+  // Stakeholder management
+  "stakeholder_identification": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "stakeholder_gap_detection": ["—", "—", "Auto", "Auto", "Auto"],
+  "influence_interest_mapping": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "first_contact_stakeholder": ["—", "—", "HITL", "Auto", "Auto"],
+  "stakeholder_landscape_monitoring": ["—", "—", "Auto", "Auto", "Auto"],
+  // Supplier/Procurement research
+  "supplier_market_research": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "supplier_evaluation_matrix": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "rfp_rfq_dispatch": ["—", "—", "HITL", "Auto", "Auto"],
+  "supplier_proposal_analysis": ["—", "—", "Auto", "Auto", "Auto"],
+  "supplier_selection_recommendation": ["HITL", "HITL", "HITL", "HITL", "HITL"],
+  // Market rates & cost estimation
+  "live_market_rate_research": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "range_based_cost_estimates": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "supplier_quote_benchmarking": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "market_price_monitoring": ["—", "—", "Auto", "Auto", "Auto"],
+  // Contracts & documents
+  "contract_sow_nda_creation": ["—", "Draft", "Auto", "Auto", "Auto"],
+  "esignature_workflow": ["HITL", "HITL", "HITL", "HITL", "HITL"],
+  "internal_document_signing": ["—", "—", "HITL", "Auto", "Auto"],
+  "signature_tracking_chasing": ["—", "—", "Auto", "Auto", "Auto"],
+  "document_version_control": ["—", "—", "Auto", "Auto", "Auto"],
+  // Purchase Orders & invoicing
+  "raise_purchase_order": ["HITL", "HITL", "HITL", "HITL", "HITL"],
+  "send_po_to_supplier": ["—", "—", "HITL", "Auto", "Auto"],
+  "po_acknowledgement_matching": ["—", "—", "Auto", "Auto", "Auto"],
+  "invoice_three_way_matching": ["—", "—", "Auto", "Auto", "Auto"],
+  // Vendor communications
+  "routine_vendor_updates": ["—", "—", "HITL", "Auto", "Auto"],
+  "commercial_commitment_comms": ["HITL", "HITL", "HITL", "HITL", "HITL"],
+  "formal_notices_breach": ["HITL", "HITL", "HITL", "HITL", "HITL"],
+  "inbound_vendor_email_reply": ["—", "—", "HITL", "Auto", "Auto"],
+  // Resource/contractor management
+  "external_resource_research": ["—", "Auto", "Auto", "Auto", "Auto"],
+  "role_brief_job_spec": ["HITL", "HITL", "HITL", "HITL", "HITL"],
+  "cv_screening_interview_scheduling": ["—", "—", "Auto", "Auto", "Auto"],
+  "contractor_onboarding": ["—", "—", "Auto", "Auto", "Auto"],
+  "contractor_timesheet_tracking": ["—", "—", "Auto", "Auto", "Auto"],
 };
 
 /**
