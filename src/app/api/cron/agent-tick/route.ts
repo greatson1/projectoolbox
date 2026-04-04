@@ -23,11 +23,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // 0. Check approval timeouts (runs every tick regardless of deployments)
+    let escalationResult = { reminders: 0, escalations: 0, overdue: 0 };
+    try {
+      const { checkApprovalTimeouts } = await import("@/lib/agents/approval-escalation");
+      escalationResult = await checkApprovalTimeouts();
+    } catch (e) {
+      console.error("Approval escalation check failed:", e);
+    }
+
     // 1. Find all active deployments due for a cycle
     const dueDeployments = await getDueDeployments();
 
     if (dueDeployments.length === 0) {
-      return NextResponse.json({ ok: true, jobs: 0, message: "No deployments due" });
+      return NextResponse.json({ ok: true, jobs: 0, message: "No deployments due", escalation: escalationResult });
     }
 
     // 2. Create jobs for each due deployment

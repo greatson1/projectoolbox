@@ -18,6 +18,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
+  // Enforce subscription tier autonomy limit
+  const agent = await db.agent.findUnique({ where: { id: agentId }, select: { autonomyLevel: true } });
+  const org = await db.organisation.findUnique({ where: { id: orgId }, select: { plan: true } });
+  if (agent && org) {
+    const { enforceAutonomyLimit } = await import("@/lib/agents/decision-classifier");
+    const effectiveLevel = enforceAutonomyLimit(agent.autonomyLevel, org.plan);
+    if (effectiveLevel < agent.autonomyLevel) {
+      await db.agent.update({ where: { id: agentId }, data: { autonomyLevel: effectiveLevel } });
+    }
+  }
+
   // Check credits
   const hasCredits = await CreditService.checkBalance(orgId, 10);
   if (!hasCredits) {

@@ -1,204 +1,129 @@
-"use client";
 // @ts-nocheck
+"use client";
 
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { useApprovals, useApprovalAction } from "@/hooks/use-api";
+import { useApprovals } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-
-/**
- * Approval Queue — HITL governance screen with expandable cards.
- */
-
-
-
-
-// ================================================================
-// TYPES & DATA
-// ================================================================
-
-interface ApprovalItem {
-  id: string;
-  type: "artefact" | "gate" | "email";
-  title: string;
-  priority: "high" | "medium" | "low";
-  project: string;
-  agent: string;
-  timestamp: string;
-  description: string;
-  changes: Array<{ type: "added" | "modified" | "info" | "passed" | "concern"; text: string }>;
-  sources: string[];
-  confidence: number;
-  confidenceLabel: string;
-}
-
-const ITEMS: ApprovalItem[] = [
-  {
-    id: "APR-001", type: "gate", title: "Phase Gate: Initiation → Planning", priority: "high",
-    project: "CRM Migration", agent: "Maya", timestamp: "12 min ago",
-    description: "All initiation artefacts have been completed and are ready for review. The agent recommends advancing to the Planning phase based on 6 approved artefacts and zero outstanding blockers.",
-    changes: [
-      { type: "passed", text: "Project Charter — approved by Sarah Chen on 28 Mar" },
-      { type: "passed", text: "Business Case — approved, ROI projected at 340% over 3 years" },
-      { type: "passed", text: "Stakeholder Register — 14 stakeholders mapped with engagement strategies" },
-      { type: "concern", text: "Budget contingency at 5% — below recommended 10% for hybrid projects" },
-      { type: "info", text: "Next phase will generate 8 planning artefacts (WBS, schedule, risk plan, etc.)" },
-    ],
-    sources: ["Project Charter v1.0", "Business Case v1.0", "Sprint Planning transcript (28 Mar)", "PMO governance framework"],
-    confidence: 92, confidenceLabel: "High confidence",
-  },
-  {
-    id: "APR-002", type: "artefact", title: "Risk Register v2", priority: "high",
-    project: "CRM Migration", agent: "Maya", timestamp: "28 min ago",
-    description: "Updated risk register incorporating 3 new risks identified during yesterday's sprint planning session. Total active risks: 14. Includes critical contract expiry penalty risk (score: 16).",
-    changes: [
-      { type: "added", text: "RISK-014: Legacy CRM contract expiry — £50K/month penalty if migration not complete by July" },
-      { type: "added", text: "RISK-015: Salesforce admin unavailable for 2 weeks in May (annual leave)" },
-      { type: "added", text: "RISK-016: Data quality issues affecting 15% of 2M records (300K records)" },
-      { type: "modified", text: "RISK-008: Probability upgraded from Medium to High — vendor confirmed delayed API documentation" },
-    ],
-    sources: ["Sprint Planning transcript (28 Mar)", "Dave Wilson verbal confirmation", "Legacy CRM vendor contract review"],
-    confidence: 96, confidenceLabel: "High confidence",
-  },
-  {
-    id: "APR-003", type: "artefact", title: "Scope Management Plan & WBS", priority: "medium",
-    project: "CRM Migration", agent: "Maya", timestamp: "1h ago",
-    description: "Comprehensive scope management plan with 3-level WBS covering 47 work packages across 6 deliverables. Includes acceptance criteria per deliverable.",
-    changes: [
-      { type: "added", text: "6 deliverables defined: Discovery, Data Migration, Configuration, Integration, Training, Cutover" },
-      { type: "added", text: "47 work packages with estimated effort and dependencies" },
-      { type: "info", text: "WBS follows PRINCE2 product-based planning approach adapted for hybrid delivery" },
-      { type: "modified", text: "Training deliverable expanded to include 3 business units (previously only Sales)" },
-    ],
-    sources: ["Project Charter", "Requirements workshop notes", "Salesforce implementation best practices"],
-    confidence: 88, confidenceLabel: "Review recommended",
-  },
-  {
-    id: "APR-004", type: "email", title: "Weekly Stakeholder Update — Draft", priority: "low",
-    project: "CRM Migration", agent: "Maya", timestamp: "2h ago",
-    description: "Weekly status update email drafted for the steering committee. Covers progress, upcoming milestones, and one escalation item (budget contingency).",
-    changes: [
-      { type: "info", text: "Recipients: Steering Committee (6 members) + Project Board (3 members)" },
-      { type: "added", text: "Escalation: Budget contingency below threshold — requesting increase from 5% to 10% (£42.5K)" },
-      { type: "info", text: "RAG status: AMBER — driven by low budget contingency and approaching contract deadline" },
-    ],
-    sources: ["Project status data", "Budget tracking module", "Risk register v2"],
-    confidence: 94, confidenceLabel: "High confidence",
-  },
-  {
-    id: "APR-005", type: "artefact", title: "Quality Management Plan", priority: "low",
-    project: "Office Renovation", agent: "Jordan", timestamp: "3h ago",
-    description: "Quality management plan defining QA processes, quality metrics, and acceptance criteria for the office renovation project.",
-    changes: [
-      { type: "added", text: "Quality standards: BS EN ISO 9001, CDM 2015 compliance requirements" },
-      { type: "added", text: "Inspection schedule: 12 quality checkpoints aligned with construction milestones" },
-      { type: "info", text: "Auto-generated from methodology template with project-specific customisation" },
-    ],
-    sources: ["Project scope statement", "CDM 2015 regulations", "PRINCE2 quality theme"],
-    confidence: 91, confidenceLabel: "High confidence",
-  },
-];
+import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2 } from "lucide-react";
 
 const FILTERS = ["All", "High Priority", "Artefacts", "Phase Gates", "Communications"];
 
-// ================================================================
-// COMPONENT
-// ================================================================
+const RISK_TIER_COLORS: Record<string, { bg: string; text: string }> = {
+  LOW: { bg: "bg-emerald-500/10", text: "text-emerald-500" },
+  MEDIUM: { bg: "bg-amber-500/10", text: "text-amber-500" },
+  HIGH: { bg: "bg-orange-500/10", text: "text-orange-500" },
+  CRITICAL: { bg: "bg-red-500/10", text: "text-red-500" },
+};
+
+const TYPE_ICONS: Record<string, string> = {
+  PHASE_GATE: "🏁", BUDGET: "💰", RISK_RESPONSE: "⚠️", SCOPE_CHANGE: "📐",
+  RESOURCE: "👥", COMMUNICATION: "📧", CHANGE_REQUEST: "📋", PROCUREMENT: "🛒",
+};
+
+function timeAgo(date: string | Date) {
+  const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
 
 export default function ApprovalsPage() {
-  const mode = "dark";
-  const { data: apiApprovals } = useApprovals();
-  const [items, setItems] = useState<ApprovalItem[]>([]);
-  useEffect(() => {
-    if (apiApprovals && apiApprovals.length > 0) {
-      setItems(apiApprovals.map((a: any) => ({
-        id: a.id, type: a.type?.toLowerCase() === "phase_gate" ? "gate" : "artefact",
-        title: a.title, priority: "high" as const, project: a.project?.name || "",
-        agent: "Agent", timestamp: new Date(a.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),
-        description: a.description || "", changes: [], sources: [],
-        confidence: 90, confidenceLabel: "High",
-      })));
-    }
-  }, [apiApprovals]);
+  const { data: approvals, isLoading, refetch } = useApprovals();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
-  const [removing, setRemoving] = useState<string | null>(null);
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [feedbackId, setFeedbackId] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
 
-  const typeIcons: Record<string, { icon: string; color: string; bg: string }> = {
-    artefact: { icon: "📄", color: "var(--primary)", bg: "rgba(99,102,241,0.12)" },
-    gate: { icon: "🏁", color: "#F59E0B", bg: "rgba(245,158,11,0.12)" },
-    email: { icon: "📧", color: "#22D3EE", bg: true ? "rgba(34,211,238,0.1)" : "rgba(14,165,233,0.1)" },
-  };
+  if (isLoading) return (
+    <div className="max-w-[1000px] space-y-4">
+      <Skeleton className="h-8 w-48" /><Skeleton className="h-12 w-full rounded-xl" />
+      {[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}
+    </div>
+  );
 
-  const changeIcons: Record<string, { prefix: string; bg: string; color: string }> = {
-    added: { prefix: "+", bg: "rgba(16,185,129,0.12)", color: "#10B981" },
-    modified: { prefix: "~", bg: "rgba(245,158,11,0.12)", color: "#F59E0B" },
-    info: { prefix: "i", bg: "rgba(99,102,241,0.12)", color: "var(--primary)" },
-    passed: { prefix: "✓", bg: "rgba(16,185,129,0.12)", color: "#10B981" },
-    concern: { prefix: "!", bg: "rgba(245,158,11,0.12)", color: "#F59E0B" },
-  };
+  const items = (approvals || []).filter((a: any) => a.status === "PENDING" || a.status === "DEFERRED");
 
-  const highCount = items.filter((i) => i.priority === "high").length;
-
-  const filtered = items.filter((item) => {
+  const filtered = items.filter((item: any) => {
     if (filter === "All") return true;
-    if (filter === "High Priority") return item.priority === "high";
-    if (filter === "Artefacts") return item.type === "artefact";
-    if (filter === "Phase Gates") return item.type === "gate";
-    if (filter === "Communications") return item.type === "email";
+    if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
+    if (filter === "Artefacts") return item.type === "RISK_RESPONSE" || item.type === "SCOPE_CHANGE";
+    if (filter === "Phase Gates") return item.type === "PHASE_GATE";
+    if (filter === "Communications") return item.type === "COMMUNICATION";
     return true;
   });
 
-  function removeItem(id: string) {
-    setRemoving(id);
-    setTimeout(() => { setItems((prev) => prev.filter((i) => i.id !== id)); setRemoving(null); setExpanded(null); }, 300);
+  const highCount = items.filter((i: any) => i.urgency === "HIGH" || i.urgency === "CRITICAL").length;
+  const lowRiskItems = items.filter((i: any) => {
+    const scores = i.impactScores as any;
+    if (!scores) return false;
+    const total = (scores.schedule || 1) + (scores.cost || 1) + (scores.scope || 1) + (scores.stakeholder || 1);
+    return total <= 8; // LOW tier
+  });
+
+  async function handleAction(id: string, action: string, comment?: string) {
+    setActionInProgress(id);
+    try {
+      await fetch(`/api/approvals/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, comment }),
+      });
+      refetch();
+    } catch {}
+    setActionInProgress(null);
+    setFeedbackId(null);
+    setFeedbackText("");
+  }
+
+  async function handleBatchApprove() {
+    for (const id of lowRiskItems.map((i: any) => i.id)) {
+      await handleAction(id, "approve");
+    }
   }
 
   return (
-    <div className="max-w-[1000px] space-y-5">
+    <div className="max-w-[1000px] space-y-5 animate-page-enter">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Approval Queue</h1>
-            <span className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold text-white" style={{ backgroundColor: "var(--primary)" }}>{items.length}</span>
+            <h1 className="text-2xl font-bold">Approval Queue</h1>
+            <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white bg-primary">{items.length}</span>
           </div>
-          <p className="text-[13px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>Human-in-the-Loop Governance</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Human-in-the-Loop Governance</p>
         </div>
         <div className="flex items-center gap-3">
           {highCount > 0 && <Badge variant="destructive">{highCount} high priority</Badge>}
-          <Button variant="ghost" size="sm" disabled title="Coming soon">Approve All Low Risk</Button>
+          {lowRiskItems.length > 0 && (
+            <Button variant="outline" size="sm" onClick={handleBatchApprove}>
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve All Low Risk ({lowRiskItems.length})
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Governance banner */}
-      <div className="flex items-center justify-between px-4 py-3 rounded-[12px]"
-        style={{ backgroundColor: "rgba(99,102,241,0.12)", border: `1px solid rgba(99,102,241,0.15)` }}>
-        <div className="flex items-center gap-3">
-          <span className="text-[18px]">🛡️</span>
-          <div>
-            <span className="text-[13px] font-semibold" style={{ color: "var(--primary)" }}>Governance Mode Active</span>
-            <span className="text-[12px] ml-2" style={{ color: "var(--muted-foreground)" }}>All agent outputs require human approval before becoming official</span>
-          </div>
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/15">
+        <Shield className="h-5 w-5 text-primary flex-shrink-0" />
+        <div>
+          <span className="text-sm font-semibold text-primary">Governance Mode Active</span>
+          <span className="text-xs text-muted-foreground ml-2">Agent actions above autonomy threshold require your approval</span>
         </div>
-        <button className="text-[12px] font-medium opacity-50 cursor-not-allowed" title="Governance configuration coming soon" style={{ color: "var(--primary)" }}>Configure</button>
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 p-1 rounded-[10px]" style={{ backgroundColor: true ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)" }}>
-        {FILTERS.map((f) => (
+      <div className="flex gap-1 p-1 rounded-lg bg-muted/50">
+        {FILTERS.map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className="px-4 py-2 rounded-[8px] text-[12px] font-semibold transition-all"
-            style={{
-              backgroundColor: filter === f ? (true ? "var(--card)" : "white") : "transparent",
-              color: filter === f ? "var(--foreground)" : "var(--muted-foreground)",
-              boxShadow: filter === f ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-            }}>
+            className={cn("px-4 py-2 rounded-md text-xs font-semibold transition-all",
+              filter === f ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>
             {f}
           </button>
         ))}
@@ -207,122 +132,148 @@ export default function ApprovalsPage() {
       {/* Approval cards */}
       {filtered.length === 0 ? (
         <div className="text-center py-16">
-          <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-[28px]" style={{ backgroundColor: "rgba(16,185,129,0.12)" }}>✓</div>
-          <p className="text-[18px] font-semibold" style={{ color: "var(--foreground)" }}>All clear</p>
-          <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>No pending approvals — your agents are running smoothly</p>
+          <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-3xl bg-emerald-500/10">✓</div>
+          <p className="text-lg font-semibold">All clear</p>
+          <p className="text-sm text-muted-foreground mt-1">No pending approvals — your agents are running smoothly</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((item) => {
+          {filtered.map((item: any) => {
             const isExpanded = expanded === item.id;
-            const isRemoving = removing === item.id;
-            const ti = typeIcons[item.type];
+            const isProcessing = actionInProgress === item.id;
+            const scores = (item.impactScores as any) || {};
+            const riskScore = (scores.schedule || 1) + (scores.cost || 1) + (scores.scope || 1) + (scores.stakeholder || 1);
+            const riskTier = item.urgency || (riskScore <= 8 ? "LOW" : riskScore <= 12 ? "MEDIUM" : riskScore <= 14 ? "HIGH" : "CRITICAL");
+            const tierColors = RISK_TIER_COLORS[riskTier] || RISK_TIER_COLORS.MEDIUM;
+            const icon = TYPE_ICONS[item.type] || "📋";
 
             return (
-              <div key={item.id}
-                className={cn("rounded-[14px] transition-all duration-300 overflow-hidden", isRemoving && "opacity-0 translate-x-8 scale-[0.98]")}
-                style={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-
+              <div key={item.id} className="rounded-xl bg-card border border-border overflow-hidden transition-all">
                 {/* Collapsed row */}
-                <div className="flex items-center gap-4 px-5 py-4 cursor-pointer"
-                  onClick={() => setExpanded(isExpanded ? null : item.id)}>
-                  <div className="w-10 h-10 rounded-[10px] flex items-center justify-center text-[18px] flex-shrink-0" style={{ backgroundColor: ti.bg }}>
-                    {ti.icon}
-                  </div>
+                <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : item.id)}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 bg-muted/50">{icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[14px] font-semibold truncate" style={{ color: "var(--foreground)" }}>{item.title}</span>
-                      <Badge variant={item.type === "gate" ? "secondary" : item.type === "email" ? "outline" : "secondary"}>
-                        {item.type === "gate" ? "Phase Gate" : item.type === "email" ? "Email" : "Artefact"}
-                      </Badge>
-                      <Badge variant={item.priority}>{item.priority}</Badge>
+                      <span className="text-sm font-semibold truncate">{item.title}</span>
+                      <Badge variant="secondary" className={cn("text-[9px]", tierColors.bg, tierColors.text)}>{riskTier}</Badge>
+                      {riskScore > 0 && <span className="text-[10px] text-muted-foreground">Score {riskScore}/16</span>}
                     </div>
-                    <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--muted-foreground)" }}>
-                      <span>{item.project}</span>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span>{item.project?.name || "—"}</span>
                       <span>·</span>
-                      <span style={{ color: "#22D3EE" }}>{item.agent}</span>
+                      <span className="text-primary">{item.decision?.agent?.name || "Agent"}</span>
                       <span>·</span>
-                      <span>{item.timestamp}</span>
+                      <span>{timeAgo(item.createdAt)}</span>
+                      {item.iteration > 1 && <Badge variant="outline" className="text-[9px]">Iteration {item.iteration}</Badge>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <Button variant="default" size="sm" onClick={() => removeItem(item.id)} style={{ backgroundColor: "#10B981" }}>Approve</Button>
-                    <Button variant="ghost" size="sm">Changes</Button>
+                  <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    <Button variant="default" size="sm" disabled={isProcessing}
+                      onClick={() => handleAction(item.id, "approve")}
+                      className="bg-emerald-500 hover:bg-emerald-600">
+                      {isProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Approve"}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setFeedbackId(feedbackId === item.id ? null : item.id)}>Changes</Button>
                   </div>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={"var(--muted-foreground)"} strokeWidth="2"
-                    className={cn("transition-transform duration-200 flex-shrink-0", isExpanded && "rotate-180")}>
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform flex-shrink-0", isExpanded && "rotate-180")} />
                 </div>
+
+                {/* Feedback input (Request Changes) */}
+                {feedbackId === item.id && (
+                  <div className="px-5 pb-4 border-t border-border pt-3">
+                    <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)}
+                      placeholder="Describe what changes you'd like the agent to make..."
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y h-20" />
+                    <div className="flex justify-between items-center mt-2">
+                      <Button variant="ghost" size="sm" onClick={() => handleAction(item.id, "reject")}>
+                        <X className="h-3.5 w-3.5 mr-1" /> Reject
+                      </Button>
+                      <Button size="sm" disabled={!feedbackText.trim()} onClick={() => handleAction(item.id, "request_changes", feedbackText)}>
+                        <MessageSquare className="h-3.5 w-3.5 mr-1" /> Send Feedback
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Expanded content */}
                 <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0")}>
-                  <div className="px-5 pb-5 space-y-4" style={{ borderTop: `1px solid ${"var(--border)"}` }}>
+                  <div className="px-5 pb-5 space-y-4 border-t border-border">
+                    {/* Description / Reasoning */}
                     <div className="pt-4">
-                      <p className="text-[13px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>{item.description}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Agent Reasoning</p>
+                      <p className="text-sm text-foreground leading-relaxed">{item.reasoningChain || item.description}</p>
                     </div>
 
-                    {/* Changes */}
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Changes</p>
-                      <div className="space-y-1.5">
-                        {item.changes.map((c, i) => {
-                          const ci = changeIcons[c.type];
-                          return (
-                            <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-[8px]" style={{ backgroundColor: ci.bg }}>
-                              <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5" style={{ color: ci.color, backgroundColor: true ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.6)" }}>
-                                {ci.prefix}
-                              </span>
-                              <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{c.text}</span>
-                            </div>
-                          );
-                        })}
+                    {/* Impact Scores — 4 mini-cards */}
+                    {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Impact Analysis</p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { label: "Schedule", value: scores.schedule || 1, desc: ["None", "≤1 week", "1–4 weeks", ">1 month"] },
+                            { label: "Cost", value: scores.cost || 1, desc: ["None", "<5%", "5–15%", ">15%"] },
+                            { label: "Scope", value: scores.scope || 1, desc: ["None", "Minor", "Moderate", "Major"] },
+                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["Internal", "Team", "Client", "Board"] },
+                          ].map(dim => {
+                            const color = dim.value <= 1 ? "text-emerald-500" : dim.value <= 2 ? "text-blue-500" : dim.value <= 3 ? "text-amber-500" : "text-red-500";
+                            const bg = dim.value <= 1 ? "bg-emerald-500/10" : dim.value <= 2 ? "bg-blue-500/10" : dim.value <= 3 ? "bg-amber-500/10" : "bg-red-500/10";
+                            return (
+                              <div key={dim.label} className={cn("rounded-lg p-2.5 text-center", bg)}>
+                                <p className="text-[10px] text-muted-foreground uppercase">{dim.label}</p>
+                                <p className={cn("text-lg font-bold", color)}>{dim.value}/4</p>
+                                <p className="text-[10px] text-muted-foreground">{dim.desc[dim.value - 1]}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Sources + Confidence */}
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Sources</p>
+                    {/* Affected Items */}
+                    {item.affectedItems && (item.affectedItems as any[]).length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Affected Items</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(item.affectedItems as any[]).map((ai: any, i: number) => (
+                            <Badge key={i} variant="outline" className="text-xs">
+                              {ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : "📄"} {ai.title}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Suggested Alternatives */}
+                    {item.suggestedAlternatives && (item.suggestedAlternatives as any[]).length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Alternatives Considered</p>
                         <div className="space-y-1.5">
-                          {item.sources.map((s, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "#22D3EE" }} />
-                              <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{s}</span>
+                          {(item.suggestedAlternatives as any[]).map((alt: any, i: number) => (
+                            <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 text-xs">
+                              <span className="text-muted-foreground">{i + 1}.</span>
+                              <span className="flex-1">{alt.description}</span>
+                              {alt.creditCost && <Badge variant="secondary" className="text-[9px]">{alt.creditCost} credits</Badge>}
                             </div>
                           ))}
                         </div>
                       </div>
+                    )}
 
-                      {/* Confidence indicator */}
-                      <div className="flex flex-col items-center justify-center w-[100px]">
-                        <div className="relative w-16 h-16">
-                          <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-                            <circle cx="18" cy="18" r="15.5" fill="none" stroke={"var(--border)"} strokeWidth="3" />
-                            <circle cx="18" cy="18" r="15.5" fill="none" stroke={item.confidence >= 90 ? "#10B981" : "#F59E0B"} strokeWidth="3"
-                              strokeDasharray={`${item.confidence} ${100 - item.confidence}`} strokeLinecap="round" />
-                          </svg>
-                          <span className="absolute inset-0 flex items-center justify-center text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{item.confidence}%</span>
-                        </div>
-                        <span className="text-[10px] font-medium mt-1 text-center" style={{ color: item.confidence >= 90 ? "#10B981" : "#F59E0B" }}>
-                          {item.confidenceLabel}
-                        </span>
+                    {/* Expiry timer */}
+                    {item.expiresAt && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>Expires: {new Date(item.expiresAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                        {new Date(item.expiresAt) < new Date() && <Badge variant="destructive" className="text-[9px]">OVERDUE</Badge>}
                       </div>
-                    </div>
+                    )}
 
-                    {/* Action bar */}
-                    <div className="flex items-center justify-between pt-3" style={{ borderTop: `1px solid ${"var(--border)"}` }}>
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm">View Full Document</Button>
-                        <Button variant="ghost" size="sm">Compare Previous</Button>
-                        <Button variant="ghost" size="sm">Ask Agent</Button>
+                    {/* Credit cost */}
+                    {(item.impact as any)?.creditCost && (
+                      <div className="text-xs text-muted-foreground">
+                        Credit cost if approved: <strong>{(item.impact as any).creditCost} credits</strong>
                       </div>
-                      <div className="flex gap-2">
-                        <Button variant="default" size="sm" style={{ backgroundColor: "#EF4444" }}>Reject</Button>
-                        <Button variant="default" size="sm" style={{ backgroundColor: "#F59E0B" }}>Request Changes</Button>
-                        <Button variant="default" size="sm" onClick={() => removeItem(item.id)} style={{ background: `linear-gradient(135deg, ${"#10B981"}, #059669)` }}>Approve</Button>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
