@@ -155,6 +155,13 @@ export default function AdminSettingsPage() {
                     <span className="text-xs text-muted-foreground">credits</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-3 pt-4 border-t border-border/30 text-xs text-muted-foreground">
+                  <span>🇪🇺 GDPR Compliant</span>
+                  <span>·</span>
+                  <span>🇬🇧 UK DPA 2018</span>
+                  <span>·</span>
+                  <span>Data stored in EU (Supabase) · Encrypted at rest and in transit</span>
+                </div>
                 <Button variant="default" size="sm" onClick={() => { saveOrg.mutate({}); toast.success("Settings saved"); }}>Save Changes</Button>
               </CardContent>
             </Card>

@@ -138,6 +138,7 @@ model Organisation {
   invoices         Invoice[]
   creditTxns       CreditTransaction[]
   apiKeys          ApiKey[]
+  webhooks         WebhookEndpoint[]
   auditLogs        AuditLog[]
   reports          Report[]
   dailyDigests     DailyDigest[]
@@ -443,6 +444,21 @@ model ApiKey {
   expiresAt DateTime?
   revokedAt DateTime?
   createdAt DateTime     @default(now())
+}
+
+model WebhookEndpoint {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organisation @relation(fields: [orgId], references: [id])
+  url       String
+  events    String[]
+  secret    String
+  isActive  Boolean      @default(true)
+  lastFired DateTime?
+  failCount Int          @default(0)
+  createdAt DateTime     @default(now())
+
+  @@index([orgId])
 }
 
 // ─── Notifications ───
