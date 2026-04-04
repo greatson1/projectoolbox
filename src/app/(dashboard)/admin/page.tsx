@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import { useState, useEffect } from "react";
-import { useTeamMembers, useAuditLog, useOrgSettings, useSaveOrgSettings } from "@/hooks/use-api";
+import { useTeamMembers, useAuditLog, useOrgSettings, useSaveOrgSettings, useApiKeys, useCreateApiKey, useRevokeApiKey, useWebhooks, useCreateWebhook, useDeleteWebhook } from "@/hooks/use-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ const TABS = [
   { id: "team", label: "Team Management", icon: "👥" },
   { id: "roles", label: "Roles & Permissions", icon: "🔐" },
   { id: "integrations", label: "Integrations", icon: "🔗" },
+  { id: "api", label: "API & Webhooks", icon: "⚡" },
   { id: "audit", label: "Audit Log", icon: "📜" },
 ] as const;
 
@@ -378,7 +379,124 @@ export default function AdminSettingsPage() {
           );
         })()}
 
-        {/* ─── TAB 5: AUDIT LOG ─── */}
+        {/* ─── TAB 5: API & WEBHOOKS ─── */}
+        {tab === "api" && (() => {
+          const { data: apiKeys = [] } = useApiKeys();
+          const { data: webhooks = [] } = useWebhooks();
+          const createKey = useCreateApiKey();
+          const revokeKey = useRevokeApiKey();
+          const createWebhook = useCreateWebhook();
+          const deleteWebhook = useDeleteWebhook();
+          const [newKeyName, setNewKeyName] = useState("");
+          const [createdKey, setCreatedKey] = useState<string | null>(null);
+          const [newWebhookUrl, setNewWebhookUrl] = useState("");
+          const [createdSecret, setCreatedSecret] = useState<string | null>(null);
+
+          return (
+            <>
+              <TabHeader title="API & Webhooks" desc="Manage API access and event subscriptions" />
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* API Keys */}
+                <Card className="px-5">
+                  <h3 className="text-sm font-bold mb-3">API Keys</h3>
+
+                  {createdKey && (
+                    <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 mb-3">
+                      <p className="text-xs font-bold text-emerald-500 mb-1">Key created — copy it now (won't be shown again):</p>
+                      <code className="text-xs bg-background px-2 py-1 rounded block break-all">{createdKey}</code>
+                      <Button variant="ghost" size="sm" className="mt-2" onClick={() => { navigator.clipboard.writeText(createdKey); toast.success("Copied!"); }}>Copy</Button>
+                    </div>
+                  )}
+
+                  {apiKeys.length === 0 && !createdKey && (
+                    <p className="text-xs text-muted-foreground mb-3">No API keys generated yet.</p>
+                  )}
+
+                  {apiKeys.map((k: any) => (
+                    <div key={k.id} className="flex items-center justify-between py-2 border-b border-border/20">
+                      <div>
+                        <span className="text-xs font-semibold">{k.name}</span>
+                        <span className="text-[10px] text-muted-foreground ml-2">...{k.lastFour}</span>
+                        {k.revokedAt && <Badge variant="destructive" className="ml-2 text-[8px]">Revoked</Badge>}
+                      </div>
+                      {!k.revokedAt && (
+                        <Button variant="ghost" size="sm" onClick={() => { revokeKey.mutate(k.id); toast.success("Key revoked"); }}>Revoke</Button>
+                      )}
+                    </div>
+                  ))}
+
+                  <div className="flex gap-2 mt-3">
+                    <input className="flex-1 px-2 py-1.5 rounded-lg text-xs border border-border bg-background outline-none"
+                      placeholder="Key name (e.g. Production)" value={newKeyName} onChange={e => setNewKeyName(e.target.value)} />
+                    <Button size="sm" disabled={createKey.isPending} onClick={async () => {
+                      const result = await createKey.mutateAsync({ name: newKeyName || "API Key" });
+                      setCreatedKey(result.fullKey);
+                      setNewKeyName("");
+                      toast.success("API key generated");
+                    }}>Generate API Key</Button>
+                  </div>
+
+                  <p className="text-[10px] text-muted-foreground mt-2">Rate limit: 1,000 requests/min · 100,000/day</p>
+                </Card>
+
+                {/* Credit Usage */}
+                <Card className="px-5">
+                  <h3 className="text-sm font-bold mb-3">Credit Usage</h3>
+                  <div className="text-center py-6">
+                    <p className="text-4xl font-bold text-primary">{org?.creditBalance?.toLocaleString() || 0}</p>
+                    <p className="text-xs text-muted-foreground">credits remaining</p>
+                    <p className="text-xs text-muted-foreground mt-1">Plan: {org?.plan || "FREE"}</p>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Webhooks */}
+              <Card className="px-5 mt-4">
+                <h3 className="text-sm font-bold mb-3">Webhook Endpoints</h3>
+
+                {createdSecret && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-3">
+                    <p className="text-xs font-bold text-amber-500 mb-1">Signing secret — copy it now (won't be shown again):</p>
+                    <code className="text-xs bg-background px-2 py-1 rounded block break-all">{createdSecret}</code>
+                    <Button variant="ghost" size="sm" className="mt-2" onClick={() => { navigator.clipboard.writeText(createdSecret); toast.success("Copied!"); }}>Copy</Button>
+                  </div>
+                )}
+
+                {webhooks.length === 0 && !createdSecret && (
+                  <p className="text-xs text-muted-foreground mb-3">No webhook endpoints configured. Webhooks allow external systems to receive real-time events from Projectoolbox (agent actions, approvals, phase completions).</p>
+                )}
+
+                {webhooks.map((wh: any) => (
+                  <div key={wh.id} className="flex items-center justify-between py-2 border-b border-border/20">
+                    <div>
+                      <span className="text-xs font-semibold break-all">{wh.url}</span>
+                      <div className="flex gap-1 mt-0.5">
+                        {wh.events?.map((e: string) => (
+                          <Badge key={e} variant="secondary" className="text-[8px]">{e}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => { deleteWebhook.mutate(wh.id); toast.success("Webhook deleted"); }}>Delete</Button>
+                  </div>
+                ))}
+
+                <div className="flex gap-2 mt-3">
+                  <input className="flex-1 px-2 py-1.5 rounded-lg text-xs border border-border bg-background outline-none"
+                    placeholder="https://your-app.com/webhooks/projectoolbox" value={newWebhookUrl} onChange={e => setNewWebhookUrl(e.target.value)} />
+                  <Button size="sm" disabled={createWebhook.isPending || !newWebhookUrl} onClick={async () => {
+                    const result = await createWebhook.mutateAsync({ url: newWebhookUrl });
+                    setCreatedSecret(result.secret);
+                    setNewWebhookUrl("");
+                    toast.success("Webhook registered");
+                  }}>Add Webhook</Button>
+                </div>
+              </Card>
+            </>
+          );
+        })()}
+
+        {/* ─── TAB 6: AUDIT LOG ─── */}
         {tab === "audit" && (
           <>
             <TabHeader title="Audit Log" desc="Complete activity history across your organisation" />

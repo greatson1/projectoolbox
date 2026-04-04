@@ -171,18 +171,22 @@ const FILTER_TABS: (NType | "all")[] = ["all", "approval", "risk", "document", "
 export default function NotificationsPage() {
   const mode = "dark";
   const { data: apiNotifs } = useNotifications();
-  const initialNotifs = apiNotifs && apiNotifs.length > 0
-    ? apiNotifs.map((n: any, i: number) => ({
-        id: n.id || i, type: (n.type || "system") as NType,
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Sync from API when data arrives
+  useEffect(() => {
+    if (apiNotifs && apiNotifs.length > 0) {
+      setNotifications(apiNotifs.map((n: any, i: number) => ({
+        id: n.id || i, type: ({ AGENT_ALERT: "system", APPROVAL_REQUEST: "approval", BILLING: "billing", SYSTEM: "system", MILESTONE: "system", RISK_ESCALATION: "risk" }[n.type] || "system") as NType,
         agentId: "", agentName: "System", agentInitials: "S", agentColor: "#6366F1",
-        project: n.project || "", title: n.title || "", description: n.message || "",
-        detail: n.message || "", time: new Date(n.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+        project: n.project || "", title: n.title || "", description: n.body || n.message || "",
+        detail: n.body || n.message || "", time: new Date(n.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),
         minutesAgo: Math.round((Date.now() - new Date(n.createdAt).getTime()) / 60000),
         priority: (n.priority === "high" ? "high" : "none") as Priority,
         read: n.isRead || false, actions: ["Acknowledge"],
-      }))
-    : [];
-  const [notifications, setNotifications] = useState(initialNotifs);
+      })));
+    }
+  }, [apiNotifs]);
   const [activeTab, setActiveTab] = useState<NType | "all">("all");
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [highPriorityOnly, setHighPriorityOnly] = useState(false);

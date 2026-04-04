@@ -316,6 +316,56 @@ export function useAuditLog() {
   });
 }
 
+// ── API Keys ──
+
+export function useApiKeys() {
+  return useQuery({
+    queryKey: ["admin", "api-keys"],
+    queryFn: () => api<any[]>("/api/admin/api-keys"),
+  });
+}
+
+export function useCreateApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api<any>("/api/admin/api-keys", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "api-keys"] }),
+  });
+}
+
+export function useRevokeApiKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api(`/api/admin/api-keys/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "api-keys"] }),
+  });
+}
+
+// ── Webhooks ──
+
+export function useWebhooks() {
+  return useQuery({
+    queryKey: ["admin", "webhooks"],
+    queryFn: () => api<any[]>("/api/admin/webhooks"),
+  });
+}
+
+export function useCreateWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api<any>("/api/admin/webhooks", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "webhooks"] }),
+  });
+}
+
+export function useDeleteWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api(`/api/admin/webhooks/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "webhooks"] }),
+  });
+}
+
 // ── Agent Actions ──
 
 export function usePauseAgent() {
