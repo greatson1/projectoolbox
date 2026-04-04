@@ -164,7 +164,7 @@ async function checkDependencyChains(projectId: string, agentId: string): Promis
     where: {
       projectId,
       status: { in: ["BLOCKED", "TODO"] },
-      dependencies: { not: null },
+      NOT: { dependencies: { equals: null as any } },
     },
     select: { id: true, title: true, dependencies: true, status: true },
   });

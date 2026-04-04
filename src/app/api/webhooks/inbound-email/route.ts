@@ -69,6 +69,95 @@ export async function POST(req: NextRequest) {
       data: { inboundCount: { increment: 1 }, lastReceived: new Date() },
     });
 
+    // ── Email-based approvals (spec 7.1) ──
+    const contentLower = emailContent.toLowerCase().trim();
+    const isApprovalReply = contentLower.startsWith("approved") || contentLower.startsWith("rejected") || contentLower.includes("human");
+
+    if (isApprovalReply) {
+      // Check if sender is a known stakeholder
+      const stakeholder = activeProject ? await db.stakeholder.findFirst({
+        where: { projectId: activeProject.id, email: senderEmail },
+      }) : null;
+
+      if (stakeholder || contentLower.includes("human")) {
+        // "HUMAN" keyword → route to PM
+        if (contentLower.includes("human")) {
+          const admins = await db.user.findMany({
+            where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
+            select: { id: true },
+          });
+          for (const admin of admins) {
+            await db.notification.create({
+              data: {
+                userId: admin.id,
+                type: "AGENT_ALERT",
+                title: `Human contact requested by ${senderEmail}`,
+                body: `A stakeholder replied to ${agent.name}'s email with "HUMAN". They want to speak to a person.\n\nOriginal message: ${emailContent.slice(0, 300)}`,
+                actionUrl: "/agents/chat",
+              },
+            });
+          }
+          await db.agentActivity.create({
+            data: { agentId: agent.id, type: "chat", summary: `Human contact requested by ${senderEmail} via email` },
+          });
+          return NextResponse.json({ status: "processed", type: "human_request" });
+        }
+
+        // "APPROVED" → find pending approval and approve
+        if (contentLower.startsWith("approved")) {
+          const comments = contentLower.replace(/^approved\s*(with\s*comments?\s*:?\s*)?/i, "").trim();
+          const pendingApproval = await db.approval.findFirst({
+            where: { projectId: activeProject?.id, status: "PENDING" },
+            orderBy: { createdAt: "desc" },
+          });
+
+          if (pendingApproval) {
+            await db.approval.update({
+              where: { id: pendingApproval.id },
+              data: { status: "APPROVED" as any, resolvedAt: new Date(), comment: comments || `Approved via email by ${senderEmail}` },
+            });
+            await db.agentDecision.updateMany({
+              where: { approvalId: pendingApproval.id },
+              data: { status: "APPROVED" as any },
+            });
+            try {
+              const { executeApprovedAction } = await import("@/lib/agents/action-executor");
+              await executeApprovedAction(pendingApproval.id);
+            } catch {}
+
+            await db.agentActivity.create({
+              data: { agentId: agent.id, type: "approval", summary: `Approval "${pendingApproval.title}" approved via email by ${senderEmail}` },
+            });
+          }
+          return NextResponse.json({ status: "processed", type: "email_approval" });
+        }
+
+        // "REJECTED" → find pending approval and reject
+        if (contentLower.startsWith("rejected")) {
+          const reason = contentLower.replace(/^rejected\s*:?\s*/i, "").trim();
+          const pendingApproval = await db.approval.findFirst({
+            where: { projectId: activeProject?.id, status: "PENDING" },
+            orderBy: { createdAt: "desc" },
+          });
+
+          if (pendingApproval) {
+            await db.approval.update({
+              where: { id: pendingApproval.id },
+              data: { status: "REJECTED" as any, resolvedAt: new Date(), comment: reason || `Rejected via email by ${senderEmail}` },
+            });
+            await db.agentDecision.updateMany({
+              where: { approvalId: pendingApproval.id },
+              data: { status: "REJECTED" as any },
+            });
+            await db.agentActivity.create({
+              data: { agentId: agent.id, type: "approval", summary: `Approval "${pendingApproval.title}" rejected via email by ${senderEmail}` },
+            });
+          }
+          return NextResponse.json({ status: "processed", type: "email_rejection" });
+        }
+      }
+    }
+
     // Classify email
     const lowerSubject = subject.toLowerCase();
     const isCalendarInvite = emailContent.includes("BEGIN:VCALENDAR") ||
