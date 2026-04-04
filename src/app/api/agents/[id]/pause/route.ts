@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { cancelAgentJobs } from "@/lib/agents/job-queue";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -12,6 +13,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     data: { status: "PAUSED" },
   });
+
+  // Cancel all pending autonomous jobs
+  await cancelAgentJobs(id);
 
   await db.agentActivity.create({
     data: { agentId: id, type: "paused", summary: `Agent paused by ${session.user.name || "user"}` },

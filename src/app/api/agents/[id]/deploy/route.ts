@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { CreditService } from "@/lib/credits/service";
 import { EmailService } from "@/lib/email";
+import { createJob } from "@/lib/agents/job-queue";
+import { nudgeJobProcessor } from "@/lib/agents/agent-backend";
 
 // POST /api/agents/[id]/deploy — Deploy agent to project
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -68,6 +70,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       dashboardUrl: `${process.env.NEXTAUTH_URL}/agents/${agentId}`,
     }).catch(() => {}); // Fire and forget
   }
+
+  // Create lifecycle_init job for the VPS agent backend
+  await createJob({
+    agentId,
+    deploymentId: deployment.id,
+    type: "lifecycle_init",
+    priority: 1,
+    payload: { projectId, methodology: (await db.project.findUnique({ where: { id: projectId } }))?.methodology },
+  });
+
+  // Set initial next cycle time
+  await db.agentDeployment.update({
+    where: { id: deployment.id },
+    data: { nextCycleAt: new Date(Date.now() + 10 * 60_000) },
+  });
+
+  // Nudge VPS to start processing immediately
+  nudgeJobProcessor().catch(() => {});
 
   return NextResponse.json({ data: { deployment, agentId } }, { status: 201 });
 }

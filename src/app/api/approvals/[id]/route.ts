@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { createJob } from "@/lib/agents/job-queue";
+import { nudgeJobProcessor } from "@/lib/agents/agent-backend";
 
 // POST /api/approvals/[id] — Approve, reject, or defer
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +54,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         details: { approvalId: id, comment },
       },
     });
+  }
+
+  // Create approval_resume job so the VPS agent backend can react
+  const deployment = await db.agentDeployment.findFirst({
+    where: { projectId: approval.projectId, isActive: true },
+  });
+  if (deployment) {
+    // If approved, unblock the deployment phase
+    if (action === "approve") {
+      await db.agentDeployment.update({
+        where: { id: deployment.id },
+        data: { phaseStatus: "active" },
+      });
+    }
+
+    await createJob({
+      agentId: deployment.agentId,
+      deploymentId: deployment.id,
+      type: "approval_resume",
+      priority: 2,
+      payload: { approvalId: id, action, comment, approvalType: approval.type },
+    });
+    nudgeJobProcessor().catch(() => {});
   }
 
   return NextResponse.json({ data: updated });

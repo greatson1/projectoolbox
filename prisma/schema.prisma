@@ -162,14 +162,22 @@ model Agent {
 }
 
 model AgentDeployment {
-  id         String   @id @default(cuid())
-  agentId    String
-  agent      Agent    @relation(fields: [agentId], references: [id])
-  projectId  String
-  project    Project  @relation(fields: [projectId], references: [id])
-  isActive   Boolean  @default(true)
-  config     Json?
-  deployedAt DateTime @default(now())
+  id             String    @id @default(cuid())
+  agentId        String
+  agent          Agent     @relation(fields: [agentId], references: [id])
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id])
+  isActive       Boolean   @default(true)
+  config         Json?
+  deployedAt     DateTime  @default(now())
+  // Autonomous lifecycle state
+  currentPhase   String?
+  phaseStatus    String?   @default("active") // active | pending_approval | completed
+  lastCycleAt    DateTime?
+  nextCycleAt    DateTime?
+  cycleInterval  Int       @default(10) // minutes between autonomous cycles
+  healthStatus   String?   @default("GREEN") // GREEN | AMBER | RED
+  autonomyConfig Json?     // { budgetApprovalThreshold, scopeChangeLimit, autoApprovePhases, requireApprovalFor }
 }
 
 model AgentDecision {
@@ -259,6 +267,8 @@ model Task {
   progress     Int       @default(0)
   storyPoints  Int?
   dependencies Json?
+  createdBy    String?   // "agent:<agentId>" or "user:<userId>"
+  lastEditedBy String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
@@ -559,6 +569,47 @@ model DailyDigest {
   generatedAt DateTime @default(now())
 
   @@unique([orgId, date])
+}
+
+// ─── Agent Autonomy (job queue + artefacts) ───
+
+model AgentJob {
+  id           String    @id @default(cuid())
+  agentId      String
+  deploymentId String
+  type         String    // autonomous_cycle | lifecycle_init | approval_resume | report_generate | user_edit_reconcile
+  priority     Int       @default(5) // 1=highest
+  status       String    @default("PENDING") // PENDING | CLAIMED | RUNNING | COMPLETED | FAILED
+  payload      Json?
+  result       Json?
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3)
+  scheduledFor DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+  error        String?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, scheduledFor])
+  @@index([agentId, type])
+}
+
+model AgentArtefact {
+  id        String   @id @default(cuid())
+  agentId   String
+  projectId String
+  phaseId   String?
+  name      String
+  format    String   @default("markdown")
+  content   String   @db.Text
+  status    String   @default("DRAFT") // DRAFT | PENDING_REVIEW | APPROVED | REJECTED
+  version   Int      @default(1)
+  feedback  String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agentId, phaseId])
+  @@index([projectId])
 }
 
 // ─── Enums ───
