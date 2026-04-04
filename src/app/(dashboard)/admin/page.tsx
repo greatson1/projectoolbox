@@ -87,6 +87,16 @@ export default function AdminSettingsPage() {
   const saveOrg = useSaveOrgSettings();
   const { data: apiTeam } = useTeamMembers();
   const { data: apiAudit } = useAuditLog();
+  const { data: apiKeys = [] } = useApiKeys();
+  const { data: webhooks = [] } = useWebhooks();
+  const createKey = useCreateApiKey();
+  const revokeKey = useRevokeApiKey();
+  const createWebhook = useCreateWebhook();
+  const deleteWebhook = useDeleteWebhook();
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [newWebhookUrl, setNewWebhookUrl] = useState("");
+  const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const org = orgSettings || {};
   const members = apiTeam || [];
   const auditLog = (apiAudit || []).map((e: any) => ({
@@ -380,19 +390,7 @@ export default function AdminSettingsPage() {
         })()}
 
         {/* ─── TAB 5: API & WEBHOOKS ─── */}
-        {tab === "api" && (() => {
-          const { data: apiKeys = [] } = useApiKeys();
-          const { data: webhooks = [] } = useWebhooks();
-          const createKey = useCreateApiKey();
-          const revokeKey = useRevokeApiKey();
-          const createWebhook = useCreateWebhook();
-          const deleteWebhook = useDeleteWebhook();
-          const [newKeyName, setNewKeyName] = useState("");
-          const [createdKey, setCreatedKey] = useState<string | null>(null);
-          const [newWebhookUrl, setNewWebhookUrl] = useState("");
-          const [createdSecret, setCreatedSecret] = useState<string | null>(null);
-
-          return (
+        {tab === "api" && (
             <>
               <TabHeader title="API & Webhooks" desc="Manage API access and event subscriptions" />
 
@@ -493,8 +491,7 @@ export default function AdminSettingsPage() {
                 </div>
               </Card>
             </>
-          );
-        })()}
+        )}
 
         {/* ─── TAB 6: AUDIT LOG ─── */}
         {tab === "audit" && (
