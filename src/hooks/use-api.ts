@@ -315,3 +315,161 @@ export function useAuditLog() {
     queryFn: () => api<any[]>("/api/admin/audit-log"),
   });
 }
+
+// ── Agent Actions ──
+
+export function usePauseAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api(`/api/agents/${agentId}/pause`, { method: "POST" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["agents"] }); qc.invalidateQueries({ queryKey: ["agent"] }); },
+  });
+}
+
+export function useResumeAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api(`/api/agents/${agentId}/resume`, { method: "POST" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["agents"] }); qc.invalidateQueries({ queryKey: ["agent"] }); },
+  });
+}
+
+export function useUpdateAgent(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["agent", agentId] }); qc.invalidateQueries({ queryKey: ["agents"] }); },
+  });
+}
+
+// ── Issues ──
+
+export function useCreateIssue(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/issues`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["issues", projectId] }),
+  });
+}
+
+// ── Change Requests ──
+
+export function useCreateChangeRequest(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/change-requests`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["change-requests", projectId] }),
+  });
+}
+
+// ── Stakeholders ──
+
+export function useCreateStakeholder(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/stakeholders`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stakeholders", projectId] }),
+  });
+}
+
+// ── Risks ──
+
+export function useUpdateRisk(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ riskId, ...data }: any) => api(`/api/projects/${projectId}/risks`, { method: "PATCH", body: JSON.stringify({ riskId, ...data }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["risks", projectId] }),
+  });
+}
+
+// ── Billing ──
+
+export function useCheckout() {
+  return useMutation({
+    mutationFn: (data: any) => api<any>("/api/billing/checkout", { method: "POST", body: JSON.stringify(data) }),
+  });
+}
+
+export function useBillingPortal() {
+  return useMutation({
+    mutationFn: () => api<any>("/api/billing/portal", { method: "POST" }),
+  });
+}
+
+// ── Admin ──
+
+export function useSaveOrgSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api("/api/admin/settings", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin"] }),
+  });
+}
+
+export function useUpdateTeamMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api("/api/admin/team", { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "team"] }),
+  });
+}
+
+export function useResendInvite() {
+  return useMutation({
+    mutationFn: (data: any) => api("/api/admin/team/invite", { method: "POST", body: JSON.stringify(data) }),
+  });
+}
+
+// ── Notifications Preferences ──
+
+export function useSaveNotificationPrefs() {
+  return useMutation({
+    mutationFn: (data: any) => api("/api/notifications/preferences", { method: "POST", body: JSON.stringify(data) }),
+  });
+}
+
+// ── Decisions ──
+
+export function useCreateDecision(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/decisions`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["decisions", projectId] }),
+  });
+}
+
+// ── Report Schedule ──
+
+export function useCreateReportSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api("/api/reports/schedule", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
+  });
+}
+
+// ── Communications ──
+
+export function useLogCommunication(projectId: string) {
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/communications`, { method: "POST", body: JSON.stringify(data) }),
+  });
+}
+
+// ── Artefact Review ──
+
+export function useUpdateArtefact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ artefactId, ...data }: any) => api(`/api/agents/artefacts/${artefactId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+  });
+}
+
+// ── Portfolio Email ──
+
+export function useEmailPortfolioReport() {
+  return useMutation({
+    mutationFn: (data: any) => api("/api/portfolio/email", { method: "POST", body: JSON.stringify(data) }),
+  });
+}

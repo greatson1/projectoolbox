@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import Google from "next-auth/providers/google";
+import GoogleProvider from "next-auth/providers/google";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
 
@@ -12,7 +12,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     newUser: "/onboarding",
   },
   providers: [
-    Google,
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET || "",
+    }),
     CredentialsProvider({
       name: "credentials",
       credentials: {
