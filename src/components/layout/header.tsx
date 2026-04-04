@@ -6,6 +6,7 @@ import { useAppStore } from "@/stores/app";
 import { Bell, Moon, Sun, Search, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { OrgSwitcher } from "./org-switcher";
 import Link from "next/link";
 
 export function Header() {
@@ -18,7 +19,10 @@ export function Header() {
     <header
       className="sticky top-0 z-30 flex items-center justify-between h-16 px-6 border-b border-border bg-background/80 backdrop-blur-md"
     >
-      {/* Search */}
+      {/* Org Switcher + Search */}
+      <div className="flex items-center gap-3 flex-1 max-w-lg">
+        <OrgSwitcher />
+      </div>
       <div className="flex items-center gap-2 flex-1 max-w-md">
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border w-full">
           <Search className="w-4 h-4 text-muted-foreground" />

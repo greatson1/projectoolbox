@@ -17,10 +17,7 @@ const TABS = [
   { id: "org", label: "Organisation", icon: "🏢" },
   { id: "team", label: "Team Management", icon: "👥" },
   { id: "roles", label: "Roles & Permissions", icon: "🔐" },
-  { id: "security", label: "Security", icon: "🛡️" },
   { id: "integrations", label: "Integrations", icon: "🔗" },
-  { id: "api", label: "API & Webhooks", icon: "⚡" },
-  { id: "compliance", label: "Data & Compliance", icon: "📋" },
   { id: "audit", label: "Audit Log", icon: "📜" },
 ] as const;
 
@@ -52,17 +49,19 @@ const PERMISSIONS = [
 
 // Reference data only — not tenant-specific
 const ALL_INTEGRATIONS = [
-  { name: "Slack", icon: "💬", desc: "Send notifications to project channels", configKey: "slackWebhookUrl" },
+  { name: "Slack", icon: "💬", desc: "Send notifications to project channels", configKey: "slackConnected", oauth: "slack" },
+  { name: "Jira", icon: "🔗", desc: "Two-way task sync, issue tracking", configKey: "jiraConnected", oauth: "atlassian" },
+  { name: "Confluence", icon: "📝", desc: "Wiki sync, knowledge base", configKey: "confluenceConnected", oauth: "atlassian" },
+  { name: "Azure DevOps", icon: "🔷", desc: "Work items, pipelines, repos", configKey: "devopsConnected", oauth: "microsoft", oauthQuery: "service=devops" },
+  { name: "MS Planner", icon: "📋", desc: "Task boards, plan management", configKey: "plannerConnected", oauth: "microsoft", oauthQuery: "service=planner" },
+  { name: "Monday.com", icon: "🟣", desc: "Board sync, item tracking", configKey: "mondayConnected", oauth: "monday" },
+  { name: "Asana", icon: "🟠", desc: "Project and task sync", configKey: "asanaConnected", oauth: "asana" },
+  { name: "Zoom", icon: "📹", desc: "Meeting creation, transcript capture", configKey: "zoomConnected", oauth: "zoom" },
   { name: "Google Calendar", icon: "📅", desc: "Meeting scheduling, agent calendar", configKey: "googleCalendarConnected" },
-  { name: "Zoom", icon: "📹", desc: "Meeting creation, transcript capture", configKey: "zoomConnected" },
-  { name: "Resend", icon: "📧", desc: "Agent email addresses, notifications", configKey: "resendConnected", alwaysOn: true },
-  { name: "Perplexity", icon: "🔍", desc: "Web research, PESTLE scanning", configKey: "perplexityConnected" },
-  { name: "Jira", icon: "🔗", desc: "Two-way task sync, issue tracking", configKey: "jiraConnected" },
   { name: "GitHub", icon: "🐙", desc: "PR tracking, code commits", configKey: "githubConnected" },
-  { name: "MS Teams", icon: "📺", desc: "Team chat and meeting integration", configKey: "teamsConnected" },
-  { name: "Confluence", icon: "📝", desc: "Wiki sync, knowledge base", configKey: "confluenceConnected" },
-  { name: "Notion", icon: "📓", desc: "Document sync, databases", configKey: "notionConnected" },
-];
+  { name: "Resend", icon: "📧", desc: "Agent email addresses, notifications", configKey: "resendConnected", alwaysOn: true },
+  { name: "Perplexity", icon: "🔍", desc: "Web research, PESTLE scanning", configKey: "perplexityConnected", alwaysOn: true },
+] as const;
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN
@@ -73,12 +72,7 @@ export default function AdminSettingsPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
 
   // Security state
-  const [pwdLength, setPwdLength] = useState(12);
-  const [pwdUpper, setPwdUpper] = useState(true);
-  const [pwdNumber, setPwdNumber] = useState(true);
-  const [pwdSpecial, setPwdSpecial] = useState(false);
-  const [sessionTimeout, setSessionTimeout] = useState("8");
-  const [require2fa, setRequire2fa] = useState(true);
+  // Security/integration state removed — those tabs were decorative
 
   // Compliance state
   const [dataResidency, setDataResidency] = useState("uk");
@@ -314,247 +308,7 @@ export default function AdminSettingsPage() {
           </>
         )}
 
-        {/* ─── TAB 4: SECURITY ─── */}
-        {tab === "security" && (
-          <>
-            <TabHeader title="Security" desc="Configure authentication, sessions, and access controls" />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Password policy */}
-              <Card>
-                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Password Policy</h3>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px] text-muted-foreground">Minimum length</span>
-                      <span className="text-[13px] font-bold text-primary">{pwdLength} characters</span>
-                    </div>
-                    <input type="range" min={8} max={24} value={pwdLength} onChange={e => setPwdLength(Number(e.target.value))}
-                      className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                      style={{ background: `linear-gradient(to right, ${"var(--primary)"} ${((pwdLength - 8) / 16) * 100}%, ${"var(--border)"}44 ${((pwdLength - 8) / 16) * 100}%)` }} />
-                  </div>
-                  <ToggleRow label="Require uppercase letter" checked={pwdUpper} onChange={setPwdUpper} />
-                  <ToggleRow label="Require number" checked={pwdNumber} onChange={setPwdNumber} />
-                  <ToggleRow label="Require special character" checked={pwdSpecial} onChange={setPwdSpecial} />
-                </div>
-              </Card>
-
-              {/* 2FA + Session */}
-              <Card>
-                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Authentication</h3>
-                <div className="space-y-3">
-                  <ToggleRow label="Require 2FA for all members" checked={require2fa} onChange={setRequire2fa} />
-                  {require2fa && (
-                    <div className="p-2.5 rounded-[8px] bg-muted/20">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-muted-foreground">2FA Adoption</span>
-                        <span className="text-[11px] font-bold" style={{ color: "#10B981" }}>{members.length}/{members.length} members</span>
-                      </div>
-                      <Progress value={71} className="h-1.5" />
-                    </div>
-                  )}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px] text-muted-foreground">Session timeout</span>
-                      <select className="px-2 py-1 rounded-[6px] text-[11px] bg-background text-foreground border border-border" value={sessionTimeout}
-                        onChange={e => setSessionTimeout(e.target.value)}>
-                        {["1", "4", "8", "24", "168"].map(h => <option key={h} value={h}>{h === "168" ? "7 days" : `${h} hours`}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* SSO */}
-                <div className="mt-4 pt-3 border-t border-border/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[12px] font-semibold text-foreground">SSO Configuration</p>
-                      <p className="text-[10px] text-muted-foreground">SAML 2.0 or OpenID Connect</p>
-                    </div>
-                    <Badge variant="secondary">Enterprise</Badge>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-border/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[12px] font-semibold text-foreground">IP Allowlisting</p>
-                      <p className="text-[10px] text-muted-foreground">Restrict access to approved IPs</p>
-                    </div>
-                    <Badge variant="secondary">Enterprise</Badge>
-                  </div>
-                </div>
-              </Card>
-            </div>
-
-            {/* Active Sessions */}
-            <Card>
-              <h3 className="text-[14px] font-semibold mb-3 text-foreground">Active Sessions</h3>
-              <div className="p-4 text-center">
-                <p className="text-xs text-muted-foreground">Your current session is active. Session management will show all active browser sessions once NextAuth session tracking is enabled.</p>
-              </div>
-              <Button variant="default" size="sm" onClick={() => { saveOrg.mutate({ securityPolicy: { pwdLength, pwdUpper, pwdNumber, pwdSpecial, require2fa, sessionTimeout } }); toast.success("Security settings saved"); }}>Save Security Settings</Button>
-            </Card>
-          </>
-        )}
-
-        {/* ─── TAB 5: INTEGRATIONS ─── */}
-        {tab === "integrations" && (() => {
-          const orgMeta = (org as any)?.autoTopUp || {};
-          const connected = ALL_INTEGRATIONS.filter(i => i.alwaysOn || orgMeta[i.configKey]);
-          const available = ALL_INTEGRATIONS.filter(i => !i.alwaysOn && !orgMeta[i.configKey]);
-          return (
-            <>
-              <TabHeader title="Integrations" desc="Connect your tools to supercharge your agents" />
-
-              {connected.length > 0 && (
-                <>
-                  <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Connected ({connected.length})</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-                    {connected.map(int => (
-                      <Card key={int.name}>
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-[24px]">{int.icon}</span>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[14px] font-bold text-foreground">{int.name}</span>
-                                <Badge variant="default">Connected</Badge>
-                              </div>
-                              <p className="text-[11px] text-muted-foreground">{int.desc}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {available.length > 0 && (
-                <>
-                  <h4 className="text-[12px] font-bold uppercase tracking-wider text-primary">Available ({available.length})</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {available.map(int => (
-                      <Card key={int.name}>
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-[20px]">{int.icon}</span>
-                          <span className="text-[13px] font-bold text-foreground">{int.name}</span>
-                        </div>
-                        <p className="text-[11px] mb-3 text-muted-foreground">{int.desc}</p>
-                        <Button variant="outline" size="sm" className="w-full" onClick={() => toast.info(`Contact support to connect ${int.name}`)}>Connect</Button>
-                      </Card>
-                    ))}
-                  </div>
-                </>
-              )}
-            </>
-          );
-        })()}
-
-        {/* ─── TAB 6: API & WEBHOOKS ─── */}
-        {tab === "api" && (
-          <>
-            <TabHeader title="API & Webhooks" desc="Manage API access and event subscriptions" />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* API Keys */}
-              <Card>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-[14px] font-semibold text-foreground">API Keys</h3>
-                </div>
-                <ApiKeysSection orgId={org?.id} />
-                <div className="mt-3 p-2 rounded-[6px] text-[10px]" style={{ background: `${"#F59E0B"}08`, color: "#F59E0B" }}>
-                  Rate limit: 1,000 requests/min · 100,000/day
-                </div>
-              </Card>
-
-              {/* Credit Usage */}
-              <Card>
-                <h3 className="text-[14px] font-semibold mb-2 text-foreground">Credit Usage</h3>
-                <div className="p-4 text-center">
-                  <p className="text-3xl font-bold text-primary">{org?.creditBalance?.toLocaleString() || 0}</p>
-                  <p className="text-xs text-muted-foreground mt-1">credits remaining</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Plan: {org?.plan || "FREE"}</p>
-                </div>
-              </Card>
-            </div>
-
-            {/* Webhooks */}
-            <Card>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[14px] font-semibold text-foreground">Webhook Endpoints</h3>
-              </div>
-              <div className="p-4 text-center">
-                <p className="text-xs text-muted-foreground">No webhook endpoints configured. Webhooks allow external systems to receive real-time events from Projectoolbox (agent actions, approvals, phase completions).</p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => toast.info("Webhook configuration coming soon")}>Add Webhook</Button>
-              </div>
-            </Card>
-          </>
-        )}
-
-        {/* ─── TAB 7: DATA & COMPLIANCE ─── */}
-        {tab === "compliance" && (
-          <>
-            <TabHeader title="Data & Compliance" desc="Data residency, retention, GDPR compliance, and governance" />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Residency + Retention */}
-              <Card>
-                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Data Residency & Retention</h3>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-muted-foreground">Data Residency</p>
-                    <div className="flex gap-2">
-                      {[{ id: "uk", label: "🇬🇧 United Kingdom" }, { id: "eu", label: "🇪🇺 EU (Frankfurt)" }, { id: "us", label: "🇺🇸 US (Virginia)" }].map(r => (
-                        <button key={r.id} className="flex-1 py-2 rounded-[8px] text-[11px] font-semibold transition-all"
-                          onClick={() => setDataResidency(r.id)}
-                          style={{
-                            background: dataResidency === r.id ? `${"var(--primary)"}15` : "transparent",
-                            color: dataResidency === r.id ? "var(--primary)" : "var(--muted-foreground)",
-                            border: `1px solid ${dataResidency === r.id ? "var(--primary)" + "44" : "var(--border)" + "33"}`,
-                          }}>{r.label}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px] text-muted-foreground">Data retention period</span>
-                      <select className="px-2 py-1 rounded-[6px] text-[11px] bg-background text-foreground border border-border" value={retentionMonths}
-                        onChange={e => setRetentionMonths(e.target.value)}>
-                        {["12", "24", "36", "60", "84"].map(m => <option key={m} value={m}>{m} months</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Compliance */}
-              <Card>
-                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Compliance</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[16px]">🇪🇺</span>
-                      <span className="text-[12px] font-semibold text-foreground">GDPR</span>
-                    </div>
-                    <Badge variant="default">Compliant</Badge>
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[16px]">🇬🇧</span>
-                      <span className="text-[12px] font-semibold text-foreground">UK DPA 2018</span>
-                    </div>
-                    <Badge variant="default">Compliant</Badge>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-2">Data is stored in {dataResidency === "uk" ? "UK (London)" : dataResidency === "eu" ? "EU (Frankfurt)" : "US (Virginia)"} via Supabase. All data encrypted at rest and in transit.</p>
-                </div>
-              </Card>
-            </div>
-          </>
-        )}
-
-        {/* ─── TAB 8: AUDIT LOG ─── */}
+        {/* ─── TAB 4: AUDIT LOG ─── */}
         {tab === "audit" && (
           <>
             <TabHeader title="Audit Log" desc="Complete activity history across your organisation" />

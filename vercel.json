@@ -3,6 +3,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
   "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/api/oauth/:path*",
+      "destination": "http://187.77.182.159:3099/api/oauth/:path*"
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/agent-tick",

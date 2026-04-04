@@ -4,8 +4,8 @@ import type { NextRequest } from "next/server";
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Public routes
-  const publicPaths = ["/", "/login", "/signup", "/onboarding", "/api/auth", "/api/webhooks"];
+  // Public routes (no auth required)
+  const publicPaths = ["/", "/login", "/signup", "/onboarding", "/invite", "/review", "/api/auth", "/api/webhooks", "/api/review", "/api/invitations"];
   const isPublic = publicPaths.some(p => pathname === p || pathname.startsWith(p + "/"));
 
   // Static/API — pass through

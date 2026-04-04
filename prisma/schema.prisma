@@ -45,25 +45,74 @@ model VerificationToken {
 // ─── Users & Orgs ───
 
 model User {
-  id                 String          @id @default(cuid())
-  email              String          @unique
+  id                 String               @id @default(cuid())
+  email              String               @unique
   emailVerified      DateTime?
   name               String?
   passwordHash       String?
   image              String?
-  role               UserRole        @default(MEMBER)
-  onboardingComplete Boolean         @default(false)
+  role               UserRole             @default(MEMBER)
+  onboardingComplete Boolean              @default(false)
   notificationPrefs  Json?
-  orgId              String?
-  org                Organisation?   @relation(fields: [orgId], references: [id])
+  orgId              String?              // Active org (last selected)
+  org                Organisation?        @relation(fields: [orgId], references: [id])
+  organisations      UserOrganisation[]   // All orgs this user belongs to
   accounts           Account[]
   sessions           Session[]
   projects           ProjectMember[]
   approvals          Approval[]
   notifications      Notification[]
   decisions          Decision[]
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+}
+
+// Multi-org membership — users can belong to multiple orgs with different roles
+model UserOrganisation {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId    String
+  org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role     UserRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+// Invitation to join an org
+model Invitation {
+  id        String           @id @default(cuid())
+  email     String
+  orgId     String
+  org       Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role      UserRole         @default(MEMBER)
+  token     String           @unique
+  status    InvitationStatus @default(PENDING)
+  invitedBy String?
+  expiresAt DateTime
+  sentAt    DateTime         @default(now())
+  acceptedAt DateTime?
+
+  @@index([email])
+  @@index([orgId])
+}
+
+// Magic link for external stakeholder review (no account needed)
+model ReviewLink {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  approvalId String
+  approval   Approval @relation(fields: [approvalId], references: [id])
+  email      String?
+  name       String?
+  expiresAt  DateTime
+  viewedAt   DateTime?
+  actionedAt DateTime?
+  action     String?  // APPROVED | REJECTED | CHANGES_REQUESTED
+  comment    String?  @db.Text
+  createdAt  DateTime @default(now())
 }
 
 model Organisation {
@@ -82,6 +131,8 @@ model Organisation {
   creditBalance    Int                 @default(0)
   autoTopUp        Json?
   users            User[]
+  memberships      UserOrganisation[]
+  invitations      Invitation[]
   projects         Project[]
   agents           Agent[]
   invoices         Invoice[]
@@ -257,6 +308,7 @@ model Approval {
   reasoningChain      String?   @db.Text // agent's explanation for the recommendation
   suggestedAlternatives Json?           // [{ description, impactScores, creditCost }]
   affectedItems       Json?             // [{ type: "task"|"risk"|"issue", id, title }]
+  reviewLinks         ReviewLink[]
 }
 
 // ─── Project Modules ───
@@ -796,6 +848,13 @@ enum ReportStatus {
   PUBLISHED
   SCHEDULED
   FAILED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
 }
 
 enum MeetingStatus {
