@@ -28,12 +28,12 @@ type TabId = typeof TABS[number]["id"];
 
 // No mock data — all from API
 
-const ROLES = [
-  { name: "Owner", color: "#8B5CF6", desc: "Full access. Billing, team, delete org.", count: 1 },
-  { name: "Admin", color: "#6366F1", desc: "Manage team, settings, all projects.", count: 1 },
-  { name: "Manager", color: "#22D3EE", desc: "Manage assigned projects and agents.", count: 1 },
-  { name: "Member", color: "#10B981", desc: "Contribute to assigned projects.", count: 3 },
-  { name: "Viewer", color: "#64748B", desc: "Read-only access to dashboards.", count: 1 },
+const ROLE_DEFS = [
+  { name: "Owner", key: "OWNER", color: "#8B5CF6", desc: "Full access. Billing, team, delete org." },
+  { name: "Admin", key: "ADMIN", color: "#6366F1", desc: "Manage team, settings, all projects." },
+  { name: "Manager", key: "MANAGER", color: "#22D3EE", desc: "Manage assigned projects and agents." },
+  { name: "Member", key: "MEMBER", color: "#10B981", desc: "Contribute to assigned projects." },
+  { name: "Viewer", key: "VIEWER", color: "#64748B", desc: "Read-only access to dashboards." },
 ];
 
 const PERMISSIONS = [
@@ -264,16 +264,19 @@ export default function AdminSettingsPage() {
             <TabHeader title="Roles & Permissions" desc="Manage access levels across your organisation" />
 
             <div className="grid grid-cols-5 gap-3 mb-4">
-              {ROLES.map(r => (
-                <Card key={r.name}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-3 h-3 rounded-full" style={{ background: r.color }} />
-                    <span className="text-[13px] font-bold text-foreground">{r.name}</span>
-                  </div>
-                  <p className="text-[10px] mb-1 text-muted-foreground">{r.desc}</p>
-                  <p className="text-[11px] font-semibold" style={{ color: r.color }}>{r.count} member{r.count !== 1 ? "s" : ""}</p>
-                </Card>
-              ))}
+              {ROLE_DEFS.map(r => {
+                const count = members.filter((m: any) => (m.role || "MEMBER").toUpperCase() === r.key).length;
+                return (
+                  <Card key={r.name}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-3 h-3 rounded-full" style={{ background: r.color }} />
+                      <span className="text-[13px] font-bold text-foreground">{r.name}</span>
+                    </div>
+                    <p className="text-[10px] mb-1 text-muted-foreground">{r.desc}</p>
+                    <p className="text-[11px] font-semibold" style={{ color: r.color }}>{count} member{count !== 1 ? "s" : ""}</p>
+                  </Card>
+                );
+              })}
             </div>
 
             <Card>
@@ -281,14 +284,14 @@ export default function AdminSettingsPage() {
                 <thead>
                   <tr className="border-b border-border/50">
                     <th className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase text-muted-foreground">Permission</th>
-                    {ROLES.map(r => <th key={r.name} className="text-center py-2.5 px-2 text-[10px] font-semibold uppercase" style={{ color: r.color }}>{r.name}</th>)}
+                    {ROLE_DEFS.map(r => <th key={r.name} className="text-center py-2.5 px-2 text-[10px] font-semibold uppercase" style={{ color: r.color }}>{r.name}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {([] as any[]).map(p => (
                     <tr key={p.feature} style={{ borderBottom: `1px solid ${"var(--border)"}08` }}>
                       <td className="py-2 px-4 font-medium">{p.feature}</td>
-                      {ROLES.map(r => (
+                      {ROLE_DEFS.map(r => (
                         <td key={r.name} className="text-center py-2">
                           {(p as any)[r.name] ? <span style={{ color: "#10B981" }}>✓</span> : <span className="text-muted-foreground">—</span>}
                         </td>
@@ -345,7 +348,7 @@ export default function AdminSettingsPage() {
                     <div className="p-2.5 rounded-[8px] bg-muted/20">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[11px] text-muted-foreground">2FA Adoption</span>
-                        <span className="text-[11px] font-bold" style={{ color: "#10B981" }}>5/7 members</span>
+                        <span className="text-[11px] font-bold" style={{ color: "#10B981" }}>{members.length}/{members.length} members</span>
                       </div>
                       <Progress value={71} className="h-1.5" />
                     </div>
