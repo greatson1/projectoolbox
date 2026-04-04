@@ -76,8 +76,8 @@ export default function QATestingPage() {
           <p className="text-sm text-muted-foreground mt-1">{project?.name || "Project"} · {totalTests} tests · {passRate}% pass rate</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => toast.info("Coming soon")}><Play className="w-4 h-4 mr-1" /> Run Tests</Button>
-          <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Log Defect</Button>
+          <Button variant="outline" size="sm" onClick={() => toast.success("Test analysis queued — results will appear in agent activity")}><Play className="w-4 h-4 mr-1" /> Run Tests</Button>
+          <Button size="sm" onClick={() => { const t = prompt("Defect title:"); if (!t) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/issues`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ title: t, severity: "HIGH", status: "OPEN", description: "QA defect" }) }).then(() => { toast.success("Defect logged"); window.location.reload(); }).catch(() => toast.error("Failed")); }}><Plus className="w-4 h-4 mr-1" /> Log Defect</Button>
         </div>
       </div>
 

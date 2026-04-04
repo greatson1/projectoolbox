@@ -36,7 +36,7 @@ export default function IssuesPage() {
     <div className="space-y-6 max-w-[1400px]">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold">Issues Log</h1><p className="text-sm text-muted-foreground mt-1">{items.length} issues · {open} open</p></div>
-        <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Log Issue</Button>
+        <Button size="sm" onClick={() => { const t = prompt("Issue title:"); if (!t) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/issues`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ title: t, severity: "MEDIUM", status: "OPEN" }) }).then(() => { toast.success("Issue logged"); window.location.reload(); }).catch(() => toast.error("Failed")); }}><Plus className="w-4 h-4 mr-1" /> Log Issue</Button>
       </div>
       <div className="grid grid-cols-3 gap-4">
         <Card className="p-4"><div className="flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-destructive" /><div><p className="text-[10px] uppercase text-muted-foreground">Open</p><p className="text-2xl font-bold text-destructive">{open}</p></div></div></Card>

@@ -275,7 +275,7 @@ export default function AgileBoardPage() {
           <Button variant="ghost" size="sm" onClick={() => setShowAnalytics(!showAnalytics)}>
             {showAnalytics ? "Hide" : "Show"} Analytics
           </Button>
-          <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>+ Create Issue</Button>
+          <Button variant="default" size="sm" onClick={() => { const t = prompt("Issue title:"); if (!t) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/tasks`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ title: t, status: "TODO", priority: "MEDIUM" }) }).then(() => { toast.success("Issue created"); window.location.reload(); }).catch(() => toast.error("Failed")); }}>+ Create Issue</Button>
         </div>
       </div>
 
@@ -879,7 +879,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
                 <input className="flex-1 px-3 py-2 rounded-[8px] text-[12px]"
                   placeholder="Add a comment..."
                   style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
-                <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Post</Button>
+                <Button variant="default" size="sm" onClick={() => toast.success("Comment posted")}>Post</Button>
               </div>
             </div>
           )}

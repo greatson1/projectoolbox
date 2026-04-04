@@ -122,8 +122,8 @@ export default function ReportsHubPage() {
           <p className="text-sm text-muted-foreground mt-1">{project?.name || "All Projects"} · {reportItems.length} reports generated</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => toast.info("Coming soon")}><Calendar className="w-4 h-4 mr-1" /> Schedule</Button>
-          <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Generate Report</Button>
+          <Button variant="outline" size="sm" onClick={() => { const freq = prompt("Frequency (DAILY/WEEKLY/MONTHLY):", "WEEKLY"); if (!freq) return; fetch("/api/reports/schedule", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ frequency: freq.toUpperCase(), projectId: window.location.pathname.split("/")[2], name: "Scheduled Report" }) }).then(() => toast.success("Schedule created")).catch(() => toast.error("Failed")); }}><Calendar className="w-4 h-4 mr-1" /> Schedule</Button>
+          <Button size="sm" onClick={() => { fetch("/api/reports", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "STATUS", projectId: window.location.pathname.split("/")[2], title: "Status Report" }) }).then(() => { toast.success("Report generated"); window.location.reload(); }).catch(() => toast.error("Failed")); }}><Plus className="w-4 h-4 mr-1" /> Generate Report</Button>
         </div>
       </div>
 
@@ -258,7 +258,7 @@ export default function ReportsHubPage() {
               </CardContent>
             </Card>
           ))}
-          <Button variant="outline" className="w-full" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Add Schedule</Button>
+          <Button variant="outline" className="w-full" onClick={() => { const freq = prompt("Frequency (DAILY/WEEKLY/MONTHLY):", "WEEKLY"); if (!freq) return; fetch("/api/reports/schedule", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ frequency: freq.toUpperCase(), projectId: window.location.pathname.split("/")[2], name: "Scheduled Report" }) }).then(() => toast.success("Schedule added")).catch(() => toast.error("Failed")); }}><Plus className="w-4 h-4 mr-1" /> Add Schedule</Button>
         </div>
       )}
     </div>

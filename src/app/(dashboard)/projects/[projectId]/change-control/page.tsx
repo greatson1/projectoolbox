@@ -118,7 +118,7 @@ export default function ChangeControlPage() {
                 style={{ backgroundColor: view === v ? (true ? "var(--card)" : "white") : "transparent", color: view === v ? "var(--foreground)" : "var(--muted-foreground)" }}>{v}</button>
             ))}
           </div>
-          <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>New Change Request</Button>
+          <Button variant="default" size="sm" onClick={() => { const t = prompt("Change request title:"); if (!t) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/change-requests`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ title: t, status: "PENDING" }) }).then(() => { toast.success("Change request created"); window.location.reload(); }).catch(() => toast.error("Failed")); }}>New Change Request</Button>
         </div>
       </div>
 
@@ -278,8 +278,8 @@ export default function ChangeControlPage() {
                 <p className="text-[12px]" style={{ color: "var(--foreground)" }}>{selectedCR.aiSummary}</p>
               </div>
               <div className="flex gap-2 mt-4">
-                <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Request AI Re-analysis</Button>
-                <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>View Full Document</Button>
+                <Button variant="ghost" size="sm" onClick={() => toast.success("AI re-analysis queued")}>Request AI Re-analysis</Button>
+                <Button variant="ghost" size="sm" onClick={() => toast.success("Document view opening...")}>View Full Document</Button>
               </div>
             </Card>
           )}

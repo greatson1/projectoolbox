@@ -117,7 +117,7 @@ export default function StakeholdersPage() {
                 style={{ backgroundColor: view === v ? (true ? "var(--card)" : "white") : "transparent", color: view === v ? "var(--foreground)" : "var(--muted-foreground)" }}>{v}</button>
             ))}
           </div>
-          <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Add Stakeholder</Button>
+          <Button variant="default" size="sm" onClick={() => { const n = prompt("Stakeholder name:"); if (!n) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/stakeholders`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ name: n, role: "Stakeholder" }) }).then(() => { toast.success("Stakeholder added"); window.location.reload(); }).catch(() => toast.error("Failed")); }}>Add Stakeholder</Button>
         </div>
       </div>
 
@@ -201,7 +201,7 @@ export default function StakeholdersPage() {
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
               <CardTitle className="text-sm">Communications Log</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Log Communication</Button>
+              <Button variant="ghost" size="sm" onClick={() => { const notes = prompt("Communication notes:"); if (!notes) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/communications`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "email", notes }) }).then(() => toast.success("Communication logged")).catch(() => toast.error("Failed")); }}>Log Communication</Button>
             </CardHeader>
             <CardContent>
             <div className="space-y-3">
