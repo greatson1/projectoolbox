@@ -259,7 +259,7 @@ export default function SprintTrackerPage() {
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-[12px] font-semibold" style={{ color: "#10B981" }}>Day {sprint.daysPassed} of {sprint.days} — In Progress</span>
           </div>
-          <Button variant="default" size="sm">Export Report</Button>
+          <Button variant="default" size="sm" disabled title="Coming soon">Export Report</Button>
         </div>
       </div>
 

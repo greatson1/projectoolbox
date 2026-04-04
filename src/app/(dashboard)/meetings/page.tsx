@@ -93,7 +93,7 @@ export default function MeetingsPage() {
                 <Mail className="h-3.5 w-3.5 mr-1" /> Send Follow-up
               </Button>
             )}
-            <Button variant="ghost" size="sm"><Download className="h-3.5 w-3.5 mr-1" /> Export</Button>
+            <Button variant="ghost" size="sm" disabled title="Coming soon"><Download className="h-3.5 w-3.5 mr-1" /> Export</Button>
           </div>
         </div>
 

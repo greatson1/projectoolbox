@@ -172,7 +172,7 @@ export default function ApprovalsPage() {
         </div>
         <div className="flex items-center gap-3">
           {highCount > 0 && <Badge variant="destructive">{highCount} high priority</Badge>}
-          <Button variant="ghost" size="sm">Approve All Low Risk</Button>
+          <Button variant="ghost" size="sm" disabled title="Coming soon">Approve All Low Risk</Button>
         </div>
       </div>
 
@@ -186,7 +186,7 @@ export default function ApprovalsPage() {
             <span className="text-[12px] ml-2" style={{ color: "var(--muted-foreground)" }}>All agent outputs require human approval before becoming official</span>
           </div>
         </div>
-        <button className="text-[12px] font-medium" style={{ color: "var(--primary)" }}>Configure</button>
+        <button className="text-[12px] font-medium opacity-50 cursor-not-allowed" title="Governance configuration coming soon" style={{ color: "var(--primary)" }}>Configure</button>
       </div>
 
       {/* Filter tabs */}

@@ -225,7 +225,7 @@ export default function PortfolioPage() {
             </div>
             <div className="flex gap-3">
               <Button variant="ghost" size="sm" onClick={() => setShowExecReport(false)}>Close</Button>
-              <Button variant="default" size="sm">Export PDF</Button>
+              <Button variant="default" size="sm" disabled title="Coming soon">Export PDF</Button>
               <Button variant="default" size="sm">Email to Stakeholders</Button>
             </div>
           </div>

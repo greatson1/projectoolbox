@@ -12,6 +12,7 @@ import { CreditService } from "@/lib/credits/service";
 import {
   classifyDecision,
   getActionCreditCost,
+  isInCooldown,
   type ActionProposal,
   type ClassificationResult,
   type DeploymentConfig,
@@ -305,6 +306,22 @@ async function performMutation(
   proposal: ActionProposal,
   context: ExecutionContext,
 ): Promise<Record<string, any>> {
+  // ── 24-hour cooldown check for affected items ──
+  if (proposal.affectedItems?.length) {
+    for (const item of proposal.affectedItems) {
+      if (item.type === "task") {
+        const task = await db.task.findUnique({ where: { id: item.id }, select: { lastEditedBy: true, updatedAt: true } });
+        if (task && isInCooldown(task.lastEditedBy, task.updatedAt)) {
+          return { action: "skipped_cooldown", itemId: item.id, reason: "Human edited this item within 24 hours — agent respects override" };
+        }
+      }
+      if (item.type === "risk") {
+        const risk = await db.risk.findUnique({ where: { id: item.id }, select: { updatedAt: true } });
+        // Risks don't have lastEditedBy yet, but we can add it later
+      }
+    }
+  }
+
   switch (proposal.type) {
     case "TASK_ASSIGNMENT": {
       // Create or update a task

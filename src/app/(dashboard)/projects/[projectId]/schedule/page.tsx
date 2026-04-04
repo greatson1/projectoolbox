@@ -455,7 +455,7 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
           <Button variant="ghost" size="sm" onClick={() => setShowCriticalPath(!showCriticalPath)}>
             {showCriticalPath ? "Hide" : "Show"} Critical Path
           </Button>
-          <Button variant="default" size="sm">Export</Button>
+          <Button variant="default" size="sm" disabled title="Coming soon">Export</Button>
         </div>
       </div>
 

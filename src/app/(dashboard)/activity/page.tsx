@@ -83,7 +83,7 @@ export default function ActivityLogPage() {
           <p className="text-sm text-muted-foreground mt-1">What your agents did · {activities.length} actions</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> Export</Button>
+          <Button variant="outline" size="sm" disabled title="Coming soon"><Download className="w-4 h-4 mr-1" /> Export</Button>
           <Link href="/agents/chat"><Button size="sm"><MessageSquare className="w-4 h-4 mr-1" /> Request Digest</Button></Link>
         </div>
       </div>

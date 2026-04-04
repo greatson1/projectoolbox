@@ -283,7 +283,7 @@ export default function AdminSettingsPage() {
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary">{inv.role}</Badge>
                       <Button variant="ghost" size="sm">Resend</Button>
-                      <Button variant="ghost" size="sm">Revoke</Button>
+                      <Button variant="ghost" size="sm" disabled title="Coming soon">Revoke</Button>
                     </div>
                   </div>
                 ))}
@@ -455,7 +455,7 @@ export default function AdminSettingsPage() {
                         <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{s.ip} · {s.location} · {s.lastActive}</p>
                       </div>
                     </div>
-                    {!s.current && <Button variant="ghost" size="sm">Revoke</Button>}
+                    {!s.current && <Button variant="ghost" size="sm" disabled title="Coming soon">Revoke</Button>}
                   </div>
                 ))}
               </div>
@@ -484,7 +484,7 @@ export default function AdminSettingsPage() {
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>Last sync: {int.lastSync}</p>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm">Configure</Button>
+                    <Button variant="ghost" size="sm" disabled title="Coming soon">Configure</Button>
                   </div>
                 </Card>
               ))}
@@ -499,7 +499,7 @@ export default function AdminSettingsPage() {
                     <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
                   </div>
                   <p className="text-[11px] mb-3" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
-                  <Button variant="default" size="sm" className="w-full">Connect</Button>
+                  <Button variant="default" size="sm" className="w-full" disabled title="Coming soon">Connect</Button>
                 </Card>
               ))}
             </div>
@@ -541,8 +541,8 @@ export default function AdminSettingsPage() {
                       </div>
                       <div className="flex gap-1.5 mt-2">
                         <Button variant="ghost" size="sm">Copy</Button>
-                        <Button variant="ghost" size="sm">Regenerate</Button>
-                        <Button variant="ghost" size="sm">Revoke</Button>
+                        <Button variant="ghost" size="sm" disabled title="Coming soon">Regenerate</Button>
+                        <Button variant="ghost" size="sm" disabled title="Coming soon">Revoke</Button>
                       </div>
                     </div>
                   ))}
@@ -633,7 +633,7 @@ export default function AdminSettingsPage() {
                       </select>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm">📥 GDPR Data Export</Button>
+                  <Button variant="ghost" size="sm">📥 GDPR Data Export (Coming Soon)</Button>
                 </div>
               </Card>
 
@@ -654,7 +654,7 @@ export default function AdminSettingsPage() {
                   ))}
                 </div>
                 <div className="flex gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
-                  <Button variant="ghost" size="sm">📄 Download DPA</Button>
+                  <Button variant="ghost" size="sm">📄 Download DPA (Coming Soon)</Button>
                   <Button variant="ghost" size="sm">📄 AI Governance Statement</Button>
                 </div>
               </Card>

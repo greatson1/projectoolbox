@@ -96,10 +96,20 @@ export const CREDIT_COSTS: Record<string, number> = {
 
 // ─── Risk Tier Boundaries ───
 
+/**
+ * Risk tier boundaries per spec Section 3.1:
+ *   LOW:      4–8   (task updates, internal notes, backlog grooming)
+ *   MEDIUM:   9–12  (budget ≤10%, schedule ≤5 days, routine comms)
+ *   HIGH:    13–14  (budget >10%, critical path >5 days, scope change)
+ *   CRITICAL: 15–16 (project cancellation, legal, phase gate, restructure)
+ *
+ * Note: spec says 1-4/5-8/9-12/13-16 but the minimum possible score
+ * is 4 (all dimensions = 1). So effective ranges are 4-8/9-12/13-14/15-16.
+ */
 function getRiskTier(score: number): RiskTier {
-  if (score <= 6) return "LOW";
-  if (score <= 9) return "MEDIUM";
-  if (score <= 12) return "HIGH";
+  if (score <= 8) return "LOW";
+  if (score <= 12) return "MEDIUM";
+  if (score <= 14) return "HIGH";
   return "CRITICAL";
 }
 
@@ -230,6 +240,37 @@ export function classifyDecision(
  */
 export function getActionCreditCost(type: string): number {
   return CREDIT_COSTS[type] || 3;
+}
+
+// ─── Subscription Tier Limits ───
+
+export const PLAN_AUTONOMY_LIMITS: Record<string, { maxLevel: number; maxAgents: number }> = {
+  FREE: { maxLevel: 1, maxAgents: 1 },
+  STARTER: { maxLevel: 2, maxAgents: 3 },
+  PROFESSIONAL: { maxLevel: 4, maxAgents: 10 },
+  BUSINESS: { maxLevel: 5, maxAgents: 25 },
+  ENTERPRISE: { maxLevel: 5, maxAgents: 999 },
+};
+
+/**
+ * Enforce subscription tier limits on autonomy level.
+ * Returns the effective level (capped to plan maximum).
+ */
+export function enforceAutonomyLimit(requestedLevel: number, planTier: string): number {
+  const limit = PLAN_AUTONOMY_LIMITS[planTier]?.maxLevel || 1;
+  return Math.min(requestedLevel, limit);
+}
+
+/**
+ * Check if an item is in 24-hour cooldown (human overrode agent recently).
+ * Returns true if the item should be skipped.
+ */
+export function isInCooldown(lastEditedBy: string | null | undefined, updatedAt: Date | null | undefined): boolean {
+  if (!lastEditedBy || !updatedAt) return false;
+  // Only cooldown if a human edited it (not another agent)
+  if (!lastEditedBy.startsWith("user:")) return false;
+  const hoursSinceEdit = (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60);
+  return hoursSinceEdit < 24;
 }
 
 /**
