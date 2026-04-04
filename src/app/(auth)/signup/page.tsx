@@ -18,7 +18,7 @@ import { Progress } from "@/components/ui/progress";
 import { Eye, EyeOff, Check, ChevronLeft, Rocket, Dice1 } from "lucide-react";
 import { signIn } from "next-auth/react";
 
-const STEPS = ["Account", "Workspace", "Plan", "First Agent"];
+const STEPS = ["Account", "Workspace", "Plan"];
 
 const PLANS = [
   { id: "free", name: "Free", price: 0, credits: 50, highlight: "1 project, 1 agent" },
@@ -83,7 +83,6 @@ function SignupPageInner() {
     if (step === 0) return name.length > 1 && email.includes("@") && password.length >= 8 && agreed;
     if (step === 1) return orgName.length > 1;
     if (step === 2) return !!plan;
-    if (step === 3) return agentName.length > 0;
     return true;
   })();
 
@@ -108,55 +107,22 @@ function SignupPageInner() {
     setLoading(false);
   };
 
-  const handleDeploy = async () => {
+  const handleComplete = async () => {
     setDeploying(true);
     try {
-      // 1. Save workspace config + create agent
-      const onboardRes = await fetch("/api/onboarding", {
+      await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workspace: { orgName, industry, role },
           plan,
-          agent: { name: agentName, gradient: GRADIENTS[agentGradient].color, autonomyLevel: autonomy },
         }),
       });
-
-      // 2. Create a default project
-      const projRes = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `${orgName || "My"} Project`,
-          methodology: "HYBRID",
-          description: `First project for ${orgName || "the organisation"}`,
-        }),
-      });
-
-      if (projRes.ok) {
-        const projData = await projRes.json();
-        const projectId = projData.data?.id;
-
-        // 3. Find the agent that was just created and deploy it
-        if (projectId) {
-          const agentsRes = await fetch("/api/agents");
-          if (agentsRes.ok) {
-            const agentsData = await agentsRes.json();
-            const agent = agentsData.data?.agents?.[0];
-            if (agent) {
-              await fetch(`/api/agents/${agent.id}/deploy`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ projectId }),
-              });
-            }
-          }
-        }
-      }
     } catch {
-      // Non-blocking — continue to dashboard even if deploy fails
+      // Non-blocking — continue to dashboard
     }
-    setTimeout(() => { setDeploying(false); setDeployed(true); }, 3000);
+    setDeploying(false);
+    router.push("/dashboard");
   };
 
   const g = GRADIENTS[agentGradient];
@@ -293,134 +259,15 @@ function SignupPageInner() {
                   </button>
                 ))}
               </div>
-              <Button className="w-full" onClick={() => setStep(3)}>
-                {plan === "free" ? "Get Started" : "Start Free Trial"}
+              <Button className="w-full" onClick={handleComplete} disabled={deploying}>
+                {deploying ? "Setting up..." : plan === "free" ? "Get Started →" : "Start Free Trial →"}
               </Button>
             </CardContent>
           </Card>
-        )}
-
-        {/* Step 4: Agent */}
-        {step === 3 && !deploying && !deployed && (
-          <Card>
-            <CardContent className="pt-6 space-y-5">
-              <div className="text-center mb-2">
-                <h1 className="text-xl font-bold">Meet your AI PM</h1>
-                <p className="text-sm text-muted-foreground">Configure and deploy your first agent</p>
-              </div>
-
-              {/* Preview */}
-              <div className="flex items-center gap-4 p-4 rounded-xl border border-primary/20 bg-primary/5">
-                <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${g.bg} flex items-center justify-center text-xl font-bold text-white shadow-lg`}
-                  style={{ boxShadow: `0 0 20px ${g.color}33` }}>
-                  {agentName.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-lg font-bold">Agent {agentName}</p>
-                  <p className="text-xs text-muted-foreground">Ready to deploy</p>
-                </div>
-              </div>
-
-              {/* Name */}
-              <div>
-                <Label className="text-xs">Agent Name</Label>
-                <div className="flex gap-2 mt-1">
-                  <Input value={agentName} onChange={e => setAgentName(e.target.value)} />
-                  <Button variant="outline" size="sm" onClick={() => setAgentName(AGENT_NAMES[Math.floor(Math.random() * AGENT_NAMES.length)])}><Dice1 className="w-4 h-4" /></Button>
-                </div>
-              </div>
-
-              {/* Gradient */}
-              <div>
-                <Label className="text-xs">Avatar Colour</Label>
-                <div className="flex gap-3 mt-2">
-                  {GRADIENTS.map((gp, i) => (
-                    <button key={i} className={`w-9 h-9 rounded-full bg-gradient-to-br ${gp.bg} transition-all ${agentGradient === i ? "scale-110 ring-2 ring-offset-2 ring-primary" : ""}`}
-                      onClick={() => setAgentGradient(i)} />
-                  ))}
-                </div>
-              </div>
-
-              {/* Autonomy */}
-              <div>
-                <Label className="text-xs">Autonomy Level</Label>
-                <div className="space-y-2 mt-2">
-                  {AUTONOMY.map(al => (
-                    <button key={al.level} className={`w-full text-left p-3 rounded-xl border transition-all ${autonomy === al.level ? "border-primary shadow-sm" : "border-border/30"}`}
-                      onClick={() => setAutonomy(al.level)} style={autonomy === al.level ? { background: `${g.color}10` } : undefined}>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xl">{al.icon}</span>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold">{al.name}</span>
-                            {al.rec && <Badge variant="default" className="text-[8px]">Recommended</Badge>}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">{al.desc}</p>
-                        </div>
-                        {autonomy === al.level && <Check className="w-4 h-4 text-primary" />}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <Button className="w-full gap-2" onClick={handleDeploy}>
-                <Rocket className="w-4 h-4" /> Deploy Agent {agentName}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Deploying */}
-        {deploying && (
-          <Card>
-            <CardContent className="pt-8 pb-8 text-center">
-              <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${g.bg} flex items-center justify-center text-3xl font-bold text-white mx-auto mb-6 animate-pulse`}
-                style={{ boxShadow: `0 0 40px ${g.color}44` }}>
-                {agentName.charAt(0)}
-              </div>
-              <p className="text-sm font-semibold text-primary mb-3">Deploying Agent {agentName}...</p>
-              <div className="h-1.5 w-48 mx-auto rounded-full bg-border overflow-hidden">
-                <div className="h-full bg-primary rounded-full animate-[progress_3s_ease-in-out_forwards]" style={{ width: "0%", animation: "progress 3s ease-in-out forwards" }} />
-              </div>
-              <style>{`@keyframes progress { 0% { width: 0% } 40% { width: 45% } 70% { width: 75% } 100% { width: 100% } }`}</style>
-              <p className="text-xs text-muted-foreground mt-3">Building methodology framework...</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Deployed! */}
-        {deployed && (
-          <div className="text-center">
-            <div className={`w-24 h-24 rounded-full bg-gradient-to-br ${g.bg} flex items-center justify-center text-4xl font-bold text-white mx-auto mb-6`}
-              style={{ boxShadow: `0 0 48px ${g.color}55` }}>
-              {agentName.charAt(0)}
-            </div>
-            <h2 className="text-2xl font-bold mb-2">You&apos;re all set! 🎉</h2>
-            <p className="text-sm text-muted-foreground mb-6">Agent {agentName} is live and ready to work.</p>
-
-            <Card className="text-left mb-6">
-              <CardContent className="pt-4">
-                <p className="text-sm italic text-muted-foreground">
-                  &ldquo;Hi {name.split(" ")[0] || "there"}! I&apos;m Agent {agentName}, your AI Project Manager.
-                  I&apos;m already analysing your workspace and building initial templates.
-                  You&apos;ll have your first artefact drafts within the hour. Let&apos;s do this! 💪&rdquo;
-                </p>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-3">
-              <Link href="/dashboard"><Button className="w-full" size="lg">Go to Dashboard →</Button></Link>
-              <div className="flex gap-3">
-                <Link href="/agents/chat" className="flex-1"><Button variant="outline" className="w-full">💬 Chat with {agentName}</Button></Link>
-                <Link href="/agents" className="flex-1"><Button variant="outline" className="w-full">View Fleet</Button></Link>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Back button */}
-        {step > 0 && !deploying && !deployed && (
+        {step > 0 && !deploying && (
           <button className="flex items-center gap-1 text-xs text-muted-foreground mt-4 hover:text-foreground" onClick={() => setStep(step - 1)}>
             <ChevronLeft className="w-3 h-3" /> Back
           </button>
