@@ -79,20 +79,35 @@ export async function GET(req: NextRequest) {
 
         for (const dep of dueDeployments) {
           try {
+            const orgId = dep.agent.org?.id || dep.agent.orgId;
+
+            // 4a. Run monitoring loop (methodology playbook + interventions)
+            try {
+              const { runMonitoringLoop } = await import("@/lib/agents/monitoring-loop");
+              const monitoring = await runMonitoringLoop(dep.agentId, dep.id, dep.projectId);
+              for (const proposal of monitoring.proposals) {
+                await processActionProposal(proposal, {
+                  agentId: dep.agentId, deploymentId: dep.id,
+                  projectId: dep.projectId, orgId, autonomyLevel: dep.agent.autonomyLevel,
+                });
+              }
+            } catch (e) {
+              console.error(`Monitoring loop failed for agent ${dep.agentId}:`, e);
+            }
+
+            // 4b. Run LLM autonomous cycle (open-ended analysis)
             const proposals = await AgentLLM.autonomousCycle(dep.agentId);
             for (const proposal of proposals) {
               await processActionProposal(proposal, {
-                agentId: dep.agentId,
-                deploymentId: dep.id,
-                projectId: dep.projectId,
-                orgId: dep.agent.org?.id || dep.agent.orgId,
-                autonomyLevel: dep.agent.autonomyLevel,
+                agentId: dep.agentId, deploymentId: dep.id,
+                projectId: dep.projectId, orgId, autonomyLevel: dep.agent.autonomyLevel,
               });
             }
-            // Run proactive alerts alongside autonomous actions
+
+            // 4c. Run proactive alerts
             try {
               const { runProactiveAlerts } = await import("@/lib/agents/proactive-alerts");
-              await runProactiveAlerts(dep.agentId, dep.projectId, dep.agent.org?.id || dep.agent.orgId, dep.agent.autonomyLevel);
+              await runProactiveAlerts(dep.agentId, dep.projectId, orgId, dep.agent.autonomyLevel);
             } catch (e) {
               console.error(`Proactive alerts failed for agent ${dep.agentId}:`, e);
             }

@@ -324,7 +324,7 @@ export default function BillingPage() {
                 <p className="text-[11px] text-muted-foreground">credits</p>
                 <p className="text-lg font-bold mt-2 text-primary">${b.price}</p>
                 <p className="text-[10px] text-muted-foreground">{b.perCredit}/credit</p>
-                <Button size="sm" className="w-full mt-3">Buy</Button>
+                <Button size="sm" className="w-full mt-3" onClick={() => toast.info("Coming soon")}>Buy</Button>
               </div>
             ))}
           </div>
@@ -348,7 +348,7 @@ export default function BillingPage() {
             <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
               <span>100</span><span>2,500</span><span>5,000</span><span>10,000</span>
             </div>
-            <Button size="sm" className="mt-3">
+            <Button size="sm" className="mt-3" onClick={() => toast.info("Coming soon")}>
               Purchase {topupCustom.toLocaleString()} Credits -- ${customPrice}
             </Button>
           </div>
@@ -404,10 +404,6 @@ export default function BillingPage() {
                 <p className="text-[11px] text-muted-foreground">Expires 12/2028</p>
               </div>
               <Badge variant="default" className="bg-green-500/10 text-green-600 border-green-500/20">Default</Badge>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button variant="ghost" size="sm">Update Card</Button>
-              <Button variant="ghost" size="sm">+ Add Backup Method</Button>
             </div>
             {/* Billing details */}
             <div>
@@ -476,9 +472,6 @@ export default function BillingPage() {
                           </Badge>
                         </td>
                         <td className="py-2.5 px-3">
-                          <button className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1">
-                            <Download className="w-3 h-3" /> PDF
-                          </button>
                         </td>
                       </tr>
                     ))}

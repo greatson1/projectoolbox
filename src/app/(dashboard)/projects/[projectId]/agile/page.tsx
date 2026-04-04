@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 /**
  * Agile Board — Scrum / Kanban board with sprint analytics.
@@ -274,7 +275,7 @@ export default function AgileBoardPage() {
           <Button variant="ghost" size="sm" onClick={() => setShowAnalytics(!showAnalytics)}>
             {showAnalytics ? "Hide" : "Show"} Analytics
           </Button>
-          <Button variant="default" size="sm">+ Create Issue</Button>
+          <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>+ Create Issue</Button>
         </div>
       </div>
 
@@ -878,7 +879,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
                 <input className="flex-1 px-3 py-2 rounded-[8px] text-[12px]"
                   placeholder="Add a comment..."
                   style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
-                <Button variant="default" size="sm">Post</Button>
+                <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Post</Button>
               </div>
             </div>
           )}

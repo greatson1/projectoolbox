@@ -12,6 +12,7 @@ import { DocumentEditor } from "@/components/documents/DocumentEditor";
 import { useProject } from "@/hooks/use-api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { toast } from "sonner";
 import { FileBarChart, FileText, Download, Play, Plus, Clock, Send, Calendar, Filter, Search, Trash2 } from "lucide-react";
 
 const TEMPLATES = [
@@ -121,8 +122,8 @@ export default function ReportsHubPage() {
           <p className="text-sm text-muted-foreground mt-1">{project?.name || "All Projects"} · {reportItems.length} reports generated</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Calendar className="w-4 h-4 mr-1" /> Schedule</Button>
-          <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Generate Report</Button>
+          <Button variant="outline" size="sm" onClick={() => toast.info("Coming soon")}><Calendar className="w-4 h-4 mr-1" /> Schedule</Button>
+          <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Generate Report</Button>
         </div>
       </div>
 
@@ -257,7 +258,7 @@ export default function ReportsHubPage() {
               </CardContent>
             </Card>
           ))}
-          <Button variant="outline" className="w-full"><Plus className="w-4 h-4 mr-1" /> Add Schedule</Button>
+          <Button variant="outline" className="w-full" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Add Schedule</Button>
         </div>
       )}
     </div>

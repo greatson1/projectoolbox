@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 /**
  * Change Control Board — Kanban pipeline, impact analysis, statistics, decision log.
@@ -117,7 +118,7 @@ export default function ChangeControlPage() {
                 style={{ backgroundColor: view === v ? (true ? "var(--card)" : "white") : "transparent", color: view === v ? "var(--foreground)" : "var(--muted-foreground)" }}>{v}</button>
             ))}
           </div>
-          <Button variant="default" size="sm">New Change Request</Button>
+          <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>New Change Request</Button>
         </div>
       </div>
 
@@ -277,8 +278,8 @@ export default function ChangeControlPage() {
                 <p className="text-[12px]" style={{ color: "var(--foreground)" }}>{selectedCR.aiSummary}</p>
               </div>
               <div className="flex gap-2 mt-4">
-                <Button variant="ghost" size="sm">Request AI Re-analysis</Button>
-                <Button variant="ghost" size="sm">View Full Document</Button>
+                <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Request AI Re-analysis</Button>
+                <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>View Full Document</Button>
               </div>
             </Card>
           )}

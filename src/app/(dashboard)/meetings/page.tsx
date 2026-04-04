@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useMeetings, useMeeting, useCreateMeeting, useProjects, useAgents } from "@/hooks/use-api";
 import {
@@ -235,7 +236,7 @@ export default function MeetingsPage() {
           <div className="space-y-3">
             {actions.length > 0 && (
               <div className="flex justify-end">
-                <Button variant="default" size="sm"><Plus className="h-3.5 w-3.5 mr-1" /> Add All to Project Tasks</Button>
+                <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}><Plus className="h-3.5 w-3.5 mr-1" /> Add All to Project Tasks</Button>
               </div>
             )}
             {actions.length === 0 ? (
@@ -257,7 +258,7 @@ export default function MeetingsPage() {
                     </div>
                     <div className="flex gap-2 items-center">
                       <Badge variant={a.status === "DONE" ? "default" : "secondary"}>{a.status}</Badge>
-                      {a.status !== "DONE" && <Button variant="ghost" size="sm">Add to Tasks</Button>}
+                      {a.status !== "DONE" && <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Add to Tasks</Button>}
                     </div>
                   </div>
                 </CardContent>
@@ -287,7 +288,7 @@ export default function MeetingsPage() {
                         <p className="text-[12px] mt-2 px-3 py-2 rounded-lg bg-muted/50 text-muted-foreground">Rationale: {d.rationale}</p>
                       )}
                     </div>
-                    <Button variant="ghost" size="sm">Add to Decision Log</Button>
+                    <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Add to Decision Log</Button>
                   </div>
                 </CardContent>
               </Card>

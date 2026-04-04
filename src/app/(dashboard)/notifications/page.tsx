@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
+import Link from "next/link";
 
 /**
  * Notifications Centre — Filterable notification list with detail panel & preferences.
@@ -222,7 +224,7 @@ export default function NotificationsPage() {
         <div className="text-[48px] mb-4">🎉</div>
         <h2 className="text-[22px] font-bold mb-2" style={{ color: "var(--foreground)" }}>All caught up!</h2>
         <p className="text-[14px] mb-6" style={{ color: "var(--muted-foreground)" }}>No new notifications. Your agents are working smoothly.</p>
-        <Button variant="default" size="sm">View Agent Fleet</Button>
+        <Link href="/agents"><Button variant="default" size="sm">View Agent Fleet</Button></Link>
       </div>
     );
   }
@@ -519,7 +521,7 @@ export default function NotificationsPage() {
             </div>
           </div>
 
-          <Button variant="default" size="sm" className="mt-4">Save Preferences</Button>
+          <Button variant="default" size="sm" className="mt-4" onClick={() => toast.info("Coming soon")}>Save Preferences</Button>
         </Card>
       )}
     </div>

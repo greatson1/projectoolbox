@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Search, FileText, Network } from "lucide-react";
 import Markdown from "react-markdown";
@@ -434,7 +435,7 @@ export default function KnowledgeBasePage() {
                 </button>
               ))}
             </div>
-            <Button variant="default" size="sm">
+            <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>
               Ask Agent About This
             </Button>
           </div>

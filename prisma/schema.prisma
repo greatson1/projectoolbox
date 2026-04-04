@@ -632,6 +632,34 @@ model AgentArtefact {
   @@index([projectId])
 }
 
+// ─── Agent Knowledge Base (Section 7.6) ───
+
+model KnowledgeBaseItem {
+  id           String   @id @default(cuid())
+  agentId      String?           // null = workspace-level memory
+  projectId    String?           // null = workspace-level
+  orgId        String
+  layer        String   @default("PROJECT")  // PROJECT | WORKSPACE | AGENT
+  type         String   @default("TEXT")     // TEXT | FILE | URL | EMAIL | TRANSCRIPT | CHAT | DECISION
+  title        String
+  content      String   @db.Text
+  sourceUrl    String?
+  fileUrl      String?
+  fileSize     Int?
+  mimeType     String?
+  trustLevel   String   @default("STANDARD") // HIGH_TRUST | STANDARD | REFERENCE_ONLY
+  confidential Boolean  @default(false)
+  tags         String[] @default([])
+  metadata     Json?    // { sender, extractedFacts, sentiment, etc. }
+  cachedUntil  DateTime?          // for research caching (7 days)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([orgId, layer])
+  @@index([agentId, type])
+  @@index([projectId])
+}
+
 // ─── Enums ───
 
 enum UserRole {

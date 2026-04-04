@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 /**
  * Portfolio Dashboard — Cross-project views, timeline, heatmap, risk matrix, budget.
@@ -225,8 +226,8 @@ export default function PortfolioPage() {
             </div>
             <div className="flex gap-3">
               <Button variant="ghost" size="sm" onClick={() => setShowExecReport(false)}>Close</Button>
-              <Button variant="default" size="sm" disabled title="Coming soon">Export PDF</Button>
-              <Button variant="default" size="sm">Email to Stakeholders</Button>
+              <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Export PDF</Button>
+              <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Email to Stakeholders</Button>
             </div>
           </div>
         </div>

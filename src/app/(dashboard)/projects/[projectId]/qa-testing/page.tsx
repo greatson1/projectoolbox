@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useProject } from "@/hooks/use-api";
 import { BarChart, Bar, PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from "recharts";
+import { toast } from "sonner";
 import { TestTube2, Bug, CheckCircle2, AlertTriangle, Play, Plus } from "lucide-react";
 
 // Mock QA data — will be populated by agent
@@ -75,8 +76,8 @@ export default function QATestingPage() {
           <p className="text-sm text-muted-foreground mt-1">{project?.name || "Project"} · {totalTests} tests · {passRate}% pass rate</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Play className="w-4 h-4 mr-1" /> Run Tests</Button>
-          <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Log Defect</Button>
+          <Button variant="outline" size="sm" onClick={() => toast.info("Coming soon")}><Play className="w-4 h-4 mr-1" /> Run Tests</Button>
+          <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Log Defect</Button>
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCreditUsage } from "@/hooks/use-api";
 import { cn, PLAN_LIMITS } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   Zap, TrendingDown, ArrowRight, Pause, Play, Plus,
   Download, FileText, CalendarDays, Activity,
@@ -221,9 +222,9 @@ export default function CreditCentrePage() {
           {/* Quick actions */}
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm">+200</Button>
-              <Button size="sm">+500</Button>
-              <Button variant="ghost" size="sm">+1000</Button>
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>+200</Button>
+              <Button size="sm" onClick={() => toast.info("Coming soon")}>+500</Button>
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>+1000</Button>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">Auto top-up</span>
@@ -634,17 +635,6 @@ export default function CreditCentrePage() {
             <div>
               <h3 className="text-sm font-semibold text-foreground">Export & Reports</h3>
               <p className="text-[11px] text-muted-foreground">Download usage data or schedule automated reports</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm">
-                <Activity className="w-3 h-3 mr-1" /> Download CSV
-              </Button>
-              <Button variant="ghost" size="sm">
-                <FileText className="w-3 h-3 mr-1" /> Download PDF
-              </Button>
-              <Button size="sm">
-                <CalendarDays className="w-3 h-3 mr-1" /> Schedule Monthly Report
-              </Button>
             </div>
           </div>
         </CardContent>

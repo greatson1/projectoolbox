@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectRisks } from "@/hooks/use-api";
+import { toast } from "sonner";
 import { Plus, AlertTriangle, Shield, TrendingDown } from "lucide-react";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = { OPEN: "destructive", MITIGATING: "secondary", WATCHING: "outline", CLOSED: "default" };
@@ -47,7 +48,7 @@ export default function RiskRegisterPage() {
                 onClick={() => setView(v)}>{v}</button>
             ))}
           </div>
-          <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Add Risk</Button>
+          <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Add Risk</Button>
         </div>
       </div>
 
@@ -64,7 +65,7 @@ export default function RiskRegisterPage() {
           <Shield className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-lg font-bold mb-2">No risks registered</h2>
           <p className="text-sm text-muted-foreground mb-4">Your AI agent will identify and flag risks automatically, or you can add them manually.</p>
-          <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Add First Risk</Button>
+          <Button size="sm" onClick={() => toast.info("Coming soon")}><Plus className="w-4 h-4 mr-1" /> Add First Risk</Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
@@ -156,7 +157,7 @@ export default function RiskRegisterPage() {
                       <p className="text-xs text-muted-foreground">{selectedRisk.mitigation}</p>
                     </div>
                   )}
-                  <div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1">Edit</Button><Button variant="outline" size="sm" className="flex-1">Escalate</Button></div>
+                  <div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => toast.info("Coming soon")}>Edit</Button><Button variant="outline" size="sm" className="flex-1" onClick={() => toast.info("Coming soon")}>Escalate</Button></div>
                 </CardContent>
               </Card>
             ) : (

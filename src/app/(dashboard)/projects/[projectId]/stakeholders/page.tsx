@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
 
 /**
  * Stakeholder Management — Power/interest grid, list, sentiment, comms log.
@@ -116,7 +117,7 @@ export default function StakeholdersPage() {
                 style={{ backgroundColor: view === v ? (true ? "var(--card)" : "white") : "transparent", color: view === v ? "var(--foreground)" : "var(--muted-foreground)" }}>{v}</button>
             ))}
           </div>
-          <Button variant="default" size="sm">Add Stakeholder</Button>
+          <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Add Stakeholder</Button>
         </div>
       </div>
 
@@ -200,7 +201,7 @@ export default function StakeholdersPage() {
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
               <CardTitle className="text-sm">Communications Log</CardTitle>
-              <Button variant="ghost" size="sm">Log Communication</Button>
+              <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Log Communication</Button>
             </CardHeader>
             <CardContent>
             <div className="space-y-3">
