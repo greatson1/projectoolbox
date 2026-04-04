@@ -107,7 +107,16 @@ export async function processActionProposal(
     }
   }
 
-  // 6. Check for multi-agent conflicts
+  // 6. Check learning loop — should this action type be forced to HITL?
+  try {
+    const { shouldForceHitl } = await import("./learning-loop");
+    if (await shouldForceHitl(context.agentId, proposal.type)) {
+      classification.canAutoExecute = false;
+      classification.requiresApproval = true;
+    }
+  } catch {}
+
+  // 7. Check for multi-agent conflicts
   try {
     const { checkConflicts } = await import("./conflict-resolver");
     const conflict = await checkConflicts(proposal, context.agentId, context.projectId);

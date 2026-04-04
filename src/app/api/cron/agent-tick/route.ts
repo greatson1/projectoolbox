@@ -112,6 +112,26 @@ export async function GET(req: NextRequest) {
               console.error(`Proactive alerts failed for agent ${dep.agentId}:`, e);
             }
 
+            // 4d. Run calibration loop (weekly — checks if enough decisions have accumulated)
+            try {
+              const { runCalibrationLoop } = await import("@/lib/agents/learning-loop");
+              const decisions = await db.agentDecision.count({ where: { agentId: dep.agentId } });
+              // Only calibrate if 10+ decisions and it's been >7 days since last calibration
+              if (decisions >= 10) {
+                const lastCal = await db.knowledgeBaseItem.findFirst({
+                  where: { agentId: dep.agentId, tags: { has: "calibration" } },
+                  orderBy: { createdAt: "desc" },
+                  select: { createdAt: true },
+                });
+                const daysSinceCal = lastCal ? (Date.now() - lastCal.createdAt.getTime()) / (1000 * 60 * 60 * 24) : 999;
+                if (daysSinceCal >= 7) {
+                  await runCalibrationLoop(dep.agentId);
+                }
+              }
+            } catch (e) {
+              console.error(`Calibration loop failed for agent ${dep.agentId}:`, e);
+            }
+
             inlineProcessed++;
 
             // Update last cycle time
