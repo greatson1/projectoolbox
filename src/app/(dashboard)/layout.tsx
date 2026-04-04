@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className={cn("transition-all duration-200", sidebarCollapsed ? "ml-[60px]" : "ml-[240px]")}>
         <Header />
-        <main className="p-6 lg:p-8">{children}</main>
+        <main className="p-6 lg:p-8 animate-page-enter">{children}</main>
       </div>
     </div>
   );

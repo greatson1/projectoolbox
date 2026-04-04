@@ -187,10 +187,10 @@ export function Sidebar() {
                     key={item.label}
                     href={resolvePath(item)}
                     className={cn(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors",
+                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200",
                       active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground sidebar-link-active font-semibold"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
                     )}
                     title={sidebarCollapsed ? item.label : undefined}
                   >

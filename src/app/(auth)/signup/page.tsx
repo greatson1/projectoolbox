@@ -15,7 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Eye, EyeOff, Check, ChevronLeft, ChevronRight, Rocket, Dice1 } from "lucide-react";
+import { Eye, EyeOff, Check, ChevronLeft, Rocket, Dice1 } from "lucide-react";
+import { signIn } from "next-auth/react";
 
 const STEPS = ["Account", "Workspace", "Plan", "First Agent"];
 
@@ -97,6 +98,9 @@ function SignupPageInner() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      // Sign in immediately after registration
+      const result = await signIn("credentials", { email, password, redirect: false });
+      if (result?.error) throw new Error("Account created but sign-in failed. Please log in manually.");
       setStep(1);
     } catch (e: any) {
       setError(e.message);
@@ -104,9 +108,23 @@ function SignupPageInner() {
     setLoading(false);
   };
 
-  const handleDeploy = () => {
+  const handleDeploy = async () => {
     setDeploying(true);
-    setTimeout(() => { setDeploying(false); setDeployed(true); }, 5000);
+    try {
+      // Save workspace config and deploy agent
+      await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace: { orgName, industry, role },
+          plan,
+          agent: { name: agentName, gradient: GRADIENTS[agentGradient].color, autonomyLevel: autonomy },
+        }),
+      });
+    } catch {
+      // Non-blocking — onboarding data is optional, continue to dashboard
+    }
+    setTimeout(() => { setDeploying(false); setDeployed(true); }, 3000);
   };
 
   const g = GRADIENTS[agentGradient];
@@ -330,7 +348,10 @@ function SignupPageInner() {
                 {agentName.charAt(0)}
               </div>
               <p className="text-sm font-semibold text-primary mb-3">Deploying Agent {agentName}...</p>
-              <Progress value={65} className="h-1.5 w-48 mx-auto" />
+              <div className="h-1.5 w-48 mx-auto rounded-full bg-border overflow-hidden">
+                <div className="h-full bg-primary rounded-full animate-[progress_3s_ease-in-out_forwards]" style={{ width: "0%", animation: "progress 3s ease-in-out forwards" }} />
+              </div>
+              <style>{`@keyframes progress { 0% { width: 0% } 40% { width: 45% } 70% { width: 75% } 100% { width: 100% } }`}</style>
               <p className="text-xs text-muted-foreground mt-3">Building methodology framework...</p>
             </CardContent>
           </Card>

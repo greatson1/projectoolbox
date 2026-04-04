@@ -96,6 +96,15 @@ export default function LandingPage() {
             </Button>
           </div>
         </div>
+        {/* Mobile Menu */}
+        {mobileMenu && (
+          <div className="md:hidden bg-background/95 backdrop-blur-md border-b border-border px-6 py-4 space-y-3">
+            <a href="#features" className="block text-sm font-medium text-muted-foreground hover:text-foreground" onClick={() => setMobileMenu(false)}>Features</a>
+            <a href="#how-it-works" className="block text-sm font-medium text-muted-foreground hover:text-foreground" onClick={() => setMobileMenu(false)}>How It Works</a>
+            <a href="#pricing" className="block text-sm font-medium text-muted-foreground hover:text-foreground" onClick={() => setMobileMenu(false)}>Pricing</a>
+            <a href="#faq" className="block text-sm font-medium text-muted-foreground hover:text-foreground" onClick={() => setMobileMenu(false)}>FAQ</a>
+          </div>
+        )}
       </nav>
 
       {/* ═══ HERO ═══ */}
@@ -126,10 +135,12 @@ export default function LandingPage() {
                   Start Free Trial →
                 </Button>
               </Link>
-              <Button variant="outline" size="lg" className="px-6 text-base gap-2">
-                <span className="w-8 h-8 rounded-full flex items-center justify-center bg-primary/10">▶</span>
-                Watch Demo
-              </Button>
+              <a href="#how-it-works">
+                <Button variant="outline" size="lg" className="px-6 text-base gap-2">
+                  <span className="w-8 h-8 rounded-full flex items-center justify-center bg-primary/10">▶</span>
+                  Watch Demo
+                </Button>
+              </a>
             </div>
           </div>
 
@@ -203,7 +214,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══ FEATURES ═══ */}
-      <section id="features" className="py-20 px-6">
+      <section id="features" className="py-20 px-6 scroll-mt-20">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-14">
             <p className="text-xs font-bold uppercase tracking-widest text-primary">Features</p>
@@ -225,7 +236,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══ HOW IT WORKS ═══ */}
-      <section id="how-it-works" className="py-20 px-6 bg-muted/30">
+      <section id="how-it-works" className="py-20 px-6 bg-muted/30 scroll-mt-20">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-14">
             <p className="text-xs font-bold uppercase tracking-widest text-primary">How It Works</p>
@@ -246,7 +257,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══ PRICING ═══ */}
-      <section id="pricing" className="py-20 px-6">
+      <section id="pricing" className="py-20 px-6 scroll-mt-20">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-14">
             <p className="text-xs font-bold uppercase tracking-widest text-primary">Pricing</p>
@@ -319,7 +330,7 @@ export default function LandingPage() {
       </section>
 
       {/* ═══ FAQ ═══ */}
-      <section id="faq" className="py-20 px-6">
+      <section id="faq" className="py-20 px-6 scroll-mt-20">
         <div className="max-w-[720px] mx-auto">
           <div className="text-center mb-14">
             <p className="text-xs font-bold uppercase tracking-widest text-primary">FAQ</p>
