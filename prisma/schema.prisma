@@ -75,6 +75,7 @@ model Organisation {
   website          String?
   timezone         String              @default("Europe/London")
   billingEmail     String?
+  logoUrl          String?
   plan             PlanTier            @default(FREE)
   stripeCustomerId String?             @unique
   stripeSubId      String?

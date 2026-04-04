@@ -13,8 +13,8 @@ export async function GET() {
     where: { id: orgId },
     select: {
       id: true, name: true, slug: true, industry: true, companySize: true,
-      website: true, timezone: true, billingEmail: true, plan: true,
-      creditBalance: true, globalHitlPolicy: true,
+      website: true, timezone: true, billingEmail: true, logoUrl: true, plan: true,
+      creditBalance: true, autoTopUp: true, globalHitlPolicy: true,
     },
   });
 
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   if (!orgId) return NextResponse.json({ error: "No organisation" }, { status: 400 });
 
   const body = await req.json();
-  const { name, industry, companySize, website, timezone, billingEmail } = body;
+  const { name, industry, companySize, website, timezone, billingEmail, logoUrl, securityPolicy } = body;
 
   const org = await db.organisation.update({
     where: { id: orgId },
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       ...(website && { website }),
       ...(timezone && { timezone }),
       ...(billingEmail && { billingEmail }),
+      ...(logoUrl && { logoUrl }),
     },
   });
 

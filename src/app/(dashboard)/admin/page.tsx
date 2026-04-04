@@ -163,11 +163,7 @@ export default function AdminSettingsPage() {
               </div>
               <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Logo</p>
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-[12px] flex items-center justify-center text-[24px] font-bold text-white"
-                    style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>{(org.name || "P")[0]}</div>
-                  <p className="text-xs text-muted-foreground">Upload Logo<br /><span className="text-[10px]">PNG or SVG, max 2MB</span></p>
-                </div>
+                <OrgLogoUpload orgName={org.name || "P"} currentLogo={org.logoUrl} onUpload={(url: string) => { saveOrg.mutate({ logoUrl: url }); toast.success("Logo updated"); }} />
               </div>
               <Button variant="default" size="sm" className="mt-4" onClick={() => { saveOrg.mutate({}); toast.success("Settings saved"); }}>Save Changes</Button>
             </Card>
@@ -692,6 +688,55 @@ function Modal({ title, onClose, children,  }: { title: string; onClose: () => v
             style={{ color: "var(--muted-foreground)", background: `${"var(--border)"}22` }}>×</button>
         </div>
         {children}
+      </div>
+    </div>
+  );
+}
+
+// Org Logo Upload
+function OrgLogoUpload({ orgName, currentLogo, onUpload }: { orgName: string; currentLogo?: string; onUpload: (url: string) => void }) {
+  const [preview, setPreview] = useState<string | null>(currentLogo || null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error("File too large (max 2MB)"); return; }
+    if (!file.type.startsWith("image/")) { toast.error("Please upload an image file"); return; }
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (ev) => setPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+
+    // Convert to base64 data URL and save as logoUrl
+    // In production, this would upload to S3/Supabase Storage
+    setUploading(true);
+    const dataUrl = await new Promise<string>((resolve) => {
+      const r = new FileReader();
+      r.onload = (ev) => resolve(ev.target?.result as string);
+      r.readAsDataURL(file);
+    });
+    onUpload(dataUrl);
+    setUploading(false);
+  };
+
+  return (
+    <div className="flex items-center gap-4">
+      {preview ? (
+        <img src={preview} alt="Logo" className="w-16 h-16 rounded-xl object-cover" />
+      ) : (
+        <div className="w-16 h-16 rounded-xl flex items-center justify-center text-2xl font-bold text-white"
+          style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>{orgName[0]}</div>
+      )}
+      <div>
+        <input type="file" accept="image/*" id="logo-upload" className="hidden" onChange={handleFile} />
+        <label htmlFor="logo-upload" className="inline-block">
+          <span className="inline-flex items-center px-3 py-1.5 rounded-lg border border-border text-xs font-medium cursor-pointer hover:bg-muted transition-colors">
+            {uploading ? "Uploading..." : preview ? "Change Logo" : "Upload Logo"}
+          </span>
+        </label>
+        <p className="text-[10px] text-muted-foreground mt-1">PNG or SVG, max 2MB</p>
       </div>
     </div>
   );
