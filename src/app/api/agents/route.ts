@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { name, autonomyLevel, personality, gradient } = body;
+  const { name, autonomyLevel, personality, gradient, title, avatarUrl, defaultGreeting, domainTags, monthlyBudget } = body;
 
   const agent = await db.agent.create({
     data: {
@@ -101,6 +101,11 @@ export async function POST(req: NextRequest) {
       personality,
       gradient,
       orgId,
+      ...(title && { title }),
+      ...(avatarUrl && { avatarUrl }),
+      ...(defaultGreeting && { defaultGreeting }),
+      ...(domainTags?.length && { domainTags }),
+      ...(monthlyBudget && { monthlyBudget }),
     },
   });
 

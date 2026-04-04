@@ -11,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   const body = await req.json();
-  const { action, comment } = body; // action: "approve" | "reject" | "defer"
+  const { action, comment } = body; // action: "approve" | "reject" | "defer" | "request_changes"
 
   const approval = await db.approval.findUnique({ where: { id } });
   if (!approval) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     approve: "APPROVED",
     reject: "REJECTED",
     defer: "DEFERRED",
+    request_changes: "DEFERRED",
   };
 
   const newStatus = statusMap[action];
@@ -56,19 +57,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
-  // Create approval_resume job so the VPS agent backend can react
+  // Execute the approved action or handle request_changes
   const deployment = await db.agentDeployment.findFirst({
     where: { projectId: approval.projectId, isActive: true },
   });
+
   if (deployment) {
-    // If approved, unblock the deployment phase
     if (action === "approve") {
+      // Unblock the deployment phase
       await db.agentDeployment.update({
         where: { id: deployment.id },
         data: { phaseStatus: "active" },
       });
+
+      // Execute the approved action (inline — don't rely only on VPS)
+      try {
+        const { executeApprovedAction } = await import("@/lib/agents/action-executor");
+        await executeApprovedAction(id);
+      } catch (e) {
+        console.error("Inline execution after approval failed:", e);
+      }
     }
 
+    if (action === "request_changes" && comment) {
+      // Check iteration limit (max 3)
+      if ((approval.iteration || 1) >= 3) {
+        await db.approval.update({ where: { id }, data: { status: "REJECTED" as any } });
+      }
+    }
+
+    // Also create VPS job as backup
     await createJob({
       agentId: deployment.agentId,
       deploymentId: deployment.id,

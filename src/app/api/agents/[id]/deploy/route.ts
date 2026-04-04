@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id: agentId } = await params;
   const orgId = (session.user as any).orgId;
   const body = await req.json();
-  const { projectId, config } = body;
+  const { projectId, config, hitlPhaseGates, hitlBudgetChanges, hitlCommunications, escalationTimeout, autonomyConfig } = body;
 
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
@@ -24,9 +24,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Insufficient credits. 10 credits required for deployment." }, { status: 402 });
   }
 
-  // Create deployment
+  // Create deployment with HITL governance config
   const deployment = await db.agentDeployment.create({
-    data: { agentId, projectId, config, isActive: true },
+    data: {
+      agentId, projectId, config, isActive: true,
+      hitlPhaseGates: hitlPhaseGates ?? true,
+      hitlBudgetChanges: hitlBudgetChanges ?? true,
+      hitlCommunications: hitlCommunications ?? false,
+      escalationTimeout: escalationTimeout ?? 24,
+      autonomyConfig: autonomyConfig ?? null,
+    },
   });
 
   // Activate agent

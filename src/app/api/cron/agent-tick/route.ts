@@ -58,14 +58,50 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 3. Nudge VPS to process jobs (fire-and-forget)
+    // 3. Try VPS first, fall back to inline processing
     const nudge = await nudgeJobProcessor();
+
+    // 4. If VPS unavailable, run autonomous cycles inline (serverless)
+    let inlineProcessed = 0;
+    if (!nudge.ok) {
+      try {
+        const { AgentLLM } = await import("@/lib/agents/llm");
+        const { processActionProposal } = await import("@/lib/agents/action-executor");
+
+        for (const dep of dueDeployments) {
+          try {
+            const proposals = await AgentLLM.autonomousCycle(dep.agentId);
+            for (const proposal of proposals) {
+              await processActionProposal(proposal, {
+                agentId: dep.agentId,
+                deploymentId: dep.id,
+                projectId: dep.projectId,
+                orgId: dep.agent.org?.id || dep.agent.orgId,
+                autonomyLevel: dep.agent.autonomyLevel,
+              });
+            }
+            inlineProcessed++;
+
+            // Update last cycle time
+            await db.agentDeployment.update({
+              where: { id: dep.id },
+              data: { lastCycleAt: new Date() },
+            });
+          } catch (e) {
+            console.error(`Inline cycle failed for agent ${dep.agentId}:`, e);
+          }
+        }
+      } catch (e) {
+        console.error("Inline processing failed:", e);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
       deploymentsDue: dueDeployments.length,
       jobsCreated,
       vpsNudge: nudge.ok ? "sent" : nudge.error,
+      inlineProcessed,
     });
   } catch (err: any) {
     console.error("agent-tick cron error:", err);

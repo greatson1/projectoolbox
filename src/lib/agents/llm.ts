@@ -1,7 +1,121 @@
 import { db } from "@/lib/db";
+import type { ActionProposal } from "./decision-classifier";
 
 // Agent LLM service — abstracted to support OpenAI or Anthropic
 export class AgentLLM {
+  /**
+   * Autonomous cycle: analyse project state, propose 0-N actions.
+   * Returns structured ActionProposal[] (not conversational text).
+   */
+  static async autonomousCycle(agentId: string): Promise<ActionProposal[]> {
+    const agent = await db.agent.findUnique({
+      where: { id: agentId },
+      include: { deployments: { where: { isActive: true }, include: { project: true } } },
+    });
+    if (!agent) return [];
+
+    const project = agent.deployments[0]?.project;
+    if (!project) return [];
+
+    // Gather project state
+    const [tasks, risks, issues, recentActivities] = await Promise.all([
+      db.task.findMany({ where: { projectId: project.id }, orderBy: { updatedAt: "desc" }, take: 30 }),
+      db.risk.findMany({ where: { projectId: project.id }, orderBy: { score: "desc" } }),
+      db.issue.findMany({ where: { projectId: project.id, status: { in: ["OPEN", "IN_PROGRESS"] } } }),
+      db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 10 }),
+    ]);
+
+    const totalTasks = tasks.length;
+    const doneTasks = tasks.filter(t => t.status === "DONE").length;
+    const blockedTasks = tasks.filter(t => t.status === "BLOCKED").length;
+    const highRisks = risks.filter(r => (r.score || 0) >= 12);
+
+    const projectState = `
+PROJECT: ${project.name} (${project.methodology}, ${project.status})
+Budget: £${(project.budget || 0).toLocaleString()} | Start: ${project.startDate || "TBD"} | End: ${project.endDate || "TBD"}
+
+TASKS: ${doneTasks}/${totalTasks} done, ${blockedTasks} blocked
+${tasks.slice(0, 15).map(t => `- [${t.status}] ${t.title}${t.assigneeId ? "" : " (unassigned)"}`).join("\n")}
+
+RISKS: ${risks.length} total, ${highRisks.length} high/critical
+${risks.slice(0, 8).map(r => `- [Score ${r.score}] ${r.title} (${r.status})`).join("\n")}
+
+OPEN ISSUES: ${issues.length}
+${issues.slice(0, 5).map(i => `- [${i.priority}] ${i.title}`).join("\n")}
+
+RECENT AGENT ACTIVITY:
+${recentActivities.slice(0, 5).map(a => `- ${a.type}: ${a.summary}`).join("\n")}
+`;
+
+    const cyclePrompt = `You are Agent ${agent.name}, an L${agent.autonomyLevel} AI Project Manager.
+Analyse the current project state and propose actions to take.
+
+${projectState}
+
+AUTONOMY LEVEL: L${agent.autonomyLevel} (${["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][agent.autonomyLevel]})
+
+Respond with a JSON array of action proposals. Each proposal:
+{
+  "type": "TASK_ASSIGNMENT" | "RISK_RESPONSE" | "SCHEDULE_CHANGE" | "RESOURCE_ALLOCATION" | "ESCALATION" | "BUDGET_CHANGE" | "SCOPE_CHANGE" | "COMMUNICATION" | "DOCUMENT_GENERATION",
+  "description": "What to do (1 sentence)",
+  "reasoning": "Why (2-3 sentences with evidence from project data)",
+  "confidence": 0.0-1.0,
+  "scheduleImpact": 1-4,
+  "costImpact": 1-4,
+  "scopeImpact": 1-4,
+  "stakeholderImpact": 1-4,
+  "affectedItems": [{"type": "task"|"risk"|"issue", "id": "...", "title": "..."}]
+}
+
+Rules:
+- Propose 0-5 actions. If project is healthy, propose 0.
+- Only propose actions supported by evidence in the data above.
+- Do NOT fabricate task IDs — use the IDs from the data.
+- Self-assess impact scores honestly (1=none, 4=major).
+- Prefer LOW-risk routine actions over HIGH-risk changes.
+- If a task is BLOCKED, propose investigating or escalating.
+- If a risk has score ≥ 12, propose mitigation.
+
+Output ONLY the JSON array, no markdown fences.`;
+
+    if (!process.env.ANTHROPIC_API_KEY) return [];
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: cyclePrompt }],
+        }),
+      });
+
+      if (!response.ok) return [];
+
+      const data = await response.json();
+      const text = (data.content[0]?.text || "").trim();
+
+      // Parse JSON — strip code fences if present
+      const clean = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
+      const proposals: ActionProposal[] = JSON.parse(clean);
+
+      // Validate each proposal
+      return proposals.filter(p =>
+        p.type && p.description && typeof p.scheduleImpact === "number" &&
+        typeof p.costImpact === "number" && typeof p.scopeImpact === "number" &&
+        typeof p.stakeholderImpact === "number"
+      );
+    } catch (e) {
+      console.error("Autonomous cycle LLM error:", e);
+      return [];
+    }
+  }
+
   static async chat(agentId: string, userMessage: string): Promise<string> {
     // Get agent config
     const agent = await db.agent.findUnique({

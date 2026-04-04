@@ -90,6 +90,7 @@ model Organisation {
   meetings         Meeting[]
   calendarEvents   CalendarEvent[]
   agentInbox       AgentInboxMessage[]
+  globalHitlPolicy Json?               // org-level HITL governance overrides
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 }
@@ -142,10 +143,15 @@ model Agent {
   id               String            @id @default(cuid())
   name             String
   codename         String
+  title            String?           // user-defined job title e.g. "CRM Migration Lead"
   status           AgentStatus       @default(IDLE)
   autonomyLevel    Int               @default(2)
   personality      Json?
   gradient         String?
+  avatarUrl        String?           // custom avatar image URL
+  defaultGreeting  String?           // first-activation greeting
+  domainTags       String[]          @default([]) // specialism tags e.g. ["PRINCE2", "Agile"]
+  monthlyBudget    Int?              // credit cap per calendar month
   orgId            String
   org              Organisation      @relation(fields: [orgId], references: [id])
   deployments      AgentDeployment[]
@@ -178,6 +184,11 @@ model AgentDeployment {
   cycleInterval  Int       @default(10) // minutes between autonomous cycles
   healthStatus   String?   @default("GREEN") // GREEN | AMBER | RED
   autonomyConfig Json?     // { budgetApprovalThreshold, scopeChangeLimit, autoApprovePhases, requireApprovalFor }
+  // HITL governance overrides (explicit columns for queryability)
+  hitlPhaseGates      Boolean  @default(true)   // phase gates always require approval
+  hitlBudgetChanges   Boolean  @default(true)   // budget changes always require approval
+  hitlCommunications  Boolean  @default(false)  // external comms require approval
+  escalationTimeout   Int      @default(24)     // hours before approval escalation
 }
 
 model AgentDecision {
@@ -233,6 +244,15 @@ model Approval {
   comment       String?        @db.Text
   resolvedAt    DateTime?
   createdAt     DateTime       @default(now())
+  // Enriched approval data (Phase 1A)
+  parentApprovalId    String?           // links resubmissions for request-changes cycle
+  iteration           Int       @default(1) // defer/resubmit cycle count (max 3)
+  urgency             String?           // LOW, MEDIUM, HIGH, CRITICAL
+  expiresAt           DateTime?         // timeout/escalation deadline
+  impactScores        Json?             // { schedule: 1-4, cost: 1-4, scope: 1-4, stakeholder: 1-4 }
+  reasoningChain      String?   @db.Text // agent's explanation for the recommendation
+  suggestedAlternatives Json?           // [{ description, impactScores, creditCost }]
+  affectedItems       Json?             // [{ type: "task"|"risk"|"issue", id, title }]
 }
 
 // ─── Project Modules ───

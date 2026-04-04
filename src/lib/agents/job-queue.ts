@@ -39,7 +39,7 @@ export async function createJob(opts: CreateJobOptions) {
       deploymentId: opts.deploymentId,
       type: opts.type,
       priority: opts.priority ?? 5,
-      payload: opts.payload ?? undefined,
+      payload: (opts.payload ?? undefined) as any,
       scheduledFor: opts.scheduledFor ?? new Date(),
     },
   });
@@ -81,7 +81,7 @@ export async function markRunning(jobId: string) {
 export async function completeJob(jobId: string, result?: Record<string, unknown>) {
   return db.agentJob.update({
     where: { id: jobId },
-    data: { status: "COMPLETED", completedAt: new Date(), result: result ?? undefined },
+    data: { status: "COMPLETED", completedAt: new Date(), result: (result ?? undefined) as any },
   });
 }
 
@@ -124,7 +124,7 @@ export async function getDueDeployments() {
       ],
     },
     include: {
-      agent: { select: { id: true, name: true, autonomyLevel: true, orgId: true } },
+      agent: { select: { id: true, name: true, autonomyLevel: true, orgId: true, org: { select: { id: true } } } },
       project: { select: { id: true, name: true, methodology: true } },
     },
   });
