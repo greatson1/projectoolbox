@@ -80,7 +80,7 @@ export async function checkBackendHealth(): Promise<{
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5_000);
 
-    const res = await fetch(`${VPS_URL}/api/health`, {
+    const res = await fetch(`${VPS_URL}/health`, {
       signal: controller.signal,
     });
 
