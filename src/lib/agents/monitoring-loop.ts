@@ -33,7 +33,7 @@ export async function runMonitoringLoop(
     where: { id: deploymentId },
     include: {
       project: { select: { methodology: true, name: true, status: true, budget: true, startDate: true, endDate: true } },
-      agent: { select: { autonomyLevel: true } },
+      agent: { select: { autonomyLevel: true, orgId: true } },
     },
   });
 
@@ -106,6 +106,24 @@ export async function runMonitoringLoop(
     // Playbook weekly actions
     const weeklyPlaybook = generatePlaybookProposals(methodology, currentPhase, "weekly", projectId);
     proposals.push(...weeklyPlaybook);
+
+    // Weekly PESTLE scan (auto-generates risks from external intelligence)
+    try {
+      const { pestleScan, pestleToRisks, newsMonitor } = await import("./web-research");
+      const orgId = deployment.agent.orgId || "";
+      const pestleResult = await pestleScan(
+        { name: project.name, industry: undefined },
+        { orgId, agentId, projectId },
+      );
+      if (pestleResult.findings.length > 0) {
+        await pestleToRisks(pestleResult.findings, projectId, agentId);
+      }
+
+      // News monitoring alongside PESTLE
+      await newsMonitor({ name: project.name }, { orgId, agentId, projectId });
+    } catch (e) {
+      console.error("Weekly PESTLE/news scan failed:", e);
+    }
 
     // Stakeholder communication cadence
     const stakeholderProps = await checkStakeholderCadence(projectId, agentId);
