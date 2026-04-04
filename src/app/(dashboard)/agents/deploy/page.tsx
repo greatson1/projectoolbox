@@ -2,6 +2,8 @@
 // @ts-nocheck
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useCreateProject, useCreateAgent, useDeployAgent } from "@/hooks/use-api";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -209,15 +211,84 @@ export default function ProjectWizardPage() {
     return true;
   }, [step, data]);
 
-  // Deploy animation
-  const startDeploy = () => {
+  const router = useRouter();
+  const createProject = useCreateProject();
+  const createAgent = useCreateAgent();
+  const deployAgent = useDeployAgent();
+
+  // Real deploy — creates project, agent, and deployment via API
+  const startDeploy = async () => {
     setDeploying(true); setDeployStage(0);
-    let stage = 0;
-    const interval = setInterval(() => {
-      stage++;
-      if (stage >= DEPLOY_STAGES.length) { clearInterval(interval); setDeployed(true); setDeploying(false); }
-      else setDeployStage(stage);
-    }, 1200);
+
+    const advanceStage = (stage: number) => new Promise<void>(resolve => {
+      setDeployStage(stage);
+      setTimeout(resolve, 800);
+    });
+
+    try {
+      // Stage 0: Initialising
+      await advanceStage(0);
+
+      // Stage 1: Create project
+      await advanceStage(1);
+      const project = await createProject.mutateAsync({
+        name: data.projectName,
+        description: data.description,
+        methodology: data.methodology?.toUpperCase() || "WATERFALL",
+        startDate: data.startDate || undefined,
+        endDate: data.endDate || undefined,
+        budget: data.budget ? Number(data.budget) : undefined,
+        priority: data.priority,
+        category: data.category,
+      });
+
+      // Stage 2: Create agent
+      await advanceStage(2);
+      const agent = await createAgent.mutateAsync({
+        name: data.agentName || "Agent",
+        autonomyLevel: data.autonomyLevel || 3,
+        personality: {
+          formalityLevel: data.personalityFormal,
+          conciseness: data.personalityConcise,
+        },
+        gradient: GRADIENT_PRESETS[data.agentGradient]?.gradient,
+      });
+
+      // Stage 3: Deploy agent to project
+      await advanceStage(3);
+      await deployAgent.mutateAsync({
+        agentId: agent.id,
+        projectId: project.id,
+        config: {
+          methodology: data.methodology,
+          phases: data.phases,
+          hitlePhaseGates: data.hitlePhaseGates,
+          hitleBudgetThreshold: data.hitleBudgetThreshold,
+          hitleCommsApproval: data.hitleCommsApproval,
+          hitleRiskThreshold: data.hitleRiskThreshold,
+          escalationTimeout: data.escalationTimeout,
+          reportSchedule: data.reportSchedule,
+          notifications: { slack: data.notifSlack, email: data.notifEmail, telegram: data.notifTelegram },
+          integrations: { jira: data.intJira, github: data.intGithub, confluence: data.intConfluence },
+        },
+      });
+
+      // Stage 4: Building framework
+      await advanceStage(4);
+
+      // Stage 5: Success
+      await advanceStage(5);
+      setDeployed(true);
+      setDeploying(false);
+
+      // Redirect to fleet page after a moment
+      setTimeout(() => router.push("/agents"), 2000);
+    } catch (err: any) {
+      console.error("Deploy failed:", err);
+      setDeploying(false);
+      setDeployStage(0);
+      alert(`Deployment failed: ${err.message || "Unknown error"}`);
+    }
   };
 
   const totalCredits = CREDIT_BREAKDOWN.reduce((s, c) => s + c.value, 0);
