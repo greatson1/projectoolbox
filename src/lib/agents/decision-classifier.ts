@@ -205,6 +205,21 @@ export function classifyDecision(
     }
   }
 
+  // ── Per-Level Capability Matrix check (Section 2.6) ──
+  try {
+    const { proposalToCapability, getCapabilityAction } = require("./domain-actions");
+    const capability = proposalToCapability(proposal);
+    const capAction = getCapabilityAction(capability, effectiveLevel);
+    if (capAction === "—") {
+      // Not available at this level — block entirely
+      return { riskScore, riskTier, canAutoExecute: false, requiresApproval: false, approvalType, urgency, impactScores };
+    }
+    if (capAction === "HITL" || capAction === "Draft") {
+      return { riskScore, riskTier, canAutoExecute: false, requiresApproval: true, approvalType, urgency, impactScores };
+    }
+    // "Auto" — continue to standard threshold check below
+  } catch {}
+
   // ── Autonomy level threshold check ──
   const threshold = AUTO_EXECUTE_THRESHOLDS[effectiveLevel];
   if (!threshold) {

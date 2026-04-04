@@ -97,6 +97,34 @@ export async function runMonitoringLoop(
     // Budget threshold breach
     const budgetProps = await checkBudgetThresholds(projectId);
     proposals.push(...budgetProps);
+
+    // EVM threshold checks (daily)
+    try {
+      const { checkEvmThresholds } = await import("./evm-engine");
+      const evmProps = await checkEvmThresholds(projectId, agentId);
+      proposals.push(...evmProps);
+    } catch {}
+
+    // Project health RAG check (daily)
+    try {
+      const { checkProjectHealth } = await import("./project-health");
+      const healthProps = await checkProjectHealth(projectId, agentId);
+      proposals.push(...healthProps);
+    } catch {}
+
+    // Issue management checks (daily)
+    try {
+      const { checkIssues } = await import("./domain-actions");
+      const issueProps = await checkIssues(projectId);
+      proposals.push(...issueProps);
+    } catch {}
+
+    // Team health checks (daily)
+    try {
+      const { checkTeamHealth } = await import("./domain-actions");
+      const teamProps = await checkTeamHealth(projectId);
+      proposals.push(...teamProps);
+    } catch {}
   }
 
   // ── 3. Weekly monitoring ──
@@ -128,6 +156,20 @@ export async function runMonitoringLoop(
     // Stakeholder communication cadence
     const stakeholderProps = await checkStakeholderCadence(projectId, agentId);
     proposals.push(...stakeholderProps);
+
+    // Change request management (weekly)
+    try {
+      const { checkChangeRequests } = await import("./domain-actions");
+      const crProps = await checkChangeRequests(projectId);
+      proposals.push(...crProps);
+    } catch {}
+
+    // Vendor management (weekly)
+    try {
+      const { checkVendors } = await import("./domain-actions");
+      const vendorProps = await checkVendors(projectId);
+      proposals.push(...vendorProps);
+    } catch {}
   }
 
   // ── 4. Phase gate readiness check (always) ──
