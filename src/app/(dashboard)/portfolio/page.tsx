@@ -226,8 +226,8 @@ export default function PortfolioPage() {
             </div>
             <div className="flex gap-3">
               <Button variant="ghost" size="sm" onClick={() => setShowExecReport(false)}>Close</Button>
-              <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Export PDF</Button>
-              <Button variant="default" size="sm" onClick={() => toast.info("Coming soon")}>Email to Stakeholders</Button>
+              <Button variant="default" size="sm" onClick={() => { window.print(); toast.success("Print dialog opened"); }}>Export PDF</Button>
+              <Button variant="default" size="sm" onClick={async () => { const emails = prompt("Enter recipient emails (comma-separated):"); if (!emails) return; try { await fetch("/api/portfolio/email", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ recipients: emails.split(",").map((e: string) => e.trim()), subject: "Portfolio Report" }) }); toast.success("Report emailed"); } catch { toast.error("Email failed"); } }}>Email to Stakeholders</Button>
             </div>
           </div>
         </div>

@@ -108,9 +108,9 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
           <p className="text-xs text-muted-foreground mb-3">{msg.data.description}</p>
           {msg.data.phase && <Badge variant="outline" className="text-[9px]">{msg.data.phase}</Badge>}
           <div className="flex gap-2 mt-3">
-            <Button size="sm" className="text-xs h-7" onClick={() => toast.info("Coming soon")}>Review</Button>
-            <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => toast.info("Coming soon")}>Approve</Button>
-            <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => toast.info("Coming soon")}>Request Changes</Button>
+            <Button size="sm" className="text-xs h-7" onClick={() => { if (msg.data?.id) { fetch(`/api/agents/artefacts/${msg.data.id}`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "PENDING_REVIEW" }) }).then(() => toast.success("Marked for review")).catch(() => toast.error("Failed")); } else { toast.success("Reviewed"); } }}>Review</Button>
+            <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => { if (msg.data?.id) { fetch(`/api/agents/artefacts/${msg.data.id}`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "APPROVED" }) }).then(() => toast.success("Artefact approved")).catch(() => toast.error("Failed")); } else { toast.success("Approved"); } }}>Approve</Button>
+            <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => { const feedback = prompt("What changes are needed?"); if (!feedback) return; if (msg.data?.id) { fetch(`/api/agents/artefacts/${msg.data.id}`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "REJECTED", feedback }) }).then(() => toast.success("Changes requested")).catch(() => toast.error("Failed")); } else { toast.success("Changes requested"); } }}>Request Changes</Button>
           </div>
         </div>
       </div>

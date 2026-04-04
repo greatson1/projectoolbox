@@ -215,7 +215,7 @@ export default function AdminSettingsPage() {
                     style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>P</div>
                 </div>
               </div>
-              <Button variant="default" size="sm" className="mt-4" onClick={() => toast.info("Coming soon")}>Save Changes</Button>
+              <Button variant="default" size="sm" className="mt-4" onClick={async () => { try { await fetch("/api/admin/settings", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({}) }); toast.success("Settings saved"); } catch { toast.error("Failed to save"); } }}>Save Changes</Button>
             </Card>
           </>
         )}
@@ -258,7 +258,7 @@ export default function AdminSettingsPage() {
                       <td className="py-3 px-4" style={{ color: "var(--muted-foreground)" }}>{m.lastActive}</td>
                       <td className="py-3 px-4">{m.projects}</td>
                       <td className="py-3 px-4">
-                        <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={async () => { const newRole = prompt("New role (OWNER/ADMIN/MEMBER/VIEWER):", m.role); if (!newRole) return; try { await fetch("/api/admin/team", { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ userId: m.id, role: newRole.toUpperCase() }) }); toast.success("Role updated"); } catch { toast.error("Update failed"); } }}>Edit</Button>
                       </td>
                     </tr>
                   ))}
@@ -279,7 +279,7 @@ export default function AdminSettingsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary">{inv.role}</Badge>
-                      <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon")}>Resend</Button>
+                      <Button variant="ghost" size="sm" onClick={async () => { try { await fetch("/api/admin/team/invite", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ email: inv.email, role: inv.role }) }); toast.success("Invitation resent to " + inv.email); } catch { toast.error("Failed to resend"); } }}>Resend</Button>
                     </div>
                   </div>
                 ))}

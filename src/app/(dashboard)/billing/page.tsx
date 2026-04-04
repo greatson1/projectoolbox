@@ -324,7 +324,7 @@ export default function BillingPage() {
                 <p className="text-[11px] text-muted-foreground">credits</p>
                 <p className="text-lg font-bold mt-2 text-primary">${b.price}</p>
                 <p className="text-[10px] text-muted-foreground">{b.perCredit}/credit</p>
-                <Button size="sm" className="w-full mt-3" onClick={() => toast.info("Coming soon")}>Buy</Button>
+                <Button size="sm" className="w-full mt-3" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: b.id || "pack_500" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>Buy</Button>
               </div>
             ))}
           </div>
@@ -348,7 +348,7 @@ export default function BillingPage() {
             <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
               <span>100</span><span>2,500</span><span>5,000</span><span>10,000</span>
             </div>
-            <Button size="sm" className="mt-3" onClick={() => toast.info("Coming soon")}>
+            <Button size="sm" className="mt-3" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_custom", amount: topupCustom }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>
               Purchase {topupCustom.toLocaleString()} Credits -- ${customPrice}
             </Button>
           </div>
