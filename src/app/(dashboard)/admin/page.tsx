@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useTeamMembers, useAuditLog, useBilling } from "@/hooks/use-api";
+import { useTeamMembers, useAuditLog, useBilling, useOrgSettings, useSaveOrgSettings } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -161,14 +161,25 @@ export default function AdminSettingsPage() {
   const [auditSearch, setAuditSearch] = useState("");
   const [auditTypeFilter, setAuditTypeFilter] = useState<string | null>(null);
 
+  const { data: orgSettings } = useOrgSettings();
+  const saveOrg = useSaveOrgSettings();
   const { data: apiTeam } = useTeamMembers();
   const { data: apiAudit } = useAuditLog();
+  const org = orgSettings || {};
   const members = apiTeam || [];
-  const auditLog = apiAudit || [];
+  const rawAudit = (apiAudit || []).map((e: any) => ({
+    ts: e.createdAt ? new Date(e.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—",
+    user: e.userId || "System",
+    action: e.action || "",
+    target: e.target || "",
+    ip: e.ip || "—",
+    result: "success",
+  }));
+  const auditLog = rawAudit.length > 0 ? rawAudit : AUDIT_LOG; // Fallback to mock if empty
   const filteredAudit = auditLog.filter((e: any) => {
-    if (auditSearch && !e.action.toLowerCase().includes(auditSearch.toLowerCase()) && !e.user.toLowerCase().includes(auditSearch.toLowerCase()) && !e.target.toLowerCase().includes(auditSearch.toLowerCase())) return false;
-    if (auditTypeFilter === "agents" && !e.user.includes("Agent")) return false;
-    if (auditTypeFilter === "users" && e.user.includes("Agent")) return false;
+    if (auditSearch && !e.action.toLowerCase().includes(auditSearch.toLowerCase()) && !(e.user || "").toLowerCase().includes(auditSearch.toLowerCase()) && !e.target.toLowerCase().includes(auditSearch.toLowerCase())) return false;
+    if (auditTypeFilter === "agents" && !(e.user || "").includes("Agent")) return false;
+    if (auditTypeFilter === "users" && (e.user || "").includes("Agent")) return false;
     if (auditTypeFilter === "failed" && e.result !== "failed") return false;
     return true;
   });
@@ -201,21 +212,27 @@ export default function AdminSettingsPage() {
             <TabHeader title="Organisation Profile" desc="Manage your workspace identity and preferences" />
             <Card>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Organisation Name" value="PMGT Solutions Ltd" />
-                <Field label="Industry" value="Consulting / Professional Services" />
-                <Field label="Company Size" value="11–50 employees" />
-                <Field label="Website" value="https://pmgtsolutions.com" />
-                <Field label="Timezone" value="Europe/London (GMT+1)" />
-                <Field label="Billing Email" value="billing@pmgtsolutions.com" />
+                <EditableField label="Organisation Name" value={org.name || ""} field="name" onSave={(v: string) => saveOrg.mutate({ name: v })} />
+                <EditableField label="Industry" value={org.industry || ""} field="industry" onSave={(v: string) => saveOrg.mutate({ industry: v })} />
+                <EditableField label="Company Size" value={org.companySize || ""} field="companySize" onSave={(v: string) => saveOrg.mutate({ companySize: v })} />
+                <EditableField label="Website" value={org.website || ""} field="website" onSave={(v: string) => saveOrg.mutate({ website: v })} />
+                <EditableField label="Timezone" value={org.timezone || "Europe/London"} field="timezone" onSave={(v: string) => saveOrg.mutate({ timezone: v })} />
+                <EditableField label="Billing Email" value={org.billingEmail || ""} field="billingEmail" onSave={(v: string) => saveOrg.mutate({ billingEmail: v })} />
+              </div>
+              <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Plan</p>
+                <Badge variant="default">{org.plan || "FREE"}</Badge>
+                <span className="text-xs text-muted-foreground ml-2">{org.creditBalance?.toLocaleString() || 0} credits remaining</span>
               </div>
               <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Logo</p>
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-[12px] flex items-center justify-center text-[24px] font-bold text-white"
-                    style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>P</div>
+                    style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>{(org.name || "P")[0]}</div>
+                  <p className="text-xs text-muted-foreground">Upload Logo<br /><span className="text-[10px]">PNG or SVG, max 2MB</span></p>
                 </div>
               </div>
-              <Button variant="default" size="sm" className="mt-4" onClick={async () => { try { await fetch("/api/admin/settings", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({}) }); toast.success("Settings saved"); } catch { toast.error("Failed to save"); } }}>Save Changes</Button>
+              <Button variant="default" size="sm" className="mt-4" onClick={() => { saveOrg.mutate({}); toast.success("Settings saved"); }}>Save Changes</Button>
             </Card>
           </>
         )}
@@ -732,6 +749,28 @@ function FieldInput({ label, placeholder,  }: { label: string; placeholder: stri
       <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>{label}</p>
       <input className="w-full px-3 py-2 rounded-[10px] text-[13px]" placeholder={placeholder}
         style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
+    </div>
+  );
+}
+
+function EditableField({ label, value, field, onSave }: { label: string; value: string; field: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value);
+  useEffect(() => { setVal(value); }, [value]);
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{label}</p>
+      {editing ? (
+        <div className="flex gap-1.5">
+          <input className="flex-1 px-2 py-1 rounded-md text-[13px] border border-border bg-background outline-none" value={val} onChange={e => setVal(e.target.value)} autoFocus />
+          <button className="px-2 py-1 rounded-md text-[11px] font-semibold bg-primary text-white" onClick={() => { onSave(val); setEditing(false); toast.success(`${label} updated`); }}>Save</button>
+          <button className="px-2 py-1 rounded-md text-[11px] text-muted-foreground" onClick={() => { setVal(value); setEditing(false); }}>Cancel</button>
+        </div>
+      ) : (
+        <p className="text-[13px] font-medium cursor-pointer hover:text-primary transition-colors" onClick={() => setEditing(true)} style={{ color: "var(--foreground)" }}>
+          {value || <span className="text-muted-foreground italic">Click to set</span>}
+        </p>
+      )}
     </div>
   );
 }

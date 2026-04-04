@@ -398,6 +398,13 @@ export function useBillingPortal() {
 
 // ── Admin ──
 
+export function useOrgSettings() {
+  return useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: () => api<any>("/api/admin/settings"),
+  });
+}
+
 export function useSaveOrgSettings() {
   const qc = useQueryClient();
   return useMutation({
