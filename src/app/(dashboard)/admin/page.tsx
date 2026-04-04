@@ -1,23 +1,13 @@
 "use client";
 // @ts-nocheck
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useTeamMembers, useAuditLog, useBilling, useOrgSettings, useSaveOrgSettings } from "@/hooks/use-api";
-import { Skeleton } from "@/components/ui/skeleton";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { useTeamMembers, useAuditLog, useOrgSettings, useSaveOrgSettings } from "@/hooks/use-api";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-
-/**
- * Admin Settings — 8-tab vertical navigation.
- * Organisation, Team, Roles, Security, Integrations, API, Compliance, Audit.
- */
-
-
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES & DATA
@@ -79,7 +69,6 @@ const ALL_INTEGRATIONS = [
 // ═══════════════════════════════════════════════════════════════════
 
 export default function AdminSettingsPage() {
-  const mode = "dark";
   const [tab, setTab] = useState<TabId>("org");
   const [showInviteModal, setShowInviteModal] = useState(false);
 
@@ -122,22 +111,24 @@ export default function AdminSettingsPage() {
   });
 
   return (
-    <div className="flex gap-6 max-w-[1400px]">
+    <div className="flex gap-8 max-w-[1400px] animate-page-enter">
       {/* ═══ VERTICAL TABS ═══ */}
-      <div className="w-[220px] flex-shrink-0 space-y-1">
-        <h2 className="text-[18px] font-bold mb-4" style={{ color: "var(--foreground)" }}>Settings</h2>
-        {TABS.map(t => (
-          <button key={t.id} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] text-left transition-all"
-            onClick={() => setTab(t.id)}
-            style={{
-              background: tab === t.id ? `${"var(--primary)"}15` : "transparent",
-              color: tab === t.id ? "var(--primary)" : "var(--muted-foreground)",
-              fontWeight: tab === t.id ? 600 : 400,
-            }}>
-            <span className="text-[14px]">{t.icon}</span>
-            <span className="text-[13px]">{t.label}</span>
-          </button>
-        ))}
+      <div className="w-[230px] flex-shrink-0">
+        <h2 className="text-lg font-bold mb-5 text-foreground">Settings</h2>
+        <nav className="space-y-0.5">
+          {TABS.map(t => {
+            const active = tab === t.id;
+            return (
+              <button key={t.id}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all duration-200 ${active ? "bg-primary/10 text-primary font-semibold shadow-sm" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground hover:translate-x-0.5"}`}
+                onClick={() => setTab(t.id)}>
+                <span className="text-sm">{t.icon}</span>
+                <span className="text-[13px]">{t.label}</span>
+                {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       {/* ═══ CONTENT ═══ */}
@@ -147,25 +138,31 @@ export default function AdminSettingsPage() {
         {tab === "org" && (
           <>
             <TabHeader title="Organisation Profile" desc="Manage your workspace identity and preferences" />
-            <Card>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <EditableField label="Organisation Name" value={org.name || ""} field="name" onSave={(v: string) => saveOrg.mutate({ name: v })} />
-                <EditableField label="Industry" value={org.industry || ""} field="industry" onSave={(v: string) => saveOrg.mutate({ industry: v })} />
-                <EditableField label="Company Size" value={org.companySize || ""} field="companySize" onSave={(v: string) => saveOrg.mutate({ companySize: v })} />
-                <EditableField label="Website" value={org.website || ""} field="website" onSave={(v: string) => saveOrg.mutate({ website: v })} />
-                <EditableField label="Timezone" value={org.timezone || "Europe/London"} field="timezone" onSave={(v: string) => saveOrg.mutate({ timezone: v })} />
-                <EditableField label="Billing Email" value={org.billingEmail || ""} field="billingEmail" onSave={(v: string) => saveOrg.mutate({ billingEmail: v })} />
-              </div>
-              <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Plan</p>
-                <Badge variant="default">{org.plan || "FREE"}</Badge>
-                <span className="text-xs text-muted-foreground ml-2">{org.creditBalance?.toLocaleString() || 0} credits remaining</span>
-              </div>
-              <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Logo</p>
+            <Card className="overflow-hidden">
+              {/* Header gradient */}
+              <div className="h-24 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent -mt-4 -mx-4 mb-4 flex items-end px-6 pb-4">
                 <OrgLogoUpload orgName={org.name || "P"} currentLogo={org.logoUrl} onUpload={(url: string) => { saveOrg.mutate({ logoUrl: url }); toast.success("Logo updated"); }} />
               </div>
-              <Button variant="default" size="sm" className="mt-4" onClick={() => { saveOrg.mutate({}); toast.success("Settings saved"); }}>Save Changes</Button>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <EditableField label="Organisation Name" value={org.name || ""} field="name" onSave={(v: string) => saveOrg.mutate({ name: v })} />
+                  <EditableField label="Industry" value={org.industry || ""} field="industry" onSave={(v: string) => saveOrg.mutate({ industry: v })} />
+                  <EditableField label="Company Size" value={org.companySize || ""} field="companySize" onSave={(v: string) => saveOrg.mutate({ companySize: v })} />
+                  <EditableField label="Website" value={org.website || ""} field="website" onSave={(v: string) => saveOrg.mutate({ website: v })} />
+                  <EditableField label="Timezone" value={org.timezone || "Europe/London"} field="timezone" onSave={(v: string) => saveOrg.mutate({ timezone: v })} />
+                  <EditableField label="Billing Email" value={org.billingEmail || ""} field="billingEmail" onSave={(v: string) => saveOrg.mutate({ billingEmail: v })} />
+                </div>
+                <div className="flex items-center gap-4 pt-4 border-t border-border/30">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10">
+                    <span className="text-xs font-bold text-primary">{org.plan || "FREE"}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-2xl font-bold text-foreground">{org.creditBalance?.toLocaleString() || 0}</span>
+                    <span className="text-xs text-muted-foreground">credits</span>
+                  </div>
+                </div>
+                <Button variant="default" size="sm" onClick={() => { saveOrg.mutate({}); toast.success("Settings saved"); }}>Save Changes</Button>
+              </CardContent>
             </Card>
           </>
         )}
@@ -179,36 +176,41 @@ export default function AdminSettingsPage() {
             </div>
 
             <Card>
-              <table className="w-full text-[12px]" style={{ color: "var(--foreground)" }}>
+              <table className="w-full text-xs">
                 <thead>
-                  <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                  <tr className="border-b border-border/50">
                     {["Member", "Role", "Status", "Last Active", "Projects", ""].map(h => (
-                      <th key={h} className="text-left py-3 px-4 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{h}</th>
+                      <th key={h} className="text-left py-3 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map(m => (
-                    <tr key={m.email} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}11` }}>
+                  {members.map((m: any) => (
+                    <tr key={m.email} className="hover:bg-muted/30 transition-colors border-b border-border/10">
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+                            {(m.name || m.email || "?")[0]?.toUpperCase()}
+                          </div>
                           <div>
-                            <p className="font-semibold">{m.name}</p>
-                            <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{m.email}</p>
+                            <p className="font-semibold text-foreground">{m.name || "Unnamed"}</p>
+                            <p className="text-[10px] text-muted-foreground">{m.email}</p>
                           </div>
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={m.role === "Owner" ? "secondary" : m.role === "Admin" ? "outline" : m.role === "Manager" ? "secondary" : m.role === "Member" ? "default" : "outline"}>{m.role}</Badge>
+                        <Badge variant="secondary" className="text-[10px]">{m.role}</Badge>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={m.status === "active" ? "default" : "secondary"}>{m.status}</Badge>
+                        <span className="flex items-center gap-1.5 text-[11px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Active
+                        </span>
                       </td>
-                      <td className="py-3 px-4" style={{ color: "var(--muted-foreground)" }}>{m.lastActive}</td>
-                      <td className="py-3 px-4">{m.projects}</td>
+                      <td className="py-3 px-4 text-muted-foreground text-[11px]">{m.updatedAt ? new Date(m.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"}</td>
+                      <td className="py-3 px-4 text-[11px]">—</td>
                       <td className="py-3 px-4">
-                        <Button variant="ghost" size="sm" onClick={async () => { const newRole = prompt("New role (OWNER/ADMIN/MEMBER/VIEWER):", m.role); if (!newRole) return; try { await fetch("/api/admin/team", { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ userId: m.id, role: newRole.toUpperCase() }) }); toast.success("Role updated"); } catch { toast.error("Update failed"); } }}>Edit</Button>
+                        <Button variant="ghost" size="sm" className="text-xs" onClick={async () => { const newRole = prompt("New role (OWNER/ADMIN/MEMBER/VIEWER):", m.role); if (!newRole) return; try { await fetch("/api/admin/team", { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ userId: m.id, role: newRole.toUpperCase() }) }); toast.success("Role updated"); } catch { toast.error("Update failed"); } }}>Edit</Button>
                       </td>
                     </tr>
                   ))}
@@ -218,14 +220,13 @@ export default function AdminSettingsPage() {
 
             {/* Pending invitations */}
             <Card>
-              <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Pending Invitations</h3>
+              <h3 className="text-[14px] font-semibold mb-3 text-foreground">Pending Invitations</h3>
               <div className="space-y-2">
                 {([] as any[]).map(inv => (
-                  <div key={inv.email} className="flex items-center justify-between py-2 px-3 rounded-[8px]"
-                    style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                  <div key={inv.email} className="flex items-center justify-between py-2 px-3 rounded-[8px] bg-muted/20">
                     <div>
-                      <p className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{inv.email}</p>
-                      <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Sent {inv.sentAt} · Expires in {inv.expiresIn}</p>
+                      <p className="text-[12px] font-medium text-foreground">{inv.email}</p>
+                      <p className="text-[10px] text-muted-foreground">Sent {inv.sentAt} · Expires in {inv.expiresIn}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary">{inv.role}</Badge>
@@ -242,10 +243,10 @@ export default function AdminSettingsPage() {
                 <div className="space-y-3">
                   <FieldInput label="Email Address" placeholder="colleague@company.com" />
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>Role</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-muted-foreground">Role</p>
                     <div className="flex gap-2">
                       {["Admin", "Manager", "Member", "Viewer"].map(r => (
-                        <button key={r} className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)", border: `1px solid ${"var(--border)"}33` }}>{r}</button>
+                        <button key={r} className="px-3 py-1.5 rounded-[8px] text-[11px] font-semibold bg-muted/30 text-muted-foreground border border-border/30">{r}</button>
                       ))}
                     </div>
                   </div>
@@ -267,19 +268,19 @@ export default function AdminSettingsPage() {
                 <Card key={r.name}>
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-3 h-3 rounded-full" style={{ background: r.color }} />
-                    <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{r.name}</span>
+                    <span className="text-[13px] font-bold text-foreground">{r.name}</span>
                   </div>
-                  <p className="text-[10px] mb-1" style={{ color: "var(--muted-foreground)" }}>{r.desc}</p>
+                  <p className="text-[10px] mb-1 text-muted-foreground">{r.desc}</p>
                   <p className="text-[11px] font-semibold" style={{ color: r.color }}>{r.count} member{r.count !== 1 ? "s" : ""}</p>
                 </Card>
               ))}
             </div>
 
             <Card>
-              <table className="w-full text-[11px]" style={{ color: "var(--foreground)" }}>
+              <table className="w-full text-[11px] text-foreground">
                 <thead>
-                  <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
-                    <th className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase" style={{ color: "var(--muted-foreground)" }}>Permission</th>
+                  <tr className="border-b border-border/50">
+                    <th className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase text-muted-foreground">Permission</th>
                     {ROLES.map(r => <th key={r.name} className="text-center py-2.5 px-2 text-[10px] font-semibold uppercase" style={{ color: r.color }}>{r.name}</th>)}
                   </tr>
                 </thead>
@@ -289,7 +290,7 @@ export default function AdminSettingsPage() {
                       <td className="py-2 px-4 font-medium">{p.feature}</td>
                       {ROLES.map(r => (
                         <td key={r.name} className="text-center py-2">
-                          {(p as any)[r.name] ? <span style={{ color: "#10B981" }}>✓</span> : <span style={{ color: "var(--muted-foreground)" }}>—</span>}
+                          {(p as any)[r.name] ? <span style={{ color: "#10B981" }}>✓</span> : <span className="text-muted-foreground">—</span>}
                         </td>
                       ))}
                     </tr>
@@ -301,8 +302,8 @@ export default function AdminSettingsPage() {
             <div className="p-3 rounded-[10px]" style={{ background: `${"var(--primary)"}06`, border: `1px solid ${"var(--primary)"}18` }}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>Custom Roles</p>
-                  <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Create custom permission sets tailored to your organisation</p>
+                  <p className="text-[12px] font-semibold text-foreground">Custom Roles</p>
+                  <p className="text-[10px] text-muted-foreground">Create custom permission sets tailored to your organisation</p>
                 </div>
                 <Badge variant="secondary">Enterprise</Badge>
               </div>
@@ -318,12 +319,12 @@ export default function AdminSettingsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Password policy */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Password Policy</h3>
+                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Password Policy</h3>
                 <div className="space-y-3">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Minimum length</span>
-                      <span className="text-[13px] font-bold" style={{ color: "var(--primary)" }}>{pwdLength} characters</span>
+                      <span className="text-[12px] text-muted-foreground">Minimum length</span>
+                      <span className="text-[13px] font-bold text-primary">{pwdLength} characters</span>
                     </div>
                     <input type="range" min={8} max={24} value={pwdLength} onChange={e => setPwdLength(Number(e.target.value))}
                       className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
@@ -337,13 +338,13 @@ export default function AdminSettingsPage() {
 
               {/* 2FA + Session */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Authentication</h3>
+                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Authentication</h3>
                 <div className="space-y-3">
                   <ToggleRow label="Require 2FA for all members" checked={require2fa} onChange={setRequire2fa} />
                   {require2fa && (
-                    <div className="p-2.5 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                    <div className="p-2.5 rounded-[8px] bg-muted/20">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>2FA Adoption</span>
+                        <span className="text-[11px] text-muted-foreground">2FA Adoption</span>
                         <span className="text-[11px] font-bold" style={{ color: "#10B981" }}>5/7 members</span>
                       </div>
                       <Progress value={71} className="h-1.5" />
@@ -351,10 +352,9 @@ export default function AdminSettingsPage() {
                   )}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Session timeout</span>
-                      <select className="px-2 py-1 rounded-[6px] text-[11px]" value={sessionTimeout}
-                        onChange={e => setSessionTimeout(e.target.value)}
-                        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
+                      <span className="text-[12px] text-muted-foreground">Session timeout</span>
+                      <select className="px-2 py-1 rounded-[6px] text-[11px] bg-background text-foreground border border-border" value={sessionTimeout}
+                        onChange={e => setSessionTimeout(e.target.value)}>
                         {["1", "4", "8", "24", "168"].map(h => <option key={h} value={h}>{h === "168" ? "7 days" : `${h} hours`}</option>)}
                       </select>
                     </div>
@@ -362,21 +362,21 @@ export default function AdminSettingsPage() {
                 </div>
 
                 {/* SSO */}
-                <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+                <div className="mt-4 pt-3 border-t border-border/20">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>SSO Configuration</p>
-                      <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>SAML 2.0 or OpenID Connect</p>
+                      <p className="text-[12px] font-semibold text-foreground">SSO Configuration</p>
+                      <p className="text-[10px] text-muted-foreground">SAML 2.0 or OpenID Connect</p>
                     </div>
                     <Badge variant="secondary">Enterprise</Badge>
                   </div>
                 </div>
 
-                <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
+                <div className="mt-3 pt-3 border-t border-border/20">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>IP Allowlisting</p>
-                      <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Restrict access to approved IPs</p>
+                      <p className="text-[12px] font-semibold text-foreground">IP Allowlisting</p>
+                      <p className="text-[10px] text-muted-foreground">Restrict access to approved IPs</p>
                     </div>
                     <Badge variant="secondary">Enterprise</Badge>
                   </div>
@@ -386,7 +386,7 @@ export default function AdminSettingsPage() {
 
             {/* Active Sessions */}
             <Card>
-              <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Active Sessions</h3>
+              <h3 className="text-[14px] font-semibold mb-3 text-foreground">Active Sessions</h3>
               <div className="p-4 text-center">
                 <p className="text-xs text-muted-foreground">Your current session is active. Session management will show all active browser sessions once NextAuth session tracking is enabled.</p>
               </div>
@@ -415,10 +415,10 @@ export default function AdminSettingsPage() {
                             <span className="text-[24px]">{int.icon}</span>
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+                                <span className="text-[14px] font-bold text-foreground">{int.name}</span>
                                 <Badge variant="default">Connected</Badge>
                               </div>
-                              <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
+                              <p className="text-[11px] text-muted-foreground">{int.desc}</p>
                             </div>
                           </div>
                         </div>
@@ -430,15 +430,15 @@ export default function AdminSettingsPage() {
 
               {available.length > 0 && (
                 <>
-                  <h4 className="text-[12px] font-bold uppercase tracking-wider" style={{ color: "var(--primary)" }}>Available ({available.length})</h4>
+                  <h4 className="text-[12px] font-bold uppercase tracking-wider text-primary">Available ({available.length})</h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {available.map(int => (
                       <Card key={int.name}>
                         <div className="flex items-center gap-3 mb-2">
                           <span className="text-[20px]">{int.icon}</span>
-                          <span className="text-[13px] font-bold" style={{ color: "var(--foreground)" }}>{int.name}</span>
+                          <span className="text-[13px] font-bold text-foreground">{int.name}</span>
                         </div>
-                        <p className="text-[11px] mb-3" style={{ color: "var(--muted-foreground)" }}>{int.desc}</p>
+                        <p className="text-[11px] mb-3 text-muted-foreground">{int.desc}</p>
                         <Button variant="outline" size="sm" className="w-full" onClick={() => toast.info(`Contact support to connect ${int.name}`)}>Connect</Button>
                       </Card>
                     ))}
@@ -458,7 +458,7 @@ export default function AdminSettingsPage() {
               {/* API Keys */}
               <Card>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>API Keys</h3>
+                  <h3 className="text-[14px] font-semibold text-foreground">API Keys</h3>
                 </div>
                 <ApiKeysSection orgId={org?.id} />
                 <div className="mt-3 p-2 rounded-[6px] text-[10px]" style={{ background: `${"#F59E0B"}08`, color: "#F59E0B" }}>
@@ -468,9 +468,9 @@ export default function AdminSettingsPage() {
 
               {/* Credit Usage */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Credit Usage</h3>
+                <h3 className="text-[14px] font-semibold mb-2 text-foreground">Credit Usage</h3>
                 <div className="p-4 text-center">
-                  <p className="text-3xl font-bold" style={{ color: "var(--primary)" }}>{org?.creditBalance?.toLocaleString() || 0}</p>
+                  <p className="text-3xl font-bold text-primary">{org?.creditBalance?.toLocaleString() || 0}</p>
                   <p className="text-xs text-muted-foreground mt-1">credits remaining</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Plan: {org?.plan || "FREE"}</p>
                 </div>
@@ -480,7 +480,7 @@ export default function AdminSettingsPage() {
             {/* Webhooks */}
             <Card>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Webhook Endpoints</h3>
+                <h3 className="text-[14px] font-semibold text-foreground">Webhook Endpoints</h3>
               </div>
               <div className="p-4 text-center">
                 <p className="text-xs text-muted-foreground">No webhook endpoints configured. Webhooks allow external systems to receive real-time events from Projectoolbox (agent actions, approvals, phase completions).</p>
@@ -498,10 +498,10 @@ export default function AdminSettingsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Residency + Retention */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Data Residency & Retention</h3>
+                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Data Residency & Retention</h3>
                 <div className="space-y-3">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>Data Residency</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-muted-foreground">Data Residency</p>
                     <div className="flex gap-2">
                       {[{ id: "uk", label: "🇬🇧 United Kingdom" }, { id: "eu", label: "🇪🇺 EU (Frankfurt)" }, { id: "us", label: "🇺🇸 US (Virginia)" }].map(r => (
                         <button key={r.id} className="flex-1 py-2 rounded-[8px] text-[11px] font-semibold transition-all"
@@ -516,10 +516,9 @@ export default function AdminSettingsPage() {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Data retention period</span>
-                      <select className="px-2 py-1 rounded-[6px] text-[11px]" value={retentionMonths}
-                        onChange={e => setRetentionMonths(e.target.value)}
-                        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
+                      <span className="text-[12px] text-muted-foreground">Data retention period</span>
+                      <select className="px-2 py-1 rounded-[6px] text-[11px] bg-background text-foreground border border-border" value={retentionMonths}
+                        onChange={e => setRetentionMonths(e.target.value)}>
                         {["12", "24", "36", "60", "84"].map(m => <option key={m} value={m}>{m} months</option>)}
                       </select>
                     </div>
@@ -529,19 +528,19 @@ export default function AdminSettingsPage() {
 
               {/* Compliance */}
               <Card>
-                <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Compliance</h3>
+                <h3 className="text-[14px] font-semibold mb-3 text-foreground">Compliance</h3>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between py-2">
                     <div className="flex items-center gap-2">
                       <span className="text-[16px]">🇪🇺</span>
-                      <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>GDPR</span>
+                      <span className="text-[12px] font-semibold text-foreground">GDPR</span>
                     </div>
                     <Badge variant="default">Compliant</Badge>
                   </div>
                   <div className="flex items-center justify-between py-2">
                     <div className="flex items-center gap-2">
                       <span className="text-[16px]">🇬🇧</span>
-                      <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>UK DPA 2018</span>
+                      <span className="text-[12px] font-semibold text-foreground">UK DPA 2018</span>
                     </div>
                     <Badge variant="default">Compliant</Badge>
                   </div>
@@ -559,9 +558,8 @@ export default function AdminSettingsPage() {
 
             {/* Filters */}
             <div className="flex items-center gap-2 flex-wrap">
-              <input className="px-3 py-1.5 rounded-[8px] text-[12px] w-[200px]" placeholder="Search actions..."
-                value={auditSearch} onChange={e => setAuditSearch(e.target.value)}
-                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
+              <input className="px-3 py-1.5 rounded-lg text-xs w-[220px] bg-background text-foreground border border-border outline-none" placeholder="Search actions..."
+                value={auditSearch} onChange={e => setAuditSearch(e.target.value)} />
               {["All", "Users", "Agents", "Failed"].map(f => {
                 const fKey = f === "All" ? null : f.toLowerCase();
                 return (
@@ -577,24 +575,24 @@ export default function AdminSettingsPage() {
             </div>
 
             <Card>
-              <table className="w-full text-[12px]" style={{ color: "var(--foreground)" }}>
+              <table className="w-full text-[12px] text-foreground">
                 <thead>
-                  <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
+                  <tr className="border-b border-border/50">
                     {["Timestamp", "User", "Action", "Target", "IP Address", "Result"].map(h => (
-                      <th key={h} className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>{h}</th>
+                      <th key={h} className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAudit.map((e, i) => (
                     <tr key={i} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}08` }}>
-                      <td className="py-2.5 px-4 font-mono text-[10px]" style={{ color: "var(--muted-foreground)" }}>{e.ts}</td>
+                      <td className="py-2.5 px-4 font-mono text-[10px] text-muted-foreground">{e.ts}</td>
                       <td className="py-2.5 px-4">
                         <span className="font-medium" style={{ color: e.user.includes("Agent") ? "var(--primary)" : "var(--foreground)" }}>{e.user}</span>
                       </td>
                       <td className="py-2.5 px-4">{e.action}</td>
-                      <td className="py-2.5 px-4" style={{ color: "var(--muted-foreground)" }}>{e.target}</td>
-                      <td className="py-2.5 px-4 font-mono text-[10px]" style={{ color: "var(--muted-foreground)" }}>{e.ip}</td>
+                      <td className="py-2.5 px-4 text-muted-foreground">{e.target}</td>
+                      <td className="py-2.5 px-4 font-mono text-[10px] text-muted-foreground">{e.ip}</td>
                       <td className="py-2.5 px-4">
                         <Badge variant={e.result === "success" ? "default" : "destructive"}>{e.result}</Badge>
                       </td>
@@ -614,11 +612,11 @@ export default function AdminSettingsPage() {
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
-function TabHeader({ title, desc}: { title: string; desc: string;  }) {
+function TabHeader({ title, desc}: { title: string; desc: string }) {
   return (
-    <div className="mb-1">
-      <h2 className="text-[20px] font-bold" style={{ color: "var(--foreground)" }}>{title}</h2>
-      <p className="text-[13px]" style={{ color: "var(--muted-foreground)" }}>{desc}</p>
+    <div className="mb-2">
+      <h2 className="text-xl font-bold text-foreground">{title}</h2>
+      <p className="text-sm text-muted-foreground mt-0.5">{desc}</p>
     </div>
   );
 }
@@ -626,8 +624,8 @@ function TabHeader({ title, desc}: { title: string; desc: string;  }) {
 function Field({ label, value}: { label: string; value: string;  }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{label}</p>
-      <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{value}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1 text-muted-foreground">{label}</p>
+      <p className="text-[13px] font-medium text-foreground">{value}</p>
     </div>
   );
 }
@@ -635,9 +633,8 @@ function Field({ label, value}: { label: string; value: string;  }) {
 function FieldInput({ label, placeholder,  }: { label: string; placeholder: string }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>{label}</p>
-      <input className="w-full px-3 py-2 rounded-[10px] text-[13px]" placeholder={placeholder}
-        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 text-muted-foreground">{label}</p>
+      <input className="w-full px-3 py-2 rounded-xl text-sm bg-background text-foreground border border-border outline-none" placeholder={placeholder} />
     </div>
   );
 }
@@ -648,7 +645,7 @@ function EditableField({ label, value, field, onSave }: { label: string; value: 
   useEffect(() => { setVal(value); }, [value]);
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1 text-muted-foreground">{label}</p>
       {editing ? (
         <div className="flex gap-1.5">
           <input className="flex-1 px-2 py-1 rounded-md text-[13px] border border-border bg-background outline-none" value={val} onChange={e => setVal(e.target.value)} autoFocus />
@@ -656,7 +653,7 @@ function EditableField({ label, value, field, onSave }: { label: string; value: 
           <button className="px-2 py-1 rounded-md text-[11px] text-muted-foreground" onClick={() => { setVal(value); setEditing(false); }}>Cancel</button>
         </div>
       ) : (
-        <p className="text-[13px] font-medium cursor-pointer hover:text-primary transition-colors" onClick={() => setEditing(true)} style={{ color: "var(--foreground)" }}>
+        <p className="text-[13px] font-medium cursor-pointer hover:text-primary transition-colors text-foreground" onClick={() => setEditing(true)}>
           {value || <span className="text-muted-foreground italic">Click to set</span>}
         </p>
       )}
@@ -667,7 +664,7 @@ function EditableField({ label, value, field, onSave }: { label: string; value: 
 function ToggleRow({ label, checked, onChange}: { label: string; checked: boolean; onChange: (v: boolean) => void;  }) {
   return (
     <div className="flex items-center justify-between py-1">
-      <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{label}</span>
+      <span className="text-[12px] text-foreground">{label}</span>
       <button className="w-9 h-5 rounded-full relative transition-all flex-shrink-0" onClick={() => onChange(!checked)}
         style={{ background: checked ? "var(--primary)" : `${"var(--border)"}66` }}>
         <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm" style={{ left: checked ? 18 : 2 }} />
@@ -683,7 +680,7 @@ function Modal({ title, onClose, children,  }: { title: string; onClose: () => v
       <div className="relative w-full max-w-[440px] rounded-[16px] p-6" onClick={e => e.stopPropagation()}
         style={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-[16px] font-bold" style={{ color: "var(--foreground)" }}>{title}</h3>
+          <h3 className="text-[16px] font-bold text-foreground">{title}</h3>
           <button onClick={onClose} className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[16px]"
             style={{ color: "var(--muted-foreground)", background: `${"var(--border)"}22` }}>×</button>
         </div>
