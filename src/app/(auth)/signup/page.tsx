@@ -111,8 +111,8 @@ function SignupPageInner() {
   const handleDeploy = async () => {
     setDeploying(true);
     try {
-      // Save workspace config and deploy agent
-      await fetch("/api/onboarding", {
+      // 1. Save workspace config + create agent
+      const onboardRes = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -121,8 +121,40 @@ function SignupPageInner() {
           agent: { name: agentName, gradient: GRADIENTS[agentGradient].color, autonomyLevel: autonomy },
         }),
       });
+
+      // 2. Create a default project
+      const projRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `${orgName || "My"} Project`,
+          methodology: "HYBRID",
+          description: `First project for ${orgName || "the organisation"}`,
+        }),
+      });
+
+      if (projRes.ok) {
+        const projData = await projRes.json();
+        const projectId = projData.data?.id;
+
+        // 3. Find the agent that was just created and deploy it
+        if (projectId) {
+          const agentsRes = await fetch("/api/agents");
+          if (agentsRes.ok) {
+            const agentsData = await agentsRes.json();
+            const agent = agentsData.data?.agents?.[0];
+            if (agent) {
+              await fetch(`/api/agents/${agent.id}/deploy`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ projectId }),
+              });
+            }
+          }
+        }
+      }
     } catch {
-      // Non-blocking — onboarding data is optional, continue to dashboard
+      // Non-blocking — continue to dashboard even if deploy fails
     }
     setTimeout(() => { setDeploying(false); setDeployed(true); }, 3000);
   };
