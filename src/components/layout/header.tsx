@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useAppStore } from "@/stores/app";
+import { useNotifications } from "@/hooks/use-api";
 import { Bell, Moon, Sun, Search, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,13 @@ import Link from "next/link";
 
 export function Header() {
   const { setTheme, resolvedTheme } = useTheme();
-  const { unreadNotifications, sidebarCollapsed } = useAppStore();
+  const { sidebarCollapsed } = useAppStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Get real unread count directly from API (not stale SSE cache)
+  const { data: notifData } = useNotifications();
+  const unreadNotifications = notifData ? notifData.filter((n: any) => !n.isRead).length : 0;
 
   return (
     <header
