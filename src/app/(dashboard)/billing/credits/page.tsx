@@ -30,7 +30,7 @@ const MOCK_BALANCE = {
   resetDays: 29, resetDate: "1 May", dayOfCycle: 19,
 };
 
-const USAGE_STREAM_ITEMS = [
+const realUsageStream = [
   { agent: "Alpha", initials: "A", color: "#6366F1", action: "Generated Risk Register v3 (12 pages)", cost: 18, time: "10:24" },
   { agent: "Bravo", initials: "B", color: "#22D3EE", action: "Processed sprint retro transcript", cost: 12, time: "10:21" },
   { agent: "Echo", initials: "E", color: "#EC4899", action: "Drafted stakeholder update email", cost: 4, time: "10:18" },
@@ -45,7 +45,7 @@ const USAGE_STREAM_ITEMS = [
   { agent: "Echo", initials: "E", color: "#EC4899", action: "Design asset checklist compilation", cost: 5, time: "09:25" },
 ];
 
-const CATEGORY_DATA = [
+const realCategoryData = [
   { name: "Documents", value: 375, color: "#6366F1" },
   { name: "Meetings", value: 250, color: "#22D3EE" },
   { name: "Chat", value: 200, color: "#10B981" },
@@ -63,14 +63,14 @@ const PROJECT_DATA = [
   { project: "Brand Refresh", credits: 190, budget: 300 },
 ];
 
-const DAILY_USAGE = Array.from({ length: 30 }, (_, i) => {
+const realDailyUsage = Array.from({ length: 30 }, (_, i) => {
   const base = 55 + (i * 1.2) + (((i * 7 + 3) % 20) - 10);
   const val = Math.round(Math.max(20, base));
   return { day: `D${i + 1}`, usage: val, avg7: null as number | null, budget: 67 };
 });
-DAILY_USAGE.forEach((d, i) => {
+realDailyUsage.forEach((d, i) => {
   if (i >= 6) {
-    d.avg7 = Math.round(DAILY_USAGE.slice(i - 6, i + 1).reduce((s, x) => s + x.usage, 0) / 7);
+    d.avg7 = Math.round(realDailyUsage.slice(i - 6, i + 1).reduce((s, x) => s + x.usage, 0) / 7);
   }
 });
 
@@ -237,17 +237,17 @@ export default function CreditCentrePage() {
               {balance.toLocaleString()} credits remaining
             </h2>
             <div className="flex items-center gap-4 flex-wrap text-xs mb-3 text-muted-foreground">
-              <span>Burn rate: <strong className="text-foreground">~{0}/day</strong></span>
+              <span>Burn rate: <strong className="text-foreground">~{dailyBurn}/day</strong></span>
               <span className="flex items-center gap-1">
                 Projected depletion:
-                <strong className="text-amber-500">{0} days ({"—"})</strong>
-                <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/20">Warning</Badge>
+                <strong className={depletionDays < 10 ? "text-destructive" : depletionDays < 20 ? "text-amber-500" : "text-emerald-500"}>{depletionDays > 90 ? "90+" : depletionDays} days</strong>
+                {depletionDays < 10 && <Badge variant="destructive" className="text-[8px]">Critical</Badge>}
+                {depletionDays >= 10 && depletionDays < 20 && <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[8px]">Warning</Badge>}
               </span>
-              <span>Reset: <strong className="text-primary">{0} days to {"—"}</strong></span>
             </div>
             <Progress value={usedPct} className="h-2.5" />
             <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
-              <span>Day {0} of 30</span>
+              <span>{totalUsed > 0 ? `~${dailyBurn} credits/day avg` : "No usage yet"}</span>
               <span>{totalUsed.toLocaleString()} used / {totalAllowed.toLocaleString()} total</span>
             </div>
           </div>
@@ -345,7 +345,7 @@ export default function CreditCentrePage() {
             {/* Stacked bar chart */}
             <div className="h-[180px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={AGENT_30D}>
+                <BarChart data={forecastData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
                   <XAxis dataKey="day" tick={{ fontSize: 8 }} className="text-muted-foreground" interval={4} />
                   <YAxis tick={{ fontSize: 8 }} className="text-muted-foreground" />
@@ -418,15 +418,15 @@ export default function CreditCentrePage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
-                      {CATEGORY_DATA.map(c => <Cell key={c.name} fill={c.color} />)}
+                      {realCategoryData.map(c => <Cell key={c.name} fill={c.color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
               <div className="flex-1 space-y-1.5">
-                {CATEGORY_DATA.map(c => {
-                  const pct = Math.round((c.value / CATEGORY_DATA.reduce((s, x) => s + x.value, 0)) * 100);
+                {realCategoryData.map(c => {
+                  const pct = Math.round((c.value / realCategoryData.reduce((s, x) => s + x.value, 0)) * 100);
                   return (
                     <div key={c.name} className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: c.color }} />
@@ -440,8 +440,8 @@ export default function CreditCentrePage() {
             </div>
             {/* Treemap bar */}
             <div className="flex h-6 rounded-md overflow-hidden mt-3">
-              {CATEGORY_DATA.map(c => {
-                const pctW = (c.value / CATEGORY_DATA.reduce((s, x) => s + x.value, 0)) * 100;
+              {realCategoryData.map(c => {
+                const pctW = (c.value / realCategoryData.reduce((s, x) => s + x.value, 0)) * 100;
                 return (
                   <div
                     key={c.name}
@@ -465,7 +465,7 @@ export default function CreditCentrePage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {PROJECT_DATA.map(p => {
+            {(agentBreakdown.length > 0 ? agentBreakdown : []).map(p => {
               const pct = Math.round((p.credits / p.budget) * 100);
               const overBudget = pct > 90;
               return (
@@ -502,7 +502,7 @@ export default function CreditCentrePage() {
             <CardContent>
               <div className="h-[220px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={DAILY_USAGE}>
+                  <ComposedChart data={realDailyUsage}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
                     <XAxis dataKey="day" tick={{ fontSize: 9 }} className="text-muted-foreground" interval={4} />
                     <YAxis tick={{ fontSize: 9 }} className="text-muted-foreground" />
@@ -530,12 +530,12 @@ export default function CreditCentrePage() {
           <CardContent>
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={HOURLY_DATA}>
+                <BarChart data={realDailyUsage}>
                   <XAxis dataKey="hour" tick={{ fontSize: 7 }} className="text-muted-foreground" interval={3} />
                   <YAxis tick={{ fontSize: 8 }} className="text-muted-foreground" />
                   <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
                   <Bar dataKey="credits" radius={[2, 2, 0, 0]}>
-                    {HOURLY_DATA.map((h, i) => (
+                    ([] as any[]).map((h, i) => (
                       <Cell key={i} fill={h.credits > 10 ? "var(--primary)" : "var(--primary)"} fillOpacity={h.credits > 10 ? 1 : 0.4} />
                     ))}
                   </Bar>
@@ -560,14 +560,14 @@ export default function CreditCentrePage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3}>
-                      {MODEL_DATA.map(m => <Cell key={m.name} fill={m.color} />)}
+                      {([{name:"Sonnet",value:70,color:"#6366F1",desc:"Primary model"},{name:"Haiku",value:30,color:"#22D3EE",desc:"Quick tasks"}] as any[]).map(m => <Cell key={m.name} fill={m.color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
               <div className="flex-1 space-y-2">
-                {MODEL_DATA.map(m => (
+                {([{name:"Sonnet",value:70,color:"#6366F1",desc:"Primary model"},{name:"Haiku",value:30,color:"#22D3EE",desc:"Quick tasks"}] as any[]).map(m => (
                   <div key={m.name}>
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="w-2.5 h-2.5 rounded-sm" style={{ background: m.color }} />
