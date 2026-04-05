@@ -30,6 +30,9 @@ const MODULES = [
   { label: "QA & Testing", href: "qa-testing", icon: TestTube2, desc: "Test execution and defects" },
   { label: "EVM Dashboard", href: "evm", icon: TrendingUp, desc: "Earned value metrics" },
   { label: "Reports", href: "reports", icon: FileText, desc: "Status and executive reports" },
+  { label: "Scorecard", href: "scorecard", icon: Target, desc: "Project objectives & agent performance" },
+  { label: "Artefacts", href: "artefacts", icon: FileText, desc: "Agent-generated documents" },
+  { label: "Audit Trail", href: "audit", icon: ShieldAlert, desc: "Agent decision log" },
 ];
 
 export default function ProjectOverviewPage() {
