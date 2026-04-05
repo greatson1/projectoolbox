@@ -60,7 +60,7 @@ export default function DashboardPage() {
     );
   }
 
-  const stats = dash?.stats;
+  const stats = dash?.stats || { activeProjects: 0, completedTasks: 0, totalTasks: 0, pendingApprovals: 0, openRisks: 0, unreadNotifications: 0, creditBalance: 0, activeAgents: 0 };
   const projects = dash?.projects || [];
   const agents = dash?.agents || [];
   const activities = dash?.activities || [];
