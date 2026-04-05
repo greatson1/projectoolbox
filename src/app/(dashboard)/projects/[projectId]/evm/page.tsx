@@ -142,20 +142,20 @@ export default function EVMDashboardPage() {
   const { data: apiProject } = useProject(projectId);
   const { data: realMetrics } = useProjectMetrics(projectId);
 
-  // Use real EVM data from metrics API when available, fall back to mock
+  // Use real EVM data from metrics API — no mock fallback
   const evm = realMetrics?.evm;
-  const rBAC = evm?.budget || BAC;
-  const rPV = evm?.pv || currentPV;
-  const rEV = evm?.ev || currentEV;
-  const rAC = evm?.ac || currentAC;
+  const rBAC = evm?.budget || 0;
+  const rPV = evm?.pv || 0;
+  const rEV = evm?.ev || 0;
+  const rAC = evm?.ac || 0;
   const rSV = rEV - rPV;
   const rCV = rEV - rAC;
-  const rSPI = evm?.spi || SPI;
-  const rCPI = evm?.cpi || CPI;
+  const rSPI = evm?.spi || (rPV > 0 ? rEV / rPV : 1);
+  const rCPI = evm?.cpi || (rAC > 0 ? rEV / rAC : 1);
   const rEAC = rCPI > 0 ? Math.round(rBAC / rCPI) : EAC;
   const rETC = rEAC - rAC;
   const rVAC = rBAC - rEAC;
-  const rTCPI = (rBAC - rAC) > 0 ? +((rBAC - rEV) / (rBAC - rAC)).toFixed(2) : TCPI;
+  const rTCPI = (rBAC - rAC) > 0 ? +((rBAC - rEV) / (rBAC - rAC)).toFixed(2) : 1;
 
   const metrics = [
     { label: "BAC", value: fmt(rBAC), sub: "Budget at Completion", color: "var(--foreground)" },

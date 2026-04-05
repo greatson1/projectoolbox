@@ -126,7 +126,7 @@ export default function SchedulePage() {
     assignee: t.assignee || t.assigneeName || "",
     isMilestone: t.isMilestone || false,
     isCriticalPath: t.isCriticalPath || false,
-  })) : TASKS;
+  })) : [];
 
   const mode = "dark";
   const [zoom, setZoom] = useState<ZoomLevel>("month");
