@@ -714,6 +714,63 @@ model AgentArtefact {
   @@index([projectId])
 }
 
+// ─── Cost Tracking ───
+
+model CostEntry {
+  id          String   @id @default(cuid())
+  projectId   String
+  taskId      String?
+  entryType   String   @default("ESTIMATE")
+  amount      Float
+  currency    String   @default("GBP")
+  description String?
+  recordedAt  DateTime @default(now())
+  createdBy   String?
+
+  @@index([projectId])
+}
+
+// ─── Metrics Snapshots ───
+
+model MetricsSnapshot {
+  id                   String    @id @default(cuid())
+  projectId            String
+  cycleId              String?
+  pv                   Float?
+  ev                   Float?
+  ac                   Float?
+  spi                  Float?
+  cpi                  Float?
+  eac                  Float?
+  ragStatus            String?
+  tasksTotal           Int?
+  tasksComplete        Int?
+  tasksOverdue         Int?
+  risksOpen            Int?
+  risksCritical        Int?
+  forecastEndDate      DateTime?
+  onBudgetProbability  Float?
+  createdAt            DateTime  @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+// ─── Communications Log ───
+
+model CommsLog {
+  id          String   @id @default(cuid())
+  projectId   String
+  agentId     String?
+  channel     String   @default("EMAIL")
+  recipient   String
+  subject     String?
+  content     String?  @db.Text
+  status      String   @default("SENT")
+  sentAt      DateTime @default(now())
+
+  @@index([projectId])
+}
+
 // ─── Agent Knowledge Base (Section 7.6) ───
 
 model KnowledgeBaseItem {

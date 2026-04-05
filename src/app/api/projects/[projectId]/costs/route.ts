@@ -14,8 +14,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   });
 
   // Aggregated summary
-  const estimated = entries.filter(e => e.entryType === "ESTIMATE").reduce((s, e) => s + e.amount, 0);
-  const actual = entries.filter(e => e.entryType === "ACTUAL").reduce((s, e) => s + e.amount, 0);
+  const estimated = entries.filter((e: any) => e.entryType === "ESTIMATE").reduce((s: number, e: any) => s + e.amount, 0);
+  const actual = entries.filter((e: any) => e.entryType === "ACTUAL").reduce((s: number, e: any) => s + e.amount, 0);
   const forecast = entries.filter(e => e.entryType === "FORECAST").reduce((s, e) => s + e.amount, 0);
 
   return NextResponse.json({ data: { entries, summary: { estimated, actual, forecast } } });
