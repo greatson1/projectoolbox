@@ -46,7 +46,7 @@ export default function KnowledgeBasePage() {
   }, [agents, selectedAgent]);
 
   const fetchItems = () => {
-    if (!selectedAgent) return;
+    if (!selectedAgent) { setLoading(false); return; }
     setLoading(true);
     const params = new URLSearchParams();
     if (searchQuery) params.set("q", searchQuery);

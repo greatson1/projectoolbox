@@ -355,7 +355,7 @@ function AgentChatPage() {
         </div>
         <div className="flex-1 overflow-y-auto">
           {agents.length === 0 ? (
-            <div className="p-4 text-center"><Bot className="w-6 h-6 text-muted-foreground mx-auto mb-2" /><p className="text-xs text-muted-foreground">No agents deployed</p></div>
+            <div className="p-6 text-center"><Bot className="w-8 h-8 text-muted-foreground mx-auto mb-3" /><p className="text-sm font-medium mb-1">No agents deployed</p><p className="text-xs text-muted-foreground mb-3">Deploy your first agent to start chatting</p><a href="/agents/deploy" className="inline-flex items-center px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold">Deploy Agent →</a></div>
           ) : agents.map((agent: any) => {
             const agentMsgs = messagesByAgent[agent.id] || [];
             const lastMsg = agentMsgs[agentMsgs.length - 1];

@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useCreateProject, useCreateAgent, useDeployAgent } from "@/hooks/use-api";
+import { useCreateProject, useCreateAgent, useDeployAgent, useCredits } from "@/hooks/use-api";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -176,8 +176,9 @@ const DEPLOY_STAGES = [
 // ═══════════════════════════════════════════════════════════════════
 
 export default function ProjectWizardPage() {
-  const mode = "dark";
   const [step, setStep] = useState(0);
+  const { data: creditsData } = useCredits();
+  const creditBalance = creditsData?.balance ?? creditsData?.creditBalance ?? null;
   const [data, setData] = useState<WizardState>(INIT_STATE);
   const [deploying, setDeploying] = useState(false);
   const [deployStage, setDeployStage] = useState(0);
@@ -301,6 +302,16 @@ export default function ProjectWizardPage() {
 
   return (
     <div className="max-w-[960px] mx-auto pb-12">
+      {/* Credit warning */}
+      {creditBalance !== null && creditBalance <= 0 && (
+        <div className="mb-6 p-4 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-destructive">No credits remaining</p>
+            <p className="text-xs text-muted-foreground mt-0.5">You need credits to deploy an agent. Each deployment costs 10 credits.</p>
+          </div>
+          <a href="/billing/credits" className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors">Top Up Credits</a>
+        </div>
+      )}
       {/* ═══ PROGRESS BAR ═══ */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -887,7 +898,8 @@ export default function ProjectWizardPage() {
       {/* ═══ NAVIGATION ═══ */}
       {!deployed && (
         <div className="flex items-center justify-between mt-8 pt-4" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
-          <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => setStep(step - 1)}>← Back</Button>
+          {step > 0 && <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)}>← Back</Button>}
+          {step === 0 && <div />}
           <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>Step {step + 1} of {STEP_LABELS.length}</span>
           {step < 5 ? (
             <Button variant="default" size="sm" disabled={!canProceed} onClick={() => setStep(step + 1)}>

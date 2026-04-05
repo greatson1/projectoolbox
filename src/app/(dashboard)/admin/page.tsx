@@ -69,8 +69,23 @@ const ALL_INTEGRATIONS = [
 // ═══════════════════════════════════════════════════════════════════
 
 export default function AdminSettingsPage() {
-  const [tab, setTab] = useState<TabId>("org");
+  // Read initial tab from URL hash or search params
+  const [tab, setTab] = useState<TabId>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get("tab") as TabId;
+      if (t && TABS.some(tab => tab.id === t)) return t;
+    }
+    return "org";
+  });
   const [showInviteModal, setShowInviteModal] = useState(false);
+
+  // Sync tab to URL without navigation
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url.toString());
+  }, [tab]);
 
   // Security state
   // Security/integration state removed — those tabs were decorative
@@ -300,8 +315,8 @@ export default function AdminSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {([] as any[]).map(p => (
-                    <tr key={p.feature} style={{ borderBottom: `1px solid ${"var(--border)"}08` }}>
+                  {PERMISSIONS.map(p => (
+                    <tr key={p.feature} className="border-b border-border/10">
                       <td className="py-2 px-4 font-medium">{p.feature}</td>
                       {ROLE_DEFS.map(r => (
                         <td key={r.name} className="text-center py-2">
@@ -596,7 +611,7 @@ function EditableField({ label, value, field, onSave }: { label: string; value: 
         </div>
       ) : (
         <p className="text-[13px] font-medium cursor-pointer hover:text-primary transition-colors text-foreground" onClick={() => setEditing(true)}>
-          {value || <span className="text-muted-foreground italic">Click to set</span>}
+          {val || <span className="text-muted-foreground italic">Click to set</span>}
         </p>
       )}
     </div>

@@ -212,26 +212,12 @@ export default function DashboardPage() {
             <Card className="px-5">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Sprint Burndown</CardTitle></CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={[] as any[]}>
-                    <defs>
-                      <linearGradient id="gradPlanned" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gradActual" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                    <XAxis dataKey="day" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--foreground)", fontSize: 12 }} />
-                    <Area type="monotone" dataKey="planned" stroke="var(--primary)" fill="url(#gradPlanned)" strokeWidth={2} strokeDasharray="5 5" />
-                    <Area type="monotone" dataKey="actual" stroke="var(--chart-2)" fill="url(#gradActual)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div className="flex items-center justify-center h-[200px] text-center">
+                  <div>
+                    <p className="text-sm text-muted-foreground">No sprint data yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Charts populate when an agent runs sprint cycles</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -239,7 +225,13 @@ export default function DashboardPage() {
             <Card className="px-5">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Distribution</CardTitle></CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
+                <div className="flex items-center justify-center h-[200px] text-center">
+                  <div>
+                    <p className="text-sm text-muted-foreground">No risk data yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Charts populate when project risks are identified</p>
+                  </div>
+                </div>
+                {false && <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={[] as any[]} barSize={28}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                     <XAxis dataKey="category" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
