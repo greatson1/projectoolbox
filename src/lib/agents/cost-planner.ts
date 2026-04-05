@@ -107,7 +107,31 @@ export async function planProjectCosts(
 
   const labourTotal = items.reduce((s, i) => s + i.amount, 0);
 
-  // ── 2. NON-LABOUR COSTS (LLM-inferred) ──
+  // ── 2. NON-LABOUR COSTS (research-informed + LLM-inferred) ──
+  // Use Perplexity research for vendor pricing when available
+  try {
+    const { researchBeforePlanning } = await import("./planning-research");
+    const orgRecord = await db.organisation.findFirst({ where: { projects: { some: { id: projectId } } }, select: { id: true } });
+    if (orgRecord) {
+      const research = await researchBeforePlanning(project as any, { orgId: orgRecord.id, agentId, projectId });
+      // Add vendor-priced items from research
+      for (const vp of (research.vendorPricing || [])) {
+        const annual = vp.unit === "month" ? vp.price * 12 : vp.price;
+        items.push({ category: "MATERIALS", description: `${vp.item} (${vp.vendor})`, amount: annual, vendorName: vp.vendor });
+      }
+      // Update team rates from market research
+      for (const rate of (research.marketRates || [])) {
+        const unrated = members.filter(m => !m.hourlyRate);
+        for (const mm of unrated) {
+          if (mm.role?.toLowerCase().includes(rate.role.toLowerCase().split(" ")[0])) {
+            await db.projectMember.update({ where: { id: mm.id }, data: { hourlyRate: rate.hourlyRate } });
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // LLM-inferred items for anything research didn't cover
   const nonLabourItems = await inferNonLabourCosts(project, labourTotal);
   items.push(...nonLabourItems);
 

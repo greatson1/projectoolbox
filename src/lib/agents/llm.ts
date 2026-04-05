@@ -62,8 +62,18 @@ ${recentActivities.slice(0, 5).map(a => `- ${a.type}: ${a.summary}`).join("\n")}
       tierModifier = getTierPromptModifier(tierConfig.tier);
     } catch {}
 
+    // Inject planning research (market rates, benchmarks) if early in project lifecycle
+    let planningContext = "";
+    if (totalTasks < 5) {
+      try {
+        const { researchBeforePlanning, buildResearchEnhancedPrompt } = await import("./planning-research");
+        const research = await researchBeforePlanning(project, { orgId: agent.orgId, agentId, projectId: project.id });
+        planningContext = buildResearchEnhancedPrompt(project, research);
+      } catch {}
+    }
+
     const cyclePrompt = `You are Agent ${agent.name}, an L${agent.autonomyLevel} AI Project Manager.
-Analyse the current project state and propose actions to take.
+${planningContext ? "You have market research data to inform your planning:\n\n" + planningContext + "\n\n" : ""}Analyse the current project state and propose actions to take.
 
 ${tierModifier}
 
