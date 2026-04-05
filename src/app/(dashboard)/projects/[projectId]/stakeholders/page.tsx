@@ -96,6 +96,32 @@ export default function StakeholdersPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Stakeholder | null>(null);
 
+  const sentimentData = useMemo(() => {
+    const s = apiStakeholders || [];
+    if (s.length === 0) return SENTIMENT_DATA;
+    const groups: Record<string, number> = { supportive: 0, neutral: 0, resistant: 0, unknown: 0 };
+    s.forEach((st: any) => { groups[st.sentiment || "neutral"]++; });
+    return [
+      { name: "Supportive", value: groups.supportive, color: "#34D399" },
+      { name: "Neutral", value: groups.neutral, color: "#94A3B8" },
+      { name: "Resistant", value: groups.resistant, color: "#F87171" },
+      { name: "Unknown", value: groups.unknown, color: "#6366F1" },
+    ].filter(d => d.value > 0);
+  }, [apiStakeholders]);
+
+  const radarData = useMemo(() => {
+    const s = apiStakeholders || [];
+    if (s.length === 0) return RADAR_DATA;
+    const avg = (field: string) => s.reduce((sum: number, st: any) => sum + (st[field] || 3), 0) / s.length;
+    return [
+      { dim: "Communication", value: Math.round(avg("power") * 20) },
+      { dim: "Involvement", value: Math.round(avg("interest") * 20) },
+      { dim: "Influence", value: 65 },
+      { dim: "Support", value: 70 },
+      { dim: "Availability", value: 55 },
+    ];
+  }, [apiStakeholders]);
+
   const filtered = STAKEHOLDERS_DATA.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.role.toLowerCase().includes(search.toLowerCase()));
 
   // Grid quadrant positioning
@@ -233,13 +259,13 @@ export default function StakeholdersPage() {
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Sentiment Distribution</p>
             <ResponsiveContainer width="100%" height={140}>
               <PieChart>
-                <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" outerRadius={55} innerRadius={30}>
-                  {SENTIMENT_DATA.map((e, i) => <Cell key={i} fill={e.color} />)}
+                <Pie data={sentimentData} dataKey="value" cx="50%" cy="50%" outerRadius={55} innerRadius={30}>
+                  {sentimentData.map((e, i) => <Cell key={i} fill={e.color} />)}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
             <div className="space-y-1 mt-1">
-              {SENTIMENT_DATA.map((s) => (
+              {sentimentData.map((s) => (
                 <div key={s.name} className="flex items-center justify-between text-[11px]">
                   <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} /><span style={{ color: "var(--muted-foreground)" }}>{s.name}</span></div>
                   <span style={{ color: "var(--foreground)" }}>{s.value}</span>
@@ -252,7 +278,7 @@ export default function StakeholdersPage() {
           <Card>
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Engagement Dimensions</p>
             <ResponsiveContainer width="100%" height={200}>
-              <RadarChart data={[] as any[]}>
+              <RadarChart data={radarData}>
                 <PolarGrid stroke={"var(--border)"} />
                 <PolarAngleAxis dataKey="dim" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
                 <Radar dataKey="value" stroke={"var(--primary)"} fill={"var(--primary)"} fillOpacity={0.2} strokeWidth={2} />

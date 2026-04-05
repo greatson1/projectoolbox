@@ -91,21 +91,40 @@ export default function ProjectOverviewPage() {
         </div>
       </div>
 
-      {/* Phase gates */}
+      {/* Phase Gates + Lifecycle Status */}
       {project.phases && project.phases.length > 0 && (
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm">Phase Gates</CardTitle></CardHeader>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Lifecycle Progress</CardTitle>
+              {agent && (
+                <Badge variant="outline" className="text-[10px]">
+                  Managed by {agent.name} · L{agent.autonomyLevel}
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {project.phases.map((p: any, i: number) => (
-                <div key={p.id} className="flex items-center gap-2 flex-1">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${
-                    p.status === "COMPLETED" ? "bg-green-500 text-white" : p.status === "ACTIVE" ? "bg-primary text-white" : "bg-muted text-muted-foreground"
-                  }`}>{p.status === "COMPLETED" ? "✓" : i + 1}</div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-medium truncate block">{p.name}</span>
+                <div key={p.id} className="flex items-center gap-1 flex-1">
+                  <div className="flex flex-col items-center gap-1 flex-1">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold transition-all ${
+                      p.status === "COMPLETED" ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30"
+                      : p.status === "ACTIVE" ? "bg-primary text-white shadow-sm shadow-primary/30 ring-2 ring-primary/20"
+                      : "bg-muted text-muted-foreground"
+                    }`}>
+                      {p.status === "COMPLETED" ? "✓" : i + 1}
+                    </div>
+                    <span className={`text-[10px] font-medium text-center leading-tight ${
+                      p.status === "ACTIVE" ? "text-primary font-semibold" : p.status === "COMPLETED" ? "text-emerald-500" : "text-muted-foreground"
+                    }`}>{p.name}</span>
                   </div>
-                  {i < project.phases.length - 1 && <div className="w-8 h-px bg-border flex-shrink-0" />}
+                  {i < project.phases.length - 1 && (
+                    <div className={`h-0.5 flex-1 rounded-full min-w-[20px] ${
+                      p.status === "COMPLETED" ? "bg-emerald-500" : "bg-border"
+                    }`} />
+                  )}
                 </div>
               ))}
             </div>

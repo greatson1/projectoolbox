@@ -94,6 +94,37 @@ export default function ChangeControlPage() {
   const [selectedCR, setSelectedCR] = useState<CR | null>(null);
   const [search, setSearch] = useState("");
 
+  const catPie = useMemo(() => {
+    const crs = apiChangeRequests || [];
+    if (crs.length === 0) return CAT_PIE;
+    const cats: Record<string, number> = {};
+    crs.forEach((cr: any) => { cats[cr.category || "Other"] = (cats[cr.category || "Other"] || 0) + 1; });
+    const colors = ["#6366F1", "#22D3EE", "#F59E0B", "#8B5CF6", "#34D399"];
+    return Object.entries(cats).map(([name, value], i) => ({ name, value, color: colors[i % 5] }));
+  }, [apiChangeRequests]);
+
+  const priorityBar = useMemo(() => {
+    const crs = apiChangeRequests || [];
+    if (crs.length === 0) return PRIORITY_BAR;
+    const p: Record<string, number> = {};
+    crs.forEach((cr: any) => { p[cr.priority || "medium"] = (p[cr.priority || "medium"] || 0) + 1; });
+    const fills: Record<string, string> = { critical: "#EF4444", high: "#F59E0B", medium: "#6366F1", low: "#94A3B8" };
+    return Object.entries(p).map(([name, count]) => ({ name, count, fill: fills[name] || "#6366F1" }));
+  }, [apiChangeRequests]);
+
+  const trendData = useMemo(() => {
+    const crs = apiChangeRequests || [];
+    if (crs.length === 0) return TREND;
+    const months: Record<string, number> = {};
+    crs.forEach((cr: any) => {
+      const d = cr.createdAt || cr.date;
+      if (!d) return;
+      const m = new Date(d).toLocaleDateString("en-GB", { month: "short" });
+      months[m] = (months[m] || 0) + 1;
+    });
+    return Object.entries(months).map(([month, crs]) => ({ month, crs }));
+  }, [apiChangeRequests]);
+
   const filtered = CRS_DATA.filter((cr) => !search || cr.title.toLowerCase().includes(search.toLowerCase()) || cr.id.toLowerCase().includes(search.toLowerCase()));
   const pending = CRS_DATA.filter((cr) => !["Implementation", "Closed"].includes(cr.status)).length;
   const approved = ([] as any[]).filter((d) => d.decision === "approved").length;
@@ -206,11 +237,11 @@ export default function ChangeControlPage() {
           <Card>
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>CRs by Category</p>
             <ResponsiveContainer width="100%" height={130}>
-              <PieChart><Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" outerRadius={50} innerRadius={25}>
-                {([] as any[]).map((e, i) => <Cell key={i} fill={e.color} />)}
+              <PieChart><Pie data={catPie} dataKey="value" cx="50%" cy="50%" outerRadius={50} innerRadius={25}>
+                {catPie.map((e, i) => <Cell key={i} fill={e.color} />)}
               </Pie></PieChart>
             </ResponsiveContainer>
-            <div className="space-y-1 mt-1">{([] as any[]).map((c) => (
+            <div className="space-y-1 mt-1">{catPie.map((c) => (
               <div key={c.name} className="flex items-center justify-between text-[10px]">
                 <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} /><span style={{ color: "var(--muted-foreground)" }}>{c.name}</span></div>
                 <span style={{ color: "var(--foreground)" }}>{c.value}</span>
@@ -220,9 +251,9 @@ export default function ChangeControlPage() {
           <Card>
             <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>CRs by Priority</p>
             <ResponsiveContainer width="100%" height={100}>
-              <BarChart data={[] as any[]} layout="vertical" barSize={14}>
+              <BarChart data={priorityBar} layout="vertical" barSize={14}>
                 <XAxis type="number" hide /><YAxis type="category" dataKey="name" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} width={50} axisLine={false} tickLine={false} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]}>{([] as any[]).map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar>
+                <Bar dataKey="count" radius={[0, 4, 4, 0]}>{priorityBar.map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar>
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -315,7 +346,7 @@ export default function ChangeControlPage() {
           {/* Trend */}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CR Submission Trend</CardTitle></CardHeader><CardContent>
             <ResponsiveContainer width="100%" height={130}>
-              <AreaChart data={[] as any[]}>
+              <AreaChart data={trendData}>
                 <defs><linearGradient id="crGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={"var(--primary)"} stopOpacity={0.3} /><stop offset="95%" stopColor={"var(--primary)"} stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid stroke={"var(--border)"} strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />

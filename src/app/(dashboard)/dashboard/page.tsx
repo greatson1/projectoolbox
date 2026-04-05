@@ -14,33 +14,9 @@ import {
   FolderKanban, CheckCircle2, FileWarning, AlertTriangle,
   TrendingUp, ArrowRight, Bot, Zap,
 } from "lucide-react";
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid, Cell,
-} from "recharts";
+// Recharts removed — dashboard uses real data widgets now
 
-// Charts mock data (will be replaced with real data when tasks/sprints are populated)
-const BURNDOWN = [
-  { day: "Mon", planned: 42, actual: 42 }, { day: "Tue", planned: 38, actual: 40 },
-  { day: "Wed", planned: 34, actual: 37 }, { day: "Thu", planned: 30, actual: 33 },
-  { day: "Fri", planned: 26, actual: 30 }, { day: "Sat", planned: 22, actual: 28 },
-  { day: "Sun", planned: 18, actual: 25 },
-];
-const RISK_DIST = [
-  { category: "Technical", count: 4, fill: "#6366F1" }, { category: "Schedule", count: 3, fill: "#F59E0B" },
-  { category: "Budget", count: 2, fill: "#EF4444" }, { category: "Resource", count: 1, fill: "#22D3EE" },
-  { category: "External", count: 1, fill: "#8B5CF6" },
-];
-const PHASES = [
-  { name: "Pre-Project", pct: 100, status: "done" }, { name: "Initiation", pct: 100, status: "done" },
-  { name: "Planning", pct: 65, status: "active" }, { name: "Execution", pct: 0, status: "pending" },
-  { name: "Closing", pct: 0, status: "pending" },
-];
-const UPCOMING = [
-  { time: "Today 3pm", title: "Sprint Review — Mobile App", badge: "default" as const },
-  { time: "Tomorrow 10am", title: "Gate Review: CRM Planning", badge: "secondary" as const },
-  { time: "Thu", title: "Risk Register review due", badge: "destructive" as const },
-];
+// No mock data — all from API
 
 function timeAgo(date: string | Date) {
   const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -382,23 +358,30 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Upcoming */}
-          <Card className="px-5">
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Upcoming</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-2.5">
-                {([] as any[]).map((u, i) => (
-                  <div key={i} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-medium w-[80px] text-muted-foreground">{u.time}</span>
-                      <span className="text-[13px] font-medium">{u.title}</span>
-                    </div>
-                    <Badge variant={u.badge} className="text-[10px] capitalize">{u.badge === "default" ? "meeting" : u.badge === "secondary" ? "approval" : "deadline"}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {/* EVM Health (if projects have budget) */}
+          {projects.some((p: any) => p.budget > 0) && (
+            <Card className="px-5">
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Project Health</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {projects.filter((p: any) => p.budget > 0).slice(0, 3).map((p: any) => {
+                    const progress = p.taskCount > 0 ? Math.round(((p.completedCount || 0) / p.taskCount) * 100) : 0;
+                    return (
+                      <div key={p.id} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium truncate flex-1">{p.name}</span>
+                          <span className="text-xs font-bold text-primary ml-2">{progress}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-border/30 overflow-hidden">
+                          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
