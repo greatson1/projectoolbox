@@ -98,12 +98,17 @@ export async function runMonitoringLoop(
     const budgetProps = await checkBudgetThresholds(projectId);
     proposals.push(...budgetProps);
 
-    // EVM threshold checks (daily)
-    try {
-      const { checkEvmThresholds } = await import("./evm-engine");
-      const evmProps = await checkEvmThresholds(projectId, agentId);
-      proposals.push(...evmProps);
-    } catch {}
+    // EVM threshold checks (daily) — skip for TASK/LIGHTWEIGHT tiers
+    const { getProjectTierConfig } = await import("./project-tier");
+    const tierConfig = getProjectTierConfig(project);
+
+    if (tierConfig.evmEnabled) {
+      try {
+        const { checkEvmThresholds } = await import("./evm-engine");
+        const evmProps = await checkEvmThresholds(projectId, agentId);
+        proposals.push(...evmProps);
+      } catch {}
+    }
 
     // Project health RAG check (daily)
     try {
@@ -135,22 +140,22 @@ export async function runMonitoringLoop(
     const weeklyPlaybook = generatePlaybookProposals(methodology, currentPhase, "weekly", projectId);
     proposals.push(...weeklyPlaybook);
 
-    // Weekly PESTLE scan (auto-generates risks from external intelligence)
-    try {
-      const { pestleScan, pestleToRisks, newsMonitor } = await import("./web-research");
-      const orgId = deployment.agent.orgId || "";
-      const pestleResult = await pestleScan(
-        { name: project.name, industry: undefined },
-        { orgId, agentId, projectId },
-      );
-      if (pestleResult.findings.length > 0) {
-        await pestleToRisks(pestleResult.findings, projectId, agentId);
+    // Weekly PESTLE scan — skip for TASK/LIGHTWEIGHT tiers
+    if (tierConfig.pestelEnabled) {
+      try {
+        const { pestleScan, pestleToRisks, newsMonitor } = await import("./web-research");
+        const orgId = deployment.agent.orgId || "";
+        const pestleResult = await pestleScan(
+          { name: project.name, industry: undefined },
+          { orgId, agentId, projectId },
+        );
+        if (pestleResult.findings.length > 0) {
+          await pestleToRisks(pestleResult.findings, projectId, agentId);
+        }
+        await newsMonitor({ name: project.name }, { orgId, agentId, projectId });
+      } catch (e) {
+        console.error("Weekly PESTLE/news scan failed:", e);
       }
-
-      // News monitoring alongside PESTLE
-      await newsMonitor({ name: project.name }, { orgId, agentId, projectId });
-    } catch (e) {
-      console.error("Weekly PESTLE/news scan failed:", e);
     }
 
     // Stakeholder communication cadence

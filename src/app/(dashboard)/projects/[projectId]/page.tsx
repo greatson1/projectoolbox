@@ -65,6 +65,7 @@ export default function ProjectOverviewPage() {
             <div className="flex items-center gap-2 mt-2">
               <Badge variant="outline">{METHOD_LABEL[project.methodology] || project.methodology}</Badge>
               <Badge variant={project.status === "ACTIVE" ? "default" : "secondary"}>{project.status}</Badge>
+              {project.tier && <Badge variant="secondary" className="text-[9px]">{project.tier === "TASK" ? "Quick Task" : project.tier === "LIGHTWEIGHT" ? "Lightweight" : project.tier === "STANDARD" ? "Standard" : "Complex"}</Badge>}
               {project.priority && <Badge variant={project.priority === "high" ? "destructive" : "secondary"}>{project.priority}</Badge>}
             </div>
             {project.description && <p className="text-sm text-muted-foreground mt-2 max-w-lg">{project.description}</p>}

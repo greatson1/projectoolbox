@@ -54,8 +54,18 @@ ${recentActivities.slice(0, 5).map(a => `- ${a.type}: ${a.summary}`).join("\n")}
       deepKnowledge = await buildDeepKnowledgeContext(agentId, project.id);
     } catch {}
 
+    // Inject project tier modifier
+    let tierModifier = "";
+    try {
+      const { getProjectTierConfig, getTierPromptModifier } = await import("./project-tier");
+      const tierConfig = getProjectTierConfig(project);
+      tierModifier = getTierPromptModifier(tierConfig.tier);
+    } catch {}
+
     const cyclePrompt = `You are Agent ${agent.name}, an L${agent.autonomyLevel} AI Project Manager.
 Analyse the current project state and propose actions to take.
+
+${tierModifier}
 
 ${projectState}
 ${deepKnowledge ? `\n${deepKnowledge}\n` : ""}

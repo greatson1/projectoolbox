@@ -35,6 +35,14 @@ export async function POST(req: NextRequest) {
 
   if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
+  // Auto-detect project tier
+  const { detectProjectTier } = await import("@/lib/agents/project-tier");
+  const tier = body.tier || detectProjectTier({
+    budget: budget ? parseFloat(budget) : null,
+    startDate: startDate || null,
+    endDate: endDate || null,
+  });
+
   const project = await db.project.create({
     data: {
       name,
@@ -43,6 +51,7 @@ export async function POST(req: NextRequest) {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       budget: budget ? parseFloat(budget) : undefined,
+      tier,
       priority,
       category,
       orgId,

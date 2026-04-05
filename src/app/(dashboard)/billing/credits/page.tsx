@@ -173,13 +173,46 @@ export default function CreditCentrePage() {
   const agentBreakdown = data?.agentBreakdown || [];
   const recentTxns = data?.recentTransactions || [];
 
-  // Build forecast data dynamically based on real balance
+  // Derive burn rate from recent transactions (last 7 days)
+  const usageTxns = recentTxns.filter((t: any) => t.type === "USAGE");
+  const dailyBurn = usageTxns.length > 0 ? Math.round(usageTxns.reduce((s: number, t: any) => s + Math.abs(t.amount || 0), 0) / 7) : 0;
+  const depletionDays = dailyBurn > 0 ? Math.round(balance / dailyBurn) : 999;
+
+  // Derive category data from transaction descriptions
+  const categoryMap: Record<string, number> = {};
+  usageTxns.forEach((t: any) => {
+    const desc = (t.description || "").toLowerCase();
+    const cat = desc.includes("report") ? "Reports" : desc.includes("chat") ? "Chat" : desc.includes("risk") ? "Risk Analysis" : desc.includes("meet") ? "Meetings" : desc.includes("deploy") ? "Deployment" : "Other";
+    categoryMap[cat] = (categoryMap[cat] || 0) + Math.abs(t.amount || 0);
+  });
+  const categoryColors: Record<string, string> = { Reports: "#6366F1", Chat: "#22D3EE", "Risk Analysis": "#F59E0B", Meetings: "#10B981", Deployment: "#8B5CF6", Other: "#64748B" };
+  const realCategoryData = Object.entries(categoryMap).map(([name, value]) => ({ name, value, color: categoryColors[name] || "#64748B" }));
+
+  // Derive daily usage from transactions
+  const dailyMap: Record<string, number> = {};
+  usageTxns.forEach((t: any) => {
+    const day = new Date(t.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+    dailyMap[day] = (dailyMap[day] || 0) + Math.abs(t.amount || 0);
+  });
+  const realDailyUsage = Object.entries(dailyMap).map(([day, usage]) => ({ day, usage, budget: dailyBurn || 50 }));
+
+  // Build forecast
   const forecastData = Array.from({ length: 30 }, (_, i) => ({
-    day: `D${0 + i + 1}`,
-    current: Math.max(0, balance - (i * 0)),
-    withDelta: Math.max(0, balance - (i * (0 + 15))),
-    withTopup: i >= 9 ? Math.max(0, balance + 500 - (i * 0)) : Math.max(0, balance - (i * 0)),
+    day: `D${i + 1}`,
+    current: Math.max(0, balance - (i * dailyBurn)),
+    withDelta: Math.max(0, balance - (i * (dailyBurn + 15))),
+    withTopup: i >= 9 ? Math.max(0, balance + 500 - (i * dailyBurn)) : Math.max(0, balance - (i * dailyBurn)),
   }));
+
+  // Derive usage stream from recent transactions
+  const realUsageStream = usageTxns.slice(0, 12).map((t: any) => {
+    const agent = agentBreakdown.find((a: any) => a.agentId === t.agentId);
+    return {
+      agent: agent?.agentName || "System", initials: (agent?.agentName || "S")[0],
+      color: agent?.agentGradient || "#64748B", action: t.description || "Credit usage",
+      cost: Math.abs(t.amount || 0), time: new Date(t.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+    };
+  });
 
   return (
     <div className="space-y-6 max-w-[1400px]">
