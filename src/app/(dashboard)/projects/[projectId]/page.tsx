@@ -132,6 +132,9 @@ export default function ProjectOverviewPage() {
         </Card>
       )}
 
+      {/* EVM + Health Summary */}
+      <ProjectHealthCard projectId={projectId} />
+
       {/* Agent Artefacts */}
       <ArtefactSection projectId={projectId} />
 
@@ -220,5 +223,104 @@ function ArtefactSection({ projectId }: { projectId: string }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Project Health Card (EVM + RAG) ───
+function ProjectHealthCard({ projectId }: { projectId: string }) {
+  const [metrics, setMetrics] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/metrics`).then(r => r.json()).then(d => setMetrics(d.data)).catch(() => {});
+  }, [projectId]);
+
+  if (!metrics) return null;
+
+  const { evm, health, tasks } = metrics;
+  if (!evm?.budget || evm.budget === 0) return null;
+
+  const ragColors: Record<string, { bg: string; text: string; label: string }> = {
+    GREEN: { bg: "bg-emerald-500/10", text: "text-emerald-500", label: "On Track" },
+    AMBER: { bg: "bg-amber-500/10", text: "text-amber-500", label: "At Risk" },
+    RED: { bg: "bg-red-500/10", text: "text-red-500", label: "Critical" },
+  };
+
+  // SPI/CPI gauge helper
+  const Gauge = ({ value, label, threshold }: { value: number; label: string; threshold?: number }) => {
+    const pct = Math.min(100, Math.max(0, value * 50)); // 1.0 = 50%, 2.0 = 100%
+    const color = value >= 1.0 ? "#10B981" : value >= 0.9 ? "#F59E0B" : "#EF4444";
+    return (
+      <div className="text-center">
+        <div className="relative w-16 h-16 mx-auto">
+          <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+            <circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" strokeWidth="3" opacity={0.3} />
+            <circle cx="18" cy="18" r="15" fill="none" stroke={color} strokeWidth="3"
+              strokeDasharray={`${pct} ${100 - pct}`} strokeLinecap="round" />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-sm font-bold" style={{ color }}>{value.toFixed(2)}</span>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">{label}</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* EVM Gauges */}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Performance Indices</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-around">
+            <Gauge value={evm.spi} label="SPI (Schedule)" />
+            <Gauge value={evm.cpi} label="CPI (Cost)" />
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+            <div className="p-2 rounded-lg bg-muted/30">
+              <p className="text-xs font-bold">${(evm.budget / 1000).toFixed(0)}K</p>
+              <p className="text-[9px] text-muted-foreground">Budget</p>
+            </div>
+            <div className="p-2 rounded-lg bg-muted/30">
+              <p className="text-xs font-bold">${(evm.ev / 1000).toFixed(0)}K</p>
+              <p className="text-[9px] text-muted-foreground">Earned</p>
+            </div>
+            <div className="p-2 rounded-lg bg-muted/30">
+              <p className="text-xs font-bold">${((evm.eac || evm.budget) / 1000).toFixed(0)}K</p>
+              <p className="text-[9px] text-muted-foreground">Forecast</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Health RAG */}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Project Health</CardTitle></CardHeader>
+        <CardContent>
+          {/* Overall RAG */}
+          <div className={`flex items-center gap-3 p-3 rounded-xl mb-3 ${ragColors[health.overall]?.bg || "bg-muted/30"}`}>
+            <div className={`w-3 h-3 rounded-full ${health.overall === "GREEN" ? "bg-emerald-500" : health.overall === "AMBER" ? "bg-amber-500" : "bg-red-500"}`} />
+            <span className={`text-sm font-bold ${ragColors[health.overall]?.text || ""}`}>{ragColors[health.overall]?.label || health.overall}</span>
+          </div>
+          {/* Dimension breakdown */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "Schedule", status: health.schedule },
+              { label: "Budget", status: health.budget },
+              { label: "Risk", status: health.risk },
+            ].map(d => (
+              <div key={d.label} className={`p-2 rounded-lg text-center ${ragColors[d.status]?.bg || "bg-muted/30"}`}>
+                <div className={`w-2 h-2 rounded-full mx-auto mb-1 ${d.status === "GREEN" ? "bg-emerald-500" : d.status === "AMBER" ? "bg-amber-500" : "bg-red-500"}`} />
+                <p className="text-[10px] font-medium">{d.label}</p>
+              </div>
+            ))}
+          </div>
+          {/* Task summary */}
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/20 text-xs text-muted-foreground">
+            <span>{tasks.done}/{tasks.total} tasks done</span>
+            <span>{tasks.blocked > 0 ? `${tasks.blocked} blocked` : "No blockers"}</span>
+            <span>{tasks.overdue > 0 ? `${tasks.overdue} overdue` : "On schedule"}</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
