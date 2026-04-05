@@ -14,6 +14,7 @@ export function Header() {
   const { setTheme, resolvedTheme } = useTheme();
   const { sidebarCollapsed } = useAppStore();
   const [mounted, setMounted] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   useEffect(() => setMounted(true), []);
 
   // Get real unread count directly from API (not stale SSE cache)
@@ -68,19 +69,25 @@ export function Header() {
         </Link>
 
         {/* User avatar + sign out */}
-        <div className="relative group">
-          <Button variant="ghost" size="icon" className="rounded-lg">
+        <div className="relative">
+          <Button variant="ghost" size="icon" className="rounded-lg" onClick={() => setUserMenuOpen(!userMenuOpen)}>
             <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[11px] font-bold text-primary-foreground">
               TB
             </div>
           </Button>
-          <div className="absolute right-0 top-full mt-1 w-36 py-1 rounded-lg border border-border bg-card shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-            <Link href="/admin" className="block px-3 py-1.5 text-xs hover:bg-muted transition-colors">Settings</Link>
-            <button onClick={() => { import("next-auth/react").then(m => m.signOut({ callbackUrl: "/login" })); }}
-              className="block w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted transition-colors">
-              Sign Out
-            </button>
-          </div>
+          {userMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-1 w-40 py-1.5 rounded-lg border border-border bg-card shadow-xl z-50">
+                <Link href="/admin" className="block px-4 py-2 text-sm hover:bg-muted transition-colors" onClick={() => setUserMenuOpen(false)}>Settings</Link>
+                <div className="h-px bg-border mx-2 my-1" />
+                <button onClick={() => { import("next-auth/react").then(m => m.signOut({ callbackUrl: "/login" })); }}
+                  className="block w-full text-left px-4 py-2 text-sm text-destructive hover:bg-muted transition-colors">
+                  Sign Out
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </header>
