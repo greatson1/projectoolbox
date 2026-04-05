@@ -98,6 +98,17 @@ export async function runMonitoringLoop(
     const budgetProps = await checkBudgetThresholds(projectId);
     proposals.push(...budgetProps);
 
+    // Cost planning — run once if no estimates exist yet
+    try {
+      const costCount = await db.costEntry.count({ where: { projectId, entryType: "ESTIMATE" } });
+      if (costCount === 0 && tasks.length > 0) {
+        const { planProjectCosts } = await import("./cost-planner");
+        await planProjectCosts(projectId, agentId);
+      }
+    } catch (e) {
+      console.error("Cost planning failed:", e);
+    }
+
     // EVM threshold checks (daily) — skip for TASK/LIGHTWEIGHT tiers
     const { getProjectTierConfig } = await import("./project-tier");
     const tierConfig = getProjectTierConfig(project);
@@ -161,6 +172,14 @@ export async function runMonitoringLoop(
     // Stakeholder communication cadence
     const stakeholderProps = await checkStakeholderCadence(projectId, agentId);
     proposals.push(...stakeholderProps);
+
+    // Cost re-forecasting (weekly)
+    try {
+      const { reforecastCosts } = await import("./cost-planner");
+      await reforecastCosts(projectId, agentId);
+    } catch (e) {
+      console.error("Cost reforecast failed:", e);
+    }
 
     // Change request management (weekly)
     try {
