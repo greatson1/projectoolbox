@@ -67,12 +67,21 @@ export function Header() {
           </Button>
         </Link>
 
-        {/* User avatar */}
-        <Button variant="ghost" size="icon" className="rounded-lg">
-          <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[11px] font-bold text-primary-foreground">
-            TB
+        {/* User avatar + sign out */}
+        <div className="relative group">
+          <Button variant="ghost" size="icon" className="rounded-lg">
+            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[11px] font-bold text-primary-foreground">
+              TB
+            </div>
+          </Button>
+          <div className="absolute right-0 top-full mt-1 w-36 py-1 rounded-lg border border-border bg-card shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            <Link href="/admin" className="block px-3 py-1.5 text-xs hover:bg-muted transition-colors">Settings</Link>
+            <button onClick={() => { import("next-auth/react").then(m => m.signOut({ callbackUrl: "/login" })); }}
+              className="block w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted transition-colors">
+              Sign Out
+            </button>
           </div>
-        </Button>
+        </div>
       </div>
     </header>
   );
