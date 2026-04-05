@@ -208,3 +208,29 @@
 #nprogress .peg {
   box-shadow: 0 0 10px var(--primary), 0 0 5px var(--primary) !important;
 }
+
+/* Global button press feedback */
+button:active:not(:disabled),
+[role="button"]:active:not(:disabled),
+a:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+  transition: transform 0.05s, opacity 0.05s;
+}
+
+/* Cursor pointer for all interactive elements */
+button:not(:disabled),
+[role="button"],
+a[href],
+select,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+
+/* Disabled state clarity */
+button:disabled,
+[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

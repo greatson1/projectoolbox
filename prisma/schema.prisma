@@ -485,9 +485,19 @@ model AuditLog {
   userId    String?
   action    String
   target    String
-  details   Json?
-  ip        String?
-  createdAt DateTime @default(now())
+  details      Json?
+  ip           String?
+  // Spec additions for agent audit trail
+  projectId    String?
+  agentId      String?
+  cycleId      String?
+  entityType   String?    // task | risk | artefact | approval | cost_entry
+  entityId     String?
+  rationale    String?    @db.Text
+  dataSnapshot Json?
+  createdAt    DateTime   @default(now())
+
+  @@index([projectId])
 }
 
 // ─── Reports (Screen 23) ───
