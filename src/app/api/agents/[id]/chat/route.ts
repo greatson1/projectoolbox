@@ -75,6 +75,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { agentId, type: "chat", summary: `Responded to: ${message.slice(0, 60)}${message.length > 60 ? "..." : ""}` },
   });
 
+  // Auto-populate Knowledge Base with chat exchange
+  try {
+    const deployment = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true } });
+    await db.knowledgeBaseItem.create({
+      data: {
+        orgId, agentId, projectId: deployment?.projectId || null,
+        layer: "PROJECT", type: "CHAT",
+        title: `Chat: ${message.slice(0, 80)}`,
+        content: `User: ${message}\n\nAgent: ${responseContent.slice(0, 1000)}`,
+        tags: ["chat", "auto-generated"],
+      },
+    });
+  } catch {}
+
   return NextResponse.json({
     data: { userMessage: userMsg, agentMessage: agentMsg },
   });

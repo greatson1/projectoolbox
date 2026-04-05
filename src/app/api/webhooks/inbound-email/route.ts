@@ -191,6 +191,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Auto-populate Knowledge Base with email content
+    try {
+      await db.knowledgeBaseItem.create({
+        data: {
+          orgId, agentId: agent.id, projectId: activeProject?.id || null,
+          layer: "PROJECT", type: "EMAIL",
+          title: `Email from ${senderEmail}: ${subject}`,
+          content: emailContent.slice(0, 2000),
+          tags: ["email", "auto-generated", emailType.toLowerCase()],
+          metadata: { from: senderEmail, subject, type: emailType },
+        },
+      });
+    } catch {}
+
     let processedAs: string | null = null;
     let linkedId: string | null = null;
 

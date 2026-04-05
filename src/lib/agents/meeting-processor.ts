@@ -97,6 +97,23 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
         },
       },
     });
+
+    // Auto-populate Knowledge Base with meeting transcript + summary
+    try {
+      await db.knowledgeBaseItem.create({
+        data: {
+          orgId: meeting.orgId,
+          agentId: meeting.agentId,
+          projectId: meeting.projectId,
+          layer: "PROJECT",
+          type: "TRANSCRIPT",
+          title: `Meeting: ${meeting.title}`,
+          content: `Summary: ${result.summary}\n\nAction Items: ${result.actionItems.map(a => `- ${a.text} (${a.assignee || "unassigned"})`).join("\n")}\n\nDecisions: ${result.decisions.map(d => `- ${d.text} (by ${d.by})`).join("\n")}\n\nRisks: ${result.risks.map(r => `- ${r.title}: ${r.description}`).join("\n")}`,
+          tags: ["meeting", "transcript", "auto-generated"],
+          metadata: { meetingId, topics: result.topics, sentiment: result.sentiment },
+        },
+      });
+    } catch {}
   }
 }
 

@@ -180,6 +180,18 @@ async function autoExecute(
       },
     );
 
+    // Write to AuditLog for compliance trail
+    try {
+      await db.auditLog.create({
+        data: {
+          orgId: context.orgId,
+          action: `Agent auto-executed: ${proposal.type}`,
+          target: proposal.description.slice(0, 200),
+          details: { riskScore: classification.riskScore, riskTier: classification.riskTier, creditCost, agentId: context.agentId },
+        },
+      });
+    } catch {}
+
     return { success: true, action: "auto_executed", result: mutationResult, creditsUsed: creditCost, classification };
   } catch (e: any) {
     await logActivity(context.agentId, "error",
@@ -265,6 +277,18 @@ async function routeToApproval(
       riskTier: classification.riskTier, creditCost,
     },
   );
+
+  // Audit log for HITL routing
+  try {
+    await db.auditLog.create({
+      data: {
+        orgId: context.orgId,
+        action: `Agent routed to HITL: ${proposal.type}`,
+        target: proposal.description.slice(0, 200),
+        details: { riskScore: classification.riskScore, riskTier: classification.riskTier, approvalId: approval.id, agentId: context.agentId },
+      },
+    });
+  } catch {}
 
   return { success: true, action: "sent_to_approval", approvalId: approval.id, classification };
 }
