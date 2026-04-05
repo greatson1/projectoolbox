@@ -1,115 +1,61 @@
-/**
- * Approval Timeout & Escalation
- *
- * Called from the cron tick. Checks all PENDING approvals against their
- * escalation timeout and creates reminder/urgent notifications.
- *
- * Timeline per spec Section 4.4:
- *   50% of timeout → reminder notification
- *   100% of timeout → URGENT escalation notification
- *   150% of timeout → OVERDUE flag (no auto-approve — safety design)
- */
-
 import { db } from "@/lib/db";
 
-export async function checkApprovalTimeouts(): Promise<{ reminders: number; escalations: number; overdue: number }> {
-  const now = new Date();
-  let reminders = 0;
-  let escalations = 0;
-  let overdue = 0;
+const REMINDER_HOURS = 4;
+const ESCALATION_HOURS = 24;
 
-  // Get all PENDING approvals that have an expiresAt set
-  const pendingApprovals = await db.approval.findMany({
-    where: {
-      status: "PENDING",
-      expiresAt: { not: null },
-    },
-    include: {
-      project: { select: { orgId: true, name: true } },
-      decision: { include: { agent: { select: { name: true } } } },
-    },
+export async function checkApprovalTimeouts() {
+  const now = new Date();
+  let reminders = 0, escalations = 0, overdue = 0;
+
+  const pending = await db.approval.findMany({
+    where: { status: "PENDING" },
+    include: { project: { select: { orgId: true, name: true } } },
   });
 
-  for (const approval of pendingApprovals) {
-    if (!approval.expiresAt) continue;
+  for (const a of pending) {
+    const hours = (now.getTime() - a.createdAt.getTime()) / 3600000;
+    const orgId = a.project?.orgId;
+    if (!orgId || hours < REMINDER_HOURS) continue;
+    overdue++;
 
-    const createdAt = approval.createdAt.getTime();
-    const expiresAt = approval.expiresAt.getTime();
-    const totalWindow = expiresAt - createdAt;
-    const elapsed = now.getTime() - createdAt;
-    const pctElapsed = elapsed / totalWindow;
-
-    const orgId = approval.project.orgId;
-    const agentName = approval.decision?.agent?.name || "Agent";
-
-    // Get admins for notifications
-    const admins = await db.user.findMany({
-      where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
-      select: { id: true },
+    const recent = await db.notification.findFirst({
+      where: { type: "APPROVAL_REQUEST", createdAt: { gt: new Date(now.getTime() - REMINDER_HOURS * 3600000) }, title: { contains: a.title.slice(0, 20) } },
     });
-
-    // Check if we already sent this type of notification
-    const alreadySent = async (keyword: string) => {
-      const count = await db.notification.count({
-        where: {
-          title: { contains: keyword },
-          metadata: { path: ["approvalId"], equals: approval.id },
-          createdAt: { gte: approval.createdAt },
-        },
-      });
-      return count > 0;
-    };
-
-    if (pctElapsed >= 1.5) {
-      // OVERDUE (150%)
-      if (!(await alreadySent("OVERDUE"))) {
-        for (const admin of admins) {
-          await db.notification.create({
-            data: {
-              userId: admin.id,
-              type: "APPROVAL_REQUEST",
-              title: `OVERDUE: ${approval.title}`,
-              body: `${agentName}'s request has been waiting ${Math.round(elapsed / 3600000)}h. The agent cannot proceed without your decision.`,
-              actionUrl: "/approvals",
-              metadata: { approvalId: approval.id, escalation: "overdue" },
-            },
-          });
-        }
-        overdue++;
+    if (!recent) {
+      const users = await db.user.findMany({ where: { orgId }, select: { id: true } });
+      for (const u of users) {
+        await db.notification.create({ data: { userId: u.id, type: "APPROVAL_REQUEST", title: "Approval pending: " + a.title, body: "Waiting " + Math.floor(hours) + "h. Agent paused until reviewed.", actionUrl: "/approvals" } });
       }
-    } else if (pctElapsed >= 1.0) {
-      // URGENT (100%)
-      if (!(await alreadySent("URGENT"))) {
-        for (const admin of admins) {
-          await db.notification.create({
-            data: {
-              userId: admin.id,
-              type: "APPROVAL_REQUEST",
-              title: `URGENT: ${approval.title} needs your decision`,
-              body: `${agentName} on ${approval.project.name} has been waiting for approval. Escalation timeout reached.`,
-              actionUrl: "/approvals",
-              metadata: { approvalId: approval.id, escalation: "urgent" },
-            },
-          });
+      reminders++;
+    }
+
+    if (hours > ESCALATION_HOURS) {
+      const emailed = await db.auditLog.findFirst({ where: { orgId, action: "APPROVAL_EMAIL_ESCALATION", target: a.id, createdAt: { gt: new Date(now.getTime() - ESCALATION_HOURS * 3600000) } } });
+      if (!emailed) {
+        const org = await db.organisation.findUnique({ where: { id: orgId }, select: { billingEmail: true } });
+        if (org?.billingEmail && process.env.RESEND_API_KEY) {
+          try {
+            await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ from: "Projectoolbox <notifications@projectoolbox.com>", to: org.billingEmail, subject: "Action Required: " + a.title + " pending " + Math.floor(hours) + "h", html: "<h2>Approval Blocked</h2><p>" + a.title + " has been pending " + Math.floor(hours) + " hours.</p><p><a href='https://projectoolbox.com/approvals'>Review Now</a></p>" }) });
+            await db.auditLog.create({ data: { orgId, action: "APPROVAL_EMAIL_ESCALATION", target: a.id } });
+            escalations++;
+          } catch {}
         }
-        escalations++;
       }
-    } else if (pctElapsed >= 0.5) {
-      // Reminder (50%)
-      if (!(await alreadySent("Reminder"))) {
-        for (const admin of admins) {
-          await db.notification.create({
-            data: {
-              userId: admin.id,
-              type: "APPROVAL_REQUEST",
-              title: `Reminder: ${approval.title} awaiting approval`,
-              body: `${agentName} submitted this ${Math.round(elapsed / 3600000)}h ago. ${Math.round((expiresAt - now.getTime()) / 3600000)}h until escalation.`,
-              actionUrl: "/approvals",
-              metadata: { approvalId: approval.id, escalation: "reminder" },
-            },
-          });
+    }
+  }
+
+  // Credit warnings
+  const orgs = await db.organisation.findMany({ select: { id: true, creditBalance: true, plan: true } });
+  const alloc: Record<string, number> = { FREE: 1000, STARTER: 5000, PROFESSIONAL: 20000, BUSINESS: 60000, ENTERPRISE: 200000 };
+  for (const org of orgs) {
+    const pct = (org.creditBalance / (alloc[org.plan] || 5000)) * 100;
+    if (pct < 20) {
+      const recent = await db.notification.findFirst({ where: { type: "BILLING", createdAt: { gt: new Date(now.getTime() - 86400000) }, user: { orgId: org.id } } });
+      if (!recent) {
+        const users = await db.user.findMany({ where: { orgId: org.id }, select: { id: true } });
+        for (const u of users) {
+          await db.notification.create({ data: { userId: u.id, type: "BILLING", title: (pct < 5 ? "CRITICAL" : "Low") + " credits: " + Math.floor(pct) + "% remaining", body: org.creditBalance.toLocaleString() + " credits left. Top up to avoid interruption.", actionUrl: "/billing/credits" } });
         }
-        reminders++;
       }
     }
   }
