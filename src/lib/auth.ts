@@ -71,6 +71,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.onboardingComplete = dbUser?.onboardingComplete;
         }
       }
+      // Re-fetch orgId if it's missing from a stale token
+      if (!token.orgId && token.sub) {
+        const dbUser = await db.user.findUnique({
+          where: { id: token.sub as string },
+          select: { role: true, orgId: true, onboardingComplete: true },
+        });
+        if (dbUser?.orgId) {
+          token.orgId = dbUser.orgId;
+          token.role = dbUser.role;
+          token.onboardingComplete = dbUser.onboardingComplete;
+        }
+      }
       return token;
     },
     async session({ session, token }) {

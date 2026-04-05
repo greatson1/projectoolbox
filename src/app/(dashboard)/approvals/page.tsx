@@ -175,7 +175,11 @@ export default function ApprovalsPage() {
                       className="bg-emerald-500 hover:bg-emerald-600">
                       {isProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Approve"}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setFeedbackId(feedbackId === item.id ? null : item.id)}>Changes</Button>
+                    <Button variant="ghost" size="sm" onClick={() => {
+                        const closing = feedbackId === item.id;
+                        setFeedbackId(closing ? null : item.id);
+                        if (!closing) setExpanded(item.id);
+                      }}>Changes</Button>
                   </div>
                   <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform flex-shrink-0", isExpanded && "rotate-180")} />
                 </div>
