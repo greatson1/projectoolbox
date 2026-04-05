@@ -177,6 +177,15 @@ export function useProjectIssues(projectId: string | null) {
   });
 }
 
+export function useProjectMetrics(projectId: string | null) {
+  return useQuery({
+    queryKey: ["project-metrics", projectId],
+    queryFn: () => api<any>(`/api/projects/${projectId}/metrics`),
+    enabled: !!projectId,
+    refetchInterval: 30000,
+  });
+}
+
 export function useProjectStakeholders(projectId: string | null) {
   return useQuery({
     queryKey: ["stakeholders", projectId],
