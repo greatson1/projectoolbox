@@ -231,7 +231,7 @@ export default function StakeholdersPage() {
             </CardHeader>
             <CardContent>
             <div className="space-y-3">
-              {([] as any[]).map((c, i) => (
+              {COMMS_LOG.map((c, i) => (
                 <div key={i} className="flex gap-3">
                   <div className="flex flex-col items-center">
                     <div className="w-8 h-8 rounded-[8px] flex items-center justify-center text-[14px]" style={{ backgroundColor: "rgba(99,102,241,0.12)" }}>{COMMS_ICONS[c.type]}</div>

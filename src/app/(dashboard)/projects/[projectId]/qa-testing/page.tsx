@@ -61,9 +61,9 @@ export default function QATestingPage() {
   const { data: project } = useProject(projectId);
   const [activeTab, setActiveTab] = useState<"tests" | "defects" | "trends">("tests");
 
-  const totalTests = ([] as any[]).reduce((s, t) => s + t.total, 0);
-  const totalPass = ([] as any[]).reduce((s, t) => s + t.pass, 0);
-  const totalFail = ([] as any[]).reduce((s, t) => s + t.fail, 0);
+  const totalTests = TEST_SUITES.reduce((s, t) => s + t.total, 0);
+  const totalPass = TEST_SUITES.reduce((s, t) => s + t.pass, 0);
+  const totalFail = TEST_SUITES.reduce((s, t) => s + t.fail, 0);
   const passRate = Math.round((totalPass / totalTests) * 100);
   const openDefects = DEFECTS.filter(d => d.status === "Open" || d.status === "In Progress").length;
   const criticalDefects = DEFECTS.filter(d => d.severity === "critical").length;
@@ -86,7 +86,7 @@ export default function QATestingPage() {
         <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">🧪 Tests</p><p className="text-xl font-bold">{totalTests}</p></Card>
         <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">✅ Pass Rate</p><p className="text-xl font-bold text-green-500">{passRate}%</p></Card>
         <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">🐛 Open Defects</p><p className="text-xl font-bold text-amber-500">{openDefects}</p></Card>
-        <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">🔧 Fixed</p><p className="text-xl font-bold text-green-500">{([] as any[]).filter(d => d.status === "Fixed" || d.status === "Verified").length}</p></Card>
+        <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">🔧 Fixed</p><p className="text-xl font-bold text-green-500">{DEFECTS.filter(d => d.status === "Fixed" || d.status === "Verified").length}</p></Card>
         <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">🔴 Critical</p><p className="text-xl font-bold text-destructive">{criticalDefects}</p></Card>
         <Card className="p-3"><p className="text-[10px] uppercase text-muted-foreground">📊 Coverage</p><p className="text-xl font-bold text-primary">82%</p></Card>
       </div>
@@ -128,7 +128,7 @@ export default function QATestingPage() {
                 ))}
               </tr></thead>
               <tbody>
-                {([] as any[]).map(s => (
+                {TEST_SUITES.map(s => (
                   <tr key={s.name} className="border-b border-border/30">
                     <td className="py-2.5 px-4 font-medium">{s.name}</td>
                     <td className="py-2.5 px-4">{s.total}</td>
@@ -188,7 +188,7 @@ export default function QATestingPage() {
             <CardContent>
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[] as any[]}>
+                  <LineChart data={TREND_DATA}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                     <XAxis dataKey="week" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
                     <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
@@ -205,7 +205,7 @@ export default function QATestingPage() {
             <CardContent>
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[] as any[]}>
+                  <LineChart data={COVERAGE_TREND}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
                     <XAxis dataKey="week" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
                     <YAxis domain={[50, 100]} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} />
@@ -221,7 +221,7 @@ export default function QATestingPage() {
             <CardContent>
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={[] as any[]} dataKey="count" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
+                  <PieChart><Pie data={COMPONENT_DATA} dataKey="count" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
                     {COMPONENT_DATA.map(c => <Cell key={c.name} fill={c.fill} />)}
                   </Pie><Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} /></PieChart>
                 </ResponsiveContainer>
@@ -238,7 +238,7 @@ export default function QATestingPage() {
             <CardContent>
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={[] as any[]} cx="50%" cy="50%" outerRadius="70%">
+                  <RadarChart data={QUALITY_RADAR} cx="50%" cy="50%" outerRadius="70%">
                     <PolarGrid stroke="var(--border)" opacity={0.4} />
                     <PolarAngleAxis dataKey="axis" tick={{ fill: "var(--muted-foreground)", fontSize: 9 }} />
                     <PolarRadiusAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} domain={[0, 100]} />

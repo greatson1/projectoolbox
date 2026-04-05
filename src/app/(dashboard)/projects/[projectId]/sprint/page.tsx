@@ -323,7 +323,7 @@ export default function SprintTrackerPage() {
           <select className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold"
             value={selectedSprint} onChange={e => setSelectedSprint(Number(e.target.value))}
             style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
-            {([] as any[]).map(s => <option key={s.id} value={s.id}>{s.name} — {s.start.slice(5)} to {s.end.slice(5)}</option>)}
+            {SPRINTS.map(s => <option key={s.id} value={s.id}>{s.name} — {s.start.slice(5)} to {s.end.slice(5)}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-3">
@@ -682,12 +682,12 @@ export default function SprintTrackerPage() {
             <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Avg Cycle Time by Status</h3>
             <div style={{ height: 130 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[] as any[]} layout="vertical" barSize={14}>
+                <BarChart data={cycleTimeData} layout="vertical" barSize={14}>
                   <XAxis type="number" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} unit="d" />
                   <YAxis type="category" dataKey="status" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} width={80} />
                   <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
                   <Bar dataKey="avg" radius={[0, 4, 4, 0]}>
-                    {([] as any[]).map((_, i) => (
+                    {cycleTimeData.map((_, i) => (
                       <Cell key={i} fill={["var(--muted-foreground)", "var(--primary)", "#F59E0B", "#10B981"][i]} />
                     ))}
                   </Bar>
@@ -700,7 +700,7 @@ export default function SprintTrackerPage() {
             <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Velocity Trend</h3>
             <div style={{ height: 130 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[] as any[]} barGap={2}>
+                <BarChart data={velocityData} barGap={2}>
                   <XAxis dataKey="sprint" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                   <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                   <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
@@ -762,7 +762,7 @@ export default function SprintTrackerPage() {
           </div>
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={[] as any[]} cx="50%" cy="50%" outerRadius="75%">
+              <RadarChart data={confidenceData} cx="50%" cy="50%" outerRadius="75%">
                 <PolarGrid stroke={`${"var(--border)"}44`} />
                 <PolarAngleAxis dataKey="axis" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                 <PolarRadiusAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} domain={[0, 100]} />

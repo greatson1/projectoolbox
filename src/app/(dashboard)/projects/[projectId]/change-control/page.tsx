@@ -127,7 +127,7 @@ export default function ChangeControlPage() {
 
   const filtered = CRS_DATA.filter((cr) => !search || cr.title.toLowerCase().includes(search.toLowerCase()) || cr.id.toLowerCase().includes(search.toLowerCase()));
   const pending = CRS_DATA.filter((cr) => !["Implementation", "Closed"].includes(cr.status)).length;
-  const approved = ([] as any[]).filter((d) => d.decision === "approved").length;
+  const approved = DECISIONS.filter((d) => d.decision === "approved").length;
 
   return (
     <div className="space-y-5">
@@ -136,7 +136,7 @@ export default function ChangeControlPage() {
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Change Control Board</h1>
           <div className="flex gap-4 mt-1">
-            {[{ l: "Total CRs", v: CRS_DATA.length }, { l: "Pending", v: pending }, { l: "Approval Rate", v: `${Math.round((approved / 0) * 100)}%` }].map((s) => (
+            {[{ l: "Total CRs", v: CRS_DATA.length }, { l: "Pending", v: pending }, { l: "Approval Rate", v: `${Math.round((approved / (DECISIONS.length || 1)) * 100)}%` }].map((s) => (
               <span key={s.l} className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>{s.l}: <strong style={{ color: "var(--foreground)" }}>{s.v}</strong></span>
             ))}
           </div>
@@ -264,9 +264,9 @@ export default function ChangeControlPage() {
                 <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
                   <circle cx="18" cy="18" r="14" fill="none" stroke={"var(--border)"} strokeWidth="3" />
                   <circle cx="18" cy="18" r="14" fill="none" stroke={"#10B981"} strokeWidth="3" strokeLinecap="round"
-                    strokeDasharray={`${Math.round((approved / 0) * 100)} ${100 - Math.round((approved / 0) * 100)}`} />
+                    strokeDasharray={`${Math.round((approved / (DECISIONS.length || 1)) * 100)} ${100 - Math.round((approved / (DECISIONS.length || 1)) * 100)}`} />
                 </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{Math.round((approved / 0) * 100)}%</span>
+                <span className="absolute inset-0 flex items-center justify-center text-[14px] font-bold" style={{ color: "var(--foreground)" }}>{Math.round((approved / (DECISIONS.length || 1)) * 100)}%</span>
               </div>
             </div>
           </Card>
@@ -318,8 +318,8 @@ export default function ChangeControlPage() {
           {/* Decision log */}
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">CCB Decision History</CardTitle></CardHeader><CardContent>
             <div className="space-y-3">
-              {([] as any[]).map((d, i) => (
-                <div key={i} className="flex gap-3 pb-3" style={{ borderBottom: i < 0 - 1 ? `1px solid ${"var(--border)"}` : undefined }}>
+              {DECISIONS.map((d, i) => (
+                <div key={i} className="flex gap-3 pb-3" style={{ borderBottom: i < DECISIONS.length - 1 ? `1px solid ${"var(--border)"}` : undefined }}>
                   <div className="w-8 h-8 rounded-[8px] flex items-center justify-center text-[12px] flex-shrink-0"
                     style={{ backgroundColor: d.decision === "approved" ? "rgba(16,185,129,0.12)" : d.decision === "rejected" ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)" }}>
                     {d.decision === "approved" ? "✓" : d.decision === "rejected" ? "✗" : "⏸"}

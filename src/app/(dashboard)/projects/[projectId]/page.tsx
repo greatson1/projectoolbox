@@ -132,6 +132,9 @@ export default function ProjectOverviewPage() {
         </Card>
       )}
 
+      {/* Agent Artefacts */}
+      <ArtefactSection projectId={projectId} />
+
       {/* Module cards */}
       <div>
         <h2 className="text-lg font-bold mb-3">Project Modules</h2>
