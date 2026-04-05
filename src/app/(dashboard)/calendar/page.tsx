@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ function timeUntil(date: string | Date) {
 }
 
 export default function CalendarPage() {
+  usePageTitle("Calendar");
   const [range, setRange] = useState("week");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);

@@ -1,6 +1,7 @@
 "use client";
 // @ts-nocheck
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { cn } from "@/lib/utils";
 import { useProjects } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +69,7 @@ const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function PortfolioPage() {
   const { data: apiProjects, isLoading } = useProjects();
+  usePageTitle("Portfolio");
   const [showExecReport, setShowExecReport] = useState(false);
   const [hoveredCell, setHoveredCell] = useState<{ r: number; c: number } | null>(null);
 

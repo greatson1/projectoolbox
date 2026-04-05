@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ function timeAgo(date: string | Date) {
 }
 
 export default function MeetingsPage() {
+  usePageTitle("Meetings");
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<"summary" | "transcript" | "actions" | "decisions">("summary");
   const [searchTranscript, setSearchTranscript] = useState("");

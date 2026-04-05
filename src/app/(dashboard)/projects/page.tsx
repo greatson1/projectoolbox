@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { Plus, FolderKanban, Search } from "lucide-react";
 const METHOD_LABEL: Record<string, string> = { PRINCE2: "PRINCE2", AGILE_SCRUM: "Scrum", AGILE_KANBAN: "Kanban", WATERFALL: "Waterfall", HYBRID: "Hybrid", SAFE: "SAFe" };
 
 export default function ProjectsPage() {
+  usePageTitle("Projects");
   const [search, setSearch] = useState("");
   const { setActiveProject } = useAppStore();
   const { data: projects, isLoading } = useProjects();

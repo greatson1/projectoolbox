@@ -1,6 +1,7 @@
 "use client";
 // @ts-nocheck
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useCreateProject, useCreateAgent, useDeployAgent, useCredits } from "@/hooks/use-api";
@@ -176,6 +177,7 @@ const DEPLOY_STAGES = [
 // ═══════════════════════════════════════════════════════════════════
 
 export default function ProjectWizardPage() {
+  usePageTitle("Deploy Agent");
   const [step, setStep] = useState(0);
   const { data: creditsData } = useCredits();
   const creditBalance = creditsData?.balance ?? creditsData?.creditBalance ?? null;
@@ -371,8 +373,13 @@ export default function ProjectWizardPage() {
                 <FieldGroup label="End Date">
                   <StyledInput type="date" value={data.endDate} onChange={v => upd({ endDate: v })} />
                 </FieldGroup>
-                <FieldGroup label="Budget (£)">
-                  <StyledInput type="number" value={data.budget} onChange={v => upd({ budget: v })} placeholder="250000" />
+                <FieldGroup label="Budget">
+                  <div className="flex gap-2">
+                    <select className="px-2 py-2 rounded-lg text-sm bg-card border border-border/30 text-foreground w-16" defaultValue="GBP">
+                      <option value="GBP">£</option><option value="USD">$</option><option value="EUR">€</option>
+                    </select>
+                    <StyledInput type="number" value={data.budget} onChange={v => upd({ budget: v })} placeholder="250000" />
+                  </div>
                 </FieldGroup>
               </div>
             </Card>

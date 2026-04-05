@@ -102,6 +102,7 @@ const NAV: NavGroup[] = [
   {
     items: [
       { label: "Portfolio", href: "/portfolio", icon: Briefcase },
+      { label: "Notifications", href: "/notifications", icon: Bell },
     ],
   },
   {

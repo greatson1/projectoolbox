@@ -1,6 +1,7 @@
 "use client";
 // @ts-nocheck
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useNotifications, useMarkAllRead } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -171,6 +172,7 @@ const FILTER_TABS: (NType | "all")[] = ["all", "approval", "risk", "document", "
 export default function NotificationsPage() {
   const mode = "dark";
   const { data: apiNotifs } = useNotifications();
+  usePageTitle("Notifications");
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   // Sync from API when data arrives

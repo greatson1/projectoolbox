@@ -1,6 +1,7 @@
 "use client";
 // @ts-nocheck
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAgents } from "@/hooks/use-api";
@@ -218,6 +219,7 @@ const AUTONOMY_LABELS = ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "
 
 export default function AgentFleetPage() {
   const mode = "dark";
+  usePageTitle("Agent Fleet");
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
 

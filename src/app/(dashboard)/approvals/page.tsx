@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useApprovals } from "@/hooks/use-api";
@@ -34,6 +35,7 @@ function timeAgo(date: string | Date) {
 
 export default function ApprovalsPage() {
   const { data: approvals, isLoading, refetch } = useApprovals();
+  usePageTitle("Approvals");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -154,6 +155,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 export default function BillingPage() {
   const { data, isLoading } = useBilling();
+  usePageTitle("Billing");
   const [topupCustom, setTopupCustom] = useState(500);
   const [autoTopup, setAutoTopup] = useState(false);
   const [autoTopupThreshold, setAutoTopupThreshold] = useState(200);

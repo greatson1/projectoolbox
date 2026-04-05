@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -218,6 +219,7 @@ function AgentChatPage() {
   const { data: agentData, isLoading: agentsLoading } = useAgents();
   const agents = agentData?.agents || [];
 
+  usePageTitle("Chat with Agent");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(searchParams.get("agent"));
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");

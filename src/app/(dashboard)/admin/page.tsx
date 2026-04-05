@@ -1,6 +1,7 @@
 "use client";
 // @ts-nocheck
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useEffect } from "react";
 import { useTeamMembers, useAuditLog, useOrgSettings, useSaveOrgSettings, useApiKeys, useCreateApiKey, useRevokeApiKey, useWebhooks, useCreateWebhook, useDeleteWebhook } from "@/hooks/use-api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -70,6 +71,7 @@ const ALL_INTEGRATIONS = [
 
 export default function AdminSettingsPage() {
   // Read initial tab from URL hash or search params
+  usePageTitle("Admin Settings");
   const [tab, setTab] = useState<TabId>(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -393,8 +395,8 @@ export default function AdminSettingsPage() {
                         Connect
                       </Button>
                     ) : (
-                      <Button variant="outline" size="sm" className="w-full" onClick={() => toast.info(`${i.name} integration requires API key configuration`)}>
-                        Configure
+                      <Button variant="outline" size="sm" className="w-full opacity-60 cursor-not-allowed" disabled>
+                        Coming Soon
                       </Button>
                     )}
                   </Card>

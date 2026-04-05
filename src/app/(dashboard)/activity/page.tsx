@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,7 @@ const ACTIVITY_ICONS: Record<string, { icon: string; color: string; bg: string }
 };
 
 export default function ActivityLogPage() {
+  usePageTitle("Activity Log");
   const [range, setRange] = useState("7d");
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);

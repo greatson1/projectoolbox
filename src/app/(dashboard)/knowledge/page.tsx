@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ const TRUST_BADGES: Record<string, { label: string; cls: string }> = {
 };
 
 export default function KnowledgeBasePage() {
+  usePageTitle("Knowledge Base");
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

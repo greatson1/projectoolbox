@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useEffect } from "react";
 import Link from "next/link";
 import { useDashboard } from "@/hooks/use-api";
@@ -231,19 +232,6 @@ export default function DashboardPage() {
                     <p className="text-xs text-muted-foreground mt-1">Charts populate when project risks are identified</p>
                   </div>
                 </div>
-                {false && <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={[] as any[]} barSize={28}>
-                    <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-                    <XAxis dataKey="category" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, color: "var(--foreground)", fontSize: 12 }} />
-                    <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                      {([] as any[]).map((entry, i) => (
-                        <Cell key={i} fill={entry.fill} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
