@@ -52,7 +52,7 @@ const FAQS = [
   { q: "Do I need to change my existing tools?", a: "No. Projectoolbox integrates with Jira, GitHub, Slack, Teams, Confluence, and more. Your agent works alongside your existing stack." },
 ];
 
-const LOGOS = ["Accenture", "Deloitte", "AECOM", "Mott MacDonald", "BAE Systems", "Capgemini"];
+const LOGOS = ["Engineering", "Consulting", "Defence", "Infrastructure", "Advisory", "Technology"];
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -114,7 +114,7 @@ export default function LandingPage() {
           <div className="max-w-[720px] mx-auto">
             <Badge variant="outline" className="mb-6 bg-primary/5 border-primary/20 text-primary gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Now in Public Beta — 500+ teams onboard
+              Now in Early Access — Join the waitlist
             </Badge>
 
             <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] mb-6">
@@ -138,7 +138,7 @@ export default function LandingPage() {
               <a href="#how-it-works">
                 <Button variant="outline" size="lg" className="px-6 text-base gap-2">
                   <span className="w-8 h-8 rounded-full flex items-center justify-center bg-primary/10">▶</span>
-                  Watch Demo
+                  See How It Works
                 </Button>
               </a>
             </div>
@@ -201,14 +201,10 @@ export default function LandingPage() {
       <section className="py-12 px-6 border-y border-border/30">
         <div className="max-w-[1200px] mx-auto text-center">
           <p className="text-sm text-muted-foreground mb-6">
-            Trusted by <strong className="text-foreground">500+</strong> project managers at leading organisations
+            Used by project managers across leading sectors
           </p>
-          <div className="flex items-center justify-center gap-10 flex-wrap opacity-30">
+          <div className="flex items-center justify-center gap-10 flex-wrap opacity-60">
             {LOGOS.map(l => <span key={l} className="text-base font-bold tracking-wide text-muted-foreground">{l}</span>)}
-          </div>
-          <div className="flex items-center justify-center gap-1 mt-4">
-            {[1, 2, 3, 4, 5].map(i => <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />)}
-            <span className="text-sm font-semibold text-muted-foreground ml-2">4.9/5 from 200+ reviews</span>
           </div>
         </div>
       </section>
@@ -293,7 +289,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Need unlimited? <Link href="#" className="text-primary font-semibold">Contact us for Enterprise pricing</Link>
+            Need unlimited? <Link href="/contact" className="text-primary font-semibold">Contact us for Enterprise pricing</Link>
           </p>
         </div>
       </section>
@@ -378,15 +374,35 @@ export default function LandingPage() {
               <p className="text-xs text-muted-foreground leading-relaxed">AI-powered project management for teams that demand governance.</p>
             </div>
             {[
-              { title: "Product", links: ["Features", "Pricing", "Integrations", "Changelog"] },
-              { title: "Company", links: ["About", "Blog", "Careers", "Contact"] },
-              { title: "Resources", links: ["Docs", "API Reference", "Community", "Webinars"] },
-              { title: "Legal", links: ["Privacy", "Terms", "GDPR", "Security"] },
+              { title: "Product", links: [
+                { label: "Features", href: "#features" },
+                { label: "Pricing", href: "#pricing" },
+                { label: "Integrations", href: "/integrations" },
+                { label: "Changelog", href: "/changelog" },
+              ]},
+              { title: "Company", links: [
+                { label: "About", href: "/about" },
+                { label: "Blog", href: "/blog" },
+                { label: "Careers", href: "/careers" },
+                { label: "Contact", href: "/contact" },
+              ]},
+              { title: "Resources", links: [
+                { label: "Docs", href: "/docs" },
+                { label: "API Reference", href: "/api-reference" },
+                { label: "Community", href: "/community" },
+                { label: "Webinars", href: "/webinars" },
+              ]},
+              { title: "Legal", links: [
+                { label: "Privacy", href: "/legal/privacy" },
+                { label: "Terms", href: "/legal/terms" },
+                { label: "GDPR", href: "/legal/gdpr" },
+                { label: "Security", href: "/legal/security" },
+              ]},
             ].map(col => (
               <div key={col.title}>
                 <p className="text-xs font-bold uppercase tracking-wider mb-3">{col.title}</p>
                 <ul className="space-y-2">
-                  {col.links.map(link => <li key={link}><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">{link}</a></li>)}
+                  {col.links.map(link => <li key={link.label}><Link href={link.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{link.label}</Link></li>)}
                 </ul>
               </div>
             ))}

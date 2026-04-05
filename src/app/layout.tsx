@@ -19,6 +19,22 @@ export const metadata: Metadata = {
   title: "Projectoolbox — AI Project Management",
   description: "Deploy autonomous AI project managers that plan, track, and deliver. Built for PMOs that demand governance.",
   icons: { icon: "/favicon.ico" },
+  metadataBase: new URL("https://www.projectoolbox.com"),
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "https://www.projectoolbox.com",
+    title: "Projectoolbox — AI Project Management",
+    description: "Deploy autonomous AI project managers that plan, track, and deliver. Built for PMOs that demand governance.",
+    siteName: "Projectoolbox",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Projectoolbox — AI Project Management" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Projectoolbox — AI Project Management",
+    description: "Deploy autonomous AI project managers that plan, track, and deliver. Built for PMOs that demand governance.",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({

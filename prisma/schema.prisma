@@ -161,6 +161,7 @@ model Project {
   startDate      DateTime?
   endDate        DateTime?
   budget         Float?
+  tier           String?            // TASK | LIGHTWEIGHT | STANDARD | COMPLEX
   priority       String?
   category       String?
   orgId          String

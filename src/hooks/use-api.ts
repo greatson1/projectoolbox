@@ -21,7 +21,7 @@ export function useDashboard() {
   return useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<any>("/api/dashboard"),
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 }
 
@@ -85,7 +85,7 @@ export function useApprovals(status = "PENDING") {
   return useQuery({
     queryKey: ["approvals", status],
     queryFn: () => api<any[]>(`/api/approvals?status=${status}`),
-    refetchInterval: 30000, // Poll every 30s
+    refetchInterval: 60000, // Poll every 30s
   });
 }
 
@@ -104,7 +104,7 @@ export function useNotifications() {
   return useQuery({
     queryKey: ["notifications"],
     queryFn: () => api<any[]>("/api/notifications"),
-    refetchInterval: 15000, // Poll every 15s
+    refetchInterval: 60000, // Poll every 15s
   });
 }
 
@@ -122,7 +122,7 @@ export function useCredits() {
   return useQuery({
     queryKey: ["credits"],
     queryFn: () => api<any>("/api/credits"),
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 }
 
@@ -130,7 +130,7 @@ export function useCreditUsage() {
   return useQuery({
     queryKey: ["credits", "usage"],
     queryFn: () => api<any>("/api/credits/usage"),
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 }
 
@@ -182,7 +182,7 @@ export function useProjectMetrics(projectId: string | null) {
     queryKey: ["project-metrics", projectId],
     queryFn: () => api<any>(`/api/projects/${projectId}/metrics`),
     enabled: !!projectId,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 }
 
@@ -305,7 +305,7 @@ export function useAgentInbox(agentId: string | null) {
     queryKey: ["agent-inbox", agentId],
     queryFn: () => api<any>(`/api/agents/${agentId}/inbox`),
     enabled: !!agentId,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
 }
 

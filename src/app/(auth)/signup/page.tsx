@@ -185,7 +185,7 @@ function SignupPageInner() {
 
               <label className="flex items-start gap-2 cursor-pointer">
                 <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-0.5 w-4 h-4 rounded accent-primary" />
-                <span className="text-xs text-muted-foreground">I agree to the <a href="#" className="text-primary">Terms</a> and <a href="#" className="text-primary">Privacy Policy</a></span>
+                <span className="text-xs text-muted-foreground">I agree to the <Link href="/legal/terms" className="text-primary hover:underline" target="_blank" rel="noopener">Terms</Link> and <Link href="/legal/privacy" className="text-primary hover:underline" target="_blank" rel="noopener">Privacy Policy</Link></span>
               </label>
 
               {error && <p className="text-xs text-destructive">{error}</p>}

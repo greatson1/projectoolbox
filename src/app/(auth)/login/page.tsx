@@ -76,11 +76,14 @@ export default function LoginPage() {
                   placeholder="you@company.com" className="mt-1" required />
               </div>
               <div>
-                <Label htmlFor="password" className="text-xs">Password</Label>
+                <div className="flex items-center justify-between mb-1">
+                  <Label htmlFor="password" className="text-xs">Password</Label>
+                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">Forgot password?</Link>
+                </div>
                 <div className="relative">
                   <Input id="password" type={showPwd ? "text" : "password"} value={password}
-                    onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="mt-1 pr-10" required />
-                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 mt-0.5 text-muted-foreground"
+                    onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="pr-10" required />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                     onClick={() => setShowPwd(!showPwd)}>
                     {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
