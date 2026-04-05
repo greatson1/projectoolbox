@@ -184,12 +184,14 @@ model Project {
 }
 
 model ProjectMember {
-  id        String  @id @default(cuid())
-  userId    String
-  user      User    @relation(fields: [userId], references: [id])
-  projectId String
-  project   Project @relation(fields: [projectId], references: [id])
-  role      String  @default("MEMBER")
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id])
+  projectId  String
+  project    Project @relation(fields: [projectId], references: [id])
+  role       String  @default("MEMBER")
+  hourlyRate Float?  // Cost rate for labour estimation
+  skills     String[] @default([])
 
   @@unique([userId, projectId])
 }
@@ -721,14 +723,21 @@ model CostEntry {
   id          String   @id @default(cuid())
   projectId   String
   taskId      String?
-  entryType   String   @default("ESTIMATE")
+  entryType   String   @default("ESTIMATE")  // ESTIMATE | ACTUAL | FORECAST | COMMITMENT
+  category    String   @default("LABOUR")    // LABOUR | MATERIALS | SERVICES | TRAVEL | CONTINGENCY | OTHER
   amount      Float
   currency    String   @default("GBP")
   description String?
+  vendorName  String?              // Supplier/vendor for materials/services
+  poNumber    String?              // Purchase order reference
+  invoiceRef  String?              // Invoice reference for actuals
+  unitQty     Float?               // Quantity (e.g. 10 licenses, 5 days)
+  unitRate    Float?               // Rate per unit (e.g. £500/license, £800/day)
   recordedAt  DateTime @default(now())
-  createdBy   String?
+  createdBy   String?              // agent:<id> or user:<id>
 
   @@index([projectId])
+  @@index([projectId, category])
 }
 
 // ─── Metrics Snapshots ───

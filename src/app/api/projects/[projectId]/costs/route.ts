@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
-// GET /api/projects/:id/costs — All cost entries
+// GET /api/projects/:id/costs — Cost entries + breakdown by category
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,15 +13,30 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     orderBy: { recordedAt: "desc" },
   });
 
-  // Aggregated summary
-  const estimated = entries.filter((e: any) => e.entryType === "ESTIMATE").reduce((s: number, e: any) => s + e.amount, 0);
-  const actual = entries.filter((e: any) => e.entryType === "ACTUAL").reduce((s: number, e: any) => s + e.amount, 0);
-  const forecast = entries.filter(e => e.entryType === "FORECAST").reduce((s, e) => s + e.amount, 0);
+  // Category breakdown
+  const byCategory: Record<string, { estimated: number; actual: number; committed: number }> = {};
+  for (const e of entries) {
+    const cat = e.category || "OTHER";
+    if (!byCategory[cat]) byCategory[cat] = { estimated: 0, actual: 0, committed: 0 };
+    if (e.entryType === "ESTIMATE") byCategory[cat].estimated += e.amount;
+    else if (e.entryType === "ACTUAL") byCategory[cat].actual += e.amount;
+    else if (e.entryType === "COMMITMENT") byCategory[cat].committed += e.amount;
+  }
 
-  return NextResponse.json({ data: { entries, summary: { estimated, actual, forecast } } });
+  const totalEstimated = Object.values(byCategory).reduce((s, c) => s + c.estimated, 0);
+  const totalActual = Object.values(byCategory).reduce((s, c) => s + c.actual, 0);
+  const totalCommitted = Object.values(byCategory).reduce((s, c) => s + c.committed, 0);
+
+  return NextResponse.json({
+    data: {
+      entries,
+      byCategory,
+      summary: { estimated: totalEstimated, actual: totalActual, committed: totalCommitted },
+    },
+  });
 }
 
-// POST /api/projects/:id/costs — Log a cost entry
+// POST /api/projects/:id/costs — Log a cost entry (labour, material, PO, invoice)
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -33,11 +48,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       projectId,
       taskId: body.taskId || null,
       entryType: body.entryType || "ACTUAL",
+      category: body.category || "OTHER",
       amount: body.amount,
       currency: body.currency || "GBP",
       description: body.description || null,
+      vendorName: body.vendorName || null,
+      poNumber: body.poNumber || null,
+      invoiceRef: body.invoiceRef || null,
+      unitQty: body.unitQty || null,
+      unitRate: body.unitRate || null,
       recordedAt: body.recordedAt ? new Date(body.recordedAt) : new Date(),
       createdBy: session.user.id,
+    },
+  });
+
+  // Audit log
+  await db.auditLog.create({
+    data: {
+      orgId: (session.user as any).orgId,
+      userId: session.user.id,
+      projectId,
+      action: `Logged ${body.entryType || "ACTUAL"} cost: ${body.category || "OTHER"}`,
+      target: body.description || `£${body.amount}`,
     },
   });
 

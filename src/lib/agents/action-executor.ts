@@ -382,6 +382,13 @@ async function performMutation(
             lastEditedBy: `agent:${context.agentId}`,
           },
         });
+        // Auto-log actual cost on task completion
+        if (task.status === "DONE" || task.status === "IN_PROGRESS") {
+          try {
+            const { logTaskCompletion } = await import("./cost-estimator");
+            if (task.status === "DONE") await logTaskCompletion(task.id, context.projectId, context.agentId);
+          } catch {}
+        }
         return { taskId: task.id, action: "updated" };
       } else {
         // Create new task from proposal
@@ -394,6 +401,11 @@ async function performMutation(
             createdBy: `agent:${context.agentId}`,
           },
         });
+        // Auto-estimate labour cost for new task
+        try {
+          const { estimateTaskCost } = await import("./cost-estimator");
+          await estimateTaskCost(task.id, context.projectId, context.agentId);
+        } catch {}
         return { taskId: task.id, action: "created" };
       }
     }
