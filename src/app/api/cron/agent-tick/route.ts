@@ -32,6 +32,12 @@ export async function GET(req: NextRequest) {
       console.error("Approval escalation check failed:", e);
     }
 
+    // 0b. Generate daily digest (once per day per org)
+    try {
+      const { generateDailyDigest } = await import("@/lib/agents/daily-digest");
+      await generateDailyDigest();
+    } catch {}
+
     // 1. Find all active deployments due for a cycle
     const dueDeployments = await getDueDeployments();
 

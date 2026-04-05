@@ -4,7 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
-import { useProject } from "@/hooks/use-api";
+import { useProject, useProjectMetrics } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -140,25 +140,36 @@ function Gauge({ value, label, min = 0, max = 1.5}: { value: number; label: stri
 export default function EVMDashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: apiProject } = useProject(projectId);
+  const { data: realMetrics } = useProjectMetrics(projectId);
 
-  // Use project budget from API when available, fall back to mock BAC
-  const projectBudget = (apiProject && apiProject.budget) ? apiProject.budget : BAC;
-
-  const mode = "dark";
+  // Use real EVM data from metrics API when available, fall back to mock
+  const evm = realMetrics?.evm;
+  const rBAC = evm?.budget || BAC;
+  const rPV = evm?.pv || currentPV;
+  const rEV = evm?.ev || currentEV;
+  const rAC = evm?.ac || currentAC;
+  const rSV = rEV - rPV;
+  const rCV = rEV - rAC;
+  const rSPI = evm?.spi || SPI;
+  const rCPI = evm?.cpi || CPI;
+  const rEAC = rCPI > 0 ? Math.round(rBAC / rCPI) : EAC;
+  const rETC = rEAC - rAC;
+  const rVAC = rBAC - rEAC;
+  const rTCPI = (rBAC - rAC) > 0 ? +((rBAC - rEV) / (rBAC - rAC)).toFixed(2) : TCPI;
 
   const metrics = [
-    { label: "BAC", value: fmt(BAC), sub: "Budget at Completion", color: "var(--foreground)" },
-    { label: "PV", value: fmt(currentPV), sub: "Planned Value", color: "var(--primary)" },
-    { label: "EV", value: fmt(currentEV), sub: "Earned Value", color: "#10B981" },
-    { label: "AC", value: fmt(currentAC), sub: "Actual Cost", color: "#EF4444" },
-    { label: "SV", value: fmt(SV), sub: "Schedule Variance", color: evmColor("SV", SV), trend: SV >= 0 ? "up" as const : "down" as const },
-    { label: "CV", value: fmt(CV), sub: "Cost Variance", color: evmColor("CV", CV), trend: CV >= 0 ? "up" as const : "down" as const },
-    { label: "SPI", value: SPI.toFixed(2), sub: "Schedule Performance", color: evmColor("SPI", SPI), trend: SPI >= 1 ? "up" as const : "down" as const },
-    { label: "CPI", value: CPI.toFixed(2), sub: "Cost Performance", color: evmColor("CPI", CPI), trend: CPI >= 1 ? "up" as const : "down" as const },
-    { label: "EAC", value: fmt(EAC), sub: "Estimate at Completion", color: evmColor("CV", VAC) },
-    { label: "ETC", value: fmt(ETC), sub: "Estimate to Complete", color: "var(--muted-foreground)" },
-    { label: "VAC", value: fmt(VAC), sub: "Variance at Completion", color: evmColor("VAC", VAC) },
-    { label: "TCPI", value: TCPI.toFixed(2), sub: "To-Complete Performance", color: evmColor("TCPI", TCPI) },
+    { label: "BAC", value: fmt(rBAC), sub: "Budget at Completion", color: "var(--foreground)" },
+    { label: "PV", value: fmt(rPV), sub: "Planned Value", color: "var(--primary)" },
+    { label: "EV", value: fmt(rEV), sub: "Earned Value", color: "#10B981" },
+    { label: "AC", value: fmt(rAC), sub: "Actual Cost", color: "#EF4444" },
+    { label: "SV", value: fmt(rSV), sub: "Schedule Variance", color: evmColor("SV", rSV), trend: rSV >= 0 ? "up" as const : "down" as const },
+    { label: "CV", value: fmt(rCV), sub: "Cost Variance", color: evmColor("CV", rCV), trend: rCV >= 0 ? "up" as const : "down" as const },
+    { label: "SPI", value: rSPI.toFixed(2), sub: "Schedule Performance", color: evmColor("SPI", rSPI), trend: rSPI >= 1 ? "up" as const : "down" as const },
+    { label: "CPI", value: rCPI.toFixed(2), sub: "Cost Performance", color: evmColor("CPI", rCPI), trend: rCPI >= 1 ? "up" as const : "down" as const },
+    { label: "EAC", value: fmt(rEAC), sub: "Estimate at Completion", color: evmColor("CV", rVAC) },
+    { label: "ETC", value: fmt(rETC), sub: "Estimate to Complete", color: "var(--muted-foreground)" },
+    { label: "VAC", value: fmt(rVAC), sub: "Variance at Completion", color: evmColor("VAC", rVAC) },
+    { label: "TCPI", value: rTCPI.toFixed(2), sub: "To-Complete Performance", color: evmColor("TCPI", rTCPI) },
   ];
 
   return (

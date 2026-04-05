@@ -525,7 +525,7 @@ export default function SprintTrackerPage() {
               </tr>
             </thead>
             <tbody>
-              {([] as any[]).map(s => (
+              {STANDUP_DATA.map(s => (
                 <tr key={s.name} style={{ borderBottom: `1px solid ${"var(--border)"}22` }}>
                   <td className="py-2.5 px-2">
                     <div className="flex items-center gap-2">
@@ -720,7 +720,7 @@ export default function SprintTrackerPage() {
         <Card className="lg:col-span-1">
           <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Active Blockers</h3>
           <div className="space-y-3">
-            {([] as any[]).map(b => (
+            {BLOCKERS.map(b => (
               <div key={b.id} className="p-2.5 rounded-[8px]" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-bold" style={{ color: "#EF4444" }}>{b.id}</span>

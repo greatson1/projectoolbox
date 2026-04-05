@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,5 +153,72 @@ export default function ProjectOverviewPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Artefact Section ───
+function ArtefactSection({ projectId }: { projectId: string }) {
+  const [artefacts, setArtefacts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/artefacts`).then(r => r.json()).then(d => {
+      setArtefacts(d.data || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [projectId]);
+
+  if (loading) return <Skeleton className="h-24 rounded-xl" />;
+  if (artefacts.length === 0) return null; // Don't show section if no artefacts
+
+  const statusColors: Record<string, string> = {
+    DRAFT: "bg-amber-500/10 text-amber-500",
+    PENDING_REVIEW: "bg-blue-500/10 text-blue-500",
+    APPROVED: "bg-emerald-500/10 text-emerald-500",
+    REJECTED: "bg-red-500/10 text-red-500",
+  };
+
+  const formatIcons: Record<string, string> = {
+    markdown: "📄",
+    docx: "📝",
+    xlsx: "📊",
+    pdf: "📕",
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Agent-Generated Artefacts</CardTitle>
+          <Badge variant="secondary" className="text-[10px]">{artefacts.length} document{artefacts.length !== 1 ? "s" : ""}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {artefacts.map((a: any) => (
+            <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/30 transition-colors">
+              <span className="text-lg">{formatIcons[a.format] || "📄"}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{a.name}</p>
+                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                  <span>v{a.version}</span>
+                  <span>·</span>
+                  <span>{new Date(a.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                </div>
+              </div>
+              <Badge variant="secondary" className={`text-[9px] ${statusColors[a.status] || ""}`}>
+                {a.status.replace("_", " ")}
+              </Badge>
+              {a.status === "DRAFT" && (
+                <Button variant="ghost" size="sm" className="text-xs" onClick={async () => {
+                  await fetch(`/api/agents/artefacts/${a.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "APPROVED" }) });
+                  setArtefacts(prev => prev.map(x => x.id === a.id ? { ...x, status: "APPROVED" } : x));
+                }}>Approve</Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
