@@ -2,6 +2,7 @@
 
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useDashboard } from "@/hooks/use-api";
 import { useAppStore } from "@/stores/app";
@@ -30,8 +31,16 @@ const METHOD_LABEL: Record<string, string> = { PRINCE2: "PRINCE2", AGILE_SCRUM: 
 const ACTIVITY_COLORS: Record<string, string> = { document: "bg-primary", meeting: "bg-chart-2", approval: "bg-chart-4", risk: "bg-destructive", deployment: "bg-chart-3", chat: "bg-chart-5" };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { data: dash, isLoading, error } = useDashboard();
   const { setPendingApprovals, setUnreadNotifications, setActiveProject } = useAppStore();
+
+  // Redirect to onboarding if user has no org (first-time Google sign-in)
+  useEffect(() => {
+    if (!isLoading && dash === null) {
+      router.push("/onboarding");
+    }
+  }, [isLoading, dash, router]);
 
   // Sync badge counts
   useEffect(() => {
