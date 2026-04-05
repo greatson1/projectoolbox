@@ -209,29 +209,76 @@ export default function DashboardPage() {
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Burndown */}
+            {/* Task Progress */}
             <Card className="px-5">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Sprint Burndown</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Task Progress</CardTitle></CardHeader>
               <CardContent>
-                <div className="flex items-center justify-center h-[200px] text-center">
+                {stats.totalTasks > 0 ? (
                   <div>
-                    <p className="text-sm text-muted-foreground">No sprint data yet</p>
-                    <p className="text-xs text-muted-foreground mt-1">Charts populate when an agent runs sprint cycles</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-muted-foreground">{stats.completedTasks} of {stats.totalTasks} completed</span>
+                      <span className="text-xs font-bold text-primary">{Math.round((stats.completedTasks / stats.totalTasks) * 100)}%</span>
+                    </div>
+                    <div className="h-3 rounded-full bg-border/30 overflow-hidden">
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(stats.completedTasks / stats.totalTasks) * 100}%` }} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-4">
+                      <div className="text-center p-2 rounded-lg bg-muted/30">
+                        <p className="text-lg font-bold text-foreground">{stats.totalTasks - stats.completedTasks}</p>
+                        <p className="text-[10px] text-muted-foreground">Open</p>
+                      </div>
+                      <div className="text-center p-2 rounded-lg bg-muted/30">
+                        <p className="text-lg font-bold text-emerald-500">{stats.completedTasks}</p>
+                        <p className="text-[10px] text-muted-foreground">Done</p>
+                      </div>
+                      <div className="text-center p-2 rounded-lg bg-muted/30">
+                        <p className="text-lg font-bold text-amber-500">{stats.pendingApprovals}</p>
+                        <p className="text-[10px] text-muted-foreground">Blocked</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-center h-[140px] text-center">
+                    <div>
+                      <p className="text-sm text-muted-foreground">No tasks yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">Deploy an agent to start generating tasks</p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Risk Distribution */}
+            {/* Risk Overview */}
             <Card className="px-5">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Distribution</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Overview</CardTitle></CardHeader>
               <CardContent>
-                <div className="flex items-center justify-center h-[200px] text-center">
+                {stats.openRisks > 0 ? (
                   <div>
-                    <p className="text-sm text-muted-foreground">No risk data yet</p>
-                    <p className="text-xs text-muted-foreground mt-1">Charts populate when project risks are identified</p>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="text-center flex-1 p-3 rounded-lg bg-red-500/10">
+                        <p className="text-2xl font-bold text-red-500">{stats.openRisks}</p>
+                        <p className="text-[10px] text-muted-foreground">Open Risks</p>
+                      </div>
+                      <div className="text-center flex-1 p-3 rounded-lg bg-muted/30">
+                        <p className="text-2xl font-bold text-foreground">{projects.reduce((s: number, p: any) => s + (p.riskCount || 0), 0)}</p>
+                        <p className="text-[10px] text-muted-foreground">Total Risks</p>
+                      </div>
+                    </div>
+                    {projects.filter((p: any) => p.riskCount > 0).map((p: any) => (
+                      <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-border/10">
+                        <span className="text-xs font-medium">{p.name}</span>
+                        <span className="text-xs font-bold" style={{ color: p.riskCount > 3 ? "#EF4444" : "#F59E0B" }}>{p.riskCount} risks</span>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-center h-[140px] text-center">
+                    <div>
+                      <p className="text-sm text-muted-foreground">No risks identified</p>
+                      <p className="text-xs text-muted-foreground mt-1">Agents flag risks as they analyse your projects</p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -270,34 +317,26 @@ export default function DashboardPage() {
 
         {/* Right: Phase Gates + Activity + Credits + Upcoming */}
         <div className="xl:col-span-2 space-y-6">
-          {/* Phase Gates */}
+          {/* Pending Approvals */}
           <Card className="px-5">
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Phase Gates — {projects[0]?.name || "Project"}</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-sm">Pending Approvals</CardTitle>
+              {stats.pendingApprovals > 0 && (
+                <Link href="/approvals"><Badge variant="destructive">{stats.pendingApprovals}</Badge></Link>
+              )}
+            </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {([] as any[]).map((p, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${
-                      p.status === "done" ? "bg-green-500 text-white" :
-                      p.status === "active" ? "bg-primary text-white" :
-                      "bg-muted text-muted-foreground"
-                    }`}>
-                      {p.status === "done" ? "✓" : p.status === "active" ? "●" : i + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className={`text-[13px] font-medium ${p.status === "pending" ? "text-muted-foreground" : ""}`}>{p.name}</span>
-                        <span className={`text-[11px] font-semibold ${
-                          p.status === "done" ? "text-green-500" :
-                          p.status === "active" ? "text-primary" :
-                          "text-muted-foreground"
-                        }`}>{p.pct}%</span>
-                      </div>
-                      <Progress value={p.pct} className="h-1.5" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {stats.pendingApprovals === 0 ? (
+                <div className="text-center py-4">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">All clear — no approvals waiting</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">{stats.pendingApprovals} approval(s) require your attention</p>
+                  <Link href="/approvals"><Button variant="default" size="sm" className="w-full">Review Approvals</Button></Link>
+                </div>
+              )}
             </CardContent>
           </Card>
 
