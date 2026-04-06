@@ -39,6 +39,7 @@ export default function ApprovalsPage() {
   usePageTitle("Approvals");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
+  const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
@@ -53,7 +54,13 @@ export default function ApprovalsPage() {
 
   const items = (approvals || []).filter((a: any) => a.status === "PENDING" || a.status === "DEFERRED");
 
+  // Extract unique agents from approvals
+  const agentNames = Array.from(new Set(items.map((i: any) => i.agentName || i.requestedById || "Agent").filter(Boolean)));
+
   const filtered = items.filter((item: any) => {
+    // Agent filter
+    if (agentFilter && (item.agentName || item.requestedById) !== agentFilter) return false;
+    // Type filter
     if (filter === "All") return true;
     if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
     if (filter === "Artefacts") return item.type === "RISK_RESPONSE" || item.type === "SCOPE_CHANGE";
@@ -128,6 +135,25 @@ export default function ApprovalsPage() {
           </button>
         ))}
       </div>
+
+      {/* Agent filter */}
+      {agentNames.length > 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Agent:</span>
+          <button onClick={() => setAgentFilter(null)}
+            className={cn("px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all",
+              !agentFilter ? "bg-primary/10 text-primary" : "text-muted-foreground")}>
+            All
+          </button>
+          {agentNames.map(name => (
+            <button key={name} onClick={() => setAgentFilter(agentFilter === name ? null : name)}
+              className={cn("px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all",
+                agentFilter === name ? "bg-primary/10 text-primary" : "text-muted-foreground")}>
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Approval cards */}
       {filtered.length === 0 ? (

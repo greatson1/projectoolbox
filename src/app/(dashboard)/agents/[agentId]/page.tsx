@@ -2,11 +2,11 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useAgent, useAgentArtefacts, useUpdateArtefact } from "@/hooks/use-api";
+import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
-  Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2,
+  Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -316,6 +316,21 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
     }));
   }, [apiAgent]);
 
+  const { data: pendingApprovals } = useApprovals("PENDING");
+  const { data: agentArtefactsData } = useAgentArtefacts(agentId);
+  const projectId = apiAgent?.deployments?.[0]?.project?.id;
+
+  // Agent-specific pending approvals
+  const agentPendingApprovals = useMemo(() => {
+    if (!pendingApprovals || !Array.isArray(pendingApprovals)) return [];
+    return pendingApprovals.filter((a: any) => a.agentId === agentId || a.projectId === projectId);
+  }, [pendingApprovals, agentId, projectId]);
+
+  const recentArtefactsReal = useMemo(() => {
+    if (!agentArtefactsData || !Array.isArray(agentArtefactsData)) return [];
+    return agentArtefactsData.slice(0, 5);
+  }, [agentArtefactsData]);
+
   if (isLoading) return <div className="space-y-4 max-w-[1400px] mx-auto"><Skeleton className="h-6 w-48" /><Skeleton className="h-28 rounded-xl" /><div className="grid grid-cols-6 gap-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div></div>;
 
   return (
@@ -386,9 +401,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               <Button variant="ghost" size="sm" onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}>
                 <Pause className="mr-1 size-3.5" /> Pause
               </Button>
-              <Link href="/agents/chat">
+              <Link href={`/agents/chat?agent=${agentId}`}>
                 <Button variant="ghost" size="sm">
-                  <MessageSquare className="mr-1 size-3.5" /> Chat
+                  <MessageSquare className="mr-1 size-3.5" /> Chat with Agent
                 </Button>
               </Link>
               <Link href="/agents/deploy">
@@ -423,6 +438,84 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           </Card>
         ))}
       </div>
+
+      {/* ═══ 2b. COMMAND CENTRE — Agent drives from here ═══ */}
+      {(agentPendingApprovals.length > 0 || recentArtefactsReal.length > 0 || AGENT_RESOLVED.currentTask) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          {/* What the agent is doing RIGHT NOW */}
+          <div className="lg:col-span-2 rounded-[14px] border border-border/30 p-4" style={{ background: "var(--card)" }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Agent is working on</p>
+            </div>
+            {AGENT_RESOLVED.currentTask ? (
+              <p className="text-sm text-foreground leading-relaxed">{AGENT_RESOLVED.currentTask}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Monitoring project — no active task.</p>
+            )}
+
+            {/* Recent artefacts generated */}
+            {recentArtefactsReal.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border/20">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Documents Generated</p>
+                <div className="space-y-1.5">
+                  {recentArtefactsReal.map((a: any) => (
+                    <div key={a.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-xs text-foreground">{a.name}</span>
+                        <Badge variant="outline" className="text-[9px]">{a.status}</Badge>
+                      </div>
+                      <Link href={`/projects/${projectId}/artefacts`}>
+                        <button className="text-[10px] text-primary hover:underline">Review →</button>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* HITL — awaiting user response */}
+          <div className="rounded-[14px] border p-4" style={{
+            background: agentPendingApprovals.length > 0 ? "color-mix(in srgb, #F59E0B 5%, var(--card))" : "var(--card)",
+            borderColor: agentPendingApprovals.length > 0 ? "#F59E0B44" : "var(--border)",
+          }}>
+            <div className="flex items-center gap-2 mb-3">
+              {agentPendingApprovals.length > 0 ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-amber-500">Awaiting Your Decision</p>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">No Pending Approvals</p>
+                </>
+              )}
+            </div>
+
+            {agentPendingApprovals.length > 0 ? (
+              <div className="space-y-3">
+                {agentPendingApprovals.map((a: any) => (
+                  <div key={a.id} className="p-2.5 rounded-[8px] bg-amber-500/5 border border-amber-500/20">
+                    <p className="text-xs font-semibold text-foreground mb-1">{a.title}</p>
+                    <p className="text-[10px] text-muted-foreground mb-2">{a.description?.slice(0, 80)}{(a.description?.length ?? 0) > 80 ? "…" : ""}</p>
+                    <div className="flex gap-1.5">
+                      <Link href="/approvals">
+                        <button className="px-2 py-1 rounded-[5px] text-[10px] font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors">Review & Approve</button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">The agent is managing everything within its autonomy bounds. You'll be notified when a decision is required.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ═══ 3. TABS ═══ */}
       <Tabs defaultValue="overview" className="space-y-4">
