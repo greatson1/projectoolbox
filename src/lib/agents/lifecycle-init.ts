@@ -184,40 +184,78 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
 }
 
 function buildArtefactPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string): string {
-  return `You are an AI Project Manager initialising a project.
+  const category = (project.category || "other").toLowerCase();
+  const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
+  const isNigeria = (project.name || "").toLowerCase().includes("nigeria") || (project.name || "").toLowerCase().includes("lagos");
+  const isPersonal = category === "personal";
+
+  const contextHints = isTravel
+    ? `\nThis is a TRAVEL project. Frame all documents in travel PM terms: itinerary, logistics, bookings, visa/health requirements, safety, budget breakdown by component (flights, accommodation, transfers, meals, activities, contingency). Do NOT use software/corporate PM language.`
+    : isPersonal
+    ? `\nThis is a PERSONAL project. Use plain language, practical checklists, and personal project framing — not corporate PM jargon.`
+    : "";
+
+  const nigeriaHints = isNigeria
+    ? `\nDestination: Nigeria. Include specific considerations for: FCO travel advisory, yellow fever vaccination certificate (mandatory), malaria prophylaxis, currency (NGN / parallel market rate), connectivity, local transport options, recommended areas to stay.`
+    : "";
+
+  return `You are an AI Project Manager initialising a project. Generate professional, specific, practical artefacts.
 
 PROJECT: ${project.name}
 DESCRIPTION: ${project.description || "No description provided"}
 BUDGET: £${(project.budget || 0).toLocaleString()}
 TIMELINE: ${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD"} to ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD"}
+CATEGORY: ${category}
 METHODOLOGY: ${methodologyName}
 CURRENT PHASE: ${phaseName}
+${contextHints}${nigeriaHints}
 
-Generate the following artefacts for this phase. For each artefact, write a professional, practical document.
+Generate the following artefacts. Each must be SPECIFIC to this project — no generic templates.
 
-${artefactNames.map(n => `## ARTEFACT: ${n}\n(Write the full ${n} document here)`).join("\n\n")}
+${artefactNames.map(n => `## ARTEFACT: ${n}\n(Write the complete, specific ${n} for this project)`).join("\n\n")}
 
 Rules:
-- Write practical, specific content tailored to THIS project (not generic templates)
-- Use British English
-- Include specific budget figures, dates, and recommendations where applicable
-- Keep each artefact between 300-800 words
+- SPECIFIC: use the actual project name, budget figures, dates, destinations
+- Use British English throughout
+- Include tables, bullet points, and headings for readability
+- For travel: include actual cost breakdowns summing to the £${(project.budget || 0).toLocaleString()} budget
+- For risk documents: list REAL risks for this specific project and destination
+- 400-900 words per artefact
 - Start each section with "## ARTEFACT: <exact name>"`;
 }
 
 function getSeedRisks(projectName: string, category: string, budget: number) {
+  const name = projectName.toLowerCase();
   const risks = [
-    { title: "Budget overrun", description: `Risk of exceeding the £${budget.toLocaleString()} budget due to scope changes or vendor price increases`, probability: 3, impact: 4, score: 12, status: "OPEN" },
+    { title: "Budget overrun", description: `Risk of exceeding the £${budget.toLocaleString()} budget due to unforeseen costs or price increases`, probability: 3, impact: 4, score: 12, status: "OPEN" },
     { title: "Schedule slippage", description: "Key milestones may be delayed due to dependency chains or resource unavailability", probability: 3, impact: 3, score: 9, status: "OPEN" },
     { title: "Stakeholder availability", description: "Key decision-makers may be unavailable for timely approvals, causing delays", probability: 2, impact: 3, score: 6, status: "OPEN" },
   ];
 
-  // Add category-specific risks
-  if (category === "other" || projectName.toLowerCase().includes("wedding")) {
+  if (category === "travel" || name.includes("trip") || name.includes("travel") || name.includes("holiday")) {
+    risks.push(
+      { title: "Flight cancellation or delay", description: "Flights may be cancelled or significantly delayed, disrupting the entire itinerary and incurring rebooking costs", probability: 2, impact: 4, score: 8, status: "OPEN" },
+      { title: "Visa / entry requirements not met", description: "Entry documentation, visa approvals, or vaccination requirements may not be obtained in time", probability: 2, impact: 5, score: 10, status: "OPEN" },
+      { title: "Health and medical risk", description: "Illness, injury, or required vaccinations (e.g. yellow fever, malaria prophylaxis) may impact the traveller or cause trip cancellation", probability: 2, impact: 4, score: 8, status: "OPEN" },
+      { title: "Accommodation unavailability", description: "Booked accommodation may be unavailable, overbooked, or below acceptable standard on arrival", probability: 1, impact: 3, score: 3, status: "OPEN" },
+      { title: "Currency and payment issues", description: "Access to local currency (NGN, etc.) may be restricted; card payments may not be accepted at all locations", probability: 2, impact: 3, score: 6, status: "OPEN" },
+    );
+  }
+
+  if (name.includes("nigeria") || name.includes("lagos") || name.includes("abuja")) {
+    risks.push(
+      { title: "Security and safety risk", description: "Nigeria carries an elevated FCO travel advisory. Petty crime, scams, and in some regions civil unrest are material risks requiring mitigation", probability: 3, impact: 5, score: 15, status: "OPEN" },
+      { title: "Yellow fever vaccination requirement", description: "Yellow fever vaccination certificate (valid yellow card) is mandatory for entry into Nigeria. Without it, entry will be refused", probability: 1, impact: 5, score: 5, status: "OPEN" },
+      { title: "Naira exchange rate volatility", description: "The Nigerian Naira has experienced significant exchange rate volatility. Budget variance risk is HIGH", probability: 3, impact: 3, score: 9, status: "OPEN" },
+      { title: "Power and connectivity outages", description: "Nigeria experiences frequent power cuts and intermittent internet connectivity which may disrupt communications and planned activities", probability: 4, impact: 2, score: 8, status: "OPEN" },
+    );
+  }
+
+  if (category === "events" || name.includes("event") || name.includes("conference") || name.includes("wedding")) {
     risks.push(
       { title: "Vendor no-show or cancellation", description: "A critical vendor (caterer, photographer, venue) cancels or fails to deliver", probability: 2, impact: 5, score: 10, status: "OPEN" },
       { title: "Weather disruption", description: "Adverse weather affecting outdoor elements of the event", probability: 2, impact: 3, score: 6, status: "OPEN" },
-      { title: "Guest count variance", description: "Actual attendance significantly different from planned, affecting catering and seating", probability: 3, impact: 2, score: 6, status: "OPEN" },
+      { title: "Attendance variance", description: "Actual attendance significantly different from planned, affecting catering and logistics", probability: 3, impact: 2, score: 6, status: "OPEN" },
     );
   }
 

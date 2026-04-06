@@ -60,6 +60,10 @@ const QUICK_ACTIONS = [
 
 // ── Rich message renderer ──
 function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGradient?: string; agentName?: string }) {
+  // Hide internal system kickoff prompts from the UI
+  const isKickoff = msg.role === "user" && (msg.content.startsWith("SYSTEM_KICKOFF:") || msg.content.startsWith("KICKOFF:"));
+  if (isKickoff) return null;
+
   if (msg.role === "user") {
     return (
       <div className="flex justify-end gap-2">
@@ -233,6 +237,10 @@ function AgentChatPage() {
   const activeAgent = agents.find((a: any) => a.id === activeAgentId);
   const messages = activeAgentId ? (messagesByAgent[activeAgentId] || []) : [];
 
+  // Auto-kickoff ref — set after sendMessage is defined
+  const kickoffFiredRef = useRef<Set<string>>(new Set());
+  const pendingKickoffRef = useRef<string | null>(null);
+
   const scrollToBottom = () => {
     setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
   };
@@ -345,6 +353,23 @@ function AgentChatPage() {
     setSending(false);
     scrollToBottom();
   };
+
+  // Auto-kickoff: fire once per agent when chat opens with no messages
+  useEffect(() => {
+    if (!activeAgentId || !activeAgent || sending) return;
+    if (kickoffFiredRef.current.has(activeAgentId)) return;
+    const existingMsgs = messagesByAgent[activeAgentId];
+    if (existingMsgs && existingMsgs.length > 0) return;
+
+    // Only kickoff for deployed agents with a project
+    const hasProject = activeAgent.deployments?.length > 0 || activeAgent.project;
+    if (!hasProject) return;
+
+    kickoffFiredRef.current.add(activeAgentId);
+    setTimeout(() => {
+      sendMessage(`SYSTEM_KICKOFF: I've just opened this project for the first time. Please: (1) introduce yourself and confirm the project details, (2) present your initial feasibility assessment and research findings, (3) summarise any artefacts you've already generated, (4) list the top risks identified, and (5) state clearly what needs to happen next and whether you require my approval to proceed. Be thorough.`);
+    }, 1200);
+  }, [activeAgentId, activeAgent, messagesByAgent, sending]);
 
   if (agentsLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><Skeleton className="h-[500px] rounded-xl" /></div>;
 
