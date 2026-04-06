@@ -53,15 +53,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { status: "ACTIVE" },
   });
 
-  // Auto-generate agent email address if not already set
+  // Auto-generate agent email address namespaced by org slug
   const existingEmail = await db.agentEmail.findUnique({ where: { agentId } });
   if (!existingEmail) {
-    const agentRecord = await db.agent.findUnique({ where: { id: agentId }, select: { name: true } });
-    const slug = (agentRecord?.name || "agent").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const address = `${slug}@agents.projectoolbox.com`;
+    const agentRecord = await db.agent.findUnique({ where: { id: agentId }, select: { name: true, orgId: true } });
+    const orgRecord = await db.organisation.findUnique({ where: { id: agentRecord?.orgId || orgId }, select: { slug: true } });
+    const agentSlug = (agentRecord?.name || "agent").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const orgSlug = (orgRecord?.slug || "org").replace(/[^a-z0-9-]/g, "").slice(0, 15);
+    // Format: agentname.orgslug@agents.projectoolbox.com — globally unique per org
+    const address = `${agentSlug}.${orgSlug}@agents.projectoolbox.com`;
     const collision = await db.agentEmail.findUnique({ where: { address } });
     await db.agentEmail.create({
-      data: { agentId, address: collision ? `${slug}-${agentId.slice(-4)}@agents.projectoolbox.com` : address, isActive: true },
+      data: { agentId, address: collision ? `${agentSlug}.${orgSlug}-${agentId.slice(-4)}@agents.projectoolbox.com` : address, isActive: true },
     });
   }
 
@@ -101,23 +104,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }).catch(() => {}); // Fire and forget
   }
 
-  // Create lifecycle_init job for the VPS agent backend
-  await createJob({
-    agentId,
-    deploymentId: deployment.id,
-    type: "lifecycle_init",
-    priority: 1,
-    payload: { projectId, methodology: (await db.project.findUnique({ where: { id: projectId } }))?.methodology },
-  });
-
-  // Set initial next cycle time
-  await db.agentDeployment.update({
-    where: { id: deployment.id },
-    data: { nextCycleAt: new Date(Date.now() + 10 * 60_000) },
-  });
-
-  // Nudge VPS to start processing immediately
-  nudgeJobProcessor().catch(() => {});
+  // Run lifecycle init directly on Vercel (no VPS dependency)
+  // This creates phases, generates artefacts, seeds risks, and requests gate approval.
+  // Runs async — don't block the deploy response.
+  (async () => {
+    try {
+      const { runLifecycleInit } = await import("@/lib/agents/lifecycle-init");
+      await runLifecycleInit(agentId, deployment.id);
+    } catch (e) {
+      console.error("[Deploy] Lifecycle init failed, falling back to job queue:", e);
+      // Fall back to VPS job if direct init fails
+      await createJob({
+        agentId,
+        deploymentId: deployment.id,
+        type: "lifecycle_init",
+        priority: 1,
+        payload: { projectId, methodology: (await db.project.findUnique({ where: { id: projectId } }))?.methodology },
+      });
+      nudgeJobProcessor().catch(() => {});
+    }
+  })();
 
   return NextResponse.json({ data: { deployment, agentId } }, { status: 201 });
 }

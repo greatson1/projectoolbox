@@ -33,14 +33,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ data: agent.agentEmail });
   }
 
-  // Generate email address: agent-name-slug@agents.projectoolbox.com
-  const slug = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const address = `${slug}@agents.projectoolbox.com`;
+  // Generate email address namespaced by org: agentname.orgslug@agents.projectoolbox.com
+  const orgRecord = await db.organisation.findUnique({ where: { id: agent.orgId }, select: { slug: true } });
+  const agentSlug = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const orgSlug = (orgRecord?.slug || "org").replace(/[^a-z0-9-]/g, "").slice(0, 15);
+  const address = `${agentSlug}.${orgSlug}@agents.projectoolbox.com`;
 
-  // Check for collision
+  // Check for collision (shouldn't happen with org namespace, but safety first)
   const existing = await db.agentEmail.findUnique({ where: { address } });
   const finalAddress = existing
-    ? `${slug}-${id.slice(-4)}@agents.projectoolbox.com`
+    ? `${agentSlug}.${orgSlug}-${id.slice(-4)}@agents.projectoolbox.com`
     : address;
 
   const agentEmail = await db.agentEmail.create({
