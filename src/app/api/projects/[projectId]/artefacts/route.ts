@@ -16,6 +16,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       id: true, name: true, format: true, content: true,
       status: true, version: true, feedback: true,
       phaseId: true, createdAt: true, updatedAt: true,
+      agentId: true,
+      agent: { select: { name: true, gradient: true } },
     },
   });
 

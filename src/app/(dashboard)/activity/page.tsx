@@ -65,7 +65,7 @@ export default function ActivityLogPage() {
   // Group activities by hour
   const grouped: Record<string, any[]> = {};
   activities.forEach((a: any) => {
-    const hour = new Date(a.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "00" });
+    const hour = new Date(a.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
     if (!grouped[hour]) grouped[hour] = [];
     grouped[hour].push(a);
   });

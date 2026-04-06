@@ -19,13 +19,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
 
   const body = await req.json();
-  const { status, feedback } = body;
+  const { status, feedback, content } = body;
 
   const artefact = await db.agentArtefact.update({
     where: { id },
     data: {
       ...(status && { status }),
-      ...(feedback && { feedback }),
+      ...(feedback !== undefined && { feedback }),
+      ...(content && { content, version: { increment: 1 } }),
     },
   });
 

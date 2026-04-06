@@ -222,7 +222,7 @@ export default function SprintTrackerPage() {
     cycleTime: t.cycleTime,
     blocked: t.blocked || false,
     atRisk: t.atRisk || false,
-  })) : SPRINT_ITEMS;
+  })) : [];
 
   // Derive chart data from apiTasks
   const burndownData = useMemo(() => {

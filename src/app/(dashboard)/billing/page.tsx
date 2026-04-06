@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useBilling } from "@/hooks/use-api";
+import { useSession } from "next-auth/react";
 import { cn, PLAN_LIMITS } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -155,6 +156,9 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 export default function BillingPage() {
   const { data, isLoading } = useBilling();
+  const sessionResult = useSession();
+  const userEmail = (sessionResult as any)?.data?.user?.email ?? "";
+  const orgName = (sessionResult as any)?.data?.user?.orgName ?? (sessionResult as any)?.data?.user?.name ?? "";
   usePageTitle("Billing");
   const [topupCustom, setTopupCustom] = useState(500);
   const [autoTopup, setAutoTopup] = useState(false);
@@ -185,8 +189,9 @@ export default function BillingPage() {
   const invoicesFromAPI = data?.invoices || [];
   const price = PLAN_PRICES[plan] || 0;
   const totalCredits = limits?.credits || 50;
-  const usedPct = totalCredits > 0 ? Math.round(((totalCredits - balance) / totalCredits) * 100) : 0;
-  const remaining = balance;
+  const usedCredits = Math.max(0, totalCredits - balance);
+  const usedPct = totalCredits > 0 ? Math.min(100, Math.max(0, Math.round((usedCredits / totalCredits) * 100))) : 0;
+  const remaining = Math.max(0, balance);
   const customPrice = Math.round(topupCustom * 0.018);
 
   // Use real invoices if available, fall back to mock
@@ -229,7 +234,7 @@ export default function BillingPage() {
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-medium text-muted-foreground">Credits Used</span>
             <span className={cn("text-sm font-bold", usedPct > 80 ? "text-amber-500" : "text-primary")}>
-              {(totalCredits - balance).toLocaleString()} / {totalCredits.toLocaleString()}
+              {usedCredits.toLocaleString()} / {totalCredits.toLocaleString()}
             </span>
           </div>
           <Progress value={usedPct} className="h-2.5" />
@@ -398,27 +403,27 @@ export default function BillingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Current card */}
             <div className="p-4 rounded-xl flex items-center gap-4 border border-border/30 bg-muted/10">
-              <div className="w-12 h-8 rounded flex items-center justify-center text-[11px] font-bold bg-gradient-to-br from-[#1A1F71] to-[#2557D6] text-white">
-                VISA
+              <div className="w-12 h-8 rounded flex items-center justify-center text-[11px] font-bold bg-muted text-muted-foreground border border-border/30">
+                <CreditCard className="w-4 h-4" />
               </div>
               <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">.... .... .... 4242</p>
-                <p className="text-[11px] text-muted-foreground">Expires 12/2028</p>
+                <p className="text-sm font-semibold text-foreground">No card on file</p>
+                <p className="text-[11px] text-muted-foreground">Add a payment method to enable auto top-up</p>
               </div>
-              <Badge variant="default" className="bg-green-500/10 text-green-600 border-green-500/20">Default</Badge>
+              <Button variant="outline" size="sm">Add Card</Button>
             </div>
             {/* Billing details */}
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider mb-1 text-muted-foreground">
                 Billing Email
               </p>
-              <p className="text-sm text-foreground">billing@atlascorp.com</p>
+              <p className="text-sm text-foreground">{userEmail || "—"}</p>
             </div>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider mb-1 text-muted-foreground">
-                Billing Address
+                Organisation
               </p>
-              <p className="text-sm text-foreground">Atlas Corp Ltd, 42 Innovation Way, London EC2A 1NT</p>
+              <p className="text-sm text-foreground">{orgName || "—"}</p>
             </div>
           </div>
         </CardContent>

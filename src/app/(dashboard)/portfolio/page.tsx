@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ScatterChart, Scatter, ZAxis, Cell } from "recharts";
+import { PageHeader } from "@/components/layout/page-header";
 
 
 // ================================================================
@@ -104,26 +105,24 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Portfolio</h1>
-        <p className="text-sm text-muted-foreground mt-1">Cross-project health and resource overview</p>
-      </div>
+      <PageHeader
+        title="Portfolio"
+        subtitle="Cross-project health and resource overview"
+        actions={projects.length > 0 ? <Button variant="default" size="sm" onClick={() => setShowExecReport(true)}>Generate Executive Report</Button> : undefined}
+      />
       {/* Health overview */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-4">
-          {[
-            { label: "Projects", value: projects.length, color: "var(--foreground)" },
-            { label: "On Track", value: `${projects.length > 0 ? Math.round((onTrack / projects.length) * 100) : 0}%`, color: "#10B981" },
-            { label: "At Risk", value: atRisk, color: "#EF4444" },
-            { label: "Total Budget", value: `£${(totalBudget / 1000).toFixed(0)}K`, color: "var(--primary)" },
-          ].map((s) => (
-            <div key={s.label} className="flex items-center gap-2 px-3 py-2 rounded-[8px]" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
-              <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{s.label}:</span>
-              <span className="text-[13px] font-bold" style={{ color: s.color }}>{s.value}</span>
-            </div>
-          ))}
-        </div>
-        {projects.length > 0 && <Button variant="default" size="sm" onClick={() => setShowExecReport(true)}>Generate Executive Report</Button>}
+      <div className="flex gap-4 flex-wrap">
+        {[
+          { label: "Projects", value: projects.length, color: "var(--foreground)" },
+          { label: "On Track", value: `${projects.length > 0 ? Math.round((onTrack / projects.length) * 100) : 0}%`, color: "#10B981" },
+          { label: "At Risk", value: atRisk, color: "#EF4444" },
+          { label: "Total Budget", value: `£${(totalBudget / 1000).toFixed(0)}K`, color: "var(--primary)" },
+        ].map((s) => (
+          <div key={s.label} className="flex items-center gap-2 px-3 py-2 rounded-[8px]" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+            <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{s.label}:</span>
+            <span className="text-[13px] font-bold" style={{ color: s.color }}>{s.value}</span>
+          </div>
+        ))}
       </div>
 
       {/* Project mini cards or empty state */}

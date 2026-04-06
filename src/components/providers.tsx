@@ -2,8 +2,20 @@
 
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { AppProgressBar as ProgressBar } from "next-nprogress-bar";
+import { useAppStore } from "@/stores/app";
+
+function AccentThemeApplier() {
+  const accentTheme = useAppStore((s) => s.accentTheme);
+  useEffect(() => {
+    const el = document.documentElement;
+    el.classList.remove("theme-midnight", "theme-emerald");
+    if (accentTheme === "midnight") el.classList.add("theme-midnight");
+    if (accentTheme === "emerald") el.classList.add("theme-emerald");
+  }, [accentTheme]);
+  return null;
+}
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -28,6 +40,7 @@ export function Providers({ children }: { children: ReactNode }) {
         defaultTheme="dark"
         enableSystem={false}
       >
+        <AccentThemeApplier />
         <ProgressBar
           height="3px"
           color="#6366F1"

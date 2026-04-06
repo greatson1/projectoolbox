@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type AccentTheme = "indigo" | "midnight" | "emerald";
+
 interface AppState {
   // Active project context (for sidebar project-scoped routes)
   activeProjectId: string | null;
@@ -16,6 +18,10 @@ interface AppState {
   unreadNotifications: number;
   setPendingApprovals: (n: number) => void;
   setUnreadNotifications: (n: number) => void;
+
+  // Accent colour theme
+  accentTheme: AccentTheme;
+  setAccentTheme: (t: AccentTheme) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -32,6 +38,9 @@ export const useAppStore = create<AppState>()(
       unreadNotifications: 0,
       setPendingApprovals: (n) => set({ pendingApprovals: n }),
       setUnreadNotifications: (n) => set({ unreadNotifications: n }),
+
+      accentTheme: "indigo",
+      setAccentTheme: (t) => set({ accentTheme: t }),
     }),
     { name: "projectoolbox-app" }
   )

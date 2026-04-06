@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/stores/app";
 import { useProjects } from "@/hooks/use-api";
 import { Plus, FolderKanban, Search } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 
 const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
 
@@ -35,15 +36,12 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-6 max-w-[1400px]">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Projects</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {(projects || []).length} projects · {(projects || []).filter((p: any) => p.status === "ACTIVE").length} active
-          </p>
-        </div>
-        <Link href="/agents/deploy"><Button><Plus className="w-4 h-4 mr-1" /> New Project</Button></Link>
-      </div>
+      <PageHeader
+        title="Projects"
+        subtitle={`${(projects || []).length} projects · ${(projects || []).filter((p: any) => p.status === "ACTIVE").length} active`}
+        icon={<FolderKanban className="w-5 h-5" />}
+        actions={<Link href="/agents/deploy"><Button><Plus className="w-4 h-4 mr-1" /> New Project</Button></Link>}
+      />
 
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border max-w-md">
         <Search className="w-4 h-4 text-muted-foreground" />
@@ -64,7 +62,7 @@ export default function ProjectsPage() {
             const agent = p.agents?.[0]?.agent;
             return (
               <Link key={p.id} href={`/projects/${p.id}`} onClick={() => setActiveProject(p.id, p.name)}>
-                <Card className="hover:-translate-y-0.5 transition-all cursor-pointer h-full">
+                <Card className="card-interactive h-full">
                   <CardContent className="pt-5">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">

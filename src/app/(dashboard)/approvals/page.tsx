@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 
 const FILTERS = ["All", "High Priority", "Artefacts", "Phase Gates", "Communications"];
 
@@ -92,24 +93,21 @@ export default function ApprovalsPage() {
 
   return (
     <div className="max-w-[1000px] space-y-5 animate-page-enter">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <PageHeader
+        title="Approval Queue"
+        subtitle="Human-in-the-Loop Governance"
+        icon={<Shield className="w-5 h-5" />}
+        actions={
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Approval Queue</h1>
-            <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white bg-primary">{items.length}</span>
+            {highCount > 0 && <Badge variant="destructive">{highCount} high priority</Badge>}
+            {lowRiskItems.length > 0 && (
+              <Button variant="outline" size="sm" onClick={handleBatchApprove}>
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve All Low Risk ({lowRiskItems.length})
+              </Button>
+            )}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">Human-in-the-Loop Governance</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {highCount > 0 && <Badge variant="destructive">{highCount} high priority</Badge>}
-          {lowRiskItems.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleBatchApprove}>
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve All Low Risk ({lowRiskItems.length})
-            </Button>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {/* Governance banner */}
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 border border-primary/15">

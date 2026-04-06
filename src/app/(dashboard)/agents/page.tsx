@@ -6,6 +6,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAgents } from "@/hooks/use-api";
+import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -294,21 +295,11 @@ export default function AgentFleetPage() {
   return (
     <div className="space-y-6 max-w-[1600px]">
       {/* ═══ 1. HEADER ═══ */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Agent Fleet</h1>
-          <p className="text-[13px] mt-1 flex items-center gap-2 flex-wrap" style={{ color: "var(--muted-foreground)" }}>
-            <span className="font-semibold" style={{ color: "var(--foreground)" }}>{agents.length} Agents Deployed</span>
-            <Dot />
-            <span>{activeCount} Active</span>
-            <Dot />
-            <span>{pausedCount} Paused</span>
-            <Dot />
-            <span className="font-semibold" style={{ color: "var(--primary)" }}>{totalCreditsToday} credits today</span>
-          </p>
-        </div>
-        <Link href="/agents/deploy"><Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy New Agent</Button></Link>
-      </div>
+      <PageHeader
+        title="Agent Fleet"
+        subtitle={`${agents.length} Agents Deployed · ${activeCount} Active · ${pausedCount} Paused · ${totalCreditsToday} credits today`}
+        actions={<Link href="/agents/deploy"><Button variant="default" size="sm"><span className="mr-1">🚀</span> Deploy New Agent</Button></Link>}
+      />
 
       {/* ═══ 2. FLEET OVERVIEW CARDS ═══ */}
       {agents.length === 0 ? (
@@ -631,7 +622,7 @@ function AgentCard({ agent }: { agent: Agent }) {
   const router = useRouter();
 
   return (
-    <div className="rounded-[14px] p-4 transition-all duration-200 hover:translate-y-[-2px] cursor-pointer"
+    <div className="card-interactive rounded-[14px] p-4"
       onClick={() => router.push(`/agents/${agent.id}`)}
       style={{
         background: "var(--card)",

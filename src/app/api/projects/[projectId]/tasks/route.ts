@@ -2,30 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
-// GET /api/projects/[id]/tasks
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// GET /api/projects/[projectId]/tasks
+export async function GET(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
+  const { projectId } = await params;
   const tasks = await db.task.findMany({
-    where: { projectId: id },
+    where: { projectId },
     orderBy: { createdAt: "desc" },
   });
 
   return NextResponse.json({ data: tasks });
 }
 
-// POST /api/projects/[id]/tasks
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// POST /api/projects/[projectId]/tasks
+export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await params;
+  const { projectId } = await params;
   const body = await req.json();
 
   const task = await db.task.create({
-    data: { ...body, projectId: id },
+    data: { ...body, projectId },
   });
 
   return NextResponse.json({ data: task }, { status: 201 });

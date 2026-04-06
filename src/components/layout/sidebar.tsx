@@ -93,6 +93,7 @@ const NAV: NavGroup[] = [
       { label: "EVM Dashboard", href: "/evm", icon: TrendingUp, projectScoped: true },
       { label: "Scorecard", href: "/scorecard", icon: Award, projectScoped: true },
       { label: "Reports", href: "/reports", icon: FileBarChart, projectScoped: true },
+      { label: "Report Composer", href: "/report-composer", icon: FileText, projectScoped: true },
       { label: "Benefits", href: "/benefits", icon: TrendingUp, projectScoped: true },
     ],
   },
@@ -122,6 +123,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Notifications", href: "/notifications", icon: Bell },
       { label: "Billing", href: "/billing", icon: CreditCard },
+      { label: "Settings", href: "/settings", icon: Settings },
       { label: "Admin", href: "/admin", icon: Settings },
     ],
   },

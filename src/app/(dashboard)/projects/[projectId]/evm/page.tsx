@@ -179,7 +179,7 @@ export default function EVMDashboardPage() {
         <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Earned Value Management</h1>
         <div className="flex gap-2">
           <select className="px-3 py-1.5 rounded-[8px] text-[12px]" style={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, color: "var(--foreground)" }}>
-            <option>Office Renovation Phase 2</option><option>CRM Migration</option>
+            <option>{apiProject?.name || "Current Project"}</option>
           </select>
           <select className="px-3 py-1.5 rounded-[8px] text-[12px]" style={{ backgroundColor: "var(--card)", border: `1px solid ${"var(--border)"}`, color: "var(--foreground)" }}>
             <option>Period 10 (Oct 2026)</option><option>Period 9</option>

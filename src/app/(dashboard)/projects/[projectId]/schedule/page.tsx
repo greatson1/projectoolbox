@@ -4,7 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
-import { useProjectTasks } from "@/hooks/use-api";
+import { useProjectTasks, useProject } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,6 +112,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 
 export default function SchedulePage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const { data: project } = useProject(projectId);
   const { data: apiTasks } = useProjectTasks(projectId);
 
   const TASKS_DATA: ScheduleTask[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any) => ({
@@ -209,7 +210,7 @@ export default function SchedulePage() {
       <div className="space-y-6 max-w-[1400px]">
         <Header view={view} setView={setView} zoom={zoom} setZoom={setZoom}
           showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
-          stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} />
+          stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} project={project} />
 
         <Card>
           <div className="overflow-x-auto">
@@ -429,14 +430,14 @@ export default function SchedulePage() {
 }
 
 // ── Header with stats + controls ──
-function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, stats }: any) {
+function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, stats, project }: any) {
   return (
     <div className="space-y-4">
       {/* Title row */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Project Schedule</h1>
-          <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>CRM Migration to Salesforce — Hybrid Methodology</p>
+          {project && <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>{project.name}{project.methodology ? ` — ${project.methodology}` : ""}</p>}
         </div>
         <div className="flex items-center gap-2">
           {/* View toggle */}

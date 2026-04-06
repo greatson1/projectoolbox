@@ -4,6 +4,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useProjectTasks } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -185,6 +186,8 @@ function getEpicColor(name: string) {
 export default function AgileBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: apiTasks } = useProjectTasks(projectId);
+  const { data: session } = useSession();
+  const currentUserName = (session as any)?.user?.name ?? "";
 
   const ISSUES_DATA: Issue[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any, idx: number) => ({
     id: t.id || `PTX-${100 + idx}`,
@@ -251,7 +254,7 @@ export default function AgileBoardPage() {
   // Filtered issues
   const filteredIssues = useMemo(() => {
     let result = [...ISSUES_DATA];
-    if (filterMyItems) result = result.filter(i => i.assignee === "Sarah Chen"); // simulated current user
+    if (filterMyItems && currentUserName) result = result.filter(i => i.assignee === currentUserName);
     if (filterBlocked) result = result.filter(i => i.blocked);
     if (filterBugs) result = result.filter(i => i.type === "bug");
     if (filterUnassigned) result = result.filter(i => !i.assignee);
@@ -735,7 +738,7 @@ function IssueCard({ issue, compact, onClick }: {
       <div className="flex items-center justify-between mt-2">
         <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
         <div className="flex items-center gap-2">
-          {isDue && <span className="text-[9px] font-semibold" style={{ color: "#EF4444" }}>⚠ {issue.dueDate?.slice(5)}</span>}
+          {isDue && <span className="text-[9px] font-semibold" style={{ color: "#EF4444" }}>⚠ {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}</span>}
           <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
             style={{ background: `${"var(--primary)"}22`, color: "var(--primary)" }}>
             {issue.storyPoints}
@@ -753,18 +756,8 @@ function IssueCard({ issue, compact, onClick }: {
 function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<"details" | "comments" | "activity">("details");
 
-  const mockComments = [
-    { author: "Sarah Chen", time: "2h ago", text: "I've started the form validation — the email step needs a custom regex for corporate domains." },
-    { author: "James Okafor", time: "5h ago", text: "Can we add a skip option for the company info step? Some individual users won't have this." },
-    { author: "Maya (Agent)", time: "1d ago", text: "Linked this to PTX-128 (signup flow) — the onboarding wizard should launch after first successful login." },
-  ];
-
-  const mockActivity = [
-    { time: "2h ago", text: "Sarah Chen moved from To Do → In Progress" },
-    { time: "5h ago", text: "James Okafor added comment" },
-    { time: "1d ago", text: "Maya (Agent) linked to PTX-128" },
-    { time: "1d ago", text: "Created by Sarah Chen in Sprint 7" },
-  ];
+  const mockComments: { author: string; time: string; text: string }[] = [];
+  const mockActivity: { time: string; text: string }[] = [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
@@ -832,7 +825,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
           </FieldRow>
           {issue.dueDate && (
             <FieldRow label="Due Date">
-              <span className="text-[12px]" style={{ color: new Date(issue.dueDate) <= new Date() ? "#EF4444" : "var(--foreground)" }}>{issue.dueDate}</span>
+              <span className="text-[12px]" style={{ color: new Date(issue.dueDate) <= new Date() ? "#EF4444" : "var(--foreground)" }}>{new Date(issue.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
             </FieldRow>
           )}
         </div>

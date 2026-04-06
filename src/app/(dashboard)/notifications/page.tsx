@@ -4,6 +4,7 @@
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useNotifications, useMarkAllRead } from "@/hooks/use-api";
+import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -238,20 +239,16 @@ export default function NotificationsPage() {
   return (
     <div className="max-w-[1400px]">
       {/* ═══ 1. HEADER ═══ */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Notifications</h1>
-          {unreadCount > 0 && (
-            <span className="text-[12px] font-bold px-2.5 py-1 rounded-full text-white" style={{ background: "var(--primary)" }}>
-              {unreadCount} unread
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={markAllRead}>Mark All Read</Button>
-          <Button variant="ghost" size="sm" onClick={() => setShowPrefs(!showPrefs)}>⚙ Preferences</Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Notifications"
+        subtitle={unreadCount > 0 ? `${unreadCount} unread` : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={markAllRead}>Mark All Read</Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowPrefs(!showPrefs)}>⚙ Preferences</Button>
+          </div>
+        }
+      />
 
       {/* ═══ 2. STATS BAR ═══ */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">

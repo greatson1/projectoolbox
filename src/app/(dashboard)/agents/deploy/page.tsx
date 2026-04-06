@@ -26,7 +26,7 @@ import { METHODOLOGIES as METHODOLOGY_DEFS, type MethodologyId } from "@/lib/met
 
 const STEP_LABELS = ["Project Details", "Methodology", "Phase Gates", "Team", "Agent Config", "Review & Deploy"];
 type Priority = "high" | "medium" | "low";
-type Category = "construction" | "software" | "marketing" | "operations" | "research" | "other";
+type Category = "construction" | "software" | "marketing" | "operations" | "research" | "events" | "travel" | "personal" | "other";
 
 interface TeamMember { name: string; email: string; role: string; }
 interface Stakeholder { name: string; role: string; org: string; power: number; interest: number; }
@@ -59,32 +59,29 @@ interface WizardState {
 }
 
 const INIT_STATE: WizardState = {
-  projectName: "", description: "", client: "", startDate: "2026-04-15", endDate: "2026-10-30",
-  budget: "250000", priority: "high", category: "software",
+  projectName: "", description: "", client: "", startDate: "", endDate: "",
+  budget: "", priority: "medium", category: "other",
   methodology: "",
-  phases: [], hitlePhaseGates: true, hitleBudgetThreshold: "10000",
+  phases: [], hitlePhaseGates: true, hitleBudgetThreshold: "",
   hitleCommsApproval: true, hitleRiskThreshold: "high", escalationTimeout: "24",
-  team: [
-    { name: "Sarah Chen", email: "sarah@atlas.com", role: "PM" },
-    { name: "James Okafor", email: "james@atlas.com", role: "Dev" },
-  ],
-  stakeholders: [
-    { name: "Dr. Emma Wright", role: "Executive Sponsor", org: "Atlas Corp", power: 90, interest: 70 },
-    { name: "Mark Phillips", role: "Programme Director", org: "Atlas Corp", power: 75, interest: 85 },
-  ],
+  team: [],
+  stakeholders: [],
   agentName: "Alpha", agentTitle: "", agentGradient: 0, domainTags: "", defaultGreeting: "", monthlyBudget: "",
   personalityFormal: 35, personalityConcise: 50,
   autonomyLevel: 3, reportSchedule: "weekly",
   notifSlack: true, notifEmail: true, notifTelegram: false,
-  intJira: true, intGithub: true, intConfluence: false,
+  intJira: false, intGithub: false, intConfluence: false,
 };
 
 const CATEGORIES: { id: Category; label: string; icon: string }[] = [
-  { id: "construction", label: "Construction", icon: "🏗️" },
   { id: "software", label: "Software", icon: "💻" },
+  { id: "construction", label: "Construction", icon: "🏗️" },
   { id: "marketing", label: "Marketing", icon: "📣" },
   { id: "operations", label: "Operations", icon: "⚙️" },
   { id: "research", label: "Research", icon: "🔬" },
+  { id: "events", label: "Events", icon: "🎉" },
+  { id: "travel", label: "Travel", icon: "✈️" },
+  { id: "personal", label: "Personal", icon: "🧑" },
   { id: "other", label: "Other", icon: "📁" },
 ];
 
@@ -128,7 +125,7 @@ const AUTONOMY_CARDS = [
 ];
 
 const AGENT_NAMES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Falcon", "Griffin", "Hawk", "Iris", "Jade"];
-const ROLES = ["PM", "Dev", "QA", "BA", "Architect", "Sponsor", "Designer", "Tech Lead"];
+const ROLES = ["PM", "Sponsor", "Lead", "Organiser", "Participant", "Dev", "QA", "BA", "Architect", "Designer", "Tech Lead", "Analyst", "Consultant", "Traveller", "Client", "Other"];
 
 const CREDIT_BREAKDOWN = [
   { name: "Document generation", value: 420, color: "#6366F1" },
@@ -178,16 +175,38 @@ export default function ProjectWizardPage() {
     if (data.category === "construction") return "waterfall";
     if (data.category === "marketing") return "kanban";
     if (data.category === "research") return "hybrid";
+    if (data.category === "events") return "waterfall";
+    if (data.category === "travel") return "kanban";
+    if (data.category === "personal") return "kanban";
     if (Number(data.budget) > 500000) return "prince2";
     return "hybrid";
   }, [data.category, data.budget]);
+
+  // Auto-generate context-aware greeting placeholder
+  const greetingPlaceholder = useMemo(() => {
+    const name = data.projectName || "your project";
+    if (data.category === "travel") return `Ready to plan your trip! I'll track budget, bookings, and risks for ${name}.`;
+    if (data.category === "personal") return `I'm here to help you manage ${name} — let's get organised.`;
+    if (data.category === "events") return `Let's make ${name} a success. I'll handle logistics, timelines, and risks.`;
+    if (data.category === "construction") return `Ready to manage ${name}. I'll track milestones, costs, and site risks.`;
+    if (data.category === "software") return `Let's build something great! I'm ready to manage ${name}.`;
+    if (data.category === "marketing") return `Campaign ready! I'm set to drive ${name} forward.`;
+    return `Ready to manage ${name}. How can I help you today?`;
+  }, [data.category, data.projectName]);
+
+  // Auto-compute budget threshold (10% of project budget, min £100)
+  const autoThreshold = useMemo(() => {
+    const b = Number(data.budget);
+    if (!b || b <= 0) return "";
+    return String(Math.max(100, Math.round(b * 0.1)));
+  }, [data.budget]);
 
   // Validation
   const canProceed = useMemo(() => {
     if (step === 0) return data.projectName.length > 2;
     if (step === 1) return !!data.methodology;
     if (step === 2) return data.phases.length > 0;
-    if (step === 3) return data.team.length > 0;
+    if (step === 3) return data.team.length > 0 || data.category === "personal" || data.category === "travel" || data.category === "other";
     if (step === 4) return data.agentName.length > 0;
     return true;
   }, [step, data]);
@@ -375,7 +394,7 @@ export default function ProjectWizardPage() {
 
             {/* Category cards */}
             <FieldGroup label="Category">
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                 {CATEGORIES.map(c => (
                   <SelectCard key={c.id} selected={data.category === c.id} onClick={() => upd({ category: c.id })} color={g.color} compact>
                     <span className="text-[22px]">{c.icon}</span>
@@ -496,8 +515,10 @@ export default function ProjectWizardPage() {
                 <HitlToggle label="Phase gate approvals" desc="Require human sign-off at every phase gate" checked={data.hitlePhaseGates} onChange={v => upd({ hitlePhaseGates: v })} color={g.color} />
                 <HitlToggle label="Communications approval" desc="Review external stakeholder messages before sending" checked={data.hitleCommsApproval} onChange={v => upd({ hitleCommsApproval: v })} color={g.color} />
                 <FieldGroup label="Budget threshold (£)">
-                  <StyledInput value={data.hitleBudgetThreshold} onChange={v => upd({ hitleBudgetThreshold: v })} placeholder="10000" />
-                  <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>Approve spend above this amount</p>
+                  <StyledInput value={data.hitleBudgetThreshold || autoThreshold} onChange={v => upd({ hitleBudgetThreshold: v })} placeholder={autoThreshold || "e.g. 500"} />
+                  <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+                    {autoThreshold ? `Auto-set to 10% of budget (£${Number(autoThreshold).toLocaleString()})` : "Approve spend above this amount"}
+                  </p>
                 </FieldGroup>
                 <FieldGroup label="Risk escalation threshold">
                   <select className="w-full px-3 py-2 rounded-[10px] text-[13px]" value={data.hitleRiskThreshold}
@@ -520,13 +541,24 @@ export default function ProjectWizardPage() {
         {/* ─── STEP 4: TEAM & STAKEHOLDERS ─── */}
         {step === 3 && (
           <div className="space-y-5">
-            <StepHeader title="Team & Stakeholders" subtitle="Add team members and key stakeholders" />
+            <StepHeader title="Team & Stakeholders" subtitle="Add team members and key stakeholders — optional for personal or solo projects" />
+
+            {/* Personal project hint */}
+            {(data.category === "personal" || data.category === "travel") && (
+              <div className="p-3 rounded-[10px] flex items-center gap-3" style={{ background: `${g.color}08`, border: `1px solid ${g.color}22` }}>
+                <span className="text-[18px]">{data.category === "travel" ? "✈️" : "🧑"}</span>
+                <div className="flex-1">
+                  <p className="text-[12px] font-semibold" style={{ color: g.color }}>Solo / personal project detected</p>
+                  <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Team and stakeholder fields are optional. Add yourself or travel companions if you'd like the agent to track responsibilities.</p>
+                </div>
+              </div>
+            )}
 
             {/* Team */}
             <Card className="px-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Team Members</h3>
-                <Button variant="ghost" size="sm" onClick={() => upd({ team: [...data.team, { name: "", email: "", role: "Dev" }] })}>+ Add Member</Button>
+                <Button variant="ghost" size="sm" onClick={() => upd({ team: [...data.team, { name: "", email: "", role: (data.category === "travel" || data.category === "personal") ? "Participant" : "PM" }] })}>+ Add Member</Button>
               </div>
               <div className="space-y-2">
                 {data.team.map((m, i) => (
@@ -661,7 +693,8 @@ export default function ProjectWizardPage() {
 
                   {/* Default Greeting */}
                   <FieldGroup label="Default Greeting (optional)">
-                    <StyledInput value={data.defaultGreeting || ""} onChange={v => upd({ defaultGreeting: v })} placeholder="e.g. Good morning! I'm ready to manage your project." />
+                    <StyledInput value={data.defaultGreeting || ""} onChange={v => upd({ defaultGreeting: v })} placeholder={greetingPlaceholder} />
+                    <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>Auto-generated from project type. Override if needed.</p>
                   </FieldGroup>
 
                   {/* Monthly Credit Budget */}

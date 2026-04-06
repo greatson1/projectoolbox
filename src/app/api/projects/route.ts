@@ -24,39 +24,56 @@ export async function GET() {
 
 // POST /api/projects — Create project
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const orgId = (session.user as any).orgId;
-  if (!orgId) return NextResponse.json({ error: "No organisation" }, { status: 400 });
+    const orgId = (session.user as any).orgId;
+    if (!orgId) return NextResponse.json({ error: "No organisation" }, { status: 400 });
 
-  const body = await req.json();
-  const { name, description, methodology, startDate, endDate, budget, priority, category } = body;
+    const body = await req.json();
+    const { name, description, startDate, endDate, budget, priority, category } = body;
 
-  if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-  // Auto-detect project tier
-  const { detectProjectTier } = await import("@/lib/agents/project-tier");
-  const tier = body.tier || detectProjectTier({
-    budget: budget ? parseFloat(budget) : null,
-    startDate: startDate || null,
-    endDate: endDate || null,
-  });
+    // Map lowercase methodology keys to Prisma enum values
+    const METHODOLOGY_MAP: Record<string, string> = {
+      prince2: "PRINCE2", waterfall: "WATERFALL", scrum: "AGILE_SCRUM",
+      kanban: "AGILE_KANBAN", safe: "SAFE", hybrid: "HYBRID",
+      PRINCE2: "PRINCE2", WATERFALL: "WATERFALL", AGILE_SCRUM: "AGILE_SCRUM",
+      AGILE_KANBAN: "AGILE_KANBAN", SAFE: "SAFE", HYBRID: "HYBRID",
+    };
+    const methodology = (METHODOLOGY_MAP[body.methodology] || "WATERFALL") as any;
 
-  const project = await db.project.create({
-    data: {
-      name,
-      description,
-      methodology: methodology || "WATERFALL",
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-      budget: budget ? parseFloat(budget) : undefined,
-      tier,
-      priority,
-      category,
-      orgId,
-    },
-  });
+    // Auto-detect project tier
+    let tier = body.tier || null;
+    try {
+      const { detectProjectTier } = await import("@/lib/agents/project-tier");
+      tier = tier || detectProjectTier({
+        budget: budget ? parseFloat(budget) : null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+      });
+    } catch {}
 
-  return NextResponse.json({ data: project }, { status: 201 });
+    const project = await db.project.create({
+      data: {
+        name,
+        description,
+        methodology: methodology || "WATERFALL",
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        budget: budget ? parseFloat(budget) : undefined,
+        tier,
+        priority,
+        category,
+        orgId,
+      },
+    });
+
+    return NextResponse.json({ data: project }, { status: 201 });
+  } catch (e: any) {
+    console.error("[POST /api/projects]", e);
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 }

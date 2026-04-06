@@ -205,9 +205,16 @@ function ArtefactSection({ projectId }: { projectId: string }) {
           {artefacts.map((a: any) => (
             <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/30 transition-colors">
               <span className="text-lg">{formatIcons[a.format] || "📄"}</span>
+              {a.agent && (
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0"
+                  style={{ background: a.agent.gradient?.match(/#[0-9A-Fa-f]{6}/)?.[0] || "#6366F1" }}
+                  title={a.agent.name}>{a.agent.name[0]}</div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{a.name}</p>
                 <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                  {a.agent && <span className="font-medium">{a.agent.name}</span>}
+                  {a.agent && <span>·</span>}
                   <span>v{a.version}</span>
                   <span>·</span>
                   <span>{new Date(a.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>

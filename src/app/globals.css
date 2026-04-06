@@ -199,6 +199,69 @@
   border-radius: var(--radius-sm);
 }
 
+/* ─── Accent Colour Themes ─── */
+
+/* Midnight Blue */
+.theme-midnight {
+  --primary: #2563EB;
+  --ring: #2563EB;
+  --accent: #EFF6FF;
+  --accent-foreground: #2563EB;
+  --sidebar-primary: #2563EB;
+  --sidebar-accent: #EFF6FF;
+  --sidebar-accent-foreground: #2563EB;
+  --sidebar-ring: #2563EB;
+  --chart-1: #2563EB;
+}
+.dark.theme-midnight {
+  --primary: #3B82F6;
+  --ring: #3B82F6;
+  --accent: rgba(59,130,246,0.12);
+  --accent-foreground: #93C5FD;
+  --sidebar-primary: #3B82F6;
+  --sidebar-accent: rgba(59,130,246,0.12);
+  --sidebar-accent-foreground: #93C5FD;
+  --sidebar-ring: #3B82F6;
+  --chart-1: #3B82F6;
+}
+
+/* Emerald Green */
+.theme-emerald {
+  --primary: #059669;
+  --ring: #059669;
+  --accent: #ECFDF5;
+  --accent-foreground: #059669;
+  --sidebar-primary: #059669;
+  --sidebar-accent: #ECFDF5;
+  --sidebar-accent-foreground: #059669;
+  --sidebar-ring: #059669;
+  --chart-1: #059669;
+}
+.dark.theme-emerald {
+  --primary: #10B981;
+  --ring: #10B981;
+  --accent: rgba(16,185,129,0.12);
+  --accent-foreground: #6EE7B7;
+  --sidebar-primary: #10B981;
+  --sidebar-accent: rgba(16,185,129,0.12);
+  --sidebar-accent-foreground: #6EE7B7;
+  --sidebar-ring: #10B981;
+  --chart-1: #10B981;
+}
+
+/* Warm Dark mode variant (applied to backgrounds only, works with any accent) */
+.theme-warm {
+  --background: #1C1917;
+  --card: #292524;
+  --popover: #292524;
+  --secondary: #292524;
+  --muted: #292524;
+  --border: #3C3836;
+  --input: #3C3836;
+  --sidebar: #1C1917;
+  --sidebar-border: #3C3836;
+}
+
 /* ─── NProgress Overrides ─── */
 #nprogress .bar {
   background: var(--primary) !important;

@@ -184,6 +184,15 @@ export function useProjectIssues(projectId: string | null) {
   });
 }
 
+export function useProjectArtefacts(projectId: string | null) {
+  return useQuery({
+    queryKey: ["artefacts", projectId],
+    queryFn: () => api<any[]>(`/api/projects/${projectId}/artefacts`),
+    enabled: !!projectId,
+    refetchInterval: 30000,
+  });
+}
+
 export function useProjectMetrics(projectId: string | null) {
   return useQuery({
     queryKey: ["project-metrics", projectId],

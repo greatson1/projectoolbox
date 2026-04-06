@@ -12,6 +12,7 @@ import {
   Search, Plus, FileText, Globe, Mail, MessageSquare, Brain,
   Upload, Link, Trash2, Shield, X, Loader2, Microscope,
 } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 
 const TYPE_ICONS: Record<string, { icon: any; label: string; color: string }> = {
   TEXT: { icon: FileText, label: "Text", color: "#6366F1" },
@@ -68,24 +69,25 @@ export default function KnowledgeBasePage() {
 
   return (
     <div className="max-w-[1100px] space-y-6 animate-page-enter">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Knowledge Base</h1>
-          <p className="text-sm text-muted-foreground mt-1">Agent memory — documents, research, emails, transcripts</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm outline-none">
-            {agents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <Button variant="outline" size="sm" onClick={() => setShowResearch(true)}>
-            <Microscope className="h-3.5 w-3.5 mr-1" /> Research
-          </Button>
-          <Button size="sm" onClick={() => setShowAdd(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add Knowledge
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Knowledge Base"
+        subtitle="Agent memory — documents, research, emails, transcripts"
+        icon={<Brain className="w-5 h-5" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm outline-none">
+              {agents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <Button variant="outline" size="sm" onClick={() => setShowResearch(true)}>
+              <Microscope className="h-3.5 w-3.5 mr-1" /> Research
+            </Button>
+            <Button size="sm" onClick={() => setShowAdd(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add Knowledge
+            </Button>
+          </div>
+        }
+      />
 
       {/* Search + Type filters */}
       <div className="flex gap-3">
