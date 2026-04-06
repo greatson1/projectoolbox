@@ -9,7 +9,7 @@ interface PageHeaderProps {
   icon?: ReactNode;
 }
 
-export default function PageHeader({ title, subtitle, actions, className, icon }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, actions, className, icon }: PageHeaderProps) {
   return (
     <div
       className={cn(
@@ -47,3 +47,5 @@ export default function PageHeader({ title, subtitle, actions, className, icon }
     </div>
   );
 }
+
+export default PageHeader;
