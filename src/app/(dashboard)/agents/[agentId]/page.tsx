@@ -2,10 +2,10 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useAgent } from "@/hooks/use-api";
+import { useAgent, useAgentArtefacts, useUpdateArtefact } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Pause, RefreshCw, MessageSquare, Settings, TrendingUp,
+  Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2,
 } from "lucide-react";
 import {
@@ -31,7 +31,7 @@ const AGENT = {
   id: "mock-alpha", codename: "ALPHA-03",
   name: "Alpha", initials: "A",
   gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1",
-  project: "Project Atlas", methodology: "PRINCE2" as const,
+  project: "Project Atlas", methodology: "Traditional" as const,
   status: "active" as const, autonomyLevel: 3, autonomyLabel: "Co-pilot",
   performanceScore: 92, deployedDate: "2026-01-15", uptimeDays: 78,
   currentTask: "Generating Risk Register v3 for Execution phase gate review — analysing 12 identified risks against tolerance thresholds and drafting mitigation strategies.",
@@ -430,6 +430,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           <TabsTrigger value="overview" className="text-[13px] font-semibold">
             <Activity className="mr-1 size-3.5" /> Overview
           </TabsTrigger>
+          <TabsTrigger value="artefacts" className="text-[13px] font-semibold">
+            <FileText className="mr-1 size-3.5" /> Artefacts
+          </TabsTrigger>
           <TabsTrigger value="activity" className="text-[13px] font-semibold">
             <TrendingUp className="mr-1 size-3.5" /> Activity
           </TabsTrigger>
@@ -446,6 +449,148 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             <Sliders className="mr-1 size-3.5" /> Configuration
           </TabsTrigger>
         </TabsList>
+
+        {/* ─── ARTEFACTS ─── */}
+        <TabsContent value="artefacts" className="space-y-4">
+          {(() => {
+            const { data: artefacts = [], isLoading: artefactsLoading } = useAgentArtefacts(agentId);
+            const updateArtefact = useUpdateArtefact();
+            const [reviewingId, setReviewingId] = React.useState<string | null>(null);
+            const reviewing = artefacts.find((a: any) => a.id === reviewingId);
+
+            const statusColor: Record<string, string> = {
+              DRAFT: "border-amber-500/30 bg-amber-500/10 text-amber-600",
+              PENDING_REVIEW: "border-blue-500/30 bg-blue-500/10 text-blue-600",
+              APPROVED: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
+              REJECTED: "border-red-500/30 bg-red-500/10 text-red-600",
+            };
+
+            if (artefactsLoading) return <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>;
+
+            if (artefacts.length === 0) return (
+              <Card className="p-8">
+                <div className="text-center">
+                  <FileText className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <h3 className="text-sm font-semibold mb-1">No artefacts generated yet</h3>
+                  <p className="text-xs text-muted-foreground">Your agent will generate artefacts (documents, plans, reports) as it progresses through project phases.</p>
+                </div>
+              </Card>
+            );
+
+            // Group by phase
+            const phases: Record<string, any[]> = {};
+            artefacts.forEach((a: any) => {
+              const phase = a.phaseId || "General";
+              if (!phases[phase]) phases[phase] = [];
+              phases[phase].push(a);
+            });
+
+            return (
+              <>
+                {/* Summary bar */}
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span><strong className="text-foreground">{artefacts.length}</strong> artefact(s)</span>
+                  <span><strong className="text-amber-500">{artefacts.filter((a: any) => a.status === "DRAFT").length}</strong> draft</span>
+                  <span><strong className="text-emerald-500">{artefacts.filter((a: any) => a.status === "APPROVED").length}</strong> approved</span>
+                  <span><strong className="text-red-500">{artefacts.filter((a: any) => a.status === "REJECTED").length}</strong> rejected</span>
+                </div>
+
+                {/* Artefact cards grouped by phase */}
+                {Object.entries(phases).map(([phase, items]) => (
+                  <div key={phase}>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{phase} Phase</h3>
+                    <div className="space-y-2">
+                      {items.map((artefact: any) => (
+                        <Card key={artefact.id} className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-3 flex-1">
+                              <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm font-semibold">{artefact.name}</span>
+                                  <Badge variant="secondary" className={statusColor[artefact.status] || ""}>{artefact.status}</Badge>
+                                  <span className="text-[10px] text-muted-foreground">{artefact.format}</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Generated {new Date(artefact.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                                {artefact.feedback && (
+                                  <p className="text-xs text-amber-500 mt-1">Feedback: {artefact.feedback}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <Button variant="outline" size="sm" onClick={() => setReviewingId(artefact.id)}>
+                                Review
+                              </Button>
+                              {artefact.status !== "APPROVED" && (
+                                <Button variant="default" size="sm" onClick={() => {
+                                  updateArtefact.mutate({ artefactId: artefact.id, status: "APPROVED" });
+                                  toast.success(`${artefact.name} approved`);
+                                }}>
+                                  Approve
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Review modal */}
+                {reviewing && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setReviewingId(null)}>
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                    <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
+                      onClick={e => e.stopPropagation()}>
+                      {/* Header */}
+                      <div className="flex items-center justify-between p-5 border-b border-border">
+                        <div>
+                          <h2 className="text-lg font-bold">{reviewing.name}</h2>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="secondary" className={statusColor[reviewing.status] || ""}>{reviewing.status}</Badge>
+                            <span className="text-xs text-muted-foreground">{reviewing.phaseId} phase</span>
+                          </div>
+                        </div>
+                        <button onClick={() => setReviewingId(null)} className="text-muted-foreground hover:text-foreground text-xl">&times;</button>
+                      </div>
+                      {/* Content */}
+                      <div className="flex-1 overflow-y-auto p-5">
+                        <div className="prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: (reviewing.content || "").replace(/\n/g, "<br>").replace(/^# (.+)/gm, "<h1>$1</h1>").replace(/^## (.+)/gm, "<h2>$1</h2>").replace(/^### (.+)/gm, "<h3>$1</h3>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/^- (.+)/gm, "<li>$1</li>") }} />
+                      </div>
+                      {/* Actions */}
+                      <div className="flex items-center justify-between p-5 border-t border-border">
+                        <div className="flex gap-2">
+                          <Button variant="default" onClick={() => {
+                            updateArtefact.mutate({ artefactId: reviewing.id, status: "APPROVED" });
+                            toast.success(`${reviewing.name} approved`);
+                            setReviewingId(null);
+                          }}>Approve</Button>
+                          <Button variant="outline" onClick={() => {
+                            const fb = prompt("What changes are needed?");
+                            if (!fb) return;
+                            updateArtefact.mutate({ artefactId: reviewing.id, status: "REJECTED", feedback: fb });
+                            toast.success("Changes requested");
+                            setReviewingId(null);
+                          }}>Request Changes</Button>
+                          <Button variant="ghost" className="text-destructive" onClick={() => {
+                            updateArtefact.mutate({ artefactId: reviewing.id, status: "REJECTED" });
+                            toast.success(`${reviewing.name} rejected`);
+                            setReviewingId(null);
+                          }}>Reject</Button>
+                        </div>
+                        <Button variant="ghost" onClick={() => setReviewingId(null)}>Close</Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </TabsContent>
 
         {/* ─── OVERVIEW ─── */}
         <TabsContent value="overview" className="space-y-4">

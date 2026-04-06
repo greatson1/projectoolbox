@@ -534,9 +534,9 @@ export default function CreditCentrePage() {
                   <XAxis dataKey="hour" tick={{ fontSize: 7 }} className="text-muted-foreground" interval={3} />
                   <YAxis tick={{ fontSize: 8 }} className="text-muted-foreground" />
                   <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  <Bar dataKey="credits" radius={[2, 2, 0, 0]}>
-                    ([] as any[]).map((h, i) => (
-                      <Cell key={i} fill={h.credits > 10 ? "var(--primary)" : "var(--primary)"} fillOpacity={h.credits > 10 ? 1 : 0.4} />
+                  <Bar dataKey="usage" radius={[2, 2, 0, 0]}>
+                    {realDailyUsage.map((h, i) => (
+                      <Cell key={i} fill="var(--primary)" fillOpacity={h.usage > 10 ? 1 : 0.4} />
                     ))}
                   </Bar>
                 </BarChart>

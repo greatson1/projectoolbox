@@ -29,7 +29,7 @@ import {
 // ═══════════════════════════════════════════════════════════════════
 
 type AgentStatus = "active" | "paused" | "idle" | "error";
-type Methodology = "PRINCE2" | "Scrum" | "Waterfall" | "Kanban" | "Hybrid";
+type Methodology = "Traditional" | "Scrum" | "Waterfall" | "Kanban" | "Hybrid";
 type RAG = "green" | "amber" | "red";
 
 interface Agent {
@@ -88,7 +88,7 @@ const AGENTS: Agent[] = [
   {
     id: "alpha", name: "Alpha", initials: "A",
     gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1",
-    project: "Project Atlas", methodology: "PRINCE2", status: "active",
+    project: "Project Atlas", methodology: "Traditional", status: "active",
     currentTask: "Generating Risk Register v3 for Execution phase gate review",
     autonomyLevel: 4, autonomyLabel: "Autonomous",
     performanceScore: 92, creditsToday: 234,
@@ -200,7 +200,7 @@ const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string; pulseCo
 };
 
 const METHODOLOGY_CN: Record<Methodology, string> = {
-  "PRINCE2": "border-blue-500/30 bg-blue-500/10 text-blue-600",
+  "Traditional": "border-blue-500/30 bg-blue-500/10 text-blue-600",
   "Scrum": "border-purple-500/30 bg-purple-500/10 text-purple-600",
   "Waterfall": "border-slate-500/30 bg-slate-500/10 text-slate-600",
   "Kanban": "border-amber-500/30 bg-amber-500/10 text-amber-600",

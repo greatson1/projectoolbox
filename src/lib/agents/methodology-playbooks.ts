@@ -14,6 +14,7 @@
 
 import { db } from "@/lib/db";
 import type { ActionProposal } from "./decision-classifier";
+import { getMethodology, getPhaseArtefacts } from "@/lib/methodology-definitions";
 
 // ─── Playbook Definitions ───
 
@@ -40,19 +41,30 @@ const PRINCE2_PLAYBOOK: PhasePlaybook[] = [
       { type: "TASK_ASSIGNMENT", description: "Create initial project team assignments and RACI matrix", trigger: "on_entry", riskLevel: "LOW" },
     ],
     gateCriteria: ["PID approved", "Business case validated", "Project Board identified"],
-    artefacts: ["Project Initiation Document", "Business Case", "Project Brief"],
+    artefacts: ["Problem Statement", "Options Analysis", "Outline Business Case", "Project Brief"],
   },
   {
     name: "Initiation",
     actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate Project Charter with governance structure and stakeholder map", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Produce detailed Business Case with cost-benefit analysis", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "RISK_RESPONSE", description: "Build comprehensive risk register with P/I scoring", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "COMMUNICATION", description: "Create stakeholder register and communication plan", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Charter signed", "Business Case approved", "Team resourced", "Risk register populated"],
+    artefacts: ["Project Charter", "Business Case", "Stakeholder Register", "Initial Risk Register", "Communication Plan"],
+  },
+  {
+    name: "Planning",
+    actions: [
       { type: "DOCUMENT_GENERATION", description: "Generate Work Breakdown Structure (WBS) from project scope", trigger: "on_entry", riskLevel: "LOW" },
       { type: "DOCUMENT_GENERATION", description: "Create schedule baseline with dependencies and critical path", trigger: "on_entry", riskLevel: "LOW" },
       { type: "DOCUMENT_GENERATION", description: "Produce resource plan and budget breakdown", trigger: "on_entry", riskLevel: "LOW" },
-      { type: "RISK_RESPONSE", description: "Build comprehensive risk register with P/I scoring", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Generate quality plan and risk management plan", trigger: "on_entry", riskLevel: "LOW" },
       { type: "TASK_ASSIGNMENT", description: "Create and assign all planning tasks from WBS", trigger: "on_entry", riskLevel: "LOW" },
     ],
-    gateCriteria: ["WBS complete", "Schedule baselined", "Budget approved", "Risk register populated", "Quality plan defined"],
-    artefacts: ["WBS", "Schedule Baseline", "Resource Plan", "Budget Breakdown", "Risk Register", "Quality Plan"],
+    gateCriteria: ["WBS complete", "Schedule baselined", "Budget approved", "Risk management plan defined", "Quality plan accepted"],
+    artefacts: ["WBS", "Schedule Baseline", "Budget Breakdown", "Risk Management Plan", "Quality Plan", "Resource Plan"],
   },
   {
     name: "Execution",
@@ -64,7 +76,7 @@ const PRINCE2_PLAYBOOK: PhasePlaybook[] = [
       { type: "ESCALATION", description: "Escalate exceptions: tasks >24h overdue, budget >80% consumed, critical path affected", trigger: "daily", riskLevel: "MEDIUM" },
     ],
     gateCriteria: ["All deliverables complete", "Quality reviews passed", "Acceptance criteria met", "Lessons log updated"],
-    artefacts: ["Weekly Highlight Reports", "Exception Reports", "Quality Review Records"],
+    artefacts: ["Status Reports", "Risk Reviews", "Exception Reports", "Quality Review Records"],
   },
   {
     name: "Closing",
@@ -75,7 +87,93 @@ const PRINCE2_PLAYBOOK: PhasePlaybook[] = [
       { type: "TASK_ASSIGNMENT", description: "Archive all project artefacts and close open items", trigger: "on_completion", riskLevel: "LOW" },
     ],
     gateCriteria: ["End Project Report approved", "Lessons Learned documented", "All artefacts archived"],
-    artefacts: ["End Project Report", "Lessons Learned", "Project Archive"],
+    artefacts: ["Acceptance Certificate", "End Project Report", "Lessons Learned", "Closure Report"],
+  },
+];
+
+const WATERFALL_PLAYBOOK: PhasePlaybook[] = [
+  {
+    name: "Requirements",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Gather and document all functional and non-functional requirements", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Produce feasibility study and requirements traceability matrix", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "COMMUNICATION", description: "Conduct stakeholder requirement review sessions", trigger: "weekly", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Requirements complete and reviewed", "Stakeholder sign-off obtained"],
+    artefacts: ["Requirements Specification", "Feasibility Study"],
+  },
+  {
+    name: "Design",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Produce system and detailed design documents", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Create architecture specification", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "RISK_RESPONSE", description: "Assess technical risks and design trade-offs", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Design document reviewed", "Architecture approved"],
+    artefacts: ["Design Document", "Architecture Specification"],
+  },
+  {
+    name: "Build",
+    actions: [
+      { type: "TASK_ASSIGNMENT", description: "Track daily build progress and code completion", trigger: "daily", riskLevel: "LOW" },
+      { type: "ESCALATION", description: "Flag blocked tasks and dependency issues", trigger: "daily", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Generate weekly build status report", trigger: "weekly", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["All components built", "Unit tests passing"],
+    artefacts: ["Code", "Unit Tests"],
+  },
+  {
+    name: "Test",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate test plan from requirements", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "TASK_ASSIGNMENT", description: "Track test execution progress and defect resolution", trigger: "daily", riskLevel: "LOW" },
+      { type: "ESCALATION", description: "Escalate critical defects blocking release", trigger: "daily", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["All critical defects resolved", "UAT sign-off"],
+    artefacts: ["Test Plan", "Test Results"],
+  },
+  {
+    name: "Deploy",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate release plan and deployment checklist", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Produce handover documentation for operations", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "COMMUNICATION", description: "Notify stakeholders of go-live", trigger: "on_completion", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["Go-live approved by sponsor", "Operations handover accepted"],
+    artefacts: ["Release Plan", "Handover Documentation"],
+  },
+];
+
+const SAFE_PLAYBOOK: PhasePlaybook[] = [
+  {
+    name: "PI Planning",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Facilitate PI objectives creation from programme backlog", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Build programme board with team dependencies and milestones", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "RISK_RESPONSE", description: "Identify programme-level risks and cross-team dependencies", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["PI objectives agreed", "Team capacity confirmed"],
+    artefacts: ["PI Objectives", "Programme Board"],
+  },
+  {
+    name: "Iteration Cadence",
+    actions: [
+      { type: "TASK_ASSIGNMENT", description: "Track iteration goals and team velocity", trigger: "daily", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Generate system demo readiness report", trigger: "on_gate_ready", riskLevel: "LOW" },
+      { type: "ESCALATION", description: "Flag cross-team blockers and dependency issues", trigger: "daily", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["Iteration goals met", "System demo delivered"],
+    artefacts: ["Iteration Plans", "System Demos"],
+  },
+  {
+    name: "Inspect & Adapt",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate PI metrics report: velocity, predictability, quality", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Compile improvement backlog from retrospective data", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "COMMUNICATION", description: "Distribute PI summary to programme stakeholders", trigger: "on_completion", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["PI metrics reviewed", "Improvements prioritised"],
+    artefacts: ["PI Report", "Improvement Backlog"],
   },
 ];
 
@@ -199,11 +297,19 @@ const HYBRID_PLAYBOOK: PhasePlaybook[] = [
 // ─── Playbook Registry ───
 
 const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
-  WATERFALL: PRINCE2_PLAYBOOK,
+  // Canonical keys (lowercase — match MethodologyId)
+  prince2: PRINCE2_PLAYBOOK,
+  waterfall: WATERFALL_PLAYBOOK,
+  scrum: SCRUM_PLAYBOOK,
+  kanban: KANBAN_PLAYBOOK,
+  safe: SAFE_PLAYBOOK,
+  hybrid: HYBRID_PLAYBOOK,
+  // Legacy uppercase aliases (for VPS agent compatibility)
+  WATERFALL: WATERFALL_PLAYBOOK,
   PRINCE2: PRINCE2_PLAYBOOK,
   AGILE_SCRUM: SCRUM_PLAYBOOK,
   AGILE_KANBAN: KANBAN_PLAYBOOK,
-  SAFE: SCRUM_PLAYBOOK, // SAFe uses Scrum at team level
+  SAFE: SAFE_PLAYBOOK,
   HYBRID: HYBRID_PLAYBOOK,
 };
 
@@ -211,7 +317,8 @@ const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
  * Get the playbook for a given methodology.
  */
 export function getPlaybook(methodology: string): PhasePlaybook[] {
-  return PLAYBOOKS[methodology] || PRINCE2_PLAYBOOK; // Default to PRINCE2
+  // Try exact match first, then lowercase, then uppercase
+  return PLAYBOOKS[methodology] || PLAYBOOKS[methodology.toLowerCase()] || PLAYBOOKS[methodology.toUpperCase()] || PRINCE2_PLAYBOOK;
 }
 
 /**

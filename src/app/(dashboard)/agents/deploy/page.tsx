@@ -18,6 +18,7 @@ import { Progress } from "@/components/ui/progress";
 
 
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { METHODOLOGIES as METHODOLOGY_DEFS, type MethodologyId } from "@/lib/methodology-definitions";
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES & CONSTANTS
@@ -90,49 +91,24 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
 const METHODOLOGIES = [
   { id: "scrum", name: "Scrum", icon: "🔄", desc: "Iterative sprints with ceremonies and retrospectives", bestFor: "Software teams needing fast feedback loops", rec: false },
   { id: "kanban", name: "Kanban", icon: "📋", desc: "Continuous flow with WIP limits and visual boards", bestFor: "Support teams, ongoing work with variable priority", rec: false },
-  { id: "prince2", name: "PRINCE2", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
+  { id: "prince2", name: "Traditional (PMI-Style)", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
   { id: "safe", name: "SAFe", icon: "🏢", desc: "Scaled agile for enterprise-level programme coordination", bestFor: "Multiple teams, cross-functional dependencies, portfolios", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },
 ];
 
-const PHASE_TEMPLATES: Record<string, PhaseGate[]> = {
-  prince2: [
-    { name: "Pre-Project", artefacts: [{ name: "Problem Statement", required: true }, { name: "Options Analysis", required: true }, { name: "Outline Business Case", required: true }], approvalRequired: true, criteria: "Business case approved by sponsor" },
-    { name: "Initiation", artefacts: [{ name: "Project Charter", required: true }, { name: "Business Case", required: true }, { name: "Stakeholder Register", required: true }, { name: "Initial Risk Register", required: false }], approvalRequired: true, criteria: "Charter signed, team resourced" },
-    { name: "Planning", artefacts: [{ name: "WBS", required: true }, { name: "Schedule Baseline", required: true }, { name: "Risk Management Plan", required: true }, { name: "Quality Plan", required: false }, { name: "Comms Plan", required: false }], approvalRequired: true, criteria: "All baselines approved" },
-    { name: "Execution", artefacts: [{ name: "Status Reports", required: true }, { name: "Risk Reviews", required: true }, { name: "Change Requests", required: false }], approvalRequired: false, criteria: "Deliverables meeting quality criteria" },
-    { name: "Closing", artefacts: [{ name: "Acceptance Certificate", required: true }, { name: "Lessons Learned", required: true }, { name: "Closure Report", required: true }], approvalRequired: true, criteria: "All deliverables accepted, lessons captured" },
-  ],
-  scrum: [
-    { name: "Sprint Zero", artefacts: [{ name: "Product Vision", required: true }, { name: "Initial Backlog", required: true }, { name: "Team Charter", required: false }], approvalRequired: true, criteria: "Vision agreed, backlog prioritised" },
-    { name: "Sprint Cadence", artefacts: [{ name: "Sprint Plans", required: true }, { name: "Sprint Reviews", required: true }, { name: "Retrospectives", required: true }], approvalRequired: false, criteria: "Definition of Done met" },
-    { name: "Release", artefacts: [{ name: "Release Plan", required: true }, { name: "Final Retrospective", required: true }], approvalRequired: true, criteria: "Acceptance criteria met" },
-  ],
-  kanban: [
-    { name: "Setup", artefacts: [{ name: "Board Configuration", required: true }, { name: "WIP Policies", required: true }], approvalRequired: true, criteria: "Board live, policies agreed" },
-    { name: "Continuous Delivery", artefacts: [{ name: "Flow Metrics", required: true }, { name: "Service Level Reports", required: false }], approvalRequired: false, criteria: "Lead time within SLA" },
-    { name: "Review", artefacts: [{ name: "Retrospective", required: true }], approvalRequired: false, criteria: "Improvements identified" },
-  ],
-  waterfall: [
-    { name: "Requirements", artefacts: [{ name: "Requirements Spec", required: true }, { name: "Feasibility Study", required: false }], approvalRequired: true, criteria: "Requirements signed off" },
-    { name: "Design", artefacts: [{ name: "Design Document", required: true }, { name: "Architecture Spec", required: true }], approvalRequired: true, criteria: "Design approved" },
-    { name: "Build", artefacts: [{ name: "Code", required: true }, { name: "Unit Tests", required: true }], approvalRequired: false, criteria: "Build complete, unit tests passing" },
-    { name: "Test", artefacts: [{ name: "Test Plan", required: true }, { name: "Test Results", required: true }], approvalRequired: true, criteria: "All critical defects resolved" },
-    { name: "Deploy", artefacts: [{ name: "Release Plan", required: true }, { name: "Handover Docs", required: true }], approvalRequired: true, criteria: "Go-live approved" },
-  ],
-  safe: [
-    { name: "PI Planning", artefacts: [{ name: "PI Objectives", required: true }, { name: "Program Board", required: true }], approvalRequired: true, criteria: "PI objectives committed" },
-    { name: "Iteration Cadence", artefacts: [{ name: "Iteration Plans", required: true }, { name: "System Demos", required: true }], approvalRequired: false, criteria: "System increment delivered" },
-    { name: "Inspect & Adapt", artefacts: [{ name: "PI Report", required: true }, { name: "Improvement Backlog", required: true }], approvalRequired: true, criteria: "Improvements prioritised" },
-  ],
-  hybrid: [
-    { name: "Foundation", artefacts: [{ name: "Charter", required: true }, { name: "Delivery Approach", required: true }, { name: "Roadmap", required: true }], approvalRequired: true, criteria: "Approach approved, team formed" },
-    { name: "Planning", artefacts: [{ name: "WBS", required: true }, { name: "Backlog", required: true }, { name: "Risk Plan", required: true }], approvalRequired: true, criteria: "Plan and backlog baselined" },
-    { name: "Iterative Delivery", artefacts: [{ name: "Sprint Plans", required: true }, { name: "Status Reports", required: true }], approvalRequired: false, criteria: "Increments meeting acceptance" },
-    { name: "Closure", artefacts: [{ name: "Acceptance", required: true }, { name: "Lessons Learned", required: true }], approvalRequired: true, criteria: "All deliverables accepted" },
-  ],
-};
+// Derive PHASE_TEMPLATES from the single source of truth
+const PHASE_TEMPLATES: Record<string, PhaseGate[]> = Object.fromEntries(
+  Object.entries(METHODOLOGY_DEFS).map(([key, def]) => [
+    key,
+    def.phases.map(p => ({
+      name: p.name,
+      artefacts: p.artefacts.map(a => ({ name: a.name, required: a.required })),
+      approvalRequired: p.gate.preRequisites.some(pr => pr.requiresHumanApproval),
+      criteria: p.gate.criteria,
+    })),
+  ])
+);
 
 const GRADIENT_PRESETS = [
   { gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1" },

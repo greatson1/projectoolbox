@@ -8,9 +8,9 @@ import {
   LayoutDashboard, Bot, CheckSquare, FolderKanban, Calendar,
   Columns3, Timer, Target, DollarSign, Users, UserCog, ShieldAlert,
   AlertTriangle, GitPullRequest, TestTube2, ShieldCheck, TrendingUp,
-  Briefcase, FileText, Bell, CreditCard, Settings, Wrench,
+  Briefcase, FileText, Bell, CreditCard, Settings,
   GitBranch, Dice5, Calculator, Table2, ChevronLeft, ChevronRight,
-  Brain, Video,
+  Brain, Video, Package, ClipboardList, FileBarChart, Award,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -57,11 +57,12 @@ const NAV: NavGroup[] = [
     title: "DELIVERY",
     projectScoped: true,
     items: [
+      { label: "Scope & WBS", href: "/scope", icon: Target, projectScoped: true },
       { label: "Schedule", href: "/schedule", icon: Calendar, projectScoped: true },
       { label: "Agile Board", href: "/agile", icon: Columns3, projectScoped: true },
       { label: "Sprint Tracker", href: "/sprint", icon: Timer, projectScoped: true },
-      { label: "Scope", href: "/scope", icon: Target, projectScoped: true },
       { label: "Cost", href: "/cost", icon: DollarSign, projectScoped: true },
+      { label: "Actions", href: "/actions", icon: ClipboardList, projectScoped: true },
     ],
   },
   {
@@ -81,6 +82,8 @@ const NAV: NavGroup[] = [
       { label: "Change Control", href: "/change-control", icon: GitPullRequest, projectScoped: true },
       { label: "QA & Testing", href: "/qa-testing", icon: TestTube2, projectScoped: true },
       { label: "Compliance", href: "/compliance", icon: ShieldCheck, projectScoped: true },
+      { label: "Procurement", href: "/procurement", icon: Package, projectScoped: true },
+      { label: "Artefacts", href: "/artefacts", icon: FileText, projectScoped: true },
     ],
   },
   {
@@ -88,7 +91,9 @@ const NAV: NavGroup[] = [
     projectScoped: true,
     items: [
       { label: "EVM Dashboard", href: "/evm", icon: TrendingUp, projectScoped: true },
-      { label: "Reports", href: "/reports", icon: FileText, projectScoped: true },
+      { label: "Scorecard", href: "/scorecard", icon: Award, projectScoped: true },
+      { label: "Reports", href: "/reports", icon: FileBarChart, projectScoped: true },
+      { label: "Benefits", href: "/benefits", icon: TrendingUp, projectScoped: true },
     ],
   },
   {
@@ -102,7 +107,6 @@ const NAV: NavGroup[] = [
   {
     items: [
       { label: "Portfolio", href: "/portfolio", icon: Briefcase },
-      { label: "Notifications", href: "/notifications", icon: Bell },
     ],
   },
   {

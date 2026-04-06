@@ -533,11 +533,19 @@ export function useLogCommunication(projectId: string) {
 
 // ── Artefact Review ──
 
+export function useAgentArtefacts(agentId: string | null) {
+  return useQuery({
+    queryKey: ["artefacts", agentId],
+    queryFn: () => api<any[]>(`/api/agents/${agentId}/artefacts`),
+    enabled: !!agentId,
+  });
+}
+
 export function useUpdateArtefact() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ artefactId, ...data }: any) => api(`/api/agents/artefacts/${artefactId}`, { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["artefacts"] }); qc.invalidateQueries({ queryKey: ["agents"] }); },
   });
 }
 
