@@ -31,6 +31,7 @@ export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
     queryFn: () => api<any[]>("/api/projects"),
+    refetchInterval: 30000,
   });
 }
 
@@ -48,6 +49,7 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api<any>("/api/agents"),
+    refetchInterval: 30000,
   });
 }
 
@@ -56,6 +58,7 @@ export function useAgent(id: string | null) {
     queryKey: ["agent", id],
     queryFn: () => api<any>(`/api/agents/${id}`),
     enabled: !!id,
+    refetchInterval: 30000,
   });
 }
 
@@ -150,6 +153,7 @@ export function useProject(id: string | null) {
     queryKey: ["project", id],
     queryFn: () => api<any>(`/api/projects/${id}`),
     enabled: !!id,
+    refetchInterval: 30000,
   });
 }
 
@@ -158,6 +162,7 @@ export function useProjectTasks(projectId: string | null) {
     queryKey: ["tasks", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/tasks`),
     enabled: !!projectId,
+    refetchInterval: 30000,
   });
 }
 
@@ -166,6 +171,7 @@ export function useProjectRisks(projectId: string | null) {
     queryKey: ["risks", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/risks`),
     enabled: !!projectId,
+    refetchInterval: 30000,
   });
 }
 
@@ -174,6 +180,7 @@ export function useProjectIssues(projectId: string | null) {
     queryKey: ["issues", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/issues`),
     enabled: !!projectId,
+    refetchInterval: 30000,
   });
 }
 
@@ -182,7 +189,7 @@ export function useProjectMetrics(projectId: string | null) {
     queryKey: ["project-metrics", projectId],
     queryFn: () => api<any>(`/api/projects/${projectId}/metrics`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    refetchInterval: 15000,
   });
 }
 
@@ -191,6 +198,7 @@ export function useProjectStakeholders(projectId: string | null) {
     queryKey: ["stakeholders", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/stakeholders`),
     enabled: !!projectId,
+    refetchInterval: 30000,
   });
 }
 
@@ -199,6 +207,7 @@ export function useProjectChangeRequests(projectId: string | null) {
     queryKey: ["change-requests", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/change-requests`),
     enabled: !!projectId,
+    refetchInterval: 30000,
   });
 }
 
