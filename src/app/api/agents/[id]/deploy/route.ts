@@ -53,6 +53,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { status: "ACTIVE" },
   });
 
+  // Auto-generate agent email address if not already set
+  const existingEmail = await db.agentEmail.findUnique({ where: { agentId } });
+  if (!existingEmail) {
+    const agentRecord = await db.agent.findUnique({ where: { id: agentId }, select: { name: true } });
+    const slug = (agentRecord?.name || "agent").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const address = `${slug}@agents.projectoolbox.com`;
+    const collision = await db.agentEmail.findUnique({ where: { address } });
+    await db.agentEmail.create({
+      data: { agentId, address: collision ? `${slug}-${agentId.slice(-4)}@agents.projectoolbox.com` : address, isActive: true },
+    });
+  }
+
   // Deduct credits
   await CreditService.deduct(orgId, 10, `Agent deployment to project`, agentId);
 
