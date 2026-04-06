@@ -124,8 +124,6 @@ export default function DashboardPage() {
         type Suggestion = { icon: string; label: string; desc: string; href: string; priority: "critical" | "high" | "medium" | "low"; color: string };
         const suggestions: Suggestion[] = [];
 
-        if (!showGuide) return null;
-
         // === CONTEXT-AWARE SUGGESTION ENGINE ===
 
         // 1. No agent — first-time user
