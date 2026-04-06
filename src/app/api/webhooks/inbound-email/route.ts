@@ -166,11 +166,24 @@ export async function POST(req: NextRequest) {
       lowerSubject.includes("recap") || lowerSubject.includes("summary") || lowerSubject.includes("transcript");
     const isStatusUpdate = lowerSubject.includes("update") || lowerSubject.includes("status") ||
       lowerSubject.includes("report") || lowerSubject.includes("progress");
+    const isVendorQuote = lowerSubject.includes("quote") || lowerSubject.includes("quotation") ||
+      lowerSubject.includes("proposal") || lowerSubject.includes("pricing") || lowerSubject.includes("rfq response");
 
     const emailType = isCalendarInvite ? "MEETING_INVITE"
       : isMeetingNotes ? "MEETING_NOTES"
+      : isVendorQuote ? "VENDOR_QUOTE"
       : isStatusUpdate ? "STATUS_UPDATE"
       : "GENERAL";
+
+    // ── Route: Vendor Quote ──
+    if (isVendorQuote && activeProject) {
+      try {
+        const { processVendorQuote } = await import("@/lib/agents/procurement-engine");
+        await processVendorQuote(emailContent, senderEmail, subject, activeProject.id, agent.id);
+      } catch (e) {
+        console.error("Vendor quote processing failed:", e);
+      }
+    }
 
     // ── Store in agent's private inbox (org-scoped) ──
     const inboxMsg = await db.agentInboxMessage.create({

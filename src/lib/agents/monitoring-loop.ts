@@ -194,6 +194,26 @@ export async function runMonitoringLoop(
       const vendorProps = await checkVendors(projectId);
       proposals.push(...vendorProps);
     } catch {}
+
+    // Procurement: identify needs and run pipeline for high-value items (weekly)
+    try {
+      const { identifyProcurementNeeds, runProcurementPipeline } = await import("./procurement-engine");
+      const needs = await identifyProcurementNeeds(projectId, agentId);
+      const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, description: true } });
+      const orgId = deployment.agent.orgId || "";
+      // Run pipeline for HIGH urgency needs (>£10K) automatically
+      for (const need of needs.filter(n => n.urgency === "HIGH")) {
+        try {
+          await runProcurementPipeline(
+            { description: need.description, estimatedBudget: need.estimatedBudget, category: need.category },
+            { id: projectId, name: project?.name || "", description: project?.description || null },
+            { orgId, agentId },
+          );
+        } catch (e) {
+          console.error("Procurement pipeline failed:", e);
+        }
+      }
+    } catch {}
   }
 
   // ── 4. Phase gate readiness check (always) ──
