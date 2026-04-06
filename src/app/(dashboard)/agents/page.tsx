@@ -545,6 +545,7 @@ export default function AgentFleetPage() {
                     <div className="flex items-center gap-1">
                       <ActionBtn icon={agent.status === "paused" ? "▶" : "⏸"} tooltip={agent.status === "paused" ? "Resume" : "Pause"} />
                       <ActionBtn icon="💬" tooltip="Chat" />
+                      <ActionBtn icon="📡" tooltip="Live Console" />
                       <ActionBtn icon="⚙" tooltip="Settings" />
                     </div>
                   </td>
