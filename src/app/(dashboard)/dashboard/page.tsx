@@ -112,67 +112,90 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* ── Getting Started Guide (shows contextually) ── */}
+      {/* ── Context-Aware Suggestions ── */}
       {(() => {
         const hasAgent = agents.length > 0;
         const hasProject = projects.length > 0;
-        const hasPendingApprovals = (stats?.pendingApprovals || 0) > 0;
-        const isFullySetup = hasAgent && hasProject;
+        const pendingApprovals = stats?.pendingApprovals || 0;
+        const openRisks = stats?.openRisks || 0;
+        const creditBalance = stats?.creditBalance || 0;
+        const creditPct = creditBalance / 5000 * 100; // rough estimate
 
-        // Determine what needs attention
-        const needsAttention: { label: string; desc: string; href: string; done: boolean }[] = [];
-
-        if (!hasAgent) {
-          needsAttention.push({ label: "Deploy your first agent", desc: "Create a project and deploy an AI agent to manage it autonomously", href: "/agents/deploy", done: false });
-        } else {
-          needsAttention.push({ label: "Deploy your first agent", desc: "Agent deployed", href: "/agents", done: true });
-        }
-
-        if (!hasProject) {
-          needsAttention.push({ label: "Create a project", desc: "Your agent needs a project to manage — define scope, methodology, and team", href: "/agents/deploy", done: false });
-        } else {
-          needsAttention.push({ label: "Create a project", desc: `${projects.length} project(s) active`, href: "/projects", done: true });
-        }
-
-        // Check if artefacts need review (fetch inline — this is cheap)
-        if (hasAgent) {
-          needsAttention.push({ label: "Review agent artefacts", desc: hasPendingApprovals ? `${stats.pendingApprovals} item(s) awaiting your review` : "Your agent will generate documents for each phase", href: hasAgent ? `/agents/${agents[0]?.id}` : "/agents", done: false });
-        }
-
-        if (hasPendingApprovals) {
-          needsAttention.push({ label: "Approve phase gate", desc: `${stats.pendingApprovals} approval(s) pending — your agent is waiting`, href: "/approvals", done: false });
-        }
-
-        // Don't show if everything is done and user has been active
-        const allDone = needsAttention.every(n => n.done);
-        const showGuide = !allDone || activities.length === 0;
+        type Suggestion = { icon: string; label: string; desc: string; href: string; priority: "critical" | "high" | "medium" | "low"; color: string };
+        const suggestions: Suggestion[] = [];
 
         if (!showGuide) return null;
+
+        // === CONTEXT-AWARE SUGGESTION ENGINE ===
+
+        // 1. No agent — first-time user
+        if (!hasAgent) {
+          suggestions.push({ icon: "🚀", label: "Deploy your first AI agent", desc: "Create a project and deploy an autonomous agent to manage it — plans, risks, reports, all handled by AI", href: "/agents/deploy", priority: "high", color: "border-primary/30 bg-primary/5" });
+        }
+
+        // 2. Pending approvals — agent is blocked
+        if (pendingApprovals > 0) {
+          suggestions.push({ icon: "⏳", label: `${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""} waiting for you`, desc: "Your agent is paused at a governance gate — review and approve to let it continue", href: "/approvals", priority: "critical", color: "border-amber-500/30 bg-amber-500/5" });
+        }
+
+        // 3. High risks flagged
+        if (openRisks > 2) {
+          suggestions.push({ icon: "⚠️", label: `${openRisks} open risks need attention`, desc: "Your agent flagged risks that may need mitigation strategies or escalation", href: hasProject ? `/projects/${projects[0]?.id}/risk` : "/projects", priority: "high", color: "border-red-500/30 bg-red-500/5" });
+        }
+
+        // 4. Credits running low
+        if (creditPct < 20 && creditPct > 0) {
+          suggestions.push({ icon: "💰", label: `Credits at ${Math.floor(creditPct)}% — top up soon`, desc: `${creditBalance.toLocaleString()} credits remaining. Agents stop working when credits run out`, href: "/billing/credits", priority: creditPct < 5 ? "critical" : "medium", color: "border-orange-500/30 bg-orange-500/5" });
+        }
+
+        // 5. Agent active but no recent activity (might be stale)
+        if (hasAgent && activities.length === 0) {
+          suggestions.push({ icon: "🔍", label: "Check agent status", desc: "Your agent hasn't recorded any activity yet — it may still be initialising or needs attention", href: "/agents", priority: "medium", color: "border-blue-500/30 bg-blue-500/5" });
+        }
+
+        // 6. Recent artefact generation (from activity feed)
+        const artefactActivity = activities.find((a: any) => a.type === "artefact_generated");
+        if (artefactActivity && hasAgent) {
+          suggestions.push({ icon: "📄", label: "New artefacts ready for review", desc: artefactActivity.summary || "Your agent generated documents — review and approve them", href: `/agents/${agents[0]?.id}`, priority: "high", color: "border-emerald-500/30 bg-emerald-500/5" });
+        }
+
+        // 7. Phase advanced (celebration)
+        const phaseActivity = activities.find((a: any) => a.type === "phase_advance" || a.type === "phase_advanced");
+        if (phaseActivity) {
+          suggestions.push({ icon: "🎉", label: "Phase advanced", desc: phaseActivity.summary || "Your project moved to the next phase", href: hasAgent ? `/agents/${agents[0]?.id}` : "/agents", priority: "low", color: "border-emerald-500/30 bg-emerald-500/5" });
+        }
+
+        // 8. Tasks overdue
+        const overdueActivity = activities.find((a: any) => a.type === "overdue_alert");
+        if (overdueActivity) {
+          suggestions.push({ icon: "📋", label: "Overdue tasks detected", desc: overdueActivity.summary || "Some tasks are past their deadline", href: hasProject ? `/projects/${projects[0]?.id}/schedule` : "/projects", priority: "high", color: "border-red-500/30 bg-red-500/5" });
+        }
+
+        // 9. No projects but has agent (unusual state)
+        if (hasAgent && !hasProject) {
+          suggestions.push({ icon: "📁", label: "No active projects", desc: "Your agent is deployed but has no project — deploy to a project to start autonomous management", href: "/agents/deploy", priority: "medium", color: "border-amber-500/30 bg-amber-500/5" });
+        }
+
+        // Sort by priority
+        const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+        suggestions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+
+        if (suggestions.length === 0) return null;
 
         return (
           <Card>
             <CardContent className="pt-5 pb-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-bold">{!hasAgent ? "Welcome to Projectoolbox" : "What's next"}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {!hasAgent ? "Get started in 3 steps — deploy an agent, review its work, approve decisions" : "Here's what needs your attention"}
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground">{needsAttention.filter(n => n.done).length}/{needsAttention.length} complete</span>
-              </div>
+              <h3 className="text-sm font-bold mb-3">{!hasAgent ? "Get Started" : "Needs Your Attention"}</h3>
               <div className="space-y-2">
-                {needsAttention.map((step, i) => (
-                  <Link key={i} href={step.href}>
-                    <div className={`flex items-center gap-3 p-3 rounded-xl transition-all ${step.done ? "bg-emerald-500/5 border border-emerald-500/20" : "bg-muted/50 border border-border hover:border-primary/30 hover:bg-primary/5 cursor-pointer"}`}>
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${step.done ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                        {step.done ? "✓" : i + 1}
-                      </div>
+                {suggestions.slice(0, 4).map((s, i) => (
+                  <Link key={i} href={s.href}>
+                    <div className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:translate-x-0.5 cursor-pointer ${s.color}`}>
+                      <span className="text-xl flex-shrink-0">{s.icon}</span>
                       <div className="flex-1 min-w-0">
-                        <span className={`text-sm font-semibold ${step.done ? "text-emerald-500" : "text-foreground"}`}>{step.label}</span>
-                        <p className="text-xs text-muted-foreground">{step.desc}</p>
+                        <span className="text-sm font-semibold">{s.label}</span>
+                        <p className="text-xs text-muted-foreground">{s.desc}</p>
                       </div>
-                      {!step.done && <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+                      <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                     </div>
                   </Link>
                 ))}
