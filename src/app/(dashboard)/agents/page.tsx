@@ -3,6 +3,7 @@
 
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAgents } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -624,12 +625,14 @@ export default function AgentFleetPage() {
 // AGENT CARD (section 2)
 // ═══════════════════════════════════════════════════════════════════
 
-function AgentCard({ agent,  }: { agent: Agent }) {
+function AgentCard({ agent }: { agent: Agent }) {
   const statusCfg = STATUS_CONFIG[agent.status];
   const isActive = agent.status === "active";
+  const router = useRouter();
 
   return (
-    <div className="rounded-[14px] p-4 transition-all duration-200 hover:translate-y-[-2px]"
+    <div className="rounded-[14px] p-4 transition-all duration-200 hover:translate-y-[-2px] cursor-pointer"
+      onClick={() => router.push(`/agents/${agent.id}`)}
       style={{
         background: "var(--card)",
         border: isActive ? `1.5px solid ${agent.color}44` : `1px solid ${"var(--border)"}`,
@@ -653,9 +656,9 @@ function AgentCard({ agent,  }: { agent: Agent }) {
         <Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology]}>{agent.methodology}</Badge>
       </div>
 
-      {/* Current task */}
+      {/* Current task / phase */}
       <p className="text-[11px] leading-[15px] mb-2 line-clamp-2" style={{ color: "var(--muted-foreground)" }}>
-        {agent.currentTask}
+        {agent.currentTask !== "Awaiting instructions" ? agent.currentTask : agent.phase !== "—" ? `Working on ${agent.phase} phase` : "Ready to start"}
       </p>
 
       {/* Agent email */}
@@ -666,44 +669,40 @@ function AgentCard({ agent,  }: { agent: Agent }) {
         </div>
       )}
 
-      {/* Autonomy level */}
+      {/* Autonomy + Health */}
       <div className="flex items-center justify-between mb-3">
         <AutonomyDots level={agent.autonomyLevel} color={agent.color} />
-        <span className="text-[10px] font-semibold" style={{ color: agent.color }}>{agent.autonomyLabel}</span>
+        <RAGDot rag={agent.health} />
       </div>
 
-      {/* Performance + Credits row */}
-      <div className="flex items-center gap-3 mb-3">
-        {/* Performance ring */}
-        <div className="flex items-center gap-2">
-          <MiniRing pct={agent.performanceScore} size={32} color={agent.color} bgColor={`${"var(--border)"}33`} />
-          <div>
-            <span className="text-[11px] font-bold" style={{ color: "var(--foreground)" }}>{agent.performanceScore}</span>
-            <p className="text-[8px]" style={{ color: "var(--muted-foreground)" }}>Score</p>
-          </div>
+      {/* Credits + Tasks */}
+      <div className="flex items-center justify-between mb-3 text-[11px]">
+        <div>
+          <span className="font-bold" style={{ color: "var(--foreground)" }}>{agent.creditsToday}</span>
+          <span className="text-muted-foreground"> credits used</span>
         </div>
-
-        {/* Credits + sparkline */}
-        <div className="flex-1 flex items-center gap-2">
-          <div className="flex-1 h-[24px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={agent.creditSparkline.map((v, i) => ({ i, v }))}>
-                <Line type="monotone" dataKey="v" stroke={agent.color} strokeWidth={1.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="text-right">
-            <span className="text-[11px] font-bold" style={{ color: "var(--foreground)" }}>{agent.creditsToday}</span>
-            <p className="text-[8px]" style={{ color: "var(--muted-foreground)" }}>credits</p>
-          </div>
+        <div>
+          <span className="font-bold" style={{ color: "var(--foreground)" }}>{agent.tasksWeek}</span>
+          <span className="text-muted-foreground"> actions</span>
         </div>
       </div>
 
       {/* Quick actions */}
       <div className="flex items-center gap-1.5 pt-2" style={{ borderTop: `1px solid ${"var(--border)"}22` }}>
-        <ActionBtn icon={agent.status === "paused" ? "▶" : "⏸"} tooltip={agent.status === "paused" ? "Resume" : "Pause"} />
-        <ActionBtn icon="💬" tooltip="Chat" />
-        <ActionBtn icon="⚙" tooltip="Settings" />
+        <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
+          title={agent.status === "paused" ? "Resume" : "Pause"}
+          style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}
+          onClick={async (e) => { e.stopPropagation(); await fetch(`/api/agents/${agent.id}/${agent.status === "paused" ? "resume" : "pause"}`, { method: "POST" }); window.location.reload(); }}>
+          {agent.status === "paused" ? "▶" : "⏸"}
+        </button>
+        <Link href={`/agents/chat?agent=${agent.id}`} onClick={e => e.stopPropagation()}>
+          <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
+            title="Chat" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}>💬</button>
+        </Link>
+        <Link href={`/agents/${agent.id}`} onClick={e => e.stopPropagation()}>
+          <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
+            title="Settings" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}>⚙</button>
+        </Link>
         <div className="ml-auto">
           <Badge variant="secondary" className={statusCfg.badgeCn}>{statusCfg.label}</Badge>
         </div>
