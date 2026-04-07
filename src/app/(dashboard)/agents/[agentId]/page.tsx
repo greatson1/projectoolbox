@@ -317,7 +317,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   }, [apiAgent]);
 
   const { data: pendingApprovals } = useApprovals("PENDING");
-  const { data: agentArtefactsData } = useAgentArtefacts(agentId);
+  const { data: agentArtefactsData, isLoading: artefactsLoading } = useAgentArtefacts(agentId);
+  const updateArtefact = useUpdateArtefact();
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
   const projectId = apiAgent?.deployments?.[0]?.project?.id;
 
   // Agent-specific pending approvals
@@ -546,9 +548,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
         {/* ─── ARTEFACTS ─── */}
         <TabsContent value="artefacts" className="space-y-4">
           {(() => {
-            const { data: artefacts = [], isLoading: artefactsLoading } = useAgentArtefacts(agentId);
-            const updateArtefact = useUpdateArtefact();
-            const [reviewingId, setReviewingId] = React.useState<string | null>(null);
+            const artefacts = agentArtefactsData || [];
             const reviewing = artefacts.find((a: any) => a.id === reviewingId);
 
             const statusColor: Record<string, string> = {
