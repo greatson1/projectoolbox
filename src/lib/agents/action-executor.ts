@@ -436,11 +436,23 @@ async function performMutation(
         });
         return { riskId: risk.id, action: "updated" };
       } else {
-        // Identify new risk
+        // Identify new risk — extract a concise, noun-phrase title from the verbose action description
+        const cleanRiskTitle = proposal.description
+          .replace(/^(identify|log|flag|create|document|register|record|add|note|raise|report)\s+(and\s+\w+\s+)?(a\s+|an\s+|the\s+)?(new\s+)?(risk\s*[:\-–—]?\s*)?/i, "")
+          .replace(/\s+for\s+["']?[^"'.]{0,80}["']?\.?\s*$/i, "")
+          .replace(/\s*\(.*?\)/g, "")
+          .replace(/\s*:\s*.*$/, "")
+          .trim();
+        const riskTitle = (
+          cleanRiskTitle.length >= 5
+            ? cleanRiskTitle.charAt(0).toUpperCase() + cleanRiskTitle.slice(1)
+            : proposal.description
+        ).slice(0, 120);
+
         const risk = await db.risk.create({
           data: {
             projectId: context.projectId,
-            title: proposal.description,
+            title: riskTitle,
             description: proposal.reasoning,
             probability: proposal.scheduleImpact,
             impact: proposal.costImpact,
@@ -520,12 +532,98 @@ async function performMutation(
     }
 
     case "DOCUMENT_GENERATION": {
+      // Extract a clean, concise document name — strip action-verb prefix and trailing project context
+      const cleanName = proposal.description
+        .replace(/^(generate|create|draft|produce|write|prepare|develop|build|update|review)\s+(a\s+|an\s+|the\s+)?/i, "")
+        .replace(/\s+for\s+["']?[^"'.]{0,60}["']?\.?\s*$/i, "")
+        .replace(/\s*\(.*?\)/g, "")
+        .replace(/\s+[-–—].*$/, "")
+        .trim();
+      const artefactName = (cleanName.charAt(0).toUpperCase() + cleanName.slice(1)).slice(0, 120)
+        || proposal.description.slice(0, 120);
+
+      // Dedup — skip if a closely-named artefact already exists for this project
+      const existingArtefacts = await db.agentArtefact.findMany({
+        where: { projectId: context.projectId, agentId: context.agentId },
+        select: { id: true, name: true },
+      });
+      const nameKeywords = artefactName.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      const closeMatch = existingArtefacts.find(a => {
+        const lc = a.name.toLowerCase();
+        return nameKeywords.some(kw => lc.includes(kw));
+      });
+      if (closeMatch) return { artefactId: closeMatch.id, action: "document_already_exists" };
+
+      // Generate actual content via Claude — same quality as lifecycle-init
+      const project = await db.project.findUnique({
+        where: { id: context.projectId },
+        select: { name: true, description: true, budget: true, methodology: true, category: true, startDate: true, endDate: true },
+      });
+
+      let content = proposal.reasoning; // fallback
+
+      if (project && process.env.ANTHROPIC_API_KEY) {
+        try {
+          const today = new Date().toLocaleDateString("en-GB");
+          const budget = (project.budget || 0).toLocaleString();
+          const startDate = project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD";
+          const endDate = project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD";
+
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": process.env.ANTHROPIC_API_KEY,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-6",
+              max_tokens: 4096,
+              messages: [{
+                role: "user",
+                content: `You are an expert AI Project Manager. Generate a complete, professional **${artefactName}** for this project.
+
+TODAY: ${today}
+
+PROJECT DETAILS
+- Name: ${project.name}
+- Description: ${project.description || "No description provided"}
+- Budget: £${budget}
+- Methodology: ${project.methodology || "PRINCE2"}
+- Category: ${project.category || "general"}
+- Timeline: ${startDate} → ${endDate}
+
+CONTEXT: ${proposal.reasoning}
+
+RULES:
+1. Use the actual project name "${project.name}", actual dates, and actual budget £${budget} throughout
+2. Every table row must have a named owner or responsible role
+3. Include Status, % Complete, and Last Updated fields in tables
+4. British English throughout (colour, organisation, prioritise)
+5. End with an "Agent Progress Tracking Protocol" section
+6. No preamble — start the document content immediately
+
+Produce the full, complete document. Do not truncate or use placeholders.`,
+              }],
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const generated = (data.content?.[0]?.text || "").trim();
+            if (generated.length > 100) content = generated;
+          }
+        } catch {
+          // Silently fall back to proposal.reasoning
+        }
+      }
+
       const artefact = await db.agentArtefact.create({
         data: {
           agentId: context.agentId,
           projectId: context.projectId,
-          name: proposal.description,
-          content: proposal.reasoning,
+          name: artefactName,
+          content,
           format: "markdown",
           status: "DRAFT",
         },

@@ -378,6 +378,12 @@ async function checkBudgetThresholds(projectId: string): Promise<ActionProposal[
 async function checkStakeholderCadence(projectId: string, agentId: string): Promise<ActionProposal[]> {
   const proposals: ActionProposal[] = [];
 
+  // Don't nag on brand-new projects — stakeholders haven't had time to be engaged yet.
+  // Skip comms reminders for the first 14 days of a project's life.
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { createdAt: true } });
+  const projectAgeDays = project ? (Date.now() - new Date(project.createdAt).getTime()) / (1000 * 60 * 60 * 24) : 0;
+  if (projectAgeDays < 14) return proposals;
+
   const stakeholders = await db.stakeholder.findMany({
     where: { projectId, email: { not: null } },
     select: { id: true, name: true, email: true, power: true, interest: true },

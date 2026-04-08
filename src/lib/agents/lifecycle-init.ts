@@ -99,14 +99,22 @@ export async function generatePhaseArtefacts(
       const sections = text.split(/^## ARTEFACT:\s*/im).filter(Boolean);
       for (const section of sections) {
         const lines = section.trim().split("\n");
-        const title = lines[0]?.trim().replace(/\*+/g, "").trim();
+        // Strip bold markers, version numbers, and parenthetical notes from title
+        const title = lines[0]?.trim()
+          .replace(/\*+/g, "")
+          .replace(/\s*\(.*?\)/g, "")
+          .replace(/\s+v?\d+(\.\d+)*\s*$/i, "")
+          .trim();
         const content = lines.slice(1).join("\n").trim();
 
-        if (title && content.length > 50) {
-          const matchingDef = artefactNames.find(a =>
-            title.toLowerCase().includes(a.toLowerCase()) ||
-            a.toLowerCase().includes(title.toLowerCase().replace(/[^a-z ]/g, ""))
-          );
+        if (title && content.length > 20) {
+          const normTitle = title.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+          const matchingDef = artefactNames.find(a => {
+            const normDef = a.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+            return normTitle.includes(normDef) || normDef.includes(normTitle) ||
+              // Word-level prefix match — "project brief draft" matches "project brief"
+              normTitle.startsWith(normDef.split(" ").slice(0, 2).join(" "));
+          });
           const artName = matchingDef || title;
           // Skip if now already exists (race condition guard)
           if (existingNames.has(artName.toLowerCase())) continue;
@@ -249,14 +257,21 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
 
           for (const section of sections) {
             const lines = section.trim().split("\n");
-            const title = lines[0]?.trim().replace(/\*+/g, "").trim();
+            // Strip bold markers, version numbers, and parenthetical notes from title
+            const title = lines[0]?.trim()
+              .replace(/\*+/g, "")
+              .replace(/\s*\(.*?\)/g, "")
+              .replace(/\s+v?\d+(\.\d+)*\s*$/i, "")
+              .trim();
             const content = lines.slice(1).join("\n").trim();
 
-            if (title && content.length > 50) {
-              const matchingDef = artefactNames.find(a =>
-                title.toLowerCase().includes(a.toLowerCase()) ||
-                a.toLowerCase().includes(title.toLowerCase().replace(/[^a-z ]/g, ""))
-              );
+            if (title && content.length > 20) {
+              const normTitle = title.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+              const matchingDef = artefactNames.find(a => {
+                const normDef = a.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+                return normTitle.includes(normDef) || normDef.includes(normTitle) ||
+                  normTitle.startsWith(normDef.split(" ").slice(0, 2).join(" "));
+              });
 
               const artName = matchingDef || title;
               await db.agentArtefact.create({
