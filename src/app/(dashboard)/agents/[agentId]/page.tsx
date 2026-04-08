@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals } from "@/hooks/use-api";
+import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
+  BookOpen, Upload, Link as LinkIcon, FileAudio, Trash2 as TrashIcon, Star, X,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -18,10 +19,11 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Trash2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -241,6 +243,51 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const [personality, setPersonality] = useState(40);
   const [notifs, setNotifs] = useState(NOTIFICATION_PREFS.map((n) => n.enabled));
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
+
+  // ── Knowledge tab state ──
+  const [kbMode, setKbMode] = useState<"transcript" | "document" | "url">("transcript");
+  const [kbTitle, setKbTitle] = useState("");
+  const [kbContent, setKbContent] = useState("");
+  const [kbUrl, setKbUrl] = useState("");
+  const [kbDragOver, setKbDragOver] = useState(false);
+  const { data: knowledgeItems, isLoading: kbLoading } = useAgentKnowledge(agentId);
+  const deleteKb = useDeleteKnowledgeItem(agentId);
+  const ingest = useIngest(agentId);
+
+  const handleKbSubmit = useCallback(async () => {
+    if (!agentId) return;
+    const title = kbTitle.trim() || (kbMode === "url" ? kbUrl : kbMode === "transcript" ? "Meeting transcript" : "Document");
+    try {
+      await ingest.mutateAsync(
+        kbMode === "url"
+          ? { type: "url", title, sourceUrl: kbUrl }
+          : { type: kbMode, title, content: kbContent }
+      );
+      toast.success(`Ingested "${title}"`);
+      setKbTitle(""); setKbContent(""); setKbUrl("");
+    } catch (e: any) {
+      toast.error(e.message || "Ingest failed");
+    }
+  }, [agentId, kbMode, kbTitle, kbContent, kbUrl, ingest]);
+
+  const handleKbFileDrop = useCallback(async (e: React.DragEvent | React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    setKbDragOver(false);
+    const files = "dataTransfer" in e ? e.dataTransfer.files : (e.target as HTMLInputElement).files;
+    if (!files?.length || !agentId) return;
+    for (const file of Array.from(files)) {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("type", file.name.toLowerCase().includes("transcript") ? "transcript" : "document");
+      form.append("title", file.name.replace(/\.[^.]+$/, ""));
+      try {
+        await ingest.mutateAsync(form as any);
+        toast.success(`Ingested "${file.name}"`);
+      } catch (e: any) {
+        toast.error(`Failed: ${file.name} — ${e.message}`);
+      }
+    }
+  }, [agentId, ingest]);
 
   // ── Delete / Decommission modal state ──
   const [deleteModal, setDeleteModal] = useState<"decommission" | "purge" | null>(null);
@@ -552,6 +599,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           </TabsTrigger>
           <TabsTrigger value="configuration" className="text-[13px] font-semibold">
             <Sliders className="mr-1 size-3.5" /> Configuration
+          </TabsTrigger>
+          <TabsTrigger value="knowledge" className="text-[13px] font-semibold">
+            <BookOpen className="mr-1 size-3.5" /> Knowledge
           </TabsTrigger>
         </TabsList>
 
@@ -1324,6 +1374,186 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 </Button>
               </div>
             </div>
+          </Card>
+        </TabsContent>
+
+        {/* ─── KNOWLEDGE ─── */}
+        <TabsContent value="knowledge" className="space-y-4">
+
+          {/* Ingest panel */}
+          <Card className="p-5">
+            <CardHeader className="p-0 mb-4">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Upload className="size-4 text-primary" /> Teach the agent something new
+              </CardTitle>
+              <p className="text-[12px] text-muted-foreground mt-1">
+                Ingest meeting transcripts, documents, or URLs. Everything ingested is available in every future conversation.
+              </p>
+            </CardHeader>
+
+            {/* Mode selector */}
+            <div className="flex gap-2 mb-4">
+              {([
+                { key: "transcript", label: "Transcript / Meeting", icon: FileAudio },
+                { key: "document",   label: "Document / Notes",     icon: FileText },
+                { key: "url",        label: "URL",                   icon: LinkIcon },
+              ] as const).map(({ key, label, icon: Icon }) => (
+                <button key={key}
+                  onClick={() => setKbMode(key)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all",
+                    kbMode === key
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                  )}>
+                  <Icon className="size-3" /> {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Title */}
+            <Input
+              placeholder={kbMode === "transcript" ? "Meeting title (e.g. Kick-off call — 8 Apr)" : kbMode === "url" ? "Title (optional)" : "Document title"}
+              value={kbTitle}
+              onChange={e => setKbTitle(e.target.value)}
+              className="mb-3 text-[13px]"
+            />
+
+            {kbMode === "url" ? (
+              <Input
+                placeholder="https://..."
+                value={kbUrl}
+                onChange={e => setKbUrl(e.target.value)}
+                className="mb-3 text-[13px]"
+              />
+            ) : (
+              <>
+                {/* Drag-and-drop zone */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setKbDragOver(true); }}
+                  onDragLeave={() => setKbDragOver(false)}
+                  onDrop={handleKbFileDrop}
+                  className={cn(
+                    "relative mb-3 rounded-lg border-2 border-dashed p-3 text-center transition-all",
+                    kbDragOver ? "border-primary bg-primary/5" : "border-border"
+                  )}
+                >
+                  <label className="cursor-pointer">
+                    <Upload className="mx-auto mb-1 size-5 text-muted-foreground" />
+                    <p className="text-[12px] text-muted-foreground">
+                      Drop a file here or{" "}
+                      <span className="text-primary underline underline-offset-2">browse</span>
+                      <span className="text-muted-foreground"> — .txt, .md, .csv accepted</span>
+                    </p>
+                    <input type="file" accept=".txt,.md,.csv,.text" multiple className="sr-only"
+                      onChange={handleKbFileDrop as any} />
+                  </label>
+                </div>
+                <p className="mb-1.5 text-[11px] text-muted-foreground">Or paste content directly:</p>
+                <Textarea
+                  placeholder={kbMode === "transcript"
+                    ? "Paste the meeting transcript here. The agent will extract decisions, action items, risks, and key facts automatically."
+                    : "Paste document content, briefing notes, client requirements, or any reference material."}
+                  value={kbContent}
+                  onChange={e => setKbContent(e.target.value)}
+                  className="mb-3 min-h-[140px] text-[12px] font-mono"
+                />
+              </>
+            )}
+
+            <div className="flex items-center justify-between">
+              {kbMode === "transcript" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Claude will extract decisions (⭐ HIGH TRUST), risks, actions, and key facts as separate KB items.
+                </p>
+              )}
+              {kbMode === "document" && (
+                <p className="text-[11px] text-muted-foreground">Large documents are chunked automatically.</p>
+              )}
+              {kbMode === "url" && (
+                <p className="text-[11px] text-muted-foreground">Page will be fetched, summarised, and cached for 7 days.</p>
+              )}
+              <Button size="sm" onClick={handleKbSubmit}
+                disabled={ingest.isPending || (kbMode === "url" ? !kbUrl.trim() : !kbContent.trim())}
+                className="ml-auto shrink-0">
+                {ingest.isPending ? "Ingesting…" : "Ingest"}
+              </Button>
+            </div>
+          </Card>
+
+          {/* KB item list */}
+          <Card className="p-5">
+            <CardHeader className="p-0 mb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <BookOpen className="size-4 text-primary" />
+                Knowledge base
+                {Array.isArray(knowledgeItems) && (
+                  <Badge variant="secondary" className="ml-1 text-[10px]">{knowledgeItems.length} items</Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+
+            {kbLoading ? (
+              <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
+            ) : !Array.isArray(knowledgeItems) || knowledgeItems.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border py-10 text-center">
+                <BookOpen className="mx-auto mb-2 size-8 text-muted-foreground/40" />
+                <p className="text-[13px] text-muted-foreground">No knowledge items yet.</p>
+                <p className="text-[12px] text-muted-foreground/60 mt-0.5">
+                  Ingest a transcript, document, or URL above.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {(knowledgeItems as any[]).map((item: any) => {
+                  const trustColor = item.trustLevel === "HIGH_TRUST"
+                    ? "text-amber-500"
+                    : item.trustLevel === "REFERENCE_ONLY"
+                    ? "text-muted-foreground"
+                    : "text-primary";
+                  const trustLabel = item.trustLevel === "HIGH_TRUST" ? "⭐ High trust"
+                    : item.trustLevel === "REFERENCE_ONLY" ? "📎 Reference"
+                    : "📄 Standard";
+                  const typeColor: Record<string, string> = {
+                    DECISION: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+                    TRANSCRIPT: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+                    URL: "bg-green-500/10 text-green-600 border-green-500/20",
+                    FILE: "bg-purple-500/10 text-purple-600 border-purple-500/20",
+                  };
+                  return (
+                    <div key={item.id}
+                      className="flex items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30 transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] font-medium truncate">{item.title}</span>
+                          <Badge variant="outline"
+                            className={cn("text-[10px] px-1.5 py-0 shrink-0", typeColor[item.type] || "")}>
+                            {item.type}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={cn("text-[11px] font-medium", trustColor)}>{trustLabel}</span>
+                          {item.tags?.length > 0 && (
+                            <span className="text-[11px] text-muted-foreground">
+                              {item.tags.slice(0, 3).join(", ")}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
+                            {new Date(item.createdAt).toLocaleDateString("en-GB")}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => deleteKb.mutate(item.id)}
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        title="Delete">
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Card>
         </TabsContent>
       </Tabs>

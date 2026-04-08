@@ -558,6 +558,46 @@ export function useUpdateArtefact() {
   });
 }
 
+// ── Knowledge Base ──
+
+export function useAgentKnowledge(agentId: string | null) {
+  return useQuery({
+    queryKey: ["knowledge", agentId],
+    queryFn: () => api<any[]>(`/api/agents/${agentId}/knowledge`),
+    enabled: !!agentId,
+  });
+}
+
+export function useDeleteKnowledgeItem(agentId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) =>
+      api(`/api/agents/${agentId}/knowledge?itemId=${itemId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge", agentId] }),
+  });
+}
+
+export function useIngest(agentId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { type: string; title: string; content?: string; sourceUrl?: string } | FormData) => {
+      const isFormData = payload instanceof FormData;
+      return fetch(`/api/agents/${agentId}/ingest`, {
+        method: "POST",
+        ...(isFormData ? { body: payload } : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+      }).then(async r => {
+        const json = await r.json();
+        if (!r.ok) throw new Error(json.error || "Ingest failed");
+        return json.data;
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge", agentId] }),
+  });
+}
+
 // ── Portfolio Email ──
 
 export function useEmailPortfolioReport() {
