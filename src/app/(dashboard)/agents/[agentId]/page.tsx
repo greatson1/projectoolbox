@@ -8,6 +8,7 @@ import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
   BookOpen, Upload, Link as LinkIcon, FileAudio, Trash2 as TrashIcon, Star, X,
+  Video, Mic, MicOff, Calendar, ExternalLink,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -597,6 +598,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           <TabsTrigger value="inbox" className="text-[13px] font-semibold">
             <Mail className="mr-1 size-3.5" /> Inbox
           </TabsTrigger>
+          <TabsTrigger value="meetings" className="text-[13px] font-semibold">
+            <Video className="mr-1 size-3.5" /> Meetings
+          </TabsTrigger>
           <TabsTrigger value="configuration" className="text-[13px] font-semibold">
             <Sliders className="mr-1 size-3.5" /> Configuration
           </TabsTrigger>
@@ -1057,6 +1061,11 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           <AgentInboxTab agentId={AGENT_RESOLVED.id} agentColor={AGENT_RESOLVED.color} />
         </TabsContent>
 
+        {/* ─── MEETINGS ─── */}
+        <TabsContent value="meetings" className="space-y-4">
+          <AgentMeetingsTab agentId={AGENT_RESOLVED.id} agentName={AGENT_RESOLVED.name} agentColor={AGENT_RESOLVED.color} />
+        </TabsContent>
+
         {/* ─── CONFIGURATION ─── */}
         <TabsContent value="configuration" className="space-y-4">
           {/* Agent Identity — Editable */}
@@ -1370,7 +1379,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 </p>
                 <Button variant="destructive" size="sm"
                   onClick={() => { setDeleteModal("purge"); setDeleteProject(false); setDeleteConfirmText(""); }}>
-                  <Trash2 className="mr-1 size-3" /> Delete Permanently
+                  <TrashIcon className="mr-1 size-3" /> Delete Permanently
                 </Button>
               </div>
             </div>
@@ -1629,7 +1638,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             <div className="flex items-start gap-3 mb-4">
               <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${deleteModal === "purge" ? "bg-red-500/15" : "bg-destructive/15"}`}>
                 {deleteModal === "purge"
-                  ? <Trash2 className="h-5 w-5 text-red-500" />
+                  ? <TrashIcon className="h-5 w-5 text-red-500" />
                   : <AlertTriangle className="h-5 w-5 text-destructive" />}
               </div>
               <div>
@@ -1661,7 +1670,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     "Agent email address",
                   ].map(item => (
                     <div key={item} className="flex items-center gap-1.5 text-muted-foreground">
-                      <Trash2 className="h-2.5 w-2.5 text-red-500/70 flex-shrink-0" /> {item}
+                      <TrashIcon className="h-2.5 w-2.5 text-red-500/70 flex-shrink-0" /> {item}
                     </div>
                   ))}
                 </>
@@ -1947,6 +1956,216 @@ function AgentInboxTab({ agentId, agentColor }: { agentId: string; agentColor: s
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── AgentMeetingsTab ─────────────────────────────────────────────────────────
+
+const BOT_STATUS_META: Record<string, { label: string; color: string; pulse: boolean }> = {
+  idle:      { label: "Scheduled",  color: "#94A3B8", pulse: false },
+  joining:   { label: "Joining…",   color: "#F59E0B", pulse: true  },
+  waiting:   { label: "Waiting room", color: "#F59E0B", pulse: true },
+  recording: { label: "Recording", color: "#EF4444", pulse: true  },
+  done:      { label: "Done",       color: "#10B981", pulse: false },
+  failed:    { label: "Failed",     color: "#EF4444", pulse: false },
+};
+
+function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string; agentName: string; agentColor: string }) {
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [upcoming, setUpcoming] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const load = async () => {
+    try {
+      const res = await fetch(`/api/agents/${agentId}/meetings`);
+      const j = await res.json();
+      setMeetings(j.data?.meetings || []);
+      setUpcoming(j.data?.upcomingEvents || []);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    load();
+    // Poll every 15s when there are active bots
+    pollRef.current = setInterval(() => {
+      setMeetings(prev => {
+        const hasActive = prev.some(m => ["joining","waiting","recording"].includes(m.recallBotStatus || ""));
+        if (hasActive) load();
+        return prev;
+      });
+    }, 15000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [agentId]);
+
+  const sendBot = async (meetingUrl: string, meetingTitle?: string, calendarEventId?: string) => {
+    setSending(true); setError("");
+    try {
+      const res = await fetch(`/api/agents/${agentId}/meetings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meetingUrl, title: meetingTitle || title || undefined, calendarEventId }),
+      });
+      const j = await res.json();
+      if (!res.ok) { setError(j.error || "Failed to dispatch bot"); }
+      else { setSent(true); setUrl(""); setTitle(""); await load(); }
+    } catch { setError("Network error"); }
+    setSending(false);
+  };
+
+  const cancelBot = async (meetingId: string) => {
+    await fetch(`/api/agents/${agentId}/meetings/${meetingId}`, { method: "DELETE" });
+    await load();
+  };
+
+  const platformIcon = (p?: string) => ({ zoom: "💙", teams: "💜", meet: "🟢", webex: "🔵" }[p || ""] || "🎥");
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />)}</div>;
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Send bot to a meeting ── */}
+      <Card className="p-4">
+        <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+          <Video className="size-4" style={{ color: agentColor }} />
+          Invite {agentName} to a meeting
+        </h3>
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Paste a Zoom, Teams, or Google Meet link. {agentName} will join, transcribe, and update its knowledge base automatically.
+        </p>
+        <div className="flex flex-col gap-2">
+          <Input
+            placeholder="Meeting URL — zoom.us/j/…  teams.microsoft.com/l/…  meet.google.com/…"
+            value={url}
+            onChange={e => { setUrl(e.target.value); setSent(false); setError(""); }}
+            className="text-sm"
+          />
+          <div className="flex gap-2">
+            <Input
+              placeholder="Meeting title (optional)"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="text-sm"
+            />
+            <Button
+              onClick={() => sendBot(url)}
+              disabled={!url.trim() || sending}
+              className="shrink-0"
+            >
+              {sending ? "Dispatching…" : sent ? "✓ Dispatched" : "Send Agent"}
+            </Button>
+          </div>
+        </div>
+        {error && <p className="text-[11px] text-destructive mt-2">{error}</p>}
+        {sent && <p className="text-[11px] text-emerald-600 mt-2">✓ {agentName} will join shortly. Status updates appear below.</p>}
+      </Card>
+
+      {/* ── Upcoming calendar events ── */}
+      {upcoming.length > 0 && (
+        <div>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Upcoming meetings</h4>
+          <div className="space-y-1.5">
+            {upcoming.map((ev: any) => (
+              <div key={ev.id} className="flex items-center gap-3 p-3 rounded-xl border bg-card">
+                <Calendar className="size-4 text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-semibold truncate">{ev.title}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(ev.startTime).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {ev.location && ` · ${ev.location}`}
+                  </p>
+                </div>
+                {ev.meetingUrl ? (
+                  <Button size="sm" variant="outline" className="text-[11px] shrink-0"
+                    onClick={() => sendBot(ev.meetingUrl, ev.title, ev.id)}>
+                    <Mic className="size-3 mr-1" /> Send Agent
+                  </Button>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground shrink-0">No URL</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Past / active meetings ── */}
+      <div>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Recent meetings</h4>
+        {meetings.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground">
+            <Mic className="size-8 mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-medium mb-1">No meetings yet</p>
+            <p className="text-[11px]">Invite {agentName} above and it will transcribe and analyse each call.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {meetings.map((m: any) => {
+              const statusMeta = BOT_STATUS_META[m.recallBotStatus || "idle"] || BOT_STATUS_META.idle;
+              const isActive = ["joining","waiting","recording"].includes(m.recallBotStatus || "");
+              return (
+                <Card key={m.id} className="p-3">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl mt-0.5">{platformIcon(m.platform)}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-[12px] font-semibold truncate">{m.title}</p>
+                        <span className="flex items-center gap-1 text-[10px] font-semibold ml-auto shrink-0" style={{ color: statusMeta.color }}>
+                          {statusMeta.pulse && <span className="size-1.5 rounded-full animate-pulse" style={{ background: statusMeta.color }} />}
+                          {statusMeta.label}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        {new Date(m.createdAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {m.duration && ` · ${m.duration} min`}
+                      </p>
+                      {m.summary && (
+                        <p className="text-[11px] text-muted-foreground mt-1.5 line-clamp-2">{m.summary}</p>
+                      )}
+                      {m.actionItems?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {m.actionItems.slice(0, 3).map((a: any) => (
+                            <Badge key={a.id} variant="secondary" className="text-[9px]">
+                              {a.text.slice(0, 50)}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      {m.meetingUrl && (
+                        <a href={m.meetingUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
+                          <ExternalLink className="size-2.5" /> Join
+                        </a>
+                      )}
+                      {isActive && (
+                        <button onClick={() => cancelBot(m.id)}
+                          className="text-[10px] text-destructive hover:underline flex items-center gap-0.5">
+                          <MicOff className="size-2.5" /> Remove
+                        </button>
+                      )}
+                      {m.recallBotStatus === "done" && m.processedAt && (
+                        <span className="text-[10px] text-emerald-600 flex items-center gap-0.5">
+                          <CheckCircle2 className="size-2.5" /> KB updated
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
