@@ -81,6 +81,8 @@ export async function processActionProposal(
     await logActivity(context.agentId, "budget_limit", `Insufficient credits for: ${proposal.description}`, {
       type: proposal.type, creditCost, riskTier: classification.riskTier,
     });
+    // Queue for auto-resume when credits are topped up
+    await queueBlockedProposal(proposal, context, "insufficient_org_credits");
     return { success: false, action: "blocked", error: "Insufficient credits", classification };
   }
 
@@ -103,6 +105,8 @@ export async function processActionProposal(
         `Monthly budget limit reached (${used}/${agent.monthlyBudget} credits). Action blocked: ${proposal.description}`,
         { type: proposal.type, used, budget: agent.monthlyBudget },
       );
+      // Queue for auto-resume when monthly budget resets or is increased
+      await queueBlockedProposal(proposal, context, "monthly_budget_exceeded");
       return { success: false, action: "blocked", error: "Agent monthly budget exceeded", classification };
     }
   }
@@ -152,10 +156,15 @@ async function autoExecute(
     const mutationResult = await performMutation(proposal, context);
 
     // Create AgentDecision record
+    // Map proposal type to valid DecisionType enum
+    const typeMap: Record<string, string> = {
+      DOCUMENT_GENERATION: "TASK_ASSIGNMENT", RISK_IDENTIFICATION: "RISK_RESPONSE",
+      STAKEHOLDER_COMMUNICATION: "ESCALATION", BUDGET_ACTION: "RESOURCE_ALLOCATION",
+    };
     await db.agentDecision.create({
       data: {
         agentId: context.agentId,
-        type: proposal.type as any,
+        type: (typeMap[proposal.type] || proposal.type || "TASK_ASSIGNMENT") as any,
         description: proposal.description,
         reasoning: proposal.reasoning,
         confidence: proposal.confidence,
@@ -239,10 +248,14 @@ async function routeToApproval(
   });
 
   // Create pending AgentDecision linked to approval
+  const typeMap2: Record<string, string> = {
+    DOCUMENT_GENERATION: "TASK_ASSIGNMENT", RISK_IDENTIFICATION: "RISK_RESPONSE",
+    STAKEHOLDER_COMMUNICATION: "ESCALATION", BUDGET_ACTION: "RESOURCE_ALLOCATION",
+  };
   await db.agentDecision.create({
     data: {
       agentId: context.agentId,
-      type: proposal.type as any,
+      type: (typeMap2[proposal.type] || proposal.type || "TASK_ASSIGNMENT") as any,
       description: proposal.description,
       reasoning: proposal.reasoning,
       confidence: proposal.confidence,
@@ -550,4 +563,122 @@ function inferActivityType(decisionType: string): string {
 
 async function logActivity(agentId: string, type: string, summary: string, metadata?: any) {
   await db.agentActivity.create({ data: { agentId, type, summary, metadata } });
+}
+
+/**
+ * Store a budget-blocked proposal in AgentJob for later auto-resume.
+ * Uses type "budget_resume" so the job processor can pick it up.
+ * Deduplicates by proposal type+description to avoid flooding the queue.
+ */
+async function queueBlockedProposal(
+  proposal: ActionProposal,
+  context: ExecutionContext,
+  reason: string,
+): Promise<void> {
+  try {
+    // Only queue if there isn't already a pending budget_resume job for this proposal
+    const existing = await db.agentJob.findFirst({
+      where: {
+        agentId: context.agentId,
+        type: "budget_resume",
+        status: "PENDING",
+        payload: { path: ["proposalDescription"], equals: proposal.description },
+      },
+    });
+    if (existing) return; // Already queued
+
+    await db.agentJob.create({
+      data: {
+        agentId: context.agentId,
+        deploymentId: context.deploymentId,
+        type: "budget_resume",
+        priority: 3,
+        status: "PENDING",
+        payload: {
+          proposal: {
+            type: proposal.type,
+            description: proposal.description,
+            reasoning: proposal.reasoning,
+            confidence: proposal.confidence,
+            scheduleImpact: proposal.scheduleImpact,
+            costImpact: proposal.costImpact,
+            scopeImpact: proposal.scopeImpact,
+            stakeholderImpact: proposal.stakeholderImpact,
+            creditCost: proposal.creditCost,
+          },
+          proposalDescription: proposal.description, // top-level for dedup query
+          context: { projectId: context.projectId, orgId: context.orgId, autonomyLevel: context.autonomyLevel },
+          blockedReason: reason,
+          blockedAt: new Date().toISOString(),
+        },
+      },
+    });
+  } catch {
+    // Non-critical — don't fail the main flow if queuing fails
+  }
+}
+
+/**
+ * Resume budget-blocked proposals for an agent after credits are topped up.
+ * Called automatically by CreditService.grant() and available as a manual trigger.
+ * Returns the number of proposals re-processed.
+ */
+export async function resumeBlockedProposals(agentId: string): Promise<{ resumed: number; failed: number }> {
+  // Find all pending budget_resume jobs for this agent
+  const jobs = await db.agentJob.findMany({
+    where: { agentId, type: "budget_resume", status: "PENDING" },
+    orderBy: { createdAt: "asc" },
+    take: 20, // process up to 20 queued actions at once
+  });
+
+  if (jobs.length === 0) return { resumed: 0, failed: 0 };
+
+  // Get agent's deployment and org
+  const deployment = await db.agentDeployment.findFirst({
+    where: { agentId, isActive: true },
+    include: { agent: { select: { orgId: true, autonomyLevel: true } } },
+    orderBy: { deployedAt: "desc" },
+  });
+  if (!deployment) return { resumed: 0, failed: jobs.length };
+
+  const orgId = deployment.agent.orgId;
+  const autonomyLevel = deployment.agent.autonomyLevel;
+
+  let resumed = 0;
+  let failed = 0;
+
+  for (const job of jobs) {
+    try {
+      const payload = job.payload as any;
+      const proposal = payload?.proposal as ActionProposal;
+      const projectId = payload?.context?.projectId || deployment.projectId;
+      if (!proposal) { failed++; continue; }
+
+      // Mark job as claimed
+      await db.agentJob.update({ where: { id: job.id }, data: { status: "CLAIMED", startedAt: new Date() } });
+
+      const result = await processActionProposal(proposal, {
+        agentId, deploymentId: deployment.id, projectId, orgId, autonomyLevel,
+      });
+
+      if (result.action !== "blocked") {
+        await db.agentJob.update({ where: { id: job.id }, data: { status: "COMPLETED", completedAt: new Date(), result: result as any } });
+        resumed++;
+      } else {
+        // Still blocked (e.g. credits ran out mid-resume)
+        await db.agentJob.update({ where: { id: job.id }, data: { status: "PENDING", startedAt: null } });
+        failed++;
+        break; // Stop processing if still out of credits
+      }
+    } catch (e: any) {
+      await db.agentJob.update({ where: { id: job.id }, data: { status: "FAILED", error: e.message, completedAt: new Date() } }).catch(() => {});
+      failed++;
+    }
+  }
+
+  if (resumed > 0) {
+    await logActivity(agentId, "deployment", `Resumed ${resumed} blocked action(s) after credit top-up${failed > 0 ? ` (${failed} still pending)` : ""}`);
+  }
+
+  return { resumed, failed };
 }
