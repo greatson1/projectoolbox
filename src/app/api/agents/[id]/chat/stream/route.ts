@@ -58,15 +58,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let recentArtefacts: any[] = [];
   let openRisks: any[] = [];
   let recentActivity: any[] = [];
+  let knowledgeItems: any[] = [];
 
   if (project?.id) {
-    [phases, pendingApprovals, recentArtefacts, openRisks, recentActivity] = await Promise.all([
+    [phases, pendingApprovals, recentArtefacts, openRisks, recentActivity, knowledgeItems] = await Promise.all([
       db.phase.findMany({ where: { projectId: project.id }, orderBy: { order: "asc" } }),
       db.approval.findMany({ where: { projectId: project.id, status: "PENDING" }, take: 5 }),
       db.agentArtefact.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "desc" }, take: 8 }),
       db.risk.findMany({ where: { projectId: project.id, status: "OPEN" }, orderBy: { score: "desc" }, take: 5 }),
       db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 5 }),
+      // Knowledge base: HIGH_TRUST items first, then most recent — cap at 12 to stay within context budget
+      db.knowledgeBaseItem.findMany({
+        where: {
+          OR: [{ agentId }, { projectId: project.id }, { layer: "WORKSPACE", orgId: caller.orgId }],
+        },
+        orderBy: [{ trustLevel: "desc" }, { createdAt: "desc" }],
+        take: 12,
+        select: { title: true, content: true, type: true, trustLevel: true, tags: true, createdAt: true },
+      }),
     ]);
+  } else {
+    // No project — still load workspace-level knowledge
+    knowledgeItems = await db.knowledgeBaseItem.findMany({
+      where: { layer: "WORKSPACE", orgId: caller.orgId },
+      orderBy: [{ trustLevel: "desc" }, { createdAt: "desc" }],
+      take: 8,
+      select: { title: true, content: true, type: true, trustLevel: true, tags: true, createdAt: true },
+    });
   }
 
   const currentPhase = phases.find(p => p.status === "ACTIVE") ?? phases[0];
@@ -214,6 +232,22 @@ Gate: Sponsor sign-off, all artefacts archived
 - After presenting artefacts, explicitly ask: "Do you approve these to proceed to [next phase]?"
 - Format documents clearly with ## headings, bullet points, and tables where appropriate
 - Be specific — use the actual project name, budget figures, dates, and locations in all documents
+
+## KNOWLEDGE BASE
+${knowledgeItems.length > 0
+  ? `The following knowledge has been ingested and is available to you. Use it to inform your answers, decisions, and artefacts. HIGH_TRUST items override your defaults; STANDARD items inform and supplement.
+
+${knowledgeItems.map(k => {
+    const trust = k.trustLevel === "HIGH_TRUST" ? "⭐ HIGH TRUST" : k.trustLevel === "REFERENCE_ONLY" ? "📎 REFERENCE" : "📄 STANDARD";
+    const tags = k.tags?.length > 0 ? ` [${k.tags.join(", ")}]` : "";
+    const date = new Date(k.createdAt).toLocaleDateString("en-GB");
+    // For transcripts/long content: summarise to first 400 chars to stay within context budget
+    const body = k.content.length > 400 && k.type !== "DECISION"
+      ? k.content.slice(0, 400) + "…"
+      : k.content;
+    return `### ${k.title} (${trust}${tags} — ${date})\n${body}`;
+  }).join("\n\n")}`
+  : "No knowledge base items yet. You can ingest meetings, documents, transcripts, and URLs to build your knowledge."}
 
 ## MEMORY & CONTINUITY
 You have access to the full conversation history from all previous sessions with this user.

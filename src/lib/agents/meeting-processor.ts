@@ -98,22 +98,85 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
       },
     });
 
-    // Auto-populate Knowledge Base with meeting transcript + summary
-    try {
-      await db.knowledgeBaseItem.create({
+    // Write granular KB items so each fact is individually weighted and searchable
+    const kbWrites: Promise<any>[] = [];
+    const sharedBase = {
+      orgId: meeting.orgId,
+      agentId: meeting.agentId,
+      projectId: meeting.projectId,
+      layer: "PROJECT",
+      metadata: { meetingId, meetingTitle: meeting.title, sentiment: result.sentiment },
+    };
+
+    // 1. Meeting summary (STANDARD trust — good reference)
+    kbWrites.push(db.knowledgeBaseItem.create({
+      data: {
+        ...sharedBase,
+        type: "TEXT",
+        title: `Meeting summary: ${meeting.title}`,
+        content: result.summary,
+        trustLevel: "STANDARD",
+        tags: ["meeting", "summary"],
+      },
+    }));
+
+    // 2. Each decision — HIGH_TRUST (formal agreements override agent defaults)
+    for (const d of result.decisions) {
+      kbWrites.push(db.knowledgeBaseItem.create({
         data: {
-          orgId: meeting.orgId,
-          agentId: meeting.agentId,
-          projectId: meeting.projectId,
-          layer: "PROJECT",
-          type: "TRANSCRIPT",
-          title: `Meeting: ${meeting.title}`,
-          content: `Summary: ${result.summary}\n\nAction Items: ${result.actionItems.map(a => `- ${a.text} (${a.assignee || "unassigned"})`).join("\n")}\n\nDecisions: ${result.decisions.map(d => `- ${d.text} (by ${d.by})`).join("\n")}\n\nRisks: ${result.risks.map(r => `- ${r.title}: ${r.description}`).join("\n")}`,
-          tags: ["meeting", "transcript", "auto-generated"],
-          metadata: { meetingId, topics: result.topics, sentiment: result.sentiment },
+          ...sharedBase,
+          type: "DECISION",
+          title: d.text.slice(0, 120),
+          content: `Decision: ${d.text}\nMade by: ${d.by}\nRationale: ${d.rationale}`,
+          trustLevel: "HIGH_TRUST",
+          tags: ["meeting", "decision"],
         },
-      });
-    } catch {}
+      }));
+    }
+
+    // 3. Each risk identified — STANDARD trust
+    for (const r of result.risks) {
+      kbWrites.push(db.knowledgeBaseItem.create({
+        data: {
+          ...sharedBase,
+          type: "TEXT",
+          title: `Risk identified: ${r.title}`,
+          content: `${r.description} (Severity: ${r.severity})`,
+          trustLevel: "STANDARD",
+          tags: ["meeting", "risk"],
+        },
+      }));
+    }
+
+    // 4. Action items — STANDARD trust
+    if (result.actionItems.length > 0) {
+      kbWrites.push(db.knowledgeBaseItem.create({
+        data: {
+          ...sharedBase,
+          type: "TEXT",
+          title: `Action items: ${meeting.title}`,
+          content: result.actionItems.map(a =>
+            `- ${a.text}${a.assignee ? ` → ${a.assignee}` : ""}${a.deadline ? ` (by ${a.deadline})` : ""}`
+          ).join("\n"),
+          trustLevel: "STANDARD",
+          tags: ["meeting", "action-item"],
+        },
+      }));
+    }
+
+    // 5. Raw transcript — REFERENCE_ONLY (agent uses for lookup, not as authoritative fact)
+    kbWrites.push(db.knowledgeBaseItem.create({
+      data: {
+        ...sharedBase,
+        type: "TRANSCRIPT",
+        title: `Transcript: ${meeting.title}`,
+        content: (meeting.rawTranscript || "").slice(0, 50_000),
+        trustLevel: "REFERENCE_ONLY",
+        tags: ["meeting", "transcript", "raw"],
+      },
+    }));
+
+    await Promise.allSettled(kbWrites);
   }
 }
 
