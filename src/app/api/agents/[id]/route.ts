@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { resolveApiCaller } from "@/lib/api-auth";
 
 // GET /api/agents/[id] — Agent detail
+// Accepts: browser session cookie OR Authorization: Bearer ptx_live_<key>
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
 
@@ -40,8 +41,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // PATCH /api/agents/[id] — Update agent config
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const body = await req.json();
@@ -52,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
 
   await db.agentActivity.create({
-    data: { agentId: id, type: "config_change", summary: `Configuration updated by ${session.user.name || "user"}` },
+    data: { agentId: id, type: "config_change", summary: `Configuration updated by ${caller.userId ? "user" : "API key"}` },
   });
 
   return NextResponse.json({ data: updated });
@@ -64,8 +65,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 //   ?hard=true          — permanently deletes agent + all related data
 //   ?deleteProject=true — (only with hard=true) also deletes the deployed project
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const { searchParams } = new URL(req.url);
@@ -78,7 +79,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     select: { id: true, name: true, orgId: true },
   });
   if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
-  if (agent.orgId !== (session.user as any).orgId) {
+  if (agent.orgId !== caller.orgId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -93,7 +94,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       data: { isActive: false },
     });
     await db.agentActivity.create({
-      data: { agentId: id, type: "decommissioned", summary: `Agent decommissioned by ${session.user.name || "user"}` },
+      data: { agentId: id, type: "decommissioned", summary: `Agent decommissioned via ${caller.userId ? "dashboard" : "API"}` },
     });
     return NextResponse.json({ success: true, mode: "decommissioned" });
   }

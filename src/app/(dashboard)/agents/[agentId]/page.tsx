@@ -289,7 +289,10 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
   // Derive activity timeline from real data
   const resolvedActivityEvents = useMemo(() => {
-    const activities = apiAgent?.activities || [];
+    const activities = (apiAgent?.activities || []).filter(
+      // Suppress VPS-generated noise that fires on every cycle for brand-new projects
+      (a: any) => a.type !== "comms_reminder"
+    );
     if (activities.length === 0) return [];
     // Group by date
     const grouped: Record<string, { time: string; type: string; msg: string }[]> = {};

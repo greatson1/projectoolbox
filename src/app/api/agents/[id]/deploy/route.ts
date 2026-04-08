@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
 import { CreditService } from "@/lib/credits/service";
 import { EmailService } from "@/lib/email";
 import { createJob } from "@/lib/agents/job-queue";
 import { nudgeJobProcessor } from "@/lib/agents/agent-backend";
+import { resolveApiCaller } from "@/lib/api-auth";
 
 // POST /api/agents/[id]/deploy — Deploy agent to project
+// Accepts: browser session cookie OR Authorization: Bearer ptx_live_<key>
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: agentId } = await params;
-  const orgId = (session.user as any).orgId;
+  const orgId = caller.orgId;
   const body = await req.json();
   const { projectId, config, hitlPhaseGates, hitlBudgetChanges, hitlCommunications, escalationTimeout, autonomyConfig } = body;
 
