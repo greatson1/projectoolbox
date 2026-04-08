@@ -38,6 +38,33 @@ export async function GET(req: NextRequest) {
       await generateDailyDigest();
     } catch {}
 
+    // 0c. Self-heal: if any active deployment has a currentPhase but zero artefacts,
+    //     generate them now — directly on Vercel, regardless of VPS availability.
+    //     This recovers from VPS stub lifecycle_init and any other init failures.
+    try {
+      const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+      const uninitialised = await db.agentDeployment.findMany({
+        where: {
+          isActive: true,
+          currentPhase: { not: null },
+          agent: { status: "ACTIVE" },
+        },
+        select: { id: true, agentId: true, projectId: true, currentPhase: true },
+      });
+      for (const dep of uninitialised) {
+        if (!dep.projectId) continue;
+        const artCount = await db.agentArtefact.count({
+          where: { projectId: dep.projectId, agentId: dep.agentId },
+        });
+        if (artCount === 0) {
+          generatePhaseArtefacts(dep.agentId, dep.projectId, dep.currentPhase ?? undefined)
+            .catch(e => console.error(`[self-heal] artefact generation failed for ${dep.agentId}:`, e));
+        }
+      }
+    } catch (e) {
+      console.error("Self-heal artefact check failed:", e);
+    }
+
     // 1. Find all active deployments due for a cycle
     const dueDeployments = await getDueDeployments();
 
@@ -77,6 +104,33 @@ export async function GET(req: NextRequest) {
     const nudge = await nudgeJobProcessor();
 
     // 4. If VPS unavailable, run autonomous cycles inline (serverless)
+    // 3b. Always process any pending lifecycle_init jobs on Vercel (full implementation).
+    //     The VPS stub marks them COMPLETED without generating artefacts — so we re-run
+    //     generatePhaseArtefacts here if those jobs produced no artefacts.
+    try {
+      const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+      const pendingInits = await db.agentJob.findMany({
+        where: { type: "lifecycle_init", status: "PENDING" },
+        select: { id: true, agentId: true, deploymentId: true, payload: true },
+        take: 5,
+      });
+      for (const job of pendingInits) {
+        const payload = job.payload as any;
+        const projectId = payload?.projectId;
+        if (!projectId) continue;
+        await db.agentJob.update({ where: { id: job.id }, data: { status: "CLAIMED", startedAt: new Date() } });
+        try {
+          const { runLifecycleInit } = await import("@/lib/agents/lifecycle-init");
+          await runLifecycleInit(job.agentId, job.deploymentId!);
+          await db.agentJob.update({ where: { id: job.id }, data: { status: "COMPLETED", completedAt: new Date(), result: { processedAt: new Date().toISOString(), source: "vercel-inline" } as any } });
+        } catch (e: any) {
+          await db.agentJob.update({ where: { id: job.id }, data: { status: "FAILED", error: e.message, completedAt: new Date() } });
+        }
+      }
+    } catch (e) {
+      console.error("Inline lifecycle_init processing failed:", e);
+    }
+
     let inlineProcessed = 0;
     if (!nudge.ok) {
       try {

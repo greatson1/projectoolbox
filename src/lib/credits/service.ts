@@ -85,6 +85,17 @@ export class CreditService {
       },
     });
 
+    // Auto-resume any budget-blocked proposals for all agents in this org.
+    // Dynamic import breaks the circular dep: action-executor → CreditService → action-executor.
+    // Fire-and-forget — don't let resume failures affect the grant response.
+    import("@/lib/agents/action-executor").then(({ resumeBlockedProposals }) => {
+      db.agent.findMany({ where: { orgId }, select: { id: true } }).then((agents) => {
+        for (const agent of agents) {
+          resumeBlockedProposals(agent.id).catch(() => {});
+        }
+      }).catch(() => {});
+    }).catch(() => {});
+
     return updated.creditBalance;
   }
 

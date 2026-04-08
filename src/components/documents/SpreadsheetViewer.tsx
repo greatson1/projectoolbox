@@ -1,330 +1,269 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useRef } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Download, Upload, Save, Eye, Edit3, X, FileSpreadsheet,
-  Plus, Trash2, Copy, ArrowUpDown, Filter, History, Check,
-  ChevronLeft, ChevronRight, Bold, Italic,
-} from "lucide-react";
-
-// ── Types ──
-interface CellStyle {
-  bold?: boolean;
-  italic?: boolean;
-  color?: string;
-  bg?: string;
-  align?: "left" | "center" | "right";
-  format?: "text" | "number" | "currency" | "percent" | "date";
-}
-
-interface SpreadsheetCell {
-  value: string | number | null;
-  formula?: string;
-  style?: CellStyle;
-}
-
-interface SpreadsheetData {
-  name: string;
-  headers: { key: string; label: string; width?: number; style?: CellStyle }[];
-  rows: Record<string, SpreadsheetCell>[];
-  summary?: Record<string, SpreadsheetCell>;
-}
+import { Download, Save, Edit3, Eye, X, Check, Plus, Trash2, Table as TableIcon } from "lucide-react";
+import { toast } from "sonner";
 
 interface SpreadsheetViewerProps {
   reportId: string;
   title: string;
-  type: string;
+  content: string; // CSV content
   status: string;
   projectName?: string;
-  sheets: SpreadsheetData[];
-  onSave?: (sheets: SpreadsheetData[]) => Promise<void>;
-  onExport?: () => void;
-  onUpload?: (file: File) => Promise<void>;
+  onSave: (content: string, comment?: string) => Promise<void>;
+  onApprove?: () => Promise<void>;
+  onReject?: (reason: string) => Promise<void>;
   onClose: () => void;
 }
 
-// ── Format cell value ──
-function formatValue(cell: SpreadsheetCell | null | undefined): string {
-  if (!cell || cell.value === null || cell.value === undefined) return "";
-  const v = cell.value;
-  const fmt = cell.style?.format;
-  if (fmt === "currency" && typeof v === "number") return `$${v.toLocaleString("en-US", { minimumFractionDigits: 0 })}`;
-  if (fmt === "percent" && typeof v === "number") return `${v}%`;
-  if (fmt === "number" && typeof v === "number") return v.toLocaleString();
-  return String(v);
+// ── Parse CSV → 2D array, handles quoted fields ──
+function parseCsv(csv: string): string[][] {
+  if (!csv.trim()) return [["Column A", "Column B", "Column C"], ["", "", ""]];
+  const lines = csv.split("\n").filter(l => l.trim());
+  return lines.map(line => {
+    const cells: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"') { inQuotes = !inQuotes; }
+      else if (line[i] === "," && !inQuotes) { cells.push(current.trim()); current = ""; }
+      else { current += line[i]; }
+    }
+    cells.push(current.trim());
+    return cells;
+  });
 }
 
-// ── Cell colour based on value ──
-function getCellClass(cell: SpreadsheetCell | null | undefined, colKey: string): string {
-  if (!cell) return "";
-  const v = cell.value;
-  if (typeof v === "number") {
-    if (colKey.includes("variance") || colKey.includes("delta")) {
-      return v > 0 ? "text-green-500" : v < 0 ? "text-destructive" : "";
-    }
-    if (colKey.includes("score") || colKey.includes("risk")) {
-      return Number(v) >= 15 ? "text-destructive font-bold" : Number(v) >= 8 ? "text-amber-500 font-semibold" : "text-green-500";
-    }
-  }
-  if (cell.style?.color) return "";
+// ── Serialise 2D array → CSV ──
+function toCsv(data: string[][]): string {
+  return data.map(row =>
+    row.map(cell => (cell.includes(",") || cell.includes('"') || cell.includes("\n"))
+      ? `"${cell.replace(/"/g, '""')}"` : cell
+    ).join(",")
+  ).join("\n");
+}
+
+// ── Column letter A, B … Z, AA … ──
+function colLetter(i: number): string {
+  let s = "";
+  i += 1;
+  while (i > 0) { s = String.fromCharCode(65 + ((i - 1) % 26)) + s; i = Math.floor((i - 1) / 26); }
+  return s;
+}
+
+// ── Context-aware cell styling ──
+function cellStyle(val: string): string {
+  const v = val.trim();
+  if (!v) return "text-muted-foreground/30";
+  if (/^[£$€][\d,]+(\.\d+)?$/.test(v)) return "text-right font-mono text-emerald-400 tabular-nums";
+  if (/^\d[\d,]*(\.\d+)?$/.test(v)) return "text-right font-mono tabular-nums";
+  if (/^\d+(\.\d+)?%$/.test(v)) return "text-right font-mono text-blue-400 tabular-nums";
+  if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(v)) return "text-amber-300 font-mono text-xs";
+  if (/^(HIGH|CRITICAL)$/i.test(v)) return "text-red-400 font-semibold";
+  if (/^MEDIUM$/i.test(v)) return "text-amber-400 font-semibold";
+  if (/^LOW$/i.test(v)) return "text-emerald-400 font-semibold";
+  if (/^(COMPLETE|DONE|APPROVED|YES)$/i.test(v)) return "text-emerald-400 font-semibold";
+  if (/^(IN PROGRESS|ACTIVE|ONGOING)$/i.test(v)) return "text-blue-400 font-semibold";
+  if (/^(PENDING|NOT STARTED|TBD)$/i.test(v)) return "text-muted-foreground italic";
+  if (/^(BLOCKED|OVERDUE|REJECTED|NO)$/i.test(v)) return "text-red-400 font-semibold";
   return "";
 }
 
-// ── Column letter (A, B, C...) ──
-function colLetter(i: number): string {
-  return String.fromCharCode(65 + i);
-}
-
 export function SpreadsheetViewer({
-  reportId, title, type, status, projectName,
-  sheets, onSave, onExport, onUpload, onClose,
+  reportId, title, content, status, projectName,
+  onSave, onApprove, onReject, onClose,
 }: SpreadsheetViewerProps) {
-  const [activeSheet, setActiveSheet] = useState(0);
+  const [data, setData] = useState<string[][]>(() => parseCsv(content));
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const [editData, setEditData] = useState<SpreadsheetData[]>(sheets);
-  const [selectedCell, setSelectedCell] = useState<{ row: number; col: string } | null>(null);
+  const [selected, setSelected] = useState<[number, number] | null>(null);
   const [saving, setSaving] = useState(false);
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [filterCol, setFilterCol] = useState<string | null>(null);
-  const [filterVal, setFilterVal] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
-  const sheet = editData[activeSheet];
-  if (!sheet) return null;
+  const headers = data[0] || [];
+  const rows = data.slice(1);
+  const maxCols = Math.max(...data.map(r => r.length), 1);
 
-  // Sort rows
-  let displayRows = [...sheet.rows];
-  if (sortCol) {
-    displayRows.sort((a, b) => {
-      const av = a[sortCol]?.value ?? "";
-      const bv = b[sortCol]?.value ?? "";
-      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-      return sortDir === "asc" ? cmp : -cmp;
+  const setCell = (ri: number, ci: number, val: string) => {
+    setData(prev => {
+      const next = prev.map(r => [...r]);
+      while (!next[ri]) next[ri] = [];
+      while (next[ri].length <= ci) next[ri].push("");
+      next[ri][ci] = val;
+      return next;
     });
-  }
-  if (filterCol && filterVal) {
-    displayRows = displayRows.filter(r => String(r[filterCol!]?.value || "").toLowerCase().includes(filterVal.toLowerCase()));
-  }
-
-  const handleCellEdit = (rowIdx: number, colKey: string, value: string) => {
-    const newData = [...editData];
-    const row = { ...newData[activeSheet].rows[rowIdx] };
-    row[colKey] = { ...row[colKey], value: isNaN(Number(value)) ? value : Number(value) };
-    newData[activeSheet].rows[rowIdx] = row;
-    setEditData(newData);
   };
 
-  const handleSort = (col: string) => {
-    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortCol(col); setSortDir("asc"); }
-  };
+  const addRow = () => setData(prev => [...prev, new Array(maxCols).fill("")]);
+  const addCol = () => setData(prev => prev.map((r, i) => [...r, i === 0 ? `Column ${colLetter(maxCols)}` : ""]));
+  const deleteRow = (ri: number) => setData(prev => prev.filter((_, i) => i !== ri + 1));
 
   const handleSave = async () => {
-    if (!onSave) return;
     setSaving(true);
-    try { await onSave(editData); setMode("view"); } catch { alert("Save failed"); }
+    try { await onSave(toCsv(data)); setMode("view"); toast.success("Spreadsheet saved"); }
+    catch { toast.error("Save failed"); }
     setSaving(false);
   };
 
-  const handleExportXLSX = async () => {
-    const ExcelJS = (await import("exceljs")).default;
-    const wb = new ExcelJS.Workbook();
-
-    for (const s of editData) {
-      const ws = wb.addWorksheet(s.name);
-
-      // Headers
-      ws.addRow(s.headers.map(h => h.label));
-      const headerRow = ws.getRow(1);
-      headerRow.font = { bold: true, size: 11 };
-      headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E293B" } };
-      headerRow.font = { bold: true, color: { argb: "FFF1F5F9" }, size: 11 };
-
-      s.headers.forEach((h, i) => {
-        ws.getColumn(i + 1).width = h.width || 15;
-      });
-
-      // Data rows
-      for (const row of s.rows) {
-        const values = s.headers.map(h => row[h.key]?.value ?? "");
-        const excelRow = ws.addRow(values);
-        s.headers.forEach((h, i) => {
-          const cell = row[h.key];
-          if (cell?.style?.bold) excelRow.getCell(i + 1).font = { bold: true };
-          if (cell?.style?.format === "currency") excelRow.getCell(i + 1).numFmt = "$#,##0";
-          if (cell?.style?.format === "percent") excelRow.getCell(i + 1).numFmt = "0%";
-        });
-      }
-
-      // Summary row
-      if (s.summary) {
-        ws.addRow([]);
-        const sumValues = s.headers.map(h => s.summary![h.key]?.value ?? "");
-        const sumRow = ws.addRow(sumValues);
-        sumRow.font = { bold: true };
-        sumRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF111827" } };
-        sumRow.font = { bold: true, color: { argb: "FFF1F5F9" } };
-      }
-    }
-
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `${title.replace(/\s+/g, "_")}.xlsx`; a.click();
-    URL.revokeObjectURL(url);
+  const downloadXlsx = () => {
+    const a = document.createElement("a");
+    a.href = `/api/agents/artefacts/${reportId}/export?format=xlsx`;
+    a.download = `${title.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_")}.xlsx`;
+    a.click();
+    toast.success("Downloading Excel file…");
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !onUpload) return;
-    await onUpload(file);
+  const downloadCsv = () => {
+    const blob = new Blob([toCsv(data)], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
+
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card flex-shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onClose}><X className="w-4 h-4" /></Button>
-          <FileSpreadsheet className="w-5 h-5 text-green-500" />
           <div>
             <div className="flex items-center gap-2">
+              <TableIcon className="w-4 h-4 text-emerald-500" />
               <h1 className="text-sm font-bold">{title}</h1>
-              <Badge variant={status === "PUBLISHED" ? "default" : "secondary"} className="text-[9px]">{status}</Badge>
-              <Badge variant="outline" className="text-[9px] bg-green-500/10 text-green-500 border-green-500/20">Spreadsheet</Badge>
+              <Badge variant={status === "APPROVED" ? "default" : "secondary"} className="text-[9px]">{status}</Badge>
+              <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/30">Spreadsheet</Badge>
             </div>
-            {projectName && <p className="text-[10px] text-muted-foreground">{projectName}</p>}
+            {projectName && (
+              <p className="text-[10px] text-muted-foreground ml-6">{projectName} · {rows.length} rows · {maxCols} columns</p>
+            )}
           </div>
         </div>
+
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-border overflow-hidden">
-            <button className={`px-3 py-1 text-xs font-semibold flex items-center gap-1 ${mode === "view" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            <button className={`px-3 py-1 text-xs font-semibold flex items-center gap-1 ${mode === "view" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
               onClick={() => setMode("view")}><Eye className="w-3 h-3" /> View</button>
-            <button className={`px-3 py-1 text-xs font-semibold flex items-center gap-1 ${mode === "edit" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            <button className={`px-3 py-1 text-xs font-semibold flex items-center gap-1 ${mode === "edit" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
               onClick={() => setMode("edit")}><Edit3 className="w-3 h-3" /> Edit</button>
           </div>
-          <Button variant="outline" size="sm" onClick={handleExportXLSX}><Download className="w-3.5 h-3.5 mr-1" /> XLSX</Button>
-          <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.csv" className="hidden" onChange={handleUpload} />
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="w-3.5 h-3.5 mr-1" /> Upload</Button>
-          {mode === "edit" && <Button size="sm" onClick={handleSave} disabled={saving}><Save className="w-3.5 h-3.5 mr-1" /> {saving ? "Saving..." : "Save"}</Button>}
+
+          <Button variant="outline" size="sm" onClick={downloadXlsx} className="text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/10">
+            <Download className="w-3.5 h-3.5 mr-1" /> Excel (.xlsx)
+          </Button>
+          <Button variant="outline" size="sm" onClick={downloadCsv}>
+            <Download className="w-3.5 h-3.5 mr-1" /> CSV
+          </Button>
+
+          {mode === "edit" && (
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              <Save className="w-3.5 h-3.5 mr-1" />{saving ? "Saving…" : "Save"}
+            </Button>
+          )}
+          {status === "DRAFT" && onApprove && (
+            <>
+              <Button size="sm" onClick={onApprove}><Check className="w-3.5 h-3.5 mr-1" /> Approve</Button>
+              <Button variant="destructive" size="sm" onClick={() => setShowRejectModal(true)}><X className="w-3.5 h-3.5 mr-1" /> Reject</Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Toolbar (edit mode) */}
+      {/* Edit toolbar */}
       {mode === "edit" && (
-        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-muted/30">
-          {selectedCell && (
-            <span className="text-xs font-mono text-muted-foreground px-2 py-0.5 bg-muted rounded">
-              {colLetter(sheet.headers.findIndex(h => h.key === selectedCell.col))}{selectedCell.row + 1}
-            </span>
-          )}
-          <div className="w-px h-4 bg-border" />
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Bold className="w-3.5 h-3.5" /></Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0"><Italic className="w-3.5 h-3.5" /></Button>
-          <div className="w-px h-4 bg-border" />
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={() => { /* add row */ }}>
-            <Plus className="w-3 h-3 mr-1" /> Row
-          </Button>
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={() => { /* add col */ }}>
-            <Plus className="w-3 h-3 mr-1" /> Column
-          </Button>
-          {filterCol && (
-            <div className="flex items-center gap-1 ml-2">
-              <Filter className="w-3 h-3 text-muted-foreground" />
-              <input className="px-2 py-0.5 rounded text-[10px] bg-background border border-input w-[120px]"
-                placeholder="Filter..." value={filterVal} onChange={e => setFilterVal(e.target.value)} />
-              <button className="text-muted-foreground" onClick={() => { setFilterCol(null); setFilterVal(""); }}><X className="w-3 h-3" /></button>
-            </div>
-          )}
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border bg-muted/30 flex-shrink-0">
+          <Button variant="ghost" size="sm" className="text-xs h-7" onClick={addRow}><Plus className="w-3 h-3 mr-1" /> Row</Button>
+          <Button variant="ghost" size="sm" className="text-xs h-7" onClick={addCol}><Plus className="w-3 h-3 mr-1" /> Column</Button>
+          <span className="text-[10px] text-muted-foreground ml-2">Click cell to edit · Tab to move right · Enter to move down</span>
         </div>
       )}
 
-      {/* Sheet tabs */}
-      <div className="flex items-center gap-1 px-4 py-1 border-b border-border bg-muted/20">
-        {editData.map((s, i) => (
-          <button key={i} className={`px-3 py-1 text-xs font-semibold rounded-t transition-colors ${activeSheet === i ? "bg-card text-foreground border border-border border-b-0" : "text-muted-foreground hover:bg-muted"}`}
-            onClick={() => setActiveSheet(i)}>
-            {s.name}
-          </button>
-        ))}
-      </div>
-
       {/* Spreadsheet grid */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-xs">
+        <table className="border-collapse text-xs" style={{ minWidth: `${(maxCols + 1) * 140}px`, width: "100%" }}>
           <thead className="sticky top-0 z-10">
-            <tr className="bg-muted">
-              {/* Row number column */}
-              <th className="w-10 px-2 py-2 text-center text-[10px] font-semibold text-muted-foreground border-b border-r border-border bg-muted sticky left-0 z-20">#</th>
-              {sheet.headers.map((h, i) => (
-                <th key={h.key} className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-r border-border bg-muted cursor-pointer hover:bg-muted/80 select-none"
-                  style={{ minWidth: h.width ? `${h.width}px` : "120px" }}
-                  onClick={() => handleSort(h.key)}>
-                  <div className="flex items-center justify-between gap-1">
-                    <span>{h.label}</span>
-                    <div className="flex items-center gap-0.5">
-                      {sortCol === h.key && <ArrowUpDown className="w-3 h-3 text-primary" />}
-                      {mode === "edit" && (
-                        <button className="opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); setFilterCol(h.key); }}>
-                          <Filter className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+            {/* Column letters row */}
+            <tr className="bg-muted/60">
+              <th className="w-12 px-1 py-1 border border-border/20 text-[9px] text-muted-foreground/40 font-mono sticky left-0 z-20 bg-muted/60" />
+              {Array.from({ length: maxCols }).map((_, ci) => (
+                <th key={ci} className="px-2 py-1 border border-border/20 text-[9px] text-muted-foreground/40 font-mono font-normal text-center min-w-[140px]">
+                  {colLetter(ci)}
+                </th>
+              ))}
+            </tr>
+            {/* Header row */}
+            <tr className="bg-primary/15">
+              <td className="w-12 px-1 py-1.5 border border-border/20 text-[9px] text-muted-foreground/40 text-center font-mono sticky left-0 z-20 bg-primary/15 select-none">1</td>
+              {Array.from({ length: maxCols }).map((_, ci) => (
+                <th key={ci} className="border border-border/20 text-left font-semibold text-foreground p-0">
+                  {mode === "edit" ? (
+                    <input className="w-full px-2 py-1.5 bg-transparent outline-none focus:bg-primary/10 font-semibold text-xs"
+                      value={headers[ci] || ""} onChange={e => setCell(0, ci, e.target.value)} />
+                  ) : (
+                    <span className="block px-2 py-1.5 text-xs">{headers[ci] || ""}</span>
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {displayRows.map((row, rowIdx) => (
-              <tr key={rowIdx} className="hover:bg-muted/20 transition-colors">
-                <td className="px-2 py-1.5 text-center text-[10px] text-muted-foreground border-b border-r border-border bg-muted/30 sticky left-0">{rowIdx + 1}</td>
-                {sheet.headers.map(h => {
-                  const cell = row[h.key];
-                  const isSelected = selectedCell?.row === rowIdx && selectedCell?.col === h.key;
+            {rows.map((row, ri) => (
+              <tr key={ri} className={`group ${ri % 2 === 0 ? "bg-background" : "bg-muted/10"} hover:bg-primary/5 transition-colors`}>
+                <td className="w-12 px-1 py-0 border border-border/20 text-[9px] text-muted-foreground/40 text-center font-mono sticky left-0 bg-inherit z-10 select-none">
+                  <div className="flex items-center justify-between px-1">
+                    <span>{ri + 2}</span>
+                    {mode === "edit" && (
+                      <button onClick={() => deleteRow(ri)} className="opacity-0 group-hover:opacity-100 text-destructive/60 hover:text-destructive transition-opacity">
+                        <Trash2 className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+                {Array.from({ length: maxCols }).map((_, ci) => {
+                  const val = row[ci] || "";
+                  const isSelected = selected?.[0] === ri + 1 && selected?.[1] === ci;
                   return (
-                    <td key={h.key}
-                      className={`px-3 py-1.5 border-b border-r border-border transition-colors ${isSelected ? "ring-2 ring-primary ring-inset bg-primary/5" : ""} ${getCellClass(cell, h.key)} ${cell?.style?.bold ? "font-bold" : ""} ${cell?.style?.italic ? "italic" : ""}`}
-                      style={{
-                        textAlign: cell?.style?.align || (typeof cell?.value === "number" ? "right" : "left"),
-                        backgroundColor: cell?.style?.bg || undefined,
-                        color: cell?.style?.color || undefined,
-                      }}
-                      onClick={() => setSelectedCell({ row: rowIdx, col: h.key })}>
-                      {mode === "edit" && isSelected ? (
-                        <input className="w-full bg-transparent outline-none text-xs"
-                          value={cell?.value ?? ""} autoFocus
-                          onChange={e => handleCellEdit(rowIdx, h.key, e.target.value)}
+                    <td key={ci}
+                      className={`border border-border/20 p-0 ${isSelected ? "ring-2 ring-inset ring-primary" : ""}`}
+                      onClick={() => setSelected([ri + 1, ci])}>
+                      {mode === "edit" ? (
+                        <input
+                          autoFocus={isSelected}
+                          className={`w-full px-2 py-1.5 bg-transparent outline-none focus:bg-primary/5 ${cellStyle(val)}`}
+                          value={val}
+                          onChange={e => setCell(ri + 1, ci, e.target.value)}
                           onKeyDown={e => {
-                            if (e.key === "Tab") { e.preventDefault(); const ci = sheet.headers.findIndex(x => x.key === h.key); if (ci < sheet.headers.length - 1) setSelectedCell({ row: rowIdx, col: sheet.headers[ci + 1].key }); }
-                            if (e.key === "Enter") { e.preventDefault(); if (rowIdx < displayRows.length - 1) setSelectedCell({ row: rowIdx + 1, col: h.key }); }
-                            if (e.key === "Escape") setSelectedCell(null);
-                          }} />
+                            if (e.key === "Tab") { e.preventDefault(); setSelected([ri + 1, ci + 1]); }
+                            if (e.key === "Enter") { setSelected([ri + 2, ci]); }
+                            if (e.key === "Escape") setSelected(null);
+                            if (e.key === "ArrowRight" && (e.target as HTMLInputElement).selectionStart === val.length) setSelected([ri + 1, ci + 1]);
+                            if (e.key === "ArrowLeft" && (e.target as HTMLInputElement).selectionStart === 0) setSelected([ri + 1, ci - 1]);
+                            if (e.key === "ArrowDown") setSelected([ri + 2, ci]);
+                            if (e.key === "ArrowUp") setSelected([ri, ci]);
+                          }}
+                        />
                       ) : (
-                        <span>{formatValue(cell)}</span>
+                        <span className={`block px-2 py-1.5 ${cellStyle(val)}`}>{val}</span>
                       )}
                     </td>
                   );
                 })}
               </tr>
             ))}
-            {/* Summary row */}
-            {sheet.summary && (
-              <tr className="bg-muted font-bold border-t-2 border-border">
-                <td className="px-2 py-2 text-center text-[10px] text-muted-foreground border-b border-r border-border sticky left-0 bg-muted">Σ</td>
-                {sheet.headers.map(h => {
-                  const cell = sheet.summary![h.key];
-                  return (
-                    <td key={h.key} className={`px-3 py-2 border-b border-r border-border ${getCellClass(cell, h.key)}`}
-                      style={{ textAlign: typeof cell?.value === "number" ? "right" : "left" }}>
-                      {formatValue(cell)}
-                    </td>
-                  );
-                })}
+            {mode === "edit" && (
+              <tr>
+                <td className="border border-border/10" />
+                <td colSpan={maxCols} className="border border-border/10 px-2 py-1">
+                  <button onClick={addRow} className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-1 transition-colors">
+                    <Plus className="w-3 h-3" /> Add row
+                  </button>
+                </td>
               </tr>
             )}
           </tbody>
@@ -332,117 +271,37 @@ export function SpreadsheetViewer({
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-t border-border bg-muted/30 text-[10px] text-muted-foreground">
+      <div className="flex items-center justify-between px-4 py-1 border-t border-border bg-muted/30 text-[10px] text-muted-foreground flex-shrink-0">
         <div className="flex items-center gap-4">
-          <span>Rows: {displayRows.length}</span>
-          <span>Columns: {sheet.headers.length}</span>
-          {selectedCell && <span>Cell: {colLetter(sheet.headers.findIndex(h => h.key === selectedCell.col))}{selectedCell.row + 1}</span>}
-          {filterVal && <span>Filtered: {displayRows.length} of {sheet.rows.length}</span>}
+          <span>Status: <strong className="text-foreground">{status}</strong></span>
+          <span>{rows.length} rows · {maxCols} columns</span>
+          {selected && <span className="text-primary">Selected: {colLetter(selected[1])}{selected[0] + 1}</span>}
         </div>
-        <span>{editData.length} sheet{editData.length > 1 ? "s" : ""} · {title}</span>
+        <span>ID: {reportId.slice(-8)}</span>
       </div>
+
+      {/* Reject modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={() => setShowRejectModal(false)}>
+          <Card className="w-[400px]" onClick={e => e.stopPropagation()}>
+            <CardContent className="pt-5 space-y-4">
+              <h3 className="text-base font-bold text-destructive">Reject Document</h3>
+              <p className="text-sm text-muted-foreground">Provide a reason — the agent will be notified and may revise.</p>
+              <textarea className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-input resize-none"
+                rows={3} placeholder="Reason for rejection…"
+                value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" size="sm" onClick={() => setShowRejectModal(false)}>Cancel</Button>
+                <Button variant="destructive" size="sm"
+                  onClick={async () => { await onReject?.(rejectReason); setShowRejectModal(false); }}
+                  disabled={!rejectReason.trim()}>
+                  <X className="w-3.5 h-3.5 mr-1" /> Reject with Feedback
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
-
-// ── Pre-built spreadsheet templates ──
-export const SPREADSHEET_TEMPLATES = {
-  riskRegister: (risks: any[]): SpreadsheetData[] => [{
-    name: "Risk Register",
-    headers: [
-      { key: "id", label: "ID", width: 80 },
-      { key: "title", label: "Risk Description", width: 250 },
-      { key: "category", label: "Category", width: 100 },
-      { key: "probability", label: "P", width: 50, style: { align: "center" as const } },
-      { key: "impact", label: "I", width: 50, style: { align: "center" as const } },
-      { key: "score", label: "Score", width: 60, style: { align: "center" as const } },
-      { key: "status", label: "Status", width: 90 },
-      { key: "owner", label: "Owner", width: 120 },
-      { key: "mitigation", label: "Mitigation Strategy", width: 300 },
-    ],
-    rows: risks.map((r, i) => ({
-      id: { value: r.id?.slice(-6) || `R-${i + 1}` },
-      title: { value: r.title },
-      category: { value: r.category || "General" },
-      probability: { value: r.probability, style: { align: "center" as const } },
-      impact: { value: r.impact, style: { align: "center" as const } },
-      score: { value: r.score || r.probability * r.impact, style: { align: "center" as const, bold: true } },
-      status: { value: r.status },
-      owner: { value: r.owner || "Unassigned" },
-      mitigation: { value: r.mitigation || "" },
-    })),
-    summary: {
-      id: { value: "TOTAL" },
-      title: { value: `${risks.length} risks` },
-      category: { value: "" },
-      probability: { value: "" },
-      impact: { value: "" },
-      score: { value: Math.round(risks.reduce((s: number, r: any) => s + (r.score || r.probability * r.impact), 0) / (risks.length || 1)), style: { bold: true } },
-      status: { value: "" },
-      owner: { value: "" },
-      mitigation: { value: "" },
-    },
-  }],
-
-  budget: (budget: number, categories: any[]): SpreadsheetData[] => [{
-    name: "Budget Tracker",
-    headers: [
-      { key: "category", label: "Category", width: 160 },
-      { key: "budget", label: "Budget", width: 120, style: { format: "currency" as const } },
-      { key: "actual", label: "Actual", width: 120, style: { format: "currency" as const } },
-      { key: "variance", label: "Variance", width: 120, style: { format: "currency" as const } },
-      { key: "pctSpent", label: "% Spent", width: 80, style: { format: "percent" as const } },
-    ],
-    rows: categories.map(c => ({
-      category: { value: c.name },
-      budget: { value: c.budget, style: { format: "currency" as const } },
-      actual: { value: c.actual, style: { format: "currency" as const } },
-      variance: { value: c.budget - c.actual, style: { format: "currency" as const } },
-      pctSpent: { value: Math.round((c.actual / c.budget) * 100), style: { format: "percent" as const } },
-    })),
-    summary: {
-      category: { value: "TOTAL", style: { bold: true } },
-      budget: { value: budget, style: { format: "currency" as const, bold: true } },
-      actual: { value: categories.reduce((s: number, c: any) => s + c.actual, 0), style: { format: "currency" as const, bold: true } },
-      variance: { value: budget - categories.reduce((s: number, c: any) => s + c.actual, 0), style: { format: "currency" as const, bold: true } },
-      pctSpent: { value: Math.round((categories.reduce((s: number, c: any) => s + c.actual, 0) / budget) * 100), style: { format: "percent" as const, bold: true } },
-    },
-  }],
-
-  taskTracker: (tasks: any[]): SpreadsheetData[] => [{
-    name: "Task Tracker",
-    headers: [
-      { key: "id", label: "ID", width: 80 },
-      { key: "title", label: "Task", width: 250 },
-      { key: "status", label: "Status", width: 100 },
-      { key: "priority", label: "Priority", width: 80 },
-      { key: "sp", label: "SP", width: 50 },
-      { key: "progress", label: "Progress", width: 80, style: { format: "percent" as const } },
-      { key: "assignee", label: "Assignee", width: 120 },
-      { key: "start", label: "Start", width: 100 },
-      { key: "end", label: "End", width: 100 },
-    ],
-    rows: tasks.map((t, i) => ({
-      id: { value: t.id?.slice(-6) || `T-${i + 1}` },
-      title: { value: t.title },
-      status: { value: t.status },
-      priority: { value: t.priority || "MEDIUM" },
-      sp: { value: t.storyPoints || 0 },
-      progress: { value: t.progress || 0, style: { format: "percent" as const } },
-      assignee: { value: t.assigneeId || "Unassigned" },
-      start: { value: t.startDate ? new Date(t.startDate).toLocaleDateString() : "" },
-      end: { value: t.endDate ? new Date(t.endDate).toLocaleDateString() : "" },
-    })),
-    summary: {
-      id: { value: "TOTAL" },
-      title: { value: `${tasks.length} tasks` },
-      status: { value: `${tasks.filter((t: any) => t.status === "DONE").length} done` },
-      priority: { value: "" },
-      sp: { value: tasks.reduce((s: number, t: any) => s + (t.storyPoints || 0), 0) },
-      progress: { value: Math.round(tasks.reduce((s: number, t: any) => s + (t.progress || 0), 0) / (tasks.length || 1)), style: { format: "percent" as const } },
-      assignee: { value: "" },
-      start: { value: "" },
-      end: { value: "" },
-    },
-  }],
-};

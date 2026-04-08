@@ -10,33 +10,44 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
 import { toast } from "sonner";
-import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield } from "lucide-react";
+import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export default function ChatPageWrapper() {
   return <Suspense fallback={null}><AgentChatPage /></Suspense>;
 }
 
-// ── Simple markdown → HTML for chat bubbles ──
-function mdToHtml(text: string): string {
-  let html = text
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    // headings
-    .replace(/^### (.+)$/gm, '<strong class="block text-xs font-bold mt-2 mb-1">$1</strong>')
-    .replace(/^## (.+)$/gm, '<strong class="block text-sm font-bold mt-3 mb-1">$1</strong>')
-    .replace(/^# (.+)$/gm, '<strong class="block text-base font-bold mt-3 mb-1">$1</strong>')
-    // bold / italic
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    // bullet lists
-    .replace(/^[-•]\s+(.+)$/gm, '<span class="block pl-3">• $1</span>')
-    // numbered lists
-    .replace(/^(\d+)\.\s+(.+)$/gm, '<span class="block pl-3">$1. $2</span>')
-    // horizontal rules
-    .replace(/^---+$/gm, '<hr class="my-2 border-border/40">')
-    // newlines
-    .replace(/\n/g, "<br>");
-  return html;
-}
+// ── ReactMarkdown components for clean chat rendering ──
+const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  h1: ({ children }) => <h1 className="text-base font-bold mt-4 mb-2 text-foreground">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-sm font-bold mt-3 mb-1.5 text-foreground border-b border-border/30 pb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1 text-foreground">{children}</h3>,
+  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }) => <em className="italic text-muted-foreground">{children}</em>,
+  ul: ({ children }) => <ul className="mb-2 space-y-0.5 ml-3">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-2 space-y-0.5 ml-3 list-decimal">{children}</ol>,
+  li: ({ children }) => <li className="text-sm leading-relaxed flex gap-1.5"><span className="text-primary mt-1 flex-shrink-0">•</span><span>{children}</span></li>,
+  hr: () => <hr className="my-3 border-border/40" />,
+  blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/40 pl-3 italic text-muted-foreground my-2">{children}</blockquote>,
+  code: ({ children, className }) => {
+    const isBlock = className?.includes("language-");
+    return isBlock
+      ? <pre className="bg-muted rounded-lg p-3 text-xs font-mono overflow-x-auto my-2"><code>{children}</code></pre>
+      : <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
+  },
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-3 rounded-lg border border-border">
+      <table className="w-full text-xs border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-muted/70">{children}</thead>,
+  tbody: ({ children }) => <tbody className="divide-y divide-border/30">{children}</tbody>,
+  tr: ({ children }) => <tr className="hover:bg-muted/30 transition-colors">{children}</tr>,
+  th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-foreground text-[11px] uppercase tracking-wide">{children}</th>,
+  td: ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
+};
 
 // ── Rich message types matching Vite original ──
 type MessageType = "text" | "status" | "artefact" | "risk" | "actions";
@@ -166,12 +177,15 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
-  // Default text — render markdown formatting
+  // Default text — render with proper markdown (tables, headings, lists, bold, etc.)
   return (
     <div className="flex gap-2">
       {avatar}
-      <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-bl-md bg-muted text-sm leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
+      <div className="max-w-[80%] px-4 py-3 rounded-2xl rounded-bl-md bg-muted text-sm leading-relaxed">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+          {msg.content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -226,6 +240,8 @@ function AgentChatPage() {
   usePageTitle("Chat with Agent");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(searchParams.get("agent"));
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, Message[]>>({});
+  const [historyLoaded, setHistoryLoaded] = useState<Set<string>>(new Set());
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -236,6 +252,38 @@ function AgentChatPage() {
 
   const activeAgent = agents.find((a: any) => a.id === activeAgentId);
   const messages = activeAgentId ? (messagesByAgent[activeAgentId] || []) : [];
+
+  // ── Load persistent chat history from DB when switching agents ──
+  useEffect(() => {
+    if (!activeAgentId || historyLoaded.has(activeAgentId)) return;
+
+    setHistoryLoading(true);
+    fetch(`/api/agents/${activeAgentId}/chat`)
+      .then(r => r.json())
+      .then(({ data }) => {
+        if (!Array.isArray(data)) return;
+        // Filter out system kickoff messages stored in DB
+        const filtered = data.filter((m: any) =>
+          !(m.role === "user" && (m.content?.startsWith("SYSTEM_KICKOFF:") || m.content?.startsWith("KICKOFF:")))
+        );
+        const loaded: Message[] = filtered.map((m: any) => ({
+          id: m.id,
+          role: m.role === "user" ? "user" : "agent",
+          type: "text" as const,
+          content: m.content,
+          timestamp: new Date(m.createdAt),
+        }));
+        setMessagesByAgent(prev => ({ ...prev, [activeAgentId]: loaded }));
+        setHistoryLoaded(prev => new Set([...prev, activeAgentId]));
+        // Scroll to bottom after history loads
+        setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 150);
+      })
+      .catch(() => {
+        // If history fetch fails, mark as loaded so we fall through to kickoff
+        setHistoryLoaded(prev => new Set([...prev, activeAgentId]));
+      })
+      .finally(() => setHistoryLoading(false));
+  }, [activeAgentId, historyLoaded]);
 
   // Auto-kickoff ref — set after sendMessage is defined
   const kickoffFiredRef = useRef<Set<string>>(new Set());
@@ -354,12 +402,21 @@ function AgentChatPage() {
     scrollToBottom();
   };
 
-  // Auto-kickoff: fire once per agent when chat opens with no messages
+  // Auto-kickoff: only fire on genuine FIRST contact (no history in DB).
+  // If history loaded and messages exist → skip entirely (agent is silent, ready for input).
+  // If history loaded and empty → this is a brand new agent, fire first-contact kickoff.
   useEffect(() => {
     if (!activeAgentId || !activeAgent || sending) return;
+    // Wait until history fetch has completed for this agent
+    if (!historyLoaded.has(activeAgentId)) return;
     if (kickoffFiredRef.current.has(activeAgentId)) return;
-    const existingMsgs = messagesByAgent[activeAgentId];
-    if (existingMsgs && existingMsgs.length > 0) return;
+
+    const existingMsgs = messagesByAgent[activeAgentId] || [];
+    // History exists — user is returning. Don't greet. Agent is ready.
+    if (existingMsgs.length > 0) {
+      kickoffFiredRef.current.add(activeAgentId);
+      return;
+    }
 
     // Only kickoff for deployed agents with a project
     const hasProject = activeAgent.deployments?.length > 0 || activeAgent.project;
@@ -367,9 +424,9 @@ function AgentChatPage() {
 
     kickoffFiredRef.current.add(activeAgentId);
     setTimeout(() => {
-      sendMessage(`SYSTEM_KICKOFF: I've just opened this project for the first time. Please: (1) introduce yourself and confirm the project details, (2) present your initial feasibility assessment and research findings, (3) summarise any artefacts you've already generated, (4) list the top risks identified, and (5) state clearly what needs to happen next and whether you require my approval to proceed. Be thorough.`);
+      sendMessage(`SYSTEM_KICKOFF: This is our first interaction. Please: (1) introduce yourself and confirm the project details, (2) present your initial assessment and any research findings, (3) summarise any artefacts you've already generated, (4) list the top risks identified, and (5) state clearly what needs to happen next and whether you require my approval to proceed.`);
     }, 1200);
-  }, [activeAgentId, activeAgent, messagesByAgent, sending]);
+  }, [activeAgentId, activeAgent, messagesByAgent, historyLoaded, sending]);
 
   if (agentsLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><Skeleton className="h-[500px] rounded-xl" /></div>;
 
@@ -403,7 +460,11 @@ function AgentChatPage() {
                     <span className="text-[10px] text-muted-foreground">{agentMsgs.length > 0 ? "now" : ""}</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">
-                    {lastMsg ? lastMsg.content.slice(0, 45) + (lastMsg.content.length > 45 ? "..." : "") : (project?.name || "No messages yet")}
+                    {lastMsg
+                      ? lastMsg.content.slice(0, 45) + (lastMsg.content.length > 45 ? "..." : "")
+                      : agent._count?.chatMessages > 0
+                        ? "Tap to continue conversation"
+                        : (project?.name || "No messages yet")}
                   </p>
                 </div>
                 {agentMsgs.filter(m => m.role === "agent").length > 0 && !active && (
@@ -436,17 +497,23 @@ function AgentChatPage() {
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && activeAgent && (
+          {/* Loading history indicator */}
+          {historyLoading && activeAgent && (
+            <div className="flex items-center gap-2 justify-center py-4 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading conversation history…
+            </div>
+          )}
+          {/* Empty state — only shown after history has loaded and there's genuinely nothing */}
+          {!historyLoading && messages.length === 0 && activeAgent && historyLoaded.has(activeAgentId!) && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-2xl font-bold text-white"
+              <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center text-xl font-bold text-white"
                 style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
-              <h3 className="text-base font-bold mb-1">Chat with Agent {activeAgent.name}</h3>
-              <p className="text-sm text-muted-foreground mb-2">
+              <h3 className="text-sm font-bold mb-1">Starting conversation with {activeAgent.name}</h3>
+              <p className="text-xs text-muted-foreground mb-5">
                 {activeAgent.deployments?.[0]?.project?.name
-                  ? `Managing ${activeAgent.deployments[0].project.name} · L${activeAgent.autonomyLevel}`
+                  ? `${activeAgent.deployments[0].project.name} · L${activeAgent.autonomyLevel} Autonomy`
                   : "No project assigned"}
               </p>
-              <p className="text-xs text-muted-foreground mb-6">Each agent only knows about their assigned project.</p>
               <div className="flex flex-wrap justify-center gap-2">
                 {QUICK_ACTIONS.map(qa => (
                   <Button key={qa.label} variant="outline" size="sm" className="text-xs gap-1.5" onClick={() => sendMessage(qa.prompt)}>

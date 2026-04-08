@@ -9,9 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { DocumentEditor } from "@/components/documents/DocumentEditor";
+import { SpreadsheetViewer } from "@/components/documents/SpreadsheetViewer";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 import {
   FileText, FolderOpen, Upload, Clock, Download, Eye, CheckCircle2,
-  XCircle, ChevronDown, Edit3,
+  XCircle, ChevronDown, Edit3, RefreshCw,
 } from "lucide-react";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -49,6 +53,7 @@ export default function ArtefactsPage() {
   const [editorArt, setEditorArt] = useState<any>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
+  const [generating, setGenerating] = useState(false);
 
   if (isLoading) {
     return (
@@ -109,18 +114,63 @@ export default function ArtefactsPage() {
     window.location.reload();
   };
 
-  const handleDownload = (artefact: any) => {
-    const blob = new Blob([artefact.content || ""], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${artefact.name.replace(/[^a-zA-Z0-9]/g, "_")}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/artefacts/generate`, { method: "POST" });
+      const text = await res.text();
+      let json: any = null;
+      try { json = JSON.parse(text); } catch { /* not JSON */ }
+      if (res.ok && json?.data) {
+        const { generated, skipped, phase } = json.data;
+        if (generated > 0) {
+          toast.success(`Generated ${generated} artefact(s) for ${phase} phase`);
+          window.location.reload();
+        } else {
+          toast.info(`All ${phase} artefacts already exist (${skipped} found)`);
+        }
+      } else {
+        toast.error(json?.error || `Error ${res.status}: ${text.slice(0, 80)}`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Generation failed");
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  // ── Full-screen Document Editor ──
+  const handleDownload = (artefact: any, format: "docx" | "pdf" | "md" = "docx") => {
+    const a = document.createElement("a");
+    a.href = `/api/agents/artefacts/${artefact.id}/export?format=${format}`;
+    if (format === "pdf") {
+      // Open in new tab so browser print dialog can generate the PDF
+      window.open(a.href, "_blank");
+    } else {
+      a.download = `${artefact.name.replace(/[^a-zA-Z0-9\s]/g, "").trim().replace(/\s+/g, "_")}.${format}`;
+      a.click();
+    }
+  };
+
+  // ── Full-screen viewer — SpreadsheetViewer for tabular artefacts, DocumentEditor for prose ──
   if (editorArt) {
+    const isSheet = editorArt.format === "csv" || editorArt.format === "table" || isSpreadsheetArtefact(editorArt.name);
+
+    if (isSheet) {
+      return (
+        <SpreadsheetViewer
+          reportId={editorArt.id}
+          title={editorArt.name}
+          content={editorArt.content || ""}
+          status={editorArt.status}
+          projectName={project?.name}
+          onSave={handleSave}
+          onApprove={editorArt.status !== "APPROVED" ? () => handleApprove() : undefined}
+          onReject={editorArt.status !== "APPROVED" ? (reason) => handleReject(reason) : undefined}
+          onClose={() => setEditorArt(null)}
+        />
+      );
+    }
+
     const htmlContent = editorArt.content?.startsWith("<")
       ? editorArt.content
       : markdownToHtml(editorArt.content || "");
@@ -136,7 +186,8 @@ export default function ArtefactsPage() {
         onSave={handleSave}
         onApprove={editorArt.status !== "APPROVED" ? () => handleApprove() : undefined}
         onReject={editorArt.status !== "APPROVED" ? (reason) => handleReject(reason) : undefined}
-        onExportDOCX={() => handleDownload(editorArt)}
+        onExportPDF={() => handleDownload(editorArt, "pdf")}
+        onExportDOCX={() => handleDownload(editorArt, "docx")}
         onClose={() => setEditorArt(null)}
       />
     );
@@ -151,9 +202,15 @@ export default function ArtefactsPage() {
             {items.length} documents · {approved} approved · {inReview} in review
           </p>
         </div>
-        <Button size="sm" variant="outline">
-          <Upload className="h-4 w-4 mr-2" />Upload Document
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${generating ? "animate-spin" : ""}`} />
+            {generating ? "Generating…" : "Generate Artefacts"}
+          </Button>
+          <Button size="sm" variant="outline">
+            <Upload className="h-4 w-4 mr-2" />Upload Document
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -236,7 +293,10 @@ export default function ArtefactsPage() {
                           {art.name}
                         </h3>
                         <Badge variant={STATUS_VARIANT[art.status] || "outline"} className="text-[10px]">{art.status}</Badge>
-                        {art.format && <Badge variant="outline" className="text-[9px]">{FORMAT_LABEL[art.format] || art.format}</Badge>}
+                        {(art.format === "csv" || art.format === "table" || isSpreadsheetArtefact(art.name))
+                          ? <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/30">Spreadsheet</Badge>
+                          : art.format && <Badge variant="outline" className="text-[9px]">{FORMAT_LABEL[art.format] || art.format}</Badge>
+                        }
                         <span className="text-[10px] text-muted-foreground ml-auto">v{art.version || 1}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -246,10 +306,10 @@ export default function ArtefactsPage() {
                         {art.content && ` · ${Math.ceil(art.content.length / 5)} words`}
                       </p>
 
-                      {/* Inline Preview */}
+                      {/* Inline Preview — rendered markdown, no raw symbols */}
                       {isPreview && art.content && (
-                        <div className="mt-3 p-3 rounded-lg bg-muted/30 border border-border/30 max-h-[400px] overflow-y-auto">
-                          <pre className="text-xs whitespace-pre-wrap font-sans leading-relaxed">{art.content}</pre>
+                        <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/30 max-h-[500px] overflow-y-auto prose prose-sm dark:prose-invert max-w-none text-sm">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content}</ReactMarkdown>
                         </div>
                       )}
 
@@ -280,9 +340,14 @@ export default function ArtefactsPage() {
                         </Button>
                       )}
                       {art.content && (
-                        <Button variant="ghost" size="sm" onClick={() => handleDownload(art)} title="Download">
-                          <Download className="w-4 h-4" />
-                        </Button>
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => handleDownload(art, "docx")} title="Download Word (.docx)">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDownload(art, "pdf")} title="Print / Save as PDF">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </>
                       )}
                       {(art.status === "DRAFT" || art.status === "PENDING_REVIEW") && (
                         <>

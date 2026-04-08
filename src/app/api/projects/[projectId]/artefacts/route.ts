@@ -9,6 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 
   const { projectId } = await params;
 
+  // AgentArtefact has no Prisma relation to Agent — join manually
   const artefacts = await db.agentArtefact.findMany({
     where: { projectId },
     orderBy: { createdAt: "desc" },
@@ -17,9 +18,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       status: true, version: true, feedback: true,
       phaseId: true, createdAt: true, updatedAt: true,
       agentId: true,
-      agent: { select: { name: true, gradient: true } },
     },
   });
 
-  return NextResponse.json({ data: artefacts });
+  // Fetch unique agents referenced by these artefacts
+  const agentIds = [...new Set(artefacts.map(a => a.agentId).filter(Boolean))];
+  const agents = agentIds.length > 0
+    ? await db.agent.findMany({
+        where: { id: { in: agentIds } },
+        select: { id: true, name: true, gradient: true },
+      })
+    : [];
+  const agentMap = Object.fromEntries(agents.map(a => [a.id, a]));
+
+  const enriched = artefacts.map(a => ({
+    ...a,
+    agent: agentMap[a.agentId] ?? null,
+  }));
+
+  return NextResponse.json({ data: enriched });
 }

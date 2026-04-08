@@ -58,26 +58,94 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ data: updated });
 }
 
-// DELETE /api/agents/[id] — Decommission agent
+// DELETE /api/agents/[id] — Decommission (soft) or hard-purge agent
+//
+// Query params:
+//   ?hard=true          — permanently deletes agent + all related data
+//   ?deleteProject=true — (only with hard=true) also deletes the deployed project
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  const { searchParams } = new URL(req.url);
+  const hard = searchParams.get("hard") === "true";
+  const deleteProject = searchParams.get("deleteProject") === "true";
 
-  await db.agent.update({
+  // ── Verify agent exists and belongs to this org ──
+  const agent = await db.agent.findUnique({
     where: { id },
-    data: { status: "DECOMMISSIONED", decommissionedAt: new Date() },
+    select: { id: true, name: true, orgId: true },
   });
+  if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  if (agent.orgId !== (session.user as any).orgId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-  await db.agentDeployment.updateMany({
+  if (!hard) {
+    // ── SOFT DECOMMISSION — archives the agent, stops all activity ──
+    await db.agent.update({
+      where: { id },
+      data: { status: "DECOMMISSIONED", decommissionedAt: new Date() },
+    });
+    await db.agentDeployment.updateMany({
+      where: { agentId: id },
+      data: { isActive: false },
+    });
+    await db.agentActivity.create({
+      data: { agentId: id, type: "decommissioned", summary: `Agent decommissioned by ${session.user.name || "user"}` },
+    });
+    return NextResponse.json({ success: true, mode: "decommissioned" });
+  }
+
+  // ── HARD PURGE — deletes everything, in FK-safe order ──
+  // Collect project IDs before we delete deployments
+  const deployments = await db.agentDeployment.findMany({
     where: { agentId: id },
-    data: { isActive: false },
+    select: { id: true, projectId: true },
   });
+  const projectIds = [...new Set(deployments.map(d => d.projectId).filter(Boolean))] as string[];
 
-  await db.agentActivity.create({
-    data: { agentId: id, type: "decommissioned", summary: `Agent decommissioned by ${session.user.name || "user"}` },
+  // 1. Agent-scoped tables
+  await db.agentJob.deleteMany({ where: { agentId: id } });
+  await db.agentDecision.deleteMany({ where: { agentId: id } });
+  await db.agentActivity.deleteMany({ where: { agentId: id } });
+  await db.agentArtefact.deleteMany({ where: { agentId: id } });
+  await db.chatMessage.deleteMany({ where: { agentId: id } });
+  await db.knowledgeBaseItem.deleteMany({ where: { agentId: id } });
+  await db.agentEmail.deleteMany({ where: { agentId: id } });
+  await db.agentDeployment.deleteMany({ where: { agentId: id } });
+
+  // 2. Delete the agent itself
+  await db.agent.delete({ where: { id } });
+
+  // 3. Optionally purge the project(s) and all project-scoped data
+  const projectsDeleted: string[] = [];
+  if (deleteProject && projectIds.length > 0) {
+    for (const projectId of projectIds) {
+      // Check no other active agents are still using this project
+      const otherDeployments = await db.agentDeployment.count({
+        where: { projectId, isActive: true },
+      });
+      if (otherDeployments > 0) continue; // Leave it — another agent owns it
+
+      await db.phase.deleteMany({ where: { projectId } });
+      await db.risk.deleteMany({ where: { projectId } });
+      await db.approval.deleteMany({ where: { projectId } });
+      await db.task.deleteMany({ where: { projectId } });
+      await db.issue.deleteMany({ where: { projectId } });
+      await db.stakeholder.deleteMany({ where: { projectId } });
+      await db.changeRequest.deleteMany({ where: { projectId } });
+      await db.agentArtefact.deleteMany({ where: { projectId } }); // catch any orphans
+      await db.project.delete({ where: { id: projectId } });
+      projectsDeleted.push(projectId);
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    mode: "purged",
+    agentId: id,
+    projectsDeleted: projectsDeleted.length,
   });
-
-  return NextResponse.json({ success: true });
 }

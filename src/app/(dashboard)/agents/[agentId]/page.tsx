@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
@@ -240,6 +241,12 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const [personality, setPersonality] = useState(40);
   const [notifs, setNotifs] = useState(NOTIFICATION_PREFS.map((n) => n.enabled));
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
+
+  // ── Delete / Decommission modal state ──
+  const [deleteModal, setDeleteModal] = useState<"decommission" | "purge" | null>(null);
+  const [deleteProject, setDeleteProject] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   // Merge real API data over the mock defaults
   const AGENT_RESOLVED = useMemo(() => {
@@ -1296,16 +1303,21 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               <div className="min-w-[200px] flex-1 rounded-[10px] border border-destructive/20 bg-destructive/5 p-3">
                 <p className="mb-1 text-xs font-semibold text-destructive">Decommission Agent</p>
                 <p className="mb-2 text-[11px] text-muted-foreground">
-                  Permanently remove. All data archived. Cannot be undone.
+                  Stops all activity. Agent is archived — data preserved. Can be viewed but not restarted.
                 </p>
-                <Button variant="destructive" size="sm" onClick={async () => {
-                  if (!confirm("Are you sure? This permanently removes the agent. All history is preserved but the agent will stop all work.")) return;
-                  try {
-                    await fetch(`/api/agents/${AGENT_RESOLVED.id}`, { method: "DELETE" });
-                    alert("Agent decommissioned"); window.location.href = "/agents";
-                  } catch { alert("Failed"); }
-                }}>
+                <Button variant="outline" size="sm" className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                  onClick={() => { setDeleteModal("decommission"); setDeleteConfirmText(""); }}>
                   Decommission
+                </Button>
+              </div>
+              <div className="min-w-[200px] flex-1 rounded-[10px] border border-red-700/30 bg-red-950/20 p-3">
+                <p className="mb-1 text-xs font-semibold text-red-500">Delete Agent Permanently</p>
+                <p className="mb-2 text-[11px] text-muted-foreground">
+                  Purges the agent and all its data — artefacts, history, chat, risks, jobs. Irreversible.
+                </p>
+                <Button variant="destructive" size="sm"
+                  onClick={() => { setDeleteModal("purge"); setDeleteProject(false); setDeleteConfirmText(""); }}>
+                  <Trash2 className="mr-1 size-3" /> Delete Permanently
                 </Button>
               </div>
             </div>
@@ -1370,6 +1382,144 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             <Button variant="default" size="sm">
               Send
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ DELETE / DECOMMISSION MODAL ═══ */}
+      {deleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) { setDeleteModal(null); setDeleteConfirmText(""); } }}>
+          <div className="w-full max-w-md rounded-2xl border border-border bg-background p-6 shadow-2xl mx-4">
+
+            {/* Header */}
+            <div className="flex items-start gap-3 mb-4">
+              <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${deleteModal === "purge" ? "bg-red-500/15" : "bg-destructive/15"}`}>
+                {deleteModal === "purge"
+                  ? <Trash2 className="h-5 w-5 text-red-500" />
+                  : <AlertTriangle className="h-5 w-5 text-destructive" />}
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-foreground">
+                  {deleteModal === "purge" ? "Delete Agent Permanently" : "Decommission Agent"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {deleteModal === "purge"
+                    ? "This will permanently erase the agent and all associated data."
+                    : "This will stop the agent and archive it. All data is preserved."}
+                </p>
+              </div>
+            </div>
+
+            {/* What will be deleted */}
+            <div className={`rounded-xl p-3 mb-4 text-xs space-y-1 ${deleteModal === "purge" ? "bg-red-950/30 border border-red-700/20" : "bg-muted/50 border border-border"}`}>
+              {deleteModal === "purge" ? (
+                <>
+                  <p className="font-semibold text-red-400 mb-1.5">The following will be permanently deleted:</p>
+                  {[
+                    "Agent configuration & identity",
+                    "All generated artefacts & documents",
+                    "Full chat & conversation history",
+                    "All activity logs & audit trail",
+                    "Risk register entries",
+                    "All queued & completed jobs",
+                    "Agent decisions & approvals",
+                    "Knowledge base items",
+                    "Agent email address",
+                  ].map(item => (
+                    <div key={item} className="flex items-center gap-1.5 text-muted-foreground">
+                      <Trash2 className="h-2.5 w-2.5 text-red-500/70 flex-shrink-0" /> {item}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-foreground mb-1.5">What happens:</p>
+                  {[
+                    "Agent stops all autonomous activity immediately",
+                    "All artefacts, history & data are preserved",
+                    "Agent appears as Decommissioned — read-only",
+                    "Project remains intact and accessible",
+                  ].map(item => (
+                    <div key={item} className="flex items-center gap-1.5 text-muted-foreground">
+                      <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500/70 flex-shrink-0" /> {item}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* Also delete project? (purge only) */}
+            {deleteModal === "purge" && (
+              <label className="flex items-start gap-2.5 mb-4 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={deleteProject}
+                  onChange={e => setDeleteProject(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-border accent-red-500"
+                />
+                <div>
+                  <p className="text-xs font-medium text-foreground group-hover:text-red-400 transition-colors">
+                    Also delete the associated project
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Removes phases, risks, tasks, and all project data. Only applies if no other agents are deployed on it.
+                  </p>
+                </div>
+              </label>
+            )}
+
+            {/* Confirmation input (purge only) */}
+            {deleteModal === "purge" && (
+              <div className="mb-4">
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  Type <span className="font-mono font-bold text-foreground">{AGENT_RESOLVED.name}</span> to confirm deletion:
+                </p>
+                <Input
+                  value={deleteConfirmText}
+                  onChange={e => setDeleteConfirmText(e.target.value)}
+                  placeholder={AGENT_RESOLVED.name}
+                  className="text-sm font-mono"
+                  autoFocus
+                />
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => { setDeleteModal(null); setDeleteConfirmText(""); setDeleteProject(false); }}
+                disabled={deleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleting || (deleteModal === "purge" && deleteConfirmText !== AGENT_RESOLVED.name)}
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    if (deleteModal === "decommission") {
+                      const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}`, { method: "DELETE" });
+                      if (!res.ok) throw new Error("Failed");
+                      toast.success(`${AGENT_RESOLVED.name} decommissioned — data preserved.`);
+                      window.location.href = "/agents";
+                    } else {
+                      const url = `/api/agents/${AGENT_RESOLVED.id}?hard=true${deleteProject ? "&deleteProject=true" : ""}`;
+                      const res = await fetch(url, { method: "DELETE" });
+                      if (!res.ok) throw new Error("Failed");
+                      const data = await res.json();
+                      toast.success(`${AGENT_RESOLVED.name} permanently deleted.${data.projectsDeleted > 0 ? " Project also removed." : ""}`);
+                      window.location.href = "/agents";
+                    }
+                  } catch {
+                    toast.error("Action failed. Please try again.");
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? "Working…" : deleteModal === "purge" ? "Delete Permanently" : "Decommission Agent"}
+              </Button>
+            </div>
           </div>
         </div>
       )}

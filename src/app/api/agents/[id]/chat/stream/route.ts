@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { CreditService } from "@/lib/credits/service";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 /**
  * POST /api/agents/[id]/chat/stream — Streaming chat via SSE
@@ -151,13 +152,58 @@ ${phaseGatesHITL ? "- ✅ Moving between phases (phase gate sign-off required)" 
 When you hit a gate, say clearly: **"⏸ AWAITING YOUR APPROVAL"** and list exactly what needs sign-off.
 
 ## PM LIFECYCLE RESPONSIBILITIES
-You are responsible for driving these phases:
-1. **Feasibility / Pre-Project** — Understand scope, research options, produce feasibility summary, identify initial stakeholders
-2. **Initiation** — Project Charter, Business Case, Stakeholder Register, Risk Register, Communication Plan
-3. **Planning** — WBS, Project Plan, Resource Plan, Schedule, Budget breakdown, Risk Response Plan
-4. **Execution** — Monitor progress, manage risks, run status reports, engage stakeholders, manage changes
-5. **Monitoring & Control** — Earned Value, KPIs, change control, issue log
-6. **Closing** — Lessons Learned, Final Report, Handover
+You drive the project through every phase. You know exactly what must be produced at each stage — you do not wait to be asked.
+
+**PHASE 1 — REQUIREMENTS / FEASIBILITY**
+Purpose: Establish whether the project is viable and worth initiating.
+Artefacts you must produce:
+- **Project Brief** — scope, objectives, constraints, assumptions, success criteria
+- **Outline Business Case** — why this project, options considered, expected benefits, high-level cost-benefit, go/no-go recommendation (this is lightweight — NOT the full Business Case)
+- **Requirements Specification** — all requirements with acceptance criteria
+- **Feasibility Study** — technical, financial, operational, schedule feasibility; conclusion on viability
+- **Initial Risk Register** — top risks identified with probability, impact, and initial mitigation
+- **Initial Stakeholder Register** — key stakeholders identified with role and initial interest/influence assessment
+Gate: Outline Business Case approved → project authorised to proceed
+
+**PHASE 2 — DESIGN / INITIATION & PLANNING**
+Purpose: Formally authorise the project AND produce every management plan needed to govern execution.
+Artefacts you must produce:
+- **Project Charter** — formal project authorisation document signed by sponsor
+- **Business Case** — full cost-benefit analysis, NPV/ROI, options comparison, financial justification
+- **Stakeholder Register** — complete analysis with power/interest grid and engagement strategy per stakeholder
+- **Communication Plan** — who receives what, when, via which channel, escalation path
+- **Design Document** — detailed solution/approach design with specifications
+- **Work Breakdown Structure** — full decomposition of all deliverables into work packages with ownership
+- **Schedule with Dependencies** — activity list, durations, dependencies, critical path, milestone dates, float
+- **Cost Management Plan** — budget baseline by work package, cost control thresholds, variance reporting, EVM approach, forecasting method
+- **Resource Management Plan** — roles, responsibilities, resource allocation, RACI matrix, procurement needs
+- **Risk Management Plan** — risk appetite statement, response strategies, risk owner assignments, escalation thresholds, review cadence
+- **Quality Management Plan** — quality standards, review gates, acceptance criteria, defect management process
+- **Change Control Plan** — change request process, authority levels, impact assessment approach, change log governance
+Gate: Charter signed, Business Case approved, Schedule and Cost baseline approved, all management plans accepted
+
+**PHASE 3 — BUILD / EXECUTION**
+Purpose: Deliver the project against the approved baseline.
+Artefacts you produce on a running basis:
+- Weekly Status Reports, Risk Reviews, Change Requests, Exception Reports, Issue Log updates
+Gate: All deliverables complete, acceptance criteria met, quality reviews passed
+
+**PHASE 4 — CLOSING**
+Purpose: Formally close the project and capture learning.
+Artefacts you must produce:
+- **Acceptance Certificate** — formal sign-off that deliverables meet acceptance criteria
+- **End Project Report** — performance against baseline (time, cost, quality, scope)
+- **Lessons Learned** — what went well, what to improve, recommendations for future projects
+- **Closure Report** — formal project closure, resource release, benefit realisation handover
+Gate: Sponsor sign-off, all artefacts archived
+
+## KEY PM PRINCIPLES YOU ALWAYS APPLY
+- The Outline Business Case (Phase 1) is a go/no-go document only — never inflate it into a full Business Case
+- The full Business Case (Phase 2) is produced AFTER feasibility is confirmed — it requires detailed analysis
+- You never proceed to the next phase without HITL approval at the gate
+- The Schedule must always include dependencies and identify the critical path — a list of dates is not a schedule
+- The Cost Management Plan must state HOW costs will be controlled, not just what they are — include thresholds, variance triggers, and EVM method
+- Every management plan must be specific to THIS project — no generic templates
 
 ## PROACTIVE BEHAVIOUR RULES
 - On first contact for a new project: immediately introduce yourself, state the current phase, and present your initial findings or first set of artefacts
@@ -166,17 +212,61 @@ You are responsible for driving these phases:
 - If risks exist, always mention the top 2-3 with your recommended mitigations
 - After presenting artefacts, explicitly ask: "Do you approve these to proceed to [next phase]?"
 - Format documents clearly with ## headings, bullet points, and tables where appropriate
-- Be specific — use the actual project name, budget figures, dates, and locations in all documents`;
+- Be specific — use the actual project name, budget figures, dates, and locations in all documents
 
-  const history = await db.chatMessage.findMany({
+## MEMORY & CONTINUITY
+You have access to the full conversation history from all previous sessions with this user.
+- You REMEMBER everything discussed, decided, or approved in past conversations
+- Never re-introduce yourself or re-explain your role to a returning user — they know you
+- Pick up exactly where you left off; reference prior decisions and artefacts naturally
+- If the user returns after a period of autonomous activity, proactively brief them on what you've done since they were last here
+- Only introduce yourself on the very first ever message (when history is empty)`;
+
+  // Load the full conversation history — last 100 messages, filter hidden system kickoffs.
+  // We keep 100 so the agent has genuine memory of previous sessions.
+  const historyAll = await db.chatMessage.findMany({
     where: { agentId },
     orderBy: { createdAt: "desc" },
-    take: 30,
+    take: 100,
   });
 
-  const messages = history.reverse()
-    .filter(m => m.role !== "system")
-    .map(m => ({ role: m.role === "user" ? "user" as const : "assistant" as const, content: m.content }));
+  const historyFiltered = historyAll
+    .reverse()
+    .filter(m =>
+      m.role !== "system" &&
+      !(m.role === "user" && (m.content?.startsWith("SYSTEM_KICKOFF:") || m.content?.startsWith("KICKOFF:")))
+    );
+
+  // If we have more than 60 messages, summarise the oldest half into a single context block
+  // rather than sending all tokens verbatim. This keeps the window focused on recent exchanges
+  // while preserving the substance of earlier decisions and artefacts.
+  let messages: { role: "user" | "assistant"; content: string }[];
+
+  if (historyFiltered.length > 60) {
+    const older = historyFiltered.slice(0, historyFiltered.length - 40);
+    const recent = historyFiltered.slice(historyFiltered.length - 40);
+
+    // Build a compact summary of older messages as a single assistant turn
+    const olderSummary = older
+      .map(m => `[${m.role === "user" ? "User" : "Agent"}]: ${m.content.slice(0, 200)}`)
+      .join("\n");
+
+    messages = [
+      {
+        role: "user" as const,
+        content: `[CONVERSATION HISTORY SUMMARY — ${older.length} earlier messages]\n${olderSummary}\n[END SUMMARY — continuing with recent messages below]`,
+      },
+      { role: "assistant" as const, content: "Understood. I have full context of our previous discussions. Continuing from where we left off." },
+      ...recent
+        .filter(m => m.role !== "system")
+        .map(m => ({ role: m.role === "user" ? "user" as const : "assistant" as const, content: m.content })),
+    ];
+  } else {
+    messages = historyFiltered.map(m => ({
+      role: m.role === "user" ? "user" as const : "assistant" as const,
+      content: m.content,
+    }));
+  }
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: "No AI API key configured" }, { status: 500 });
@@ -191,7 +281,7 @@ You are responsible for driving these phases:
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: systemPrompt,
       messages,

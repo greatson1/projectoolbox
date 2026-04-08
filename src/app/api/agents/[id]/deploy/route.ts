@@ -104,26 +104,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }).catch(() => {}); // Fire and forget
   }
 
-  // Run lifecycle init directly on Vercel (no VPS dependency)
-  // This creates phases, generates artefacts, seeds risks, and requests gate approval.
-  // Runs async — don't block the deploy response.
-  (async () => {
-    try {
-      const { runLifecycleInit } = await import("@/lib/agents/lifecycle-init");
-      await runLifecycleInit(agentId, deployment.id);
-    } catch (e) {
-      console.error("[Deploy] Lifecycle init failed, falling back to job queue:", e);
-      // Fall back to VPS job if direct init fails
-      await createJob({
-        agentId,
-        deploymentId: deployment.id,
-        type: "lifecycle_init",
-        priority: 1,
-        payload: { projectId, methodology: (await db.project.findUnique({ where: { id: projectId } }))?.methodology },
-      });
-      nudgeJobProcessor().catch(() => {});
-    }
-  })();
+  // Always queue a lifecycle_init job first — this is the guaranteed path.
+  // Even if inline init succeeds, the job will be a no-op (generatePhaseArtefacts is idempotent).
+  await createJob({
+    agentId,
+    deploymentId: deployment.id,
+    type: "lifecycle_init",
+    priority: 1,
+    payload: { projectId, methodology: (await db.project.findUnique({ where: { id: projectId } }))?.methodology },
+  });
+  nudgeJobProcessor().catch(() => {});
 
   return NextResponse.json({ data: { deployment, agentId } }, { status: 201 });
 }
