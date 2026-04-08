@@ -1837,6 +1837,20 @@ function AgentInboxTab({ agentId, agentColor }: { agentId: string; agentColor: s
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<Set<string>>(new Set());
+  const [processed, setProcessed] = useState<Set<string>>(new Set());
+
+  const processIntoKb = async (msgId: string) => {
+    setProcessing(prev => new Set(prev).add(msgId));
+    try {
+      const res = await fetch(`/api/agents/${agentId}/inbox/${msgId}/process`, { method: "POST" });
+      if (res.ok) {
+        setMsgs(prev => prev.map(m => m.id === msgId ? { ...m, processedAs: "kb_extraction", status: "PROCESSED" } : m));
+        setProcessed(prev => new Set(prev).add(msgId));
+      }
+    } catch {}
+    setProcessing(prev => { const s = new Set(prev); s.delete(msgId); return s; });
+  };
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -1914,11 +1928,20 @@ function AgentInboxTab({ agentId, agentColor }: { agentId: string; agentColor: s
                 </div>
                 <p className={cn("text-[12px] truncate", m.status === "UNREAD" ? "font-medium text-foreground" : "text-muted-foreground")}>{m.subject}</p>
                 <p className="text-[11px] text-muted-foreground truncate mt-0.5">{m.preview?.slice(0, 120)}</p>
-                {m.processedAs && (
-                  <Badge variant="secondary" className="text-[9px] mt-1.5">
-                    Processed → {m.processedAs.replace("_", " ")}
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2 mt-1.5">
+                  {m.processedAs ? (
+                    <Badge variant="secondary" className="text-[9px]">
+                      Processed → {m.processedAs.replace(/_/g, " ")}
+                    </Badge>
+                  ) : (
+                    <button
+                      onClick={e => { e.stopPropagation(); processIntoKb(m.id); }}
+                      disabled={processing.has(m.id)}
+                      className="text-[10px] font-semibold text-primary hover:underline disabled:opacity-50">
+                      {processing.has(m.id) ? "Processing…" : "→ Process into KB"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}

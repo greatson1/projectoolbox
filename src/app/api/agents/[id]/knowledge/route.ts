@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { resolveApiCaller } from "@/lib/api-auth";
 
 // GET /api/agents/:id/knowledge — List knowledge base items
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const orgId = (session.user as any).orgId;
+  const orgId = caller.orgId;
   const { id: agentId } = await params;
   const { searchParams } = new URL(req.url);
   const layer = searchParams.get("layer"); // PROJECT, WORKSPACE, AGENT
@@ -40,10 +40,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // POST /api/agents/:id/knowledge — Add item to knowledge base
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const orgId = (session.user as any).orgId;
+  const orgId = caller.orgId;
   const { id: agentId } = await params;
   const body = await req.json();
   const { title, content, type, layer, sourceUrl, trustLevel, confidential, tags, projectId } = body;
@@ -92,10 +92,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 // DELETE /api/agents/:id/knowledge — Remove item
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const orgId = (session.user as any).orgId;
+  const orgId = caller.orgId;
   const { searchParams } = new URL(req.url);
   const itemId = searchParams.get("itemId");
 
