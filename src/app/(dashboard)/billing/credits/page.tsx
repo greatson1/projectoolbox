@@ -465,7 +465,7 @@ export default function CreditCentrePage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {(agentBreakdown.length > 0 ? agentBreakdown : []).map(p => {
+            {(agentBreakdown.length > 0 ? agentBreakdown : []).map((p: any) => {
               const pct = Math.round((p.credits / p.budget) * 100);
               const overBudget = pct > 90;
               return (

@@ -102,10 +102,15 @@ export async function createRecallBot(
         events: [
           "bot.joining_call",
           "bot.in_waiting_room",
+          "bot.in_call_not_recording",
           "bot.in_call_recording",
+          "bot.recording_permission_allowed",
+          "bot.recording_permission_denied",
+          "bot.waiting_room_timeout",
           "bot.call_ended",
           "bot.done",
           "bot.fatal",
+          "bot.participant_events",
         ],
       },
       ...(options?.joinAt && { join_at: options.joinAt.toISOString() }),
@@ -165,18 +170,18 @@ export function formatTranscript(
  * Map Recall bot status code → our DB status string.
  */
 export function normaliseBotStatus(
-  code: RecallBot["status"]["code"],
+  code: RecallBot["status"]["code"] | string,
 ): string {
   switch (code) {
     case "ready":
-    case "joining_call":        return "joining";
-    case "in_waiting_room":     return "waiting";
-    case "in_call_not_recording":
-    case "in_call_recording":   return "recording";
-    case "call_ended":
-    case "done":                return "done";
-    case "fatal":               return "failed";
-    default:                    return "joining";
+    case "joining_call":          return "joining";
+    case "in_waiting_room":       return "waiting";
+    case "in_call_not_recording": return "joined";
+    case "in_call_recording":     return "recording";
+    case "call_ended":            return "processing";
+    case "done":                  return "done";
+    case "fatal":                 return "failed";
+    default:                      return "joining";
   }
 }
 

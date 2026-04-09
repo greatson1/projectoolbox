@@ -99,10 +99,10 @@ const ALL_PLANS = [
 // ═══════════════════════════════════════════════════════════════════
 
 const TOPUP_BUNDLES = [
-  { credits: 500, price: 10, label: "", perCredit: "2.0c" },
-  { credits: 2000, price: 35, label: "Popular", perCredit: "1.8c" },
-  { credits: 5000, price: 75, label: "Best Value", perCredit: "1.5c" },
-  { credits: 10000, price: 120, label: "", perCredit: "1.2c" },
+  { id: "pack_500",   credits: 500,   price: 10,  label: "",           perCredit: "2.0c" },
+  { id: "pack_2000",  credits: 2000,  price: 35,  label: "Popular",    perCredit: "1.8c" },
+  { id: "pack_5000",  credits: 5000,  price: 75,  label: "Best Value", perCredit: "1.5c" },
+  { id: "pack_10000", credits: 10000, price: 120, label: "",           perCredit: "1.2c" },
 ];
 
 // ═══════════════════════════════════════════════════════════════════

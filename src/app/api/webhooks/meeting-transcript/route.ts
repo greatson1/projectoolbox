@@ -63,6 +63,127 @@ async function handlePayload(payload: any) {
     });
   }
 
+  // ── bot.joining_call — status update only (already handled above) ─────────
+  // ── bot.in_call_not_recording — status update only ────────────────────────
+  // ── bot.in_call_recording — update to SCHEDULED→IN_PROGRESS ─────────────
+  if (event === "bot.in_call_recording") {
+    await db.meeting.updateMany({
+      where: { recallBotId: botId },
+      data: { status: "IN_PROGRESS", recallBotStatus: "recording" },
+    });
+  }
+
+  // ── bot.call_ended — call has ended, transcript will follow ───────────────
+  if (event === "bot.call_ended") {
+    await db.meeting.updateMany({
+      where: { recallBotId: botId },
+      data: { recallBotStatus: "processing", endedAt: new Date() },
+    });
+  }
+
+  // ── bot.recording_permission_denied — host blocked the bot ───────────────
+  if (event === "bot.recording_permission_denied") {
+    await db.meeting.updateMany({
+      where: { recallBotId: botId },
+      data: { recallBotStatus: "failed", status: "CANCELLED" },
+    });
+
+    const meeting = await db.meeting.findFirst({ where: { recallBotId: botId } });
+    if (meeting) {
+      const admins = await db.user.findMany({
+        where: { orgId: meeting.orgId, role: { in: ["OWNER", "ADMIN", "MEMBER"] } },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await db.notification.create({
+          data: {
+            userId: admin.id,
+            type: "AGENT_ALERT",
+            title: `Recording blocked: ${meeting.title}`,
+            body: `The meeting host denied recording permission for "${meeting.title}". No transcript was captured.`,
+            actionUrl: `/agents/${meeting.agentId}?tab=meetings`,
+          },
+        });
+      }
+      if (meeting.agentId) {
+        await db.agentActivity.create({
+          data: {
+            agentId: meeting.agentId,
+            type: "meeting",
+            summary: `Recording permission denied by host for "${meeting.title}"`,
+            metadata: { meetingId: meeting.id, botId },
+          },
+        });
+      }
+    }
+  }
+
+  // ── bot.recording_permission_allowed — confirmed recording ───────────────
+  if (event === "bot.recording_permission_allowed") {
+    await db.meeting.updateMany({
+      where: { recallBotId: botId },
+      data: { recallBotStatus: "recording", status: "IN_PROGRESS" },
+    });
+  }
+
+  // ── bot.in_waiting_room — bot is waiting to be admitted ──────────────────
+  if (event === "bot.in_waiting_room") {
+    await db.meeting.updateMany({
+      where: { recallBotId: botId },
+      data: { recallBotStatus: "waiting" },
+    });
+  }
+
+  // ── bot.waiting_room_timeout — bot gave up waiting ───────────────────────
+  if (event === "bot.waiting_room_timeout") {
+    await db.meeting.updateMany({
+      where: { recallBotId: botId },
+      data: { recallBotStatus: "failed", status: "CANCELLED" },
+    });
+
+    const meeting = await db.meeting.findFirst({ where: { recallBotId: botId } });
+    if (meeting) {
+      const admins = await db.user.findMany({
+        where: { orgId: meeting.orgId, role: { in: ["OWNER", "ADMIN", "MEMBER"] } },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await db.notification.create({
+          data: {
+            userId: admin.id,
+            type: "AGENT_ALERT",
+            title: `Bot timed out: ${meeting.title}`,
+            body: `The meeting bot for "${meeting.title}" timed out in the waiting room and was never admitted.`,
+            actionUrl: `/agents/${meeting.agentId}?tab=meetings`,
+          },
+        });
+      }
+    }
+  }
+
+  // ── bot.participant_events — track attendees ──────────────────────────────
+  if (event === "bot.participant_events") {
+    const participants = payload.data?.participants as Array<{ name: string; events: Array<{ event: string; timestamp: string }> }> | undefined;
+    if (participants?.length) {
+      const meeting = await db.meeting.findFirst({ where: { recallBotId: botId } });
+      if (meeting) {
+        // Store participant list in meeting metadata via summary field supplement
+        // (full participant tracking would need a dedicated table — stored as metadata for now)
+        const names = participants.map(p => p.name).filter(Boolean);
+        if (meeting.agentId) {
+          await db.agentActivity.create({
+            data: {
+              agentId: meeting.agentId,
+              type: "meeting",
+              summary: `Participants in "${meeting.title}": ${names.join(", ")}`,
+              metadata: { meetingId: meeting.id, participants },
+            },
+          });
+        }
+      }
+    }
+  }
+
   // ── bot.done — fetch transcript and process ───────────────────────────────
   if (event === "bot.done" || statusCode === "done") {
     try {

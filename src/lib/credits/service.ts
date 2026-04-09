@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { CREDIT_COSTS, canUseFeature, PLAN_LIMITS, type PlanDefinition } from "@/lib/utils";
+import { stripe, CREDIT_PACK_AMOUNTS } from "@/lib/stripe";
 
 export type CreditAction = keyof typeof CREDIT_COSTS;
 
@@ -81,8 +82,8 @@ export class CreditService {
         // Check auto top-up threshold
         const autoTopUp = org.autoTopUp as any;
         if (autoTopUp?.enabled && updated.creditBalance <= (autoTopUp.threshold || 200)) {
-          // TODO: Trigger Stripe charge for auto top-up
-          // For now, just create a notification
+          // Fire-and-forget — don't block the deduction response
+          CreditService.triggerAutoTopUp(orgId, updated.creditBalance).catch(() => {});
         }
 
         return updated.creditBalance;
@@ -251,5 +252,112 @@ export class CreditService {
         break; // Only send the highest threshold alert
       }
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Auto top-up — charge saved card off-session when balance falls below threshold
+  // ─────────────────────────────────────────────────────────────────────────
+
+  static async triggerAutoTopUp(orgId: string, currentBalance: number): Promise<void> {
+    try {
+      const org = await db.organisation.findUnique({
+        where: { id: orgId },
+        select: { stripeCustomerId: true, autoTopUp: true },
+      });
+
+      if (!org?.stripeCustomerId) return;
+
+      const autoTopUp = org.autoTopUp as { enabled: boolean; threshold: number; packId: string } | null;
+      if (!autoTopUp?.enabled || !autoTopUp?.packId) return;
+
+      // Debounce: skip if we already auto-topped up in the last 15 minutes
+      const since = new Date(Date.now() - 15 * 60 * 1000);
+      const recentCharge = await db.creditTransaction.count({
+        where: { orgId, type: "PURCHASE", description: { startsWith: "Auto top-up:" }, createdAt: { gte: since } },
+      });
+      if (recentCharge > 0) return;
+
+      const pack = CREDIT_PACK_AMOUNTS[autoTopUp.packId];
+      if (!pack) {
+        console.warn(`[AutoTopUp] Unknown packId: ${autoTopUp.packId}`);
+        return;
+      }
+
+      // Fetch customer + default payment method
+      const customer = await stripe.customers.retrieve(org.stripeCustomerId, {
+        expand: ["invoice_settings.default_payment_method"],
+      }) as any;
+
+      if (customer.deleted) return;
+
+      const paymentMethodId =
+        (customer.invoice_settings?.default_payment_method as any)?.id ||
+        customer.default_source;
+
+      if (!paymentMethodId) {
+        await CreditService.notifyAdmins(orgId, "BILLING",
+          "Auto top-up failed: no payment method on file",
+          `Your credit balance is low (${currentBalance} credits) but no payment method is saved. Add a card in your billing settings to enable auto top-up.`,
+          "/billing");
+        return;
+      }
+
+      // Charge the saved card off-session
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: pack.amountPence,
+        currency: "gbp",
+        customer: org.stripeCustomerId,
+        payment_method: paymentMethodId,
+        confirm: true,
+        off_session: true,
+        description: `Auto top-up: ${pack.label}`,
+        metadata: { orgId, credits: String(pack.credits), type: "auto_topup", packId: autoTopUp.packId },
+      });
+
+      if (paymentIntent.status === "succeeded") {
+        await CreditService.grant(orgId, pack.credits, "PURCHASE",
+          `Auto top-up: ${pack.label}`, paymentIntent.id);
+        await CreditService.notifyAdmins(orgId, "BILLING",
+          `Auto top-up successful — ${pack.credits.toLocaleString()} credits added`,
+          `Your balance was low (${currentBalance} credits). ${pack.credits.toLocaleString()} credits have been added automatically. New balance: ${currentBalance + pack.credits} credits.`,
+          "/billing/credits");
+      }
+    } catch (e: any) {
+      // Stripe throws StripeCardError for declined cards, requires_action for 3DS etc.
+      console.error("[AutoTopUp] Charge failed:", e.message);
+
+      const friendlyReason = e.code === "authentication_required"
+        ? "Your card requires authentication. Please visit billing to authorise the payment."
+        : e.code === "card_declined"
+        ? "Your card was declined. Please update your payment method in billing settings."
+        : `Payment failed: ${e.message}`;
+
+      await CreditService.notifyAdmins(orgId, "BILLING",
+        "Auto top-up failed — action required",
+        `${friendlyReason} Credits have not been added. Please top up manually to avoid service interruption.`,
+        "/billing");
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Shared helper — notify all admins/owners in an org
+  // ─────────────────────────────────────────────────────────────────────────
+
+  static async notifyAdmins(
+    orgId: string,
+    type: "BILLING" | "AGENT_ALERT" | "APPROVAL_REQUEST",
+    title: string,
+    body: string,
+    actionUrl?: string,
+  ): Promise<void> {
+    const admins = await db.user.findMany({
+      where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
+      select: { id: true },
+    });
+    await Promise.all(admins.map(admin =>
+      db.notification.create({
+        data: { userId: admin.id, type, title, body, actionUrl: actionUrl || "/billing" },
+      })
+    ));
   }
 }

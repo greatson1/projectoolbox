@@ -2031,12 +2031,14 @@ function AgentInboxTab({ agentId, agentColor }: { agentId: string; agentColor: s
 // ─── AgentMeetingsTab ─────────────────────────────────────────────────────────
 
 const BOT_STATUS_META: Record<string, { label: string; color: string; pulse: boolean }> = {
-  idle:      { label: "Scheduled",  color: "#94A3B8", pulse: false },
-  joining:   { label: "Joining…",   color: "#F59E0B", pulse: true  },
-  waiting:   { label: "Waiting room", color: "#F59E0B", pulse: true },
-  recording: { label: "Recording", color: "#EF4444", pulse: true  },
-  done:      { label: "Done",       color: "#10B981", pulse: false },
-  failed:    { label: "Failed",     color: "#EF4444", pulse: false },
+  idle:        { label: "Scheduled",               color: "#94A3B8", pulse: false },
+  joining:     { label: "Joining…",                color: "#F59E0B", pulse: true  },
+  waiting:     { label: "Waiting room…",           color: "#F59E0B", pulse: true  },
+  joined:      { label: "In call (starting rec…)", color: "#3B82F6", pulse: true  },
+  recording:   { label: "Recording",               color: "#EF4444", pulse: true  },
+  processing:  { label: "Processing transcript…",  color: "#8B5CF6", pulse: true  },
+  done:        { label: "Done",                    color: "#10B981", pulse: false },
+  failed:      { label: "Failed",                  color: "#EF4444", pulse: false },
 };
 
 function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string; agentName: string; agentColor: string }) {
@@ -2065,7 +2067,7 @@ function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string;
     // Poll every 15s when there are active bots
     pollRef.current = setInterval(() => {
       setMeetings(prev => {
-        const hasActive = prev.some(m => ["joining","waiting","recording"].includes(m.recallBotStatus || ""));
+        const hasActive = prev.some(m => ["joining","waiting","joined","recording","processing"].includes(m.recallBotStatus || ""));
         if (hasActive) load();
         return prev;
       });
@@ -2178,7 +2180,7 @@ function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string;
           <div className="space-y-2">
             {meetings.map((m: any) => {
               const statusMeta = BOT_STATUS_META[m.recallBotStatus || "idle"] || BOT_STATUS_META.idle;
-              const isActive = ["joining","waiting","recording"].includes(m.recallBotStatus || "");
+              const isActive = ["joining","waiting","joined","recording","processing"].includes(m.recallBotStatus || "");
               return (
                 <Card key={m.id} className="p-3">
                   <div className="flex items-start gap-3">
