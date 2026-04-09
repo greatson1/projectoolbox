@@ -11,11 +11,10 @@ export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   // Authenticate via shared secret (VPS sends x-internal-key header)
-  const secret = req.headers.get("x-internal-key") || req.headers.get("x-internal-secret");
-  const expectedKey = process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "ptx-internal-2026";
+  const secret = (req.headers.get("x-internal-key") || req.headers.get("x-internal-secret") || "").trim();
+  const expectedKey = (process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "ptx-internal-2026").trim();
   if (!secret || secret !== expectedKey) {
-    console.log("[generate-artefacts] Auth failed:", { gotHeader: !!secret, secretLen: secret?.length, expectedLen: expectedKey.length, match: secret === expectedKey });
-    return NextResponse.json({ error: "Forbidden", debug: { gotKey: !!secret, envSet: !!process.env.INTERNAL_API_KEY } }, { status: 403 });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
