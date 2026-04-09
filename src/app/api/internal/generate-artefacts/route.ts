@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-internal-key") || req.headers.get("x-internal-secret");
   const expectedKey = process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "ptx-internal-2026";
   if (!secret || secret !== expectedKey) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    console.log("[generate-artefacts] Auth failed:", { gotHeader: !!secret, secretLen: secret?.length, expectedLen: expectedKey.length, match: secret === expectedKey });
+    return NextResponse.json({ error: "Forbidden", debug: { gotKey: !!secret, envSet: !!process.env.INTERNAL_API_KEY } }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
