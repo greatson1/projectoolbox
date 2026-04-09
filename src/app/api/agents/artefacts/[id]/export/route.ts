@@ -160,26 +160,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 function markdownToStyledHtml(title: string, md: string, format: string): string {
-  const body = md
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    // Tables
-    .replace(/^\|(.+)\|$/gm, (line) => {
-      const cells = line.split("|").filter(c => c.trim() !== "");
-      return `<tr>${cells.map(c => `<td>${c.trim()}</td>`).join("")}</tr>`;
-    })
-    .replace(/^[-|: ]+$/gm, "") // Remove separator rows
-    // Lists
-    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
-    .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-    // Paragraphs
-    .replace(/\n{2,}/g, "</p><p>")
-    .replace(/\n/g, "<br>");
+  // Use marked for proper GFM table support, headings, lists, bold/italic
+  const { marked } = require("marked");
+  const body = marked.parse(md, { gfm: true, breaks: true }) as string;
 
   const printStyles = format === "pdf" ? `
     @media print {
@@ -198,13 +181,15 @@ function markdownToStyledHtml(title: string, md: string, format: string): string
   h1 { font-size: 20pt; color: #1e3a5f; border-bottom: 2px solid #4f46e5; padding-bottom: 8px; margin-top: 32px; margin-bottom: 12px; }
   h2 { font-size: 14pt; color: #2d4a7a; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-top: 24px; margin-bottom: 8px; }
   h3 { font-size: 12pt; color: #374151; margin-top: 16px; margin-bottom: 4px; }
+  h4 { font-size: 11pt; color: #4b5563; margin-top: 12px; margin-bottom: 4px; }
   p { margin: 0 0 10pt 0; }
   ul, ol { margin: 0 0 10pt 0; padding-left: 20pt; }
   li { margin-bottom: 4pt; }
-  table { width: 100%; border-collapse: collapse; margin: 12pt 0; font-size: 10pt; }
+  table { width: 100%; border-collapse: collapse; margin: 12pt 0; font-size: 10pt; border: 1px solid #e2e8f0; }
+  thead th { background: #4f46e5; color: white; padding: 8pt 10pt; text-align: left; font-weight: 600; border: 1px solid #3730a3; }
   th { background: #4f46e5; color: white; padding: 8pt 10pt; text-align: left; font-weight: 600; }
-  td { padding: 7pt 10pt; border-bottom: 1px solid #e2e8f0; }
-  tr:nth-child(even) td { background: #f8fafc; }
+  td { padding: 7pt 10pt; border: 1px solid #e2e8f0; }
+  tbody tr:nth-child(even) td { background: #f8fafc; }
   .doc-header { background: linear-gradient(135deg, #1e3a5f 0%, #4f46e5 100%); color: white; padding: 32pt 40pt; margin: -40px -40px 32pt -40px; }
   .doc-title { font-size: 24pt; font-weight: 700; margin: 0 0 8pt 0; }
   .doc-meta { font-size: 9pt; opacity: 0.8; }
