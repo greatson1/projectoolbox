@@ -4,11 +4,13 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import Link from "next/link";
 import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
   BookOpen, Upload, Link as LinkIcon, FileAudio, Trash2 as TrashIcon, Star, X,
-  Video, Mic, MicOff, Calendar, ExternalLink,
+  Video, Mic, MicOff, Calendar, ExternalLink, Download,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -724,10 +726,11 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                         </div>
                         <button onClick={() => setReviewingId(null)} className="text-muted-foreground hover:text-foreground text-xl">&times;</button>
                       </div>
-                      {/* Content */}
+                      {/* Content — proper markdown rendering */}
                       <div className="flex-1 overflow-y-auto p-5">
-                        <div className="prose prose-sm dark:prose-invert max-w-none"
-                          dangerouslySetInnerHTML={{ __html: (reviewing.content || "").replace(/\n/g, "<br>").replace(/^# (.+)/gm, "<h1>$1</h1>").replace(/^## (.+)/gm, "<h2>$1</h2>").replace(/^### (.+)/gm, "<h3>$1</h3>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/^- (.+)/gm, "<li>$1</li>") }} />
+                        <div className="prose prose-sm dark:prose-invert max-w-none prose-table:text-xs prose-th:bg-primary prose-th:text-primary-foreground prose-th:text-left prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-td:border-b prose-td:border-border">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reviewing.content || ""}</ReactMarkdown>
+                        </div>
                       </div>
                       {/* Actions */}
                       <div className="flex items-center justify-between p-5 border-t border-border">
@@ -750,7 +753,20 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                             setReviewingId(null);
                           }}>Reject</Button>
                         </div>
-                        <Button variant="ghost" onClick={() => setReviewingId(null)}>Close</Button>
+                        <div className="flex items-center gap-1.5">
+                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=docx`, "_blank")}>
+                            <Download className="mr-1 size-3" /> Word
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=xlsx`, "_blank")}>
+                            <Download className="mr-1 size-3" /> Excel
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=pdf`, "_blank")}>
+                            <Download className="mr-1 size-3" /> PDF
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=md`, "_blank")}>
+                            <Download className="mr-1 size-3" /> Markdown
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
