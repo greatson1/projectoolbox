@@ -270,8 +270,8 @@ export class CreditService {
       const autoTopUp = org.autoTopUp as { enabled: boolean; threshold: number; packId: string } | null;
       if (!autoTopUp?.enabled || !autoTopUp?.packId) return;
 
-      // Debounce: skip if we already auto-topped up in the last 15 minutes
-      const since = new Date(Date.now() - 15 * 60 * 1000);
+      // Debounce: skip if we already auto-topped up in the last hour (prevents API hammering on failure)
+      const since = new Date(Date.now() - 60 * 60 * 1000);
       const recentCharge = await db.creditTransaction.count({
         where: { orgId, type: "PURCHASE", description: { startsWith: "Auto top-up:" }, createdAt: { gte: since } },
       });

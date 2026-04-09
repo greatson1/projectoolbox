@@ -59,7 +59,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         footer: true,
       });
 
-      return new Response(docxBuffer as Buffer, {
+      return new Response(docxBuffer as unknown as BodyInit, {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "Content-Disposition": `attachment; filename="${filename}.docx"`,

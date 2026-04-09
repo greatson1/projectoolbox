@@ -345,12 +345,15 @@ model Task {
   startDate    DateTime?
   endDate      DateTime?
   progress     Int       @default(0)
-  storyPoints  Int?
-  dependencies Json?
-  createdBy    String?   // "agent:<agentId>" or "user:<userId>"
-  lastEditedBy String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  storyPoints     Int?
+  estimatedHours  Float?    // used by cost-estimator and EVM
+  actualHours     Float?    // actual tracked hours for EVM AC calculation
+  isCriticalPath  Boolean   @default(false) // set by critical-path engine
+  dependencies    Json?
+  createdBy       String?   // "agent:<agentId>" or "user:<userId>"
+  lastEditedBy    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model Risk {

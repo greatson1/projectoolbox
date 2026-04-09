@@ -72,7 +72,7 @@ export async function identifyProcurementNeeds(projectId: string, agentId: strin
         agentId,
         type: "proactive_alert",
         summary: `Identified ${needs.length} procurement need(s) totalling £${needs.reduce((s, n) => s + n.estimatedBudget, 0).toLocaleString()}: ${needs.map(n => n.description).slice(0, 3).join(", ")}`,
-        metadata: { type: "procurement_needs", count: needs.length, needs },
+        metadata: { type: "procurement_needs", count: needs.length, needs: needs as any },
       },
     });
   }

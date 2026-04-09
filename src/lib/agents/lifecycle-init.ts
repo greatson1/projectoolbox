@@ -331,15 +331,20 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   }
 
   // ── Step 5: Create gate approval request ──
+  // requestedById is required — find the org owner (or any admin) to attribute the request to
+  const orgOwner = await db.user.findFirst({
+    where: { orgId: agent.orgId, role: { in: ["OWNER", "ADMIN"] } },
+    select: { id: true },
+  });
   const gateApproval = await db.approval.create({
     data: {
       projectId: project.id,
-      agentId,
+      requestedById: orgOwner?.id || agent.orgId, // fallback to orgId if no user found
       title: `${firstPhase.name} Gate: ${firstPhase.gate.criteria}`,
       description: `The agent has completed the ${firstPhase.name} phase. Review the generated artefacts and approve to advance to the next phase.`,
       type: "PHASE_GATE",
       status: "PENDING",
-      impact: "MEDIUM",
+      impact: { level: "MEDIUM", description: "Phase gate approval" },
     },
   });
 

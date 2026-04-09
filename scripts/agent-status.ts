@@ -54,9 +54,9 @@ async function main() {
   console.log(`\n=== RECENT ACTIVITY (last 10) ===`);
   activities.forEach(a => console.log(`  [${a.type}] ${a.summary?.slice(0,100)} — ${a.createdAt}`));
 
-  const org = await db.organisation.findFirst({ select: { creditBalance: true, planId: true } });
+  const org = await db.organisation.findFirst({ select: { creditBalance: true, plan: true } });
   console.log(`\n=== ORG ===`);
-  console.log(`Plan: ${org?.planId} | Credits: ${org?.creditBalance?.toLocaleString()}`);
+  console.log(`Plan: ${org?.plan} | Credits: ${org?.creditBalance?.toLocaleString()}`);
 
   await db.$disconnect();
 }

@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
           status: "failed",
         },
         update: { status: "failed" },
-      }).catch(() => {}); // upsert may fail if Invoice model has no stripeId unique — safe to ignore
+      }).catch((e: any) => console.error("[Stripe webhook] invoice upsert failed:", e.message));
 
       if (attemptCount === 1) {
         // First failure — warn admins, keep plan active (Stripe will retry)

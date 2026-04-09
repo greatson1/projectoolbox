@@ -45,6 +45,16 @@ export async function runMonitoringLoop(
   const proposals: ActionProposal[] = [];
   const cadencesRun: string[] = [];
 
+  // Fetch tasks once — used across multiple cadence checks
+  const tasks = await db.task.findMany({
+    where: { projectId },
+    select: { id: true, status: true },
+  });
+
+  // Tier config used by both daily and weekly cadences
+  const { getProjectTierConfig } = await import("./project-tier");
+  const tierConfig = getProjectTierConfig(project);
+
   // ── Determine which cadences are due ──
   const now = new Date();
   const lastCycle = deployment.lastCycleAt ? new Date(deployment.lastCycleAt) : null;
@@ -110,9 +120,6 @@ export async function runMonitoringLoop(
     }
 
     // EVM threshold checks (daily) — skip for TASK/LIGHTWEIGHT tiers
-    const { getProjectTierConfig } = await import("./project-tier");
-    const tierConfig = getProjectTierConfig(project);
-
     if (tierConfig.evmEnabled) {
       try {
         const { checkEvmThresholds } = await import("./evm-engine");
