@@ -246,30 +246,41 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
 
   // ── Knowledge tab state ──
-  const [kbMode, setKbMode] = useState<"transcript" | "document" | "url">("transcript");
+  const [kbMode, setKbMode] = useState<"transcript" | "document" | "url" | "audio">("transcript");
   const [kbTitle, setKbTitle] = useState("");
   const [kbContent, setKbContent] = useState("");
   const [kbUrl, setKbUrl] = useState("");
   const [kbDragOver, setKbDragOver] = useState(false);
+  const [kbAudioFile, setKbAudioFile] = useState<File | null>(null);
   const { data: knowledgeItems, isLoading: kbLoading } = useAgentKnowledge(agentId);
   const deleteKb = useDeleteKnowledgeItem(agentId);
   const ingest = useIngest(agentId);
 
   const handleKbSubmit = useCallback(async () => {
     if (!agentId) return;
-    const title = kbTitle.trim() || (kbMode === "url" ? kbUrl : kbMode === "transcript" ? "Meeting transcript" : "Document");
+    const title = kbTitle.trim() || (kbMode === "url" ? kbUrl : kbMode === "audio" ? (kbAudioFile?.name.replace(/\.[^.]+$/, "") || "Recording") : kbMode === "transcript" ? "Meeting transcript" : "Document");
     try {
-      await ingest.mutateAsync(
-        kbMode === "url"
-          ? { type: "url", title, sourceUrl: kbUrl }
-          : { type: kbMode, title, content: kbContent }
-      );
-      toast.success(`Ingested "${title}"`);
+      if (kbMode === "audio" && kbAudioFile) {
+        const form = new FormData();
+        form.append("file", kbAudioFile);
+        form.append("type", "transcript");
+        form.append("title", title);
+        await ingest.mutateAsync(form as any);
+        toast.success(`Transcribed & ingested "${title}"`);
+        setKbAudioFile(null);
+      } else {
+        await ingest.mutateAsync(
+          kbMode === "url"
+            ? { type: "url", title, sourceUrl: kbUrl }
+            : { type: kbMode, title, content: kbContent }
+        );
+        toast.success(`Ingested "${title}"`);
+      }
       setKbTitle(""); setKbContent(""); setKbUrl("");
     } catch (e: any) {
       toast.error(e.message || "Ingest failed");
     }
-  }, [agentId, kbMode, kbTitle, kbContent, kbUrl, ingest]);
+  }, [agentId, kbMode, kbTitle, kbContent, kbUrl, kbAudioFile, ingest]);
 
   const handleKbFileDrop = useCallback(async (e: React.DragEvent | React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
@@ -1401,9 +1412,10 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             </CardHeader>
 
             {/* Mode selector */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-4">
               {([
                 { key: "transcript", label: "Transcript / Meeting", icon: FileAudio },
+                { key: "audio",      label: "Audio / Video",        icon: Mic },
                 { key: "document",   label: "Document / Notes",     icon: FileText },
                 { key: "url",        label: "URL",                   icon: LinkIcon },
               ] as const).map(({ key, label, icon: Icon }) => (
@@ -1435,9 +1447,53 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 onChange={e => setKbUrl(e.target.value)}
                 className="mb-3 text-[13px]"
               />
+            ) : kbMode === "audio" ? (
+              <>
+                {/* Audio file drop zone */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setKbDragOver(true); }}
+                  onDragLeave={() => setKbDragOver(false)}
+                  onDrop={e => {
+                    e.preventDefault(); setKbDragOver(false);
+                    const f = e.dataTransfer.files[0];
+                    if (f) { setKbAudioFile(f); if (!kbTitle) setKbTitle(f.name.replace(/\.[^.]+$/, "")); }
+                  }}
+                  className={cn(
+                    "relative mb-3 rounded-lg border-2 border-dashed p-4 text-center transition-all cursor-pointer",
+                    kbDragOver ? "border-primary bg-primary/5" : kbAudioFile ? "border-emerald-500/50 bg-emerald-500/5" : "border-border"
+                  )}
+                >
+                  <label className="cursor-pointer block">
+                    <Mic className={cn("mx-auto mb-2 size-6", kbAudioFile ? "text-emerald-500" : "text-muted-foreground")} />
+                    {kbAudioFile ? (
+                      <div>
+                        <p className="text-[12px] font-semibold text-foreground">{kbAudioFile.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{(kbAudioFile.size / 1024 / 1024).toFixed(1)} MB · ready to transcribe</p>
+                        <button onClick={e => { e.preventDefault(); setKbAudioFile(null); }} className="text-[10px] text-destructive mt-1 hover:underline">Remove</button>
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-muted-foreground">
+                        Drop audio/video here or{" "}
+                        <span className="text-primary underline underline-offset-2">browse</span>
+                        <br />
+                        <span className="text-[11px]">mp3, mp4, m4a, wav, webm — max 25 MB</span>
+                      </p>
+                    )}
+                    <input type="file" accept=".mp3,.mp4,.m4a,.wav,.webm,.ogg,.flac,.aac,.mov" className="sr-only"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) { setKbAudioFile(f); if (!kbTitle) setKbTitle(f.name.replace(/\.[^.]+$/, "")); }
+                      }} />
+                  </label>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  🎙️ Whisper transcribes your recording, then Claude extracts decisions, risks &amp; actions. Cost: ~£0.003/min.
+                  <br />For files &gt;25 MB, export as MP3 mono 32 kbps first (1 hr ≈ 14 MB).
+                </p>
+              </>
             ) : (
               <>
-                {/* Drag-and-drop zone */}
+                {/* Drag-and-drop zone for text files */}
                 <div
                   onDragOver={e => { e.preventDefault(); setKbDragOver(true); }}
                   onDragLeave={() => setKbDragOver(false)}
@@ -1470,10 +1526,15 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               </>
             )}
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               {kbMode === "transcript" && (
                 <p className="text-[11px] text-muted-foreground">
-                  Claude will extract decisions (⭐ HIGH TRUST), risks, actions, and key facts as separate KB items.
+                  Claude extracts decisions (⭐ HIGH TRUST), risks, actions, and key facts as separate KB items.
+                </p>
+              )}
+              {kbMode === "audio" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Whisper transcribes → Claude extracts. Both the transcript and intelligence are saved to KB.
                 </p>
               )}
               {kbMode === "document" && (
@@ -1483,9 +1544,16 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 <p className="text-[11px] text-muted-foreground">Page will be fetched, summarised, and cached for 7 days.</p>
               )}
               <Button size="sm" onClick={handleKbSubmit}
-                disabled={ingest.isPending || (kbMode === "url" ? !kbUrl.trim() : !kbContent.trim())}
+                disabled={
+                  ingest.isPending ||
+                  (kbMode === "url" ? !kbUrl.trim() :
+                   kbMode === "audio" ? !kbAudioFile :
+                   !kbContent.trim())
+                }
                 className="ml-auto shrink-0">
-                {ingest.isPending ? "Ingesting…" : "Ingest"}
+                {ingest.isPending
+                  ? (kbMode === "audio" ? "Transcribing…" : "Ingesting…")
+                  : (kbMode === "audio" ? "Transcribe & Ingest" : "Ingest")}
               </Button>
             </div>
           </Card>
