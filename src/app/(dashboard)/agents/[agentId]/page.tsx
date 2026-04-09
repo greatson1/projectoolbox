@@ -6,6 +6,30 @@ import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentK
 import { Skeleton } from "@/components/ui/skeleton";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { DocumentEditor } from "@/components/documents/DocumentEditor";
+import { SpreadsheetViewer } from "@/components/documents/SpreadsheetViewer";
+import { isSpreadsheetArtefact } from "@/lib/artefact-types";
+
+/** Convert markdown to simple HTML for TipTap editor */
+function mdToHtml(md: string): string {
+  return md
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/^\|(.+)\|$/gm, (line) => {
+      const cells = line.split("|").filter(c => c.trim() !== "");
+      return `<tr>${cells.map(c => `<td>${c.trim()}</td>`).join("")}</tr>`;
+    })
+    .replace(/^[-|: ]+$/gm, "")
+    .replace(/((<tr>.*<\/tr>\s*)+)/g, "<table>$1</table>")
+    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
+    .replace(/((<li>.*<\/li>\s*)+)/g, "<ul>$1</ul>")
+    .replace(/\n{2,}/g, "</p><p>")
+    .replace(/\n/g, "<br>");
+}
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
@@ -709,67 +733,58 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   </div>
                 ))}
 
-                {/* Review modal */}
+                {/* Full-screen document/spreadsheet editor */}
                 {reviewing && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setReviewingId(null)}>
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-                    <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
-                      onClick={e => e.stopPropagation()}>
-                      {/* Header */}
-                      <div className="flex items-center justify-between p-5 border-b border-border">
-                        <div>
-                          <h2 className="text-lg font-bold">{reviewing.name}</h2>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="secondary" className={statusColor[reviewing.status] || ""}>{reviewing.status}</Badge>
-                            <span className="text-xs text-muted-foreground">{reviewing.phaseId} phase</span>
-                          </div>
-                        </div>
-                        <button onClick={() => setReviewingId(null)} className="text-muted-foreground hover:text-foreground text-xl">&times;</button>
-                      </div>
-                      {/* Content — proper markdown rendering */}
-                      <div className="flex-1 overflow-y-auto p-5">
-                        <div className="prose prose-sm dark:prose-invert max-w-none prose-table:text-xs prose-th:bg-primary prose-th:text-primary-foreground prose-th:text-left prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5 prose-td:border-b prose-td:border-border">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{reviewing.content || ""}</ReactMarkdown>
-                        </div>
-                      </div>
-                      {/* Actions */}
-                      <div className="flex items-center justify-between p-5 border-t border-border">
-                        <div className="flex gap-2">
-                          <Button variant="default" onClick={() => {
-                            updateArtefact.mutate({ artefactId: reviewing.id, status: "APPROVED" });
-                            toast.success(`${reviewing.name} approved`);
-                            setReviewingId(null);
-                          }}>Approve</Button>
-                          <Button variant="outline" onClick={() => {
-                            const fb = prompt("What changes are needed?");
-                            if (!fb) return;
-                            updateArtefact.mutate({ artefactId: reviewing.id, status: "REJECTED", feedback: fb });
-                            toast.success("Changes requested");
-                            setReviewingId(null);
-                          }}>Request Changes</Button>
-                          <Button variant="ghost" className="text-destructive" onClick={() => {
-                            updateArtefact.mutate({ artefactId: reviewing.id, status: "REJECTED" });
-                            toast.success(`${reviewing.name} rejected`);
-                            setReviewingId(null);
-                          }}>Reject</Button>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=docx`, "_blank")}>
-                            <Download className="mr-1 size-3" /> Word
-                          </Button>
-                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=xlsx`, "_blank")}>
-                            <Download className="mr-1 size-3" /> Excel
-                          </Button>
-                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=pdf`, "_blank")}>
-                            <Download className="mr-1 size-3" /> PDF
-                          </Button>
-                          <Button variant="ghost" size="sm" className="text-xs" onClick={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=md`, "_blank")}>
-                            <Download className="mr-1 size-3" /> Markdown
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  isSpreadsheetArtefact(reviewing.name) || reviewing.format === "csv" ? (
+                    <SpreadsheetViewer
+                      reportId={reviewing.id}
+                      title={reviewing.name}
+                      content={reviewing.content || ""}
+                      status={reviewing.status}
+                      projectName={reviewing.phaseId ? `${reviewing.phaseId} Phase` : undefined}
+                      onSave={async (content, comment) => {
+                        updateArtefact.mutate({ artefactId: reviewing.id, content });
+                        toast.success("Spreadsheet saved");
+                      }}
+                      onApprove={async () => {
+                        updateArtefact.mutate({ artefactId: reviewing.id, status: "APPROVED" });
+                        toast.success(`${reviewing.name} approved`);
+                        setReviewingId(null);
+                      }}
+                      onReject={async (reason) => {
+                        updateArtefact.mutate({ artefactId: reviewing.id, status: "REJECTED", feedback: reason });
+                        toast.success("Changes requested");
+                        setReviewingId(null);
+                      }}
+                      onClose={() => setReviewingId(null)}
+                    />
+                  ) : (
+                    <DocumentEditor
+                      reportId={reviewing.id}
+                      title={reviewing.name}
+                      content={mdToHtml(reviewing.content || "")}
+                      status={reviewing.status}
+                      type={reviewing.format || "markdown"}
+                      projectName={reviewing.phaseId ? `${reviewing.phaseId} Phase` : undefined}
+                      onSave={async (content, comment) => {
+                        updateArtefact.mutate({ artefactId: reviewing.id, content });
+                        toast.success("Document saved");
+                      }}
+                      onApprove={async () => {
+                        updateArtefact.mutate({ artefactId: reviewing.id, status: "APPROVED" });
+                        toast.success(`${reviewing.name} approved`);
+                        setReviewingId(null);
+                      }}
+                      onReject={async (reason) => {
+                        updateArtefact.mutate({ artefactId: reviewing.id, status: "REJECTED", feedback: reason });
+                        toast.success("Changes requested");
+                        setReviewingId(null);
+                      }}
+                      onExportPDF={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=pdf`, "_blank")}
+                      onExportDOCX={() => window.open(`/api/agents/artefacts/${reviewing.id}/export?format=docx`, "_blank")}
+                      onClose={() => setReviewingId(null)}
+                    />
+                  )
                 )}
               </>
             );
