@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
+import { CreditService, orgCanUseFeature } from "@/lib/credits/service";
+import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
 import {
   createRecallBot,
   detectPlatform,
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const agent = await db.agent.findUnique({
     where: { id: agentId },
-    select: { orgId: true, name: true },
+    select: { id: true, orgId: true, name: true },
   });
   if (!agent || agent.orgId !== caller.orgId) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
@@ -84,6 +86,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!meetingUrl?.trim()) {
     return NextResponse.json({ error: "meetingUrl is required" }, { status: 400 });
+  }
+
+  // ── Plan gate: Recall bot requires Professional or above ────────────────
+  const canRecall = await orgCanUseFeature(caller.orgId, "recallBot");
+  if (!canRecall) {
+    return NextResponse.json(insufficientPlanResponse("recallBot"), { status: 403 });
+  }
+
+  // ── Credit check: reserve 1 hour of bot time upfront ────────────────────
+  // We charge per meeting dispatch (not per actual hour — simpler UX).
+  // 60 credits = 1 hr of Recall time. If meeting runs over, we don't bill extra.
+  const recallCost = CREDIT_COSTS.RECALL_BOT_PER_HOUR;
+  const budgetCheck = await CreditService.checkAgentBudget(agent.id, caller.orgId, recallCost);
+  if (!budgetCheck.allowed) {
+    return NextResponse.json({
+      error: `Insufficient credits to dispatch meeting bot. Cost: ${recallCost} credits. Balance: ${budgetCheck.orgBalance}.`,
+      code: "INSUFFICIENT_CREDITS",
+      upgradeUrl: "/billing",
+    }, { status: 402 });
   }
 
   // Check Recall is configured
@@ -141,6 +162,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         status: "SCHEDULED",
       },
     });
+
+    // ── Deduct Recall bot cost ───────────────────────────────────────────
+    await CreditService.deduct(
+      caller.orgId,
+      CREDIT_COSTS.RECALL_BOT_PER_HOUR,
+      `Recall.ai bot: "${meetingTitle}" on ${detectPlatform(meetingUrl)}`,
+      agentId,
+    );
+    await CreditService.checkBudgetAlerts(agentId, caller.orgId);
 
     // Log activity
     await db.agentActivity.create({

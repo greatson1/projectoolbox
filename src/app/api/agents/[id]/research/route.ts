@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { auth } from "@/lib/auth";
-import { CreditService } from "@/lib/credits/service";
+import { resolveApiCaller } from "@/lib/api-auth";
+import { CreditService, orgCanUseFeature } from "@/lib/credits/service";
+import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
 
 /**
  * POST /api/agents/:id/research — Trigger web research
@@ -9,23 +10,35 @@ import { CreditService } from "@/lib/credits/service";
  * Types: "search", "pestle", "stakeholder", "vendor", "news"
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const caller = await resolveApiCaller(req);
+  if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const orgId = (session.user as any).orgId;
+  const orgId = caller.orgId;
   const { id: agentId } = await params;
   const body = await req.json();
   const { type, query, stakeholder, vendor } = body;
 
   if (!type) return NextResponse.json({ error: "Research type required" }, { status: 400 });
 
-  // Determine credit cost
-  const costs: Record<string, number> = { search: 3, pestle: 8, stakeholder: 5, vendor: 5, news: 3 };
-  const cost = costs[type] || 3;
+  // ── Plan gate: web research requires Starter or above ───────────────────
+  const canResearch = await orgCanUseFeature(orgId, "perplexityResearch");
+  if (!canResearch) {
+    return NextResponse.json(insufficientPlanResponse("perplexityResearch"), { status: 403 });
+  }
+
+  // Determine credit cost — Perplexity calls are metered at PERPLEXITY_RESEARCH per call
+  const costs: Record<string, number> = {
+    search: CREDIT_COSTS.PERPLEXITY_RESEARCH,
+    pestle: CREDIT_COSTS.PERPLEXITY_RESEARCH * 2,  // PESTLE does 6 scans
+    stakeholder: CREDIT_COSTS.PERPLEXITY_RESEARCH,
+    vendor: CREDIT_COSTS.PERPLEXITY_RESEARCH,
+    news: CREDIT_COSTS.PERPLEXITY_RESEARCH,
+  };
+  const cost = costs[type] || CREDIT_COSTS.PERPLEXITY_RESEARCH;
 
   const hasCredits = await CreditService.checkBalance(orgId, cost);
   if (!hasCredits) {
-    return NextResponse.json({ error: `Insufficient credits. This research costs ${cost} credits.` }, { status: 402 });
+    return NextResponse.json({ error: `Insufficient credits. This research costs ${cost} credits.`, code: "INSUFFICIENT_CREDITS", upgradeUrl: "/billing" }, { status: 402 });
   }
 
   // Get project context

@@ -19,6 +19,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
+import { CreditService, orgCanUseFeature, getOrgPlan } from "@/lib/credits/service";
+import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
 
 export const maxDuration = 300; // 5 min — Whisper on large files needs time
 
@@ -73,6 +75,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const isAudio = AUDIO_MIME_TYPES.has(file.type) || AUDIO_EXTENSIONS.has(ext);
 
       if (isAudio) {
+        // ── Plan gate: Whisper requires Starter or above ──────────────────
+        const canWhisper = await orgCanUseFeature(orgId, "whisperAudio");
+        if (!canWhisper) {
+          return NextResponse.json(insufficientPlanResponse("whisperAudio"), { status: 403 });
+        }
+
         // Size check — Whisper won't accept > 25 MB
         if (file.size > MAX_AUDIO_BYTES) {
           return NextResponse.json({
@@ -86,14 +94,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           }, { status: 503 });
         }
 
+        // ── Credit check: estimate duration from file size ─────────────────
+        // Rough estimate: 1 MB MP3 mono ≈ 8 minutes → creditCost = minutes × 1
+        const estimatedMinutes = Math.ceil((file.size / (1024 * 1024)) * 8);
+        const whisperCost = Math.max(1, estimatedMinutes) * CREDIT_COSTS.WHISPER_PER_MINUTE;
+        const budgetCheck = await CreditService.checkAgentBudget(agentId, orgId, whisperCost);
+        if (!budgetCheck.allowed) {
+          return NextResponse.json({
+            error: `Insufficient credits for audio transcription. Estimated cost: ${whisperCost} credits. Balance: ${budgetCheck.orgBalance}.`,
+            code: "INSUFFICIENT_CREDITS",
+            upgradeUrl: "/billing",
+          }, { status: 402 });
+        }
+
         // Transcribe with Whisper
+        let actualMinutes = estimatedMinutes;
         try {
+          const startMs = Date.now();
           content = await transcribeWithWhisper(file);
+          // Use actual duration from transcript timestamps if available
+          const lastTimestamp = content.match(/\[(\d+):(\d{2})\][^\[]*$/);
+          if (lastTimestamp) {
+            actualMinutes = Math.ceil(parseInt(lastTimestamp[1]) + parseInt(lastTimestamp[2]) / 60);
+          } else {
+            actualMinutes = Math.ceil((Date.now() - startMs) / 60000) || estimatedMinutes;
+          }
           type = "transcript"; // pipe through Claude extraction pipeline
           if (!title || title === file.name) title = file.name.replace(/\.[^.]+$/, "");
         } catch (e: any) {
           return NextResponse.json({ error: `Whisper transcription failed: ${e.message}` }, { status: 502 });
         }
+
+        // ── Deduct actual Whisper cost ──────────────────────────────────────
+        const actualCost = Math.max(1, actualMinutes) * CREDIT_COSTS.WHISPER_PER_MINUTE;
+        await CreditService.deduct(orgId, actualCost, `Whisper transcription: ${title} (${actualMinutes} min)`, agentId);
+        await CreditService.checkBudgetAlerts(agentId, orgId);
       } else {
         // Text-based file — decode as UTF-8
         const buf = await file.arrayBuffer();
@@ -211,6 +246,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       saved.push({ title: chunkTitle, type });
     }
+  }
+
+  // ── Deduct KB ingest cost (Claude extraction on transcript/url) ───────────
+  if (isTranscript || type === "url") {
+    await CreditService.deduct(
+      orgId,
+      CREDIT_COSTS.KNOWLEDGE_INGEST,
+      `Knowledge ingest: "${title.slice(0, 60)}" (${type})`,
+      agentId,
+    );
   }
 
   // Log activity

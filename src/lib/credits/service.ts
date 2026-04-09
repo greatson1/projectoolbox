@@ -1,7 +1,38 @@
 import { db } from "@/lib/db";
-import { CREDIT_COSTS } from "@/lib/utils";
+import { CREDIT_COSTS, canUseFeature, PLAN_LIMITS, type PlanDefinition } from "@/lib/utils";
 
 export type CreditAction = keyof typeof CREDIT_COSTS;
+
+/**
+ * Returns the org's current plan tier string (e.g. "FREE", "STARTER").
+ * Defaults to "FREE" if the org is not found.
+ */
+export async function getOrgPlan(orgId: string): Promise<string> {
+  const org = await db.organisation.findUnique({
+    where: { id: orgId },
+    select: { plan: true },
+  });
+  return org?.plan ?? "FREE";
+}
+
+/**
+ * Returns the full PlanDefinition for an org.
+ */
+export async function getOrgPlanDef(orgId: string): Promise<PlanDefinition> {
+  const plan = await getOrgPlan(orgId);
+  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.FREE;
+}
+
+/**
+ * Convenience: check if an org's plan unlocks a feature.
+ */
+export async function orgCanUseFeature(
+  orgId: string,
+  feature: Parameters<typeof canUseFeature>[1],
+): Promise<boolean> {
+  const plan = await getOrgPlan(orgId);
+  return canUseFeature(plan, feature);
+}
 
 export class CreditService {
   static async checkBalance(orgId: string, required: number): Promise<boolean> {
