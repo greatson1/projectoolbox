@@ -83,26 +83,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   // Create notification
-  await db.notification.create({
-    data: {
-      userId: session.user.id!,
-      type: "AGENT_ALERT",
-      title: "Agent deployed",
-      body: `Your agent has been deployed and is now active.`,
-      actionUrl: `/agents/${agentId}`,
-    },
-  });
+  if (caller.userId) {
+    await db.notification.create({
+      data: {
+        userId: caller.userId,
+        type: "AGENT_ALERT",
+        title: "Agent deployed",
+        body: `Your agent has been deployed and is now active.`,
+        actionUrl: `/agents/${agentId}`,
+      },
+    });
+  }
 
   // Send deployment email
-  if (session.user.email) {
-    const agent = await db.agent.findUnique({ where: { id: agentId } });
-    const project = await db.project.findUnique({ where: { id: projectId } });
-    EmailService.sendDeployConfirmation(session.user.email, {
-      agentName: agent?.name || "Agent",
-      projectName: project?.name || "Project",
-      autonomyLevel: agent?.autonomyLevel || 3,
-      dashboardUrl: `${process.env.NEXTAUTH_URL}/agents/${agentId}`,
-    }).catch(() => {}); // Fire and forget
+  if (caller.userId) {
+    const callerUser = await db.user.findUnique({ where: { id: caller.userId }, select: { email: true } });
+    if (callerUser?.email) {
+      const agent = await db.agent.findUnique({ where: { id: agentId } });
+      const project = await db.project.findUnique({ where: { id: projectId } });
+      EmailService.sendDeployConfirmation(callerUser.email, {
+        agentName: agent?.name || "Agent",
+        projectName: project?.name || "Project",
+        autonomyLevel: agent?.autonomyLevel || 3,
+        dashboardUrl: `${process.env.NEXTAUTH_URL}/agents/${agentId}`,
+      }).catch(() => {}); // Fire and forget
+    }
   }
 
   // Always queue a lifecycle_init job first — this is the guaranteed path.
