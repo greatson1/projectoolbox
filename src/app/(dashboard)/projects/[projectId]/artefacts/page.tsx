@@ -13,6 +13,7 @@ import { SpreadsheetViewer } from "@/components/documents/SpreadsheetViewer";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
+import { marked } from "marked";
 import {
   FileText, FolderOpen, Upload, Clock, Download, Eye, CheckCircle2,
   XCircle, ChevronDown, Edit3, RefreshCw,
@@ -30,19 +31,13 @@ const FORMAT_LABEL: Record<string, string> = {
   pdf: "PDF", docx: "Word", xlsx: "Excel",
 };
 
-// Convert markdown-ish content to basic HTML for TipTap
+/** Convert markdown to HTML for TipTap editor */
 function markdownToHtml(md: string): string {
-  return md
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/^- (.+)$/gm, "<li>$1</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-    .replace(/\n{2,}/g, "</p><p>")
-    .replace(/^(?!<[hulo])/gm, (line) => line ? `<p>${line}</p>` : "")
-    .replace(/<p><\/p>/g, "");
+  try {
+    return marked.parse(md, { gfm: true, breaks: true }) as string;
+  } catch {
+    return md.replace(/\n/g, "<br>");
+  }
 }
 
 export default function ArtefactsPage() {

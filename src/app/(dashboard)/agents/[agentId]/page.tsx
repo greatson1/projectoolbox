@@ -9,26 +9,15 @@ import remarkGfm from "remark-gfm";
 import { DocumentEditor } from "@/components/documents/DocumentEditor";
 import { SpreadsheetViewer } from "@/components/documents/SpreadsheetViewer";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
+import { marked } from "marked";
 
-/** Convert markdown to simple HTML for TipTap editor */
+/** Convert markdown to HTML for TipTap editor — uses proper parser */
 function mdToHtml(md: string): string {
-  return md
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/^\|(.+)\|$/gm, (line) => {
-      const cells = line.split("|").filter(c => c.trim() !== "");
-      return `<tr>${cells.map(c => `<td>${c.trim()}</td>`).join("")}</tr>`;
-    })
-    .replace(/^[-|: ]+$/gm, "")
-    .replace(/((<tr>.*<\/tr>\s*)+)/g, "<table>$1</table>")
-    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
-    .replace(/((<li>.*<\/li>\s*)+)/g, "<ul>$1</ul>")
-    .replace(/\n{2,}/g, "</p><p>")
-    .replace(/\n/g, "<br>");
+  try {
+    return marked.parse(md, { gfm: true, breaks: true }) as string;
+  } catch {
+    return md.replace(/\n/g, "<br>");
+  }
 }
 import {
   Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
