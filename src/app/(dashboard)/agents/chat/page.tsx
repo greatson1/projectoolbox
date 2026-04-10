@@ -402,31 +402,8 @@ function AgentChatPage() {
     scrollToBottom();
   };
 
-  // Auto-kickoff: only fire on genuine FIRST contact (no history in DB).
-  // If history loaded and messages exist → skip entirely (agent is silent, ready for input).
-  // If history loaded and empty → this is a brand new agent, fire first-contact kickoff.
-  useEffect(() => {
-    if (!activeAgentId || !activeAgent || sending) return;
-    // Wait until history fetch has completed for this agent
-    if (!historyLoaded.has(activeAgentId)) return;
-    if (kickoffFiredRef.current.has(activeAgentId)) return;
-
-    const existingMsgs = messagesByAgent[activeAgentId] || [];
-    // History exists — user is returning. Don't greet. Agent is ready.
-    if (existingMsgs.length > 0) {
-      kickoffFiredRef.current.add(activeAgentId);
-      return;
-    }
-
-    // Only kickoff for deployed agents with a project
-    const hasProject = activeAgent.deployments?.length > 0 || activeAgent.project;
-    if (!hasProject) return;
-
-    kickoffFiredRef.current.add(activeAgentId);
-    setTimeout(() => {
-      sendMessage(`SYSTEM_KICKOFF: This is our first interaction. Please: (1) introduce yourself and confirm the project details, (2) present your initial assessment and any research findings, (3) summarise any artefacts you've already generated, (4) list the top risks identified, and (5) state clearly what needs to happen next and whether you require my approval to proceed.`);
-    }, 1200);
-  }, [activeAgentId, activeAgent, messagesByAgent, historyLoaded, sending]);
+  // No auto-kickoff — agent waits for the user to send the first message.
+  // The system prompt already instructs the agent to introduce itself on first contact.
 
   if (agentsLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><Skeleton className="h-[500px] rounded-xl" /></div>;
 
