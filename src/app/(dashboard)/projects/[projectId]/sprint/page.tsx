@@ -55,144 +55,20 @@ interface TeamMember {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MOCK DATA — Sprint 7, Apr 1-14, Day 6, 57 SP scope, 34 done
+// EMPTY DEFAULTS — populated from API data in component useMemo hooks
 // ═══════════════════════════════════════════════════════════════════
 
-const SPRINTS = [
-  { id: 7, name: "Sprint 7", start: "2026-04-01", end: "2026-04-14", days: 10, daysPassed: 6, scope: 57, done: 34 },
-  { id: 6, name: "Sprint 6", start: "2026-03-18", end: "2026-03-31", days: 10, daysPassed: 10, scope: 50, done: 46 },
-  { id: 5, name: "Sprint 5", start: "2026-03-04", end: "2026-03-17", days: 10, daysPassed: 10, scope: 48, done: 44 },
-];
-
-const BURNDOWN_DATA = [
-  { day: "D1", ideal: 57, actual: 57, scope: 55 },
-  { day: "D2", ideal: 51, actual: 54, scope: 55 },
-  { day: "D3", ideal: 45, actual: 48, scope: 57 },  // scope change
-  { day: "D4", ideal: 40, actual: 43, scope: 57 },
-  { day: "D5", ideal: 34, actual: 38, scope: 57 },
-  { day: "D6", ideal: 28, actual: 23, scope: 57 },
-  { day: "D7", ideal: 23, projected: 18, scope: 57 },
-  { day: "D8", ideal: 17, projected: 13, scope: 57 },
-  { day: "D9", ideal: 11, projected: 8, scope: 57 },
-  { day: "D10", ideal: 0, projected: 2, scope: 57 },
-];
-
-const BURNUP_DATA = [
-  { day: "D1", scope: 55, completed: 0, accepted: 0 },
-  { day: "D2", scope: 55, completed: 3, accepted: 0 },
-  { day: "D3", scope: 57, completed: 9, accepted: 5 },
-  { day: "D4", scope: 57, completed: 14, accepted: 10 },
-  { day: "D5", scope: 57, completed: 19, accepted: 15 },
-  { day: "D6", scope: 57, completed: 34, accepted: 28 },
-  { day: "D7", scope: 57, completed: null, accepted: null },
-  { day: "D8", scope: 57, completed: null, accepted: null },
-  { day: "D9", scope: 57, completed: null, accepted: null },
-  { day: "D10", scope: 57, completed: null, accepted: null },
-];
-
-const CYCLE_TIME_DATA = [
-  { status: "To Do", avg: 1.2 },
-  { status: "In Progress", avg: 2.8 },
-  { status: "In Review", avg: 1.5 },
-  { status: "Done", avg: 0.3 },
-];
-
-const VELOCITY_TREND = [
-  { sprint: "S2", committed: 40, completed: 36, projected: null },
-  { sprint: "S3", committed: 42, completed: 38, projected: null },
-  { sprint: "S4", committed: 45, completed: 40, projected: null },
-  { sprint: "S5", committed: 48, completed: 44, projected: null },
-  { sprint: "S6", committed: 50, completed: 46, projected: null },
-  { sprint: "S7", committed: 57, completed: 34, projected: 52 },
-];
-
-const CONFIDENCE_RADAR = [
-  { axis: "Velocity", value: 82 },
-  { axis: "Scope Stability", value: 65 },
-  { axis: "Blockers", value: 70 },
-  { axis: "Capacity", value: 88 },
-  { axis: "Review Throughput", value: 72 },
-];
-
-const TEAM: TeamMember[] = [
-  { name: "Sarah Chen", initials: "SC", capacity: 13, done: 8, inProgress: 3, todo: 1, blocked: 0, velocityHistory: [10, 11, 12, 11, 13, 8] },
-  { name: "James Okafor", initials: "JO", capacity: 13, done: 8, inProgress: 2, todo: 2, blocked: 0, velocityHistory: [9, 10, 10, 11, 12, 8] },
-  { name: "Priya Sharma", initials: "PS", capacity: 10, done: 5, inProgress: 2, todo: 1, blocked: 1, velocityHistory: [7, 8, 8, 9, 10, 5] },
-  { name: "Liam Barrett", initials: "LB", capacity: 11, done: 8, inProgress: 2, todo: 0, blocked: 1, velocityHistory: [8, 9, 9, 10, 11, 8] },
-  { name: "Mia Novak", initials: "MN", capacity: 10, done: 5, inProgress: 3, todo: 2, blocked: 0, velocityHistory: [7, 7, 8, 8, 9, 5] },
-];
-
-const STANDUP_DATA = [
-  {
-    name: "Sarah Chen", initials: "SC", mood: "😊",
-    yesterday: ["Completed onboarding form step 3", "Reviewed PTX-121 PR"],
-    today: ["Finish form validation logic", "Start step 4 UI"],
-    blockers: [],
-  },
-  {
-    name: "James Okafor", initials: "JO", mood: "😐",
-    yesterday: ["Dashboard polling — basic interval done", "Fixed CORS issue"],
-    today: ["Add WebSocket fallback", "Write polling tests"],
-    blockers: [],
-  },
-  {
-    name: "Priya Sharma", initials: "PS", mood: "😟",
-    yesterday: ["RBAC endpoint tests — 80% coverage", "Fixed edge case in role check"],
-    today: ["Finish RBAC tests", "Start email template bug"],
-    blockers: ["Waiting on staging env credentials from DevOps"],
-  },
-  {
-    name: "Liam Barrett", initials: "LB", mood: "😤",
-    yesterday: ["Stripe webhook handler — subscription.updated done"],
-    today: ["Handle subscription.deleted event", "Fix retry logic"],
-    blockers: ["Stripe test mode returning 500 on subscription.deleted — investigating"],
-  },
-  {
-    name: "Mia Novak", initials: "MN", mood: "😊",
-    yesterday: ["Chart drill-down interaction prototype", "Updated sparkline styles"],
-    today: ["Wire drill-down to API", "Start plan comparison component"],
-    blockers: [],
-  },
-];
-
-const SPRINT_ITEMS: SprintItem[] = [
-  { id: "PTX-115", title: "Onboarding wizard multi-step form", type: "story", sp: 8, status: "in_progress", assignee: "Sarah Chen", timeInStatus: "3d", atRisk: true },
-  { id: "PTX-116", title: "Real-time dashboard data refresh", type: "story", sp: 5, status: "in_progress", assignee: "James Okafor", timeInStatus: "2d" },
-  { id: "PTX-117", title: "Stripe subscription webhooks", type: "story", sp: 5, status: "blocked", assignee: "Liam Barrett", timeInStatus: "1d", blocked: true },
-  { id: "PTX-118", title: "Fix duplicate onboarding email", type: "bug", sp: 2, status: "in_progress", assignee: "Priya Sharma", timeInStatus: "1d" },
-  { id: "PTX-119", title: "Analytics chart drill-down", type: "story", sp: 3, status: "in_progress", assignee: "Mia Novak", timeInStatus: "2d" },
-  { id: "PTX-120", title: "RBAC for billing pages", type: "story", sp: 5, status: "in_review", assignee: "Priya Sharma", timeInStatus: "4h" },
-  { id: "PTX-121", title: "Onboarding email template", type: "task", sp: 3, status: "in_review", assignee: "Sarah Chen", timeInStatus: "6h" },
-  { id: "PTX-122", title: "Dashboard KPI sparklines", type: "story", sp: 3, status: "in_review", assignee: "Mia Novak", timeInStatus: "3h" },
-  { id: "PTX-109", title: "Subscription plan comparison", type: "story", sp: 5, status: "todo", assignee: "Mia Novak", timeInStatus: "6d" },
-  { id: "PTX-110", title: "Credit usage cron job", type: "task", sp: 3, status: "todo", assignee: "Liam Barrett", timeInStatus: "6d" },
-  { id: "PTX-113", title: "Timezone fix in sprint dates", type: "bug", sp: 2, status: "todo", assignee: "Sarah Chen", timeInStatus: "6d", atRisk: true },
-  { id: "PTX-114", title: "Payment webhook retry logic", type: "task", sp: 2, status: "todo", assignee: "Liam Barrett", timeInStatus: "6d", blocked: true },
-  { id: "PTX-123", title: "Vite + Tailwind scaffold", type: "task", sp: 2, status: "done", assignee: "James Okafor", timeInStatus: "—", cycleTime: "1.5d" },
-  { id: "PTX-124", title: "Design tokens &provider", type: "story", sp: 5, status: "done", assignee: "Mia Novak", timeInStatus: "—", cycleTime: "3.1d" },
-  { id: "PTX-125", title: "JWT auth with refresh rotation", type: "story", sp: 5, status: "done", assignee: "Sarah Chen", timeInStatus: "—", cycleTime: "4.0d" },
-  { id: "PTX-126", title: "Reusable data table component", type: "story", sp: 3, status: "done", assignee: "Priya Sharma", timeInStatus: "—", cycleTime: "2.8d" },
-  { id: "PTX-127", title: "Stripe API + payment intents", type: "story", sp: 5, status: "done", assignee: "Liam Barrett", timeInStatus: "—", cycleTime: "3.5d" },
-  { id: "PTX-128", title: "Signup + email verification", type: "story", sp: 3, status: "done", assignee: "Sarah Chen", timeInStatus: "—", cycleTime: "2.2d" },
-  { id: "PTX-129", title: "Dashboard layout shell", type: "story", sp: 3, status: "done", assignee: "Mia Novak", timeInStatus: "—", cycleTime: "2.0d" },
-  { id: "PTX-130", title: "Credit ledger schema", type: "task", sp: 2, status: "done", assignee: "Liam Barrett", timeInStatus: "—", cycleTime: "1.0d" },
-  { id: "PTX-131", title: "Password reset flow", type: "task", sp: 2, status: "done", assignee: "Priya Sharma", timeInStatus: "—", cycleTime: "1.8d" },
-  { id: "PTX-132", title: "Fix CORS preflight headers", type: "bug", sp: 1, status: "done", assignee: "James Okafor", timeInStatus: "—", cycleTime: "0.5d" },
-  { id: "PTX-133", title: "Loading skeleton components", type: "task", sp: 2, status: "done", assignee: "Mia Novak", timeInStatus: "—", cycleTime: "1.2d" },
-  { id: "PTX-134", title: "Invoice PDF generation", type: "story", sp: 3, status: "done", assignee: "James Okafor", timeInStatus: "—", cycleTime: "2.5d" },
-];
-
-const BLOCKERS = [
-  { id: "PTX-117", title: "Stripe test mode 500 on subscription.deleted", owner: "Liam Barrett", duration: "1d 4h", escalated: false, impact: "Blocks subscription lifecycle completion" },
-  { id: "PTX-114", title: "Depends on PTX-117 Stripe webhook completion", owner: "Liam Barrett", duration: "6d", escalated: true, impact: "Payment retry logic cannot be tested" },
-];
-
-const SPRINT_GOAL = {
-  text: "Complete onboarding wizard end-to-end and launch billing subscription flow with Stripe integration",
-  alignedItems: 14,
-  doneItems: 9,
-  prediction: 78,
-};
+const SPRINTS: { id: number; name: string; start: string; end: string; days: number; daysPassed: number; scope: number; done: number }[] = [];
+const BURNDOWN_DATA: any[] = [];
+const BURNUP_DATA: any[] = [];
+const CYCLE_TIME_DATA: { status: string; avg: number }[] = [];
+const VELOCITY_TREND: any[] = [];
+const CONFIDENCE_RADAR: { axis: string; value: number }[] = [];
+const TEAM: TeamMember[] = [];
+const STANDUP_DATA: { name: string; initials: string; mood: string; yesterday: string[]; today: string[]; blockers: string[] }[] = [];
+const SPRINT_ITEMS: SprintItem[] = [];
+const BLOCKERS: { id: string; title: string; owner: string; duration: string; escalated: boolean; impact: string }[] = [];
+const SPRINT_GOAL = { text: "", alignedItems: 0, doneItems: 0, prediction: 0 };
 
 const ISSUE_ICONS: Record<IssueType, string> = { story: "📖", bug: "🐛", task: "✅", spike: "🔬" };
 const STATUS_COLORS: Record<ItemStatus, string> = {
@@ -211,25 +87,28 @@ export default function SprintTrackerPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: apiTasks } = useProjectTasks(projectId);
 
-  const SPRINT_ITEMS_DATA: SprintItem[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any) => ({
-    id: t.id,
-    title: t.title || t.name || "",
-    type: (t.type === "bug" ? "bug" : t.type === "spike" ? "spike" : t.type === "task" ? "task" : "story") as IssueType,
-    sp: t.storyPoints ?? t.points ?? 0,
-    status: (t.status === "done" || t.status === "completed" ? "done" : t.status === "in_review" ? "in_review" : t.status === "in_progress" || t.status === "active" ? "in_progress" : t.status === "blocked" ? "blocked" : "todo") as ItemStatus,
-    assignee: t.assignee || t.assigneeName || "",
-    timeInStatus: t.timeInStatus || "—",
-    cycleTime: t.cycleTime,
-    blocked: t.blocked || false,
-    atRisk: t.atRisk || false,
-  })) : [];
+  const SPRINT_ITEMS_DATA: SprintItem[] = useMemo(() => {
+    if (!apiTasks || apiTasks.length === 0) return [];
+    return apiTasks.map((t: any) => ({
+      id: t.id?.slice(-6) || t.id,
+      title: t.title || t.name || "",
+      type: (t.type === "bug" ? "bug" : t.type === "spike" ? "spike" : t.type === "task" ? "task" : "story") as IssueType,
+      sp: t.storyPoints ?? t.points ?? 0,
+      status: (t.status === "done" || t.status === "completed" || t.status === "DONE" ? "done" : t.status === "in_review" || t.status === "IN_REVIEW" ? "in_review" : t.status === "in_progress" || t.status === "active" || t.status === "IN_PROGRESS" ? "in_progress" : t.status === "blocked" || t.status === "BLOCKED" ? "blocked" : "todo") as ItemStatus,
+      assignee: t.assignee || t.assigneeName || t.createdBy || "",
+      timeInStatus: t.timeInStatus || "—",
+      cycleTime: t.cycleTime,
+      blocked: t.blocked || t.status === "blocked" || t.status === "BLOCKED",
+      atRisk: t.atRisk || false,
+    }));
+  }, [apiTasks]);
 
-  // Derive chart data from apiTasks
+  // Derive chart data from apiTasks — empty arrays when no data
   const burndownData = useMemo(() => {
     const tasks = apiTasks || [];
-    if (tasks.length === 0) return BURNDOWN_DATA;
+    if (tasks.length === 0) return [];
     const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
+    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed" || t.status === "DONE").length;
     const remaining = total - done;
     const days = 10;
     return Array.from({ length: days }, (_, i) => ({
@@ -243,9 +122,9 @@ export default function SprintTrackerPage() {
 
   const burnupData = useMemo(() => {
     const tasks = apiTasks || [];
-    if (tasks.length === 0) return BURNUP_DATA;
+    if (tasks.length === 0) return [];
     const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
+    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed" || t.status === "DONE").length;
     const days = 10;
     return Array.from({ length: days }, (_, i) => ({
       day: `D${i + 1}`,
@@ -298,21 +177,50 @@ export default function SprintTrackerPage() {
   }, [apiTasks]);
 
   const mode = "dark";
-  const [selectedSprint, setSelectedSprint] = useState(7);
+  const [selectedSprint, setSelectedSprint] = useState(1);
   const [standupView, setStandupView] = useState<"today" | "previous">("today");
   const [backlogFilter, setBacklogFilter] = useState<"all" | "in_progress" | "blocked" | "done" | "at_risk">("all");
 
-  const sprint = SPRINTS.find(s => s.id === selectedSprint)!;
-  const progressPct = Math.round((sprint.done / sprint.scope) * 100);
-  const avgVelocity = Math.round([36, 38, 40, 44, 46].reduce((a, b) => a + b, 0) / 5);
-  const paceVsAvg = Math.round(((sprint.done / sprint.daysPassed) / (avgVelocity / 10)) * 100);
+  // Derive sprint from API tasks
+  const derivedSprints = useMemo(() => {
+    if (!apiTasks || apiTasks.length === 0) return SPRINTS;
+    const total = apiTasks.length;
+    const done = apiTasks.filter((t: any) => ["done", "completed", "DONE"].includes(t.status)).length;
+    return [{ id: 1, name: "Current Sprint", start: new Date().toISOString().slice(0, 10), end: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10), days: 14, daysPassed: 7, scope: total, done }];
+  }, [apiTasks]);
+
+  const sprint = derivedSprints.find(s => s.id === selectedSprint) || { id: 0, name: "No Sprint", start: "", end: "", days: 1, daysPassed: 0, scope: 0, done: 0 };
+  const progressPct = sprint.scope > 0 ? Math.round((sprint.done / sprint.scope) * 100) : 0;
+  const avgVelocity = sprint.scope > 0 ? sprint.scope : 1;
+  const paceVsAvg = sprint.daysPassed > 0 ? Math.round(((sprint.done / sprint.daysPassed) / (avgVelocity / sprint.days)) * 100) : 0;
+
+  // Derive sprint goal from tasks
+  const derivedGoal = useMemo(() => {
+    if (SPRINT_ITEMS_DATA.length === 0) return SPRINT_GOAL;
+    const aligned = SPRINT_ITEMS_DATA.length;
+    const done = SPRINT_ITEMS_DATA.filter(i => i.status === "done").length;
+    const pct = aligned > 0 ? Math.round((done / aligned) * 100) : 0;
+    return { text: "Complete all sprint tasks on schedule", alignedItems: aligned, doneItems: done, prediction: pct };
+  }, [SPRINT_ITEMS_DATA]);
+
+  // Derive blockers from tasks
+  const derivedBlockers = useMemo(() => {
+    if (SPRINT_ITEMS_DATA.length === 0) return BLOCKERS;
+    return SPRINT_ITEMS_DATA.filter(i => i.blocked || i.status === "blocked").map(i => ({
+      id: i.id, title: i.title, owner: i.assignee, duration: i.timeInStatus, escalated: false, impact: "Blocking sprint progress",
+    }));
+  }, [SPRINT_ITEMS_DATA]);
 
   const filteredBacklog = useMemo(() => {
     if (backlogFilter === "all") return SPRINT_ITEMS_DATA;
     if (backlogFilter === "at_risk") return SPRINT_ITEMS_DATA.filter(i => i.atRisk || i.blocked);
     if (backlogFilter === "blocked") return SPRINT_ITEMS_DATA.filter(i => i.blocked || i.status === "blocked");
     return SPRINT_ITEMS_DATA.filter(i => i.status === backlogFilter);
-  }, [backlogFilter]);
+  }, [backlogFilter, SPRINT_ITEMS_DATA]);
+
+  // Use derived data instead of hardcoded constants throughout
+  const activeBlockers = derivedBlockers;
+  const activeGoal = derivedGoal;
 
   return (
     <div className="space-y-6 max-w-[1600px]">
@@ -323,7 +231,7 @@ export default function SprintTrackerPage() {
           <select className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold"
             value={selectedSprint} onChange={e => setSelectedSprint(Number(e.target.value))}
             style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
-            {SPRINTS.map(s => <option key={s.id} value={s.id}>{s.name} — {s.start.slice(5)} to {s.end.slice(5)}</option>)}
+            {derivedSprints.map(s => <option key={s.id} value={s.id}>{s.name} — {s.start.slice(5)} to {s.end.slice(5)}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-3">
@@ -354,7 +262,7 @@ export default function SprintTrackerPage() {
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>Burndown</p>
           <div style={{ height: 50 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={BURNDOWN_DATA.slice(0, 6)}>
+              <LineChart data={burndownData.slice(0, 6)}>
                 <Line type="monotone" dataKey="ideal" stroke="#64748B" strokeDasharray="3 3" dot={false} strokeWidth={1} />
                 <Line type="monotone" dataKey="actual" stroke={"var(--primary)"} dot={false} strokeWidth={2} />
               </LineChart>
@@ -720,7 +628,7 @@ export default function SprintTrackerPage() {
         <Card className="lg:col-span-1">
           <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Active Blockers</h3>
           <div className="space-y-3">
-            {BLOCKERS.map(b => (
+            {activeBlockers.map(b => (
               <div key={b.id} className="p-2.5 rounded-[8px]" style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] font-bold" style={{ color: "#EF4444" }}>{b.id}</span>
@@ -802,28 +710,28 @@ export default function SprintTrackerPage() {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
               <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Sprint Goal</h3>
-              <Badge variant={SPRINT_GOAL.prediction >= 80 ? "default" : SPRINT_GOAL.prediction >= 60 ? "secondary" : "destructive"}>
-                {SPRINT_GOAL.prediction}% likely
+              <Badge variant={activeGoal.prediction >= 80 ? "default" : activeGoal.prediction >= 60 ? "secondary" : "destructive"}>
+                {activeGoal.prediction}% likely
               </Badge>
             </div>
             <p className="text-[13px] leading-relaxed mb-3 italic" style={{ color: "var(--muted-foreground)" }}>
-              "{SPRINT_GOAL.text}"
+              "{activeGoal.text}"
             </p>
             <div className="flex items-center gap-3 mb-2">
               <span className="text-[12px] font-medium" style={{ color: "var(--muted-foreground)" }}>
-                Aligned Items: {SPRINT_GOAL.doneItems}/{SPRINT_GOAL.alignedItems} done
+                Aligned Items: {activeGoal.doneItems}/{activeGoal.alignedItems} done
               </span>
               <span className="text-[12px]" style={{ color: "var(--muted-foreground)" }}>
-                ({Math.round((SPRINT_GOAL.doneItems / SPRINT_GOAL.alignedItems) * 100)}%)
+                ({Math.round((activeGoal.doneItems / (activeGoal.alignedItems || 1)) * 100)}%)
               </span>
             </div>
-            <Progress value={Math.round((SPRINT_GOAL.doneItems / SPRINT_GOAL.alignedItems) * 100)} className="h-1.5" />
+            <Progress value={Math.round((activeGoal.doneItems / (activeGoal.alignedItems || 1)) * 100)} className="h-1.5" />
           </div>
           <div className="flex-shrink-0">
-            <ProgressRing pct={SPRINT_GOAL.prediction} size={90} stroke={7}
-              color={SPRINT_GOAL.prediction >= 80 ? "#10B981" : SPRINT_GOAL.prediction >= 60 ? "#F59E0B" : "#EF4444"}
+            <ProgressRing pct={activeGoal.prediction} size={90} stroke={7}
+              color={activeGoal.prediction >= 80 ? "#10B981" : activeGoal.prediction >= 60 ? "#F59E0B" : "#EF4444"}
               bgColor={`${"var(--border)"}33`}>
-              <span className="text-[18px] font-bold" style={{ color: "var(--foreground)" }}>{SPRINT_GOAL.prediction}%</span>
+              <span className="text-[18px] font-bold" style={{ color: "var(--foreground)" }}>{activeGoal.prediction}%</span>
               <span className="text-[8px]" style={{ color: "var(--muted-foreground)" }}>predicted</span>
             </ProgressRing>
           </div>
