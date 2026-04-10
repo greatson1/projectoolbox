@@ -316,7 +316,7 @@ You have access to the full conversation history from all previous sessions with
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
       max_tokens: 4096,
       system: systemPrompt,
       messages,
@@ -325,7 +325,9 @@ You have access to the full conversation history from all previous sessions with
   });
 
   if (!response.ok || !response.body) {
-    return NextResponse.json({ error: "LLM stream failed" }, { status: 502 });
+    const errBody = await response.text().catch(() => "no body");
+    console.error(`[chat/stream] Anthropic API error: ${response.status} — ${errBody}`);
+    return NextResponse.json({ error: "LLM stream failed", status: response.status, detail: errBody.slice(0, 200) }, { status: 502 });
   }
 
   // Transform Anthropic SSE stream into our own SSE format
