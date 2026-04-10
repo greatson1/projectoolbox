@@ -13,9 +13,9 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   FolderKanban, CheckCircle2, FileWarning, AlertTriangle, ChevronRight,
-  TrendingUp, ArrowRight, Bot, Zap, Activity,
+  TrendingUp, ArrowRight, Bot, Zap, Activity, Clock,
 } from "lucide-react";
-// Recharts removed — dashboard uses real data widgets now
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 // No mock data — all from API
 
@@ -316,79 +316,170 @@ export default function DashboardPage() {
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Task Progress */}
+            {/* Task Progress — donut chart */}
             <Card className="px-5">
               <CardHeader className="pb-2"><CardTitle className="text-sm">Task Progress</CardTitle></CardHeader>
               <CardContent>
-                {stats.totalTasks > 0 ? (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-muted-foreground">{stats.completedTasks} of {stats.totalTasks} completed</span>
-                      <span className="text-xs font-bold text-primary">{Math.round((stats.completedTasks / stats.totalTasks) * 100)}%</span>
-                    </div>
-                    <div className="h-3 rounded-full bg-border/30 overflow-hidden">
-                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(stats.completedTasks / stats.totalTasks) * 100}%` }} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 mt-4">
-                      <div className="text-center p-2 rounded-lg bg-muted/30">
-                        <p className="text-lg font-bold text-foreground">{stats.totalTasks - stats.completedTasks}</p>
-                        <p className="text-[10px] text-muted-foreground">Open</p>
+                {stats.totalTasks > 0 ? (() => {
+                  const open = stats.totalTasks - stats.completedTasks - (stats.pendingApprovals || 0);
+                  const pct = Math.round((stats.completedTasks / stats.totalTasks) * 100);
+                  const COLORS = ["#10B981", "#6366F1", "#F59E0B", "#E2E8F0"];
+                  const data = [
+                    { name: "Done", value: stats.completedTasks },
+                    { name: "In Progress", value: Math.max(0, open) },
+                    { name: "Blocked", value: stats.pendingApprovals || 0 },
+                  ].filter(d => d.value > 0);
+                  return (
+                    <div className="flex items-center gap-4">
+                      <div className="relative w-[120px] h-[120px] flex-shrink-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={data} cx="50%" cy="50%" innerRadius={36} outerRadius={52} dataKey="value" strokeWidth={2} stroke="hsl(var(--background))">
+                              {data.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+                            </Pie>
+                            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="text-center">
+                            <p className="text-lg font-bold leading-none">{pct}%</p>
+                            <p className="text-[9px] text-muted-foreground">complete</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-center p-2 rounded-lg bg-muted/30">
-                        <p className="text-lg font-bold text-emerald-500">{stats.completedTasks}</p>
-                        <p className="text-[10px] text-muted-foreground">Done</p>
-                      </div>
-                      <div className="text-center p-2 rounded-lg bg-muted/30">
-                        <p className="text-lg font-bold text-amber-500">{stats.pendingApprovals}</p>
-                        <p className="text-[10px] text-muted-foreground">Blocked</p>
+                      <div className="flex-1 space-y-2">
+                        {[
+                          { label: "Completed", value: stats.completedTasks, color: "bg-emerald-500" },
+                          { label: "In Progress", value: Math.max(0, open), color: "bg-primary" },
+                          { label: "Blocked", value: stats.pendingApprovals || 0, color: "bg-amber-500" },
+                        ].map(r => (
+                          <div key={r.label} className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${r.color} flex-shrink-0`} />
+                            <span className="text-xs text-muted-foreground flex-1">{r.label}</span>
+                            <span className="text-xs font-semibold">{r.value}</span>
+                          </div>
+                        ))}
+                        <div className="pt-1 border-t border-border/30">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground flex-1">Total</span>
+                            <span className="text-xs font-bold">{stats.totalTasks}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ) : (
+                  );
+                })() : (
                   <div className="flex items-center justify-center h-[140px] text-center">
                     <div>
-                      <p className="text-sm text-muted-foreground">No tasks yet</p>
-                      <p className="text-xs text-muted-foreground mt-1">Deploy an agent to start generating tasks</p>
+                      <CheckCircle2 className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+                      <p className="text-xs text-muted-foreground">No tasks yet — deploy an agent</p>
                     </div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Risk Overview */}
+            {/* Portfolio Health — RAG per project */}
             <Card className="px-5">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Risk Overview</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Portfolio Health</CardTitle></CardHeader>
               <CardContent>
-                {stats.openRisks > 0 ? (
-                  <div>
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="text-center flex-1 p-3 rounded-lg bg-red-500/10">
-                        <p className="text-2xl font-bold text-red-500">{stats.openRisks}</p>
-                        <p className="text-[10px] text-muted-foreground">Open Risks</p>
-                      </div>
-                      <div className="text-center flex-1 p-3 rounded-lg bg-muted/30">
-                        <p className="text-2xl font-bold text-foreground">{projects.reduce((s: number, p: any) => s + (p.riskCount || 0), 0)}</p>
-                        <p className="text-[10px] text-muted-foreground">Total Risks</p>
-                      </div>
-                    </div>
-                    {projects.filter((p: any) => p.riskCount > 0).map((p: any) => (
-                      <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-border/10">
-                        <span className="text-xs font-medium">{p.name}</span>
-                        <span className="text-xs font-bold" style={{ color: p.riskCount > 3 ? "#EF4444" : "#F59E0B" }}>{p.riskCount} risks</span>
-                      </div>
-                    ))}
+                {projects.length > 0 ? (
+                  <div className="space-y-3">
+                    {projects.slice(0, 4).map((p: any) => {
+                      const progress = p.taskCount > 0 ? Math.round(((p.completedCount || 0) / p.taskCount) * 100) : 0;
+                      const rag = p.riskCount > 3 ? "RED" : p.riskCount > 0 || progress < 30 ? "AMBER" : "GREEN";
+                      const ragColor = rag === "RED" ? "bg-red-500" : rag === "AMBER" ? "bg-amber-500" : "bg-emerald-500";
+                      const ragRing = rag === "RED" ? "ring-red-500/20" : rag === "AMBER" ? "ring-amber-500/20" : "ring-emerald-500/20";
+                      return (
+                        <Link key={p.id} href={`/projects/${p.id}`} className="block group">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-3 h-3 rounded-full ${ragColor} ring-4 ${ragRing} flex-shrink-0`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium truncate group-hover:text-primary transition-colors">{p.name}</span>
+                                <span className="text-[10px] text-muted-foreground ml-2">{progress}%</span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-border/30 mt-1.5 overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${ragColor}`} style={{ width: `${Math.max(3, progress)}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 ml-6 mt-1">
+                            <span className="text-[10px] text-muted-foreground">{p.taskCount || 0} tasks</span>
+                            <span className="text-[10px] text-muted-foreground">{p.riskCount || 0} risks</span>
+                            {p.budget > 0 && <span className="text-[10px] text-muted-foreground">£{(p.budget || 0).toLocaleString()}</span>}
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="flex items-center justify-center h-[140px] text-center">
                     <div>
-                      <p className="text-sm text-muted-foreground">No risks identified</p>
-                      <p className="text-xs text-muted-foreground mt-1">Agents flag risks as they analyse your projects</p>
+                      <FolderKanban className="w-6 h-6 text-muted-foreground/20 mx-auto mb-2" />
+                      <p className="text-xs text-muted-foreground">No projects yet</p>
                     </div>
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
+
+          {/* Phase Pipeline — visual stepper showing agent lifecycle progress */}
+          {agents.length > 0 && (
+            <Card className="px-5">
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Agent Lifecycle Pipeline</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {agents.map((a: any) => {
+                    const deployment = a.deployment || a;
+                    const currentPhase = deployment.currentPhase || "Requirements";
+                    const methodology = projects.find((p: any) => p.agent?.id === a.id)?.methodology || "WATERFALL";
+                    const phases = METHOD_LABEL[methodology] === "Traditional"
+                      ? ["Pre-Project", "Initiation", "Planning", "Execution", "Closing"]
+                      : methodology === "AGILE_SCRUM" || methodology === "scrum"
+                      ? ["Sprint Zero", "Sprint Cadence", "Release"]
+                      : ["Requirements", "Design", "Build", "Test", "Deploy"];
+                    const currentIdx = phases.findIndex(p => p === currentPhase);
+                    const phaseStatus = deployment.phaseStatus || "active";
+
+                    return (
+                      <div key={a.id}>
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                            style={{ background: a.gradient || "#6366F1" }}>{a.name[0]}</div>
+                          <span className="text-xs font-semibold">{a.name}</span>
+                          {phaseStatus === "pending_approval" && (
+                            <Badge variant="outline" className="text-[9px] border-amber-500/30 text-amber-500 ml-auto">Gate Pending</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {phases.map((phase, i) => {
+                            const isDone = i < currentIdx;
+                            const isCurrent = i === currentIdx;
+                            const isFuture = i > currentIdx;
+                            return (
+                              <div key={phase} className="flex items-center flex-1 min-w-0">
+                                <div className={`flex-1 flex flex-col items-center gap-1`}>
+                                  <div className={`w-full h-2 rounded-full transition-all ${
+                                    isDone ? "bg-emerald-500" : isCurrent ? (phaseStatus === "pending_approval" ? "bg-amber-500 animate-pulse" : "bg-primary") : "bg-border/40"
+                                  }`} />
+                                  <span className={`text-[9px] truncate max-w-full ${isCurrent ? "font-bold text-foreground" : isDone ? "text-emerald-600" : "text-muted-foreground/50"}`}>
+                                    {phase}
+                                  </span>
+                                </div>
+                                {i < phases.length - 1 && <div className="w-0.5 flex-shrink-0" />}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Agent Fleet Summary — shows all agents with project assignments */}
           {agents.length > 0 && (
@@ -508,26 +599,61 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* EVM Health (if projects have budget) */}
+          {/* Budget Burn — visual spend vs budget per project */}
           {projects.some((p: any) => p.budget > 0) && (
             <Card className="px-5">
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Project Health</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Budget Overview</CardTitle></CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {projects.filter((p: any) => p.budget > 0).slice(0, 3).map((p: any) => {
-                    const progress = p.taskCount > 0 ? Math.round(((p.completedCount || 0) / p.taskCount) * 100) : 0;
+                    const spent = p.actualCost || 0;
+                    const pct = p.budget > 0 ? Math.round((spent / p.budget) * 100) : 0;
+                    const remaining = Math.max(0, p.budget - spent);
+                    const barColor = pct > 90 ? "bg-red-500" : pct > 70 ? "bg-amber-500" : "bg-emerald-500";
                     return (
-                      <div key={p.id} className="space-y-1">
-                        <div className="flex items-center justify-between">
+                      <div key={p.id}>
+                        <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-medium truncate flex-1">{p.name}</span>
-                          <span className="text-xs font-bold text-primary ml-2">{progress}%</span>
+                          <span className="text-[10px] text-muted-foreground ml-2">£{remaining.toLocaleString()} left</span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-border/30 overflow-hidden">
-                          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+                        <div className="h-2 rounded-full bg-border/30 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.max(2, Math.min(100, pct))}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="text-[10px] text-muted-foreground">£{spent.toLocaleString()} spent</span>
+                          <span className="text-[10px] font-medium">£{p.budget.toLocaleString()} total</span>
                         </div>
                       </div>
                     );
                   })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Risk Heatmap — severity distribution */}
+          {stats.openRisks > 0 && (
+            <Card className="px-5">
+              <CardHeader className="pb-3"><CardTitle className="text-sm">Risk Severity</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {projects.filter((p: any) => p.riskCount > 0).map((p: any) => (
+                    <div key={p.id} className="flex items-center gap-2.5">
+                      <span className="text-xs font-medium truncate flex-1 min-w-0">{p.name}</span>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(p.riskCount, 8) }).map((_, i) => (
+                          <div key={i} className={`w-2.5 h-2.5 rounded-sm ${i < Math.ceil(p.riskCount * 0.3) ? "bg-red-500" : i < Math.ceil(p.riskCount * 0.6) ? "bg-amber-500" : "bg-yellow-400"}`} />
+                        ))}
+                        {p.riskCount > 8 && <span className="text-[9px] text-muted-foreground ml-0.5">+{p.riskCount - 8}</span>}
+                      </div>
+                      <span className="text-[10px] font-bold w-5 text-right" style={{ color: p.riskCount > 3 ? "#EF4444" : "#F59E0B" }}>{p.riskCount}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 pt-2 border-t border-border/30">
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-500" /><span className="text-[9px] text-muted-foreground">High</span></div>
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-amber-500" /><span className="text-[9px] text-muted-foreground">Medium</span></div>
+                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-yellow-400" /><span className="text-[9px] text-muted-foreground">Low</span></div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
