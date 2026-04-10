@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   FolderKanban, CheckCircle2, FileWarning, AlertTriangle, ChevronRight,
-  TrendingUp, ArrowRight, Bot, Zap,
+  TrendingUp, ArrowRight, Bot, Zap, Activity,
 } from "lucide-react";
 // Recharts removed — dashboard uses real data widgets now
 
@@ -78,38 +78,68 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-[1400px]">
-      {/* ── Agent Status Banner ── */}
-      <div className="rounded-2xl p-5 flex items-center gap-5 border border-primary/20 bg-gradient-to-r from-primary/10 via-accent/5 to-transparent">
-        <div className="relative flex-shrink-0">
-          {activeAgent ? (
-            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-primary/30"
-              style={{ background: activeAgent.gradient || "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>
-              {activeAgent.name[0]}
+      {/* ── Welcome + Agent Status Banner ── */}
+      <div className="rounded-2xl overflow-hidden border border-primary/20">
+        {/* Greeting bar */}
+        <div className="px-6 py-4 bg-gradient-to-r from-primary/10 via-accent/5 to-transparent">
+          <h1 className="text-lg font-bold">
+            Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {stats?.activeProjects || 0} project{(stats?.activeProjects || 0) !== 1 ? "s" : ""} · {stats?.activeAgents || 0} agent{(stats?.activeAgents || 0) !== 1 ? "s" : ""} active · {(stats?.creditBalance || 0).toLocaleString()} credits
+          </p>
+        </div>
+
+        {/* Agent status row(s) */}
+        <div className="px-6 py-3 border-t border-border/30">
+          {agents.length === 0 ? (
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                <Bot className="w-5 h-5 text-muted-foreground" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-muted-foreground">No agents deployed yet</p>
+                <p className="text-xs text-muted-foreground">Create a project and deploy an AI agent to get started</p>
+              </div>
+              <Link href="/agents/deploy"><Button size="sm">Deploy Agent</Button></Link>
             </div>
           ) : (
-            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center"><Bot className="w-6 h-6 text-muted-foreground" /></div>
+            <div className="space-y-2">
+              {agents.slice(0, 3).map((a: any) => {
+                const agentActivity = activities.find((act: any) => act.agentId === a.id || act.agentName === a.name);
+                return (
+                  <Link key={a.id} href={`/agents/${a.id}`} className="flex items-center gap-3 p-2 -mx-2 rounded-xl hover:bg-muted/30 transition-colors group">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md"
+                        style={{ background: a.gradient || "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>
+                        {a.name[0]}
+                      </div>
+                      <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background ${a.status === "ACTIVE" ? "bg-green-400 animate-pulse" : a.status === "PAUSED" ? "bg-amber-400" : "bg-muted-foreground"}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">{a.name}</span>
+                        <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${a.status === "ACTIVE" ? "border-green-500/30 text-green-500" : a.status === "PAUSED" ? "border-amber-500/30 text-amber-500" : ""}`}>
+                          {a.status === "ACTIVE" ? "Online" : a.status === "PAUSED" ? "Paused" : a.status}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">L{a.autonomyLevel}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {agentActivity ? agentActivity.summary : `Deployed · ${a.projectCount || 1} project${(a.projectCount || 1) !== 1 ? "s" : ""}`}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                  </Link>
+                );
+              })}
+              {agents.length > 3 && (
+                <Link href="/agents" className="text-xs text-primary hover:underline pl-12">
+                  +{agents.length - 3} more agent{agents.length - 3 !== 1 ? "s" : ""}
+                </Link>
+              )}
+            </div>
           )}
-          {activeAgent && <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-400 border-2 border-background animate-pulse" />}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-muted-foreground">Agent Status</span>
-            {activeAgent ? (
-              <Badge variant="default" className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">Online</Badge>
-            ) : (
-              <Badge variant="outline" className="text-[10px]">No agents deployed</Badge>
-            )}
-          </div>
-          <p className="text-[15px] font-semibold truncate">
-            {latestActivity ? latestActivity.summary : "Deploy an agent to get started"}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {stats?.activeAgents || 0} agents active · {stats?.pendingApprovals || 0} pending approvals · {stats?.creditBalance || 0} credits remaining
-          </p>
-        </div>
-        <Link href={activeAgent ? "/agents/chat" : "/agents/deploy"}>
-          <Button size="sm">{activeAgent ? "Open Chat" : "Deploy Agent"}</Button>
-        </Link>
       </div>
 
       {/* ── Context-Aware Suggestions ── */}
@@ -204,22 +234,23 @@ export default function DashboardPage() {
       })()}
 
       {/* ── Stats Row ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Active Projects", value: stats?.activeProjects || 0, icon: FolderKanban, color: "text-primary" },
-          { label: "Tasks Completed", value: stats?.completedTasks || 0, icon: CheckCircle2, color: "text-chart-3" },
-          { label: "Pending Approvals", value: stats?.pendingApprovals || 0, icon: FileWarning, color: "text-chart-4" },
-          { label: "Open Risks", value: stats?.openRisks || 0, icon: AlertTriangle, color: "text-destructive" },
+          { label: "Active Projects", value: stats?.activeProjects || 0, icon: FolderKanban, color: "text-primary", bg: "bg-primary/10", sub: stats?.activeProjects ? `${projects.length} total` : null },
+          { label: "Tasks Done", value: stats?.completedTasks || 0, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10", sub: stats?.totalTasks ? `of ${stats.totalTasks} (${stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}%)` : null },
+          { label: "Approvals", value: stats?.pendingApprovals || 0, icon: FileWarning, color: (stats?.pendingApprovals || 0) > 0 ? "text-amber-500" : "text-muted-foreground", bg: (stats?.pendingApprovals || 0) > 0 ? "bg-amber-500/10" : "bg-muted/50", sub: (stats?.pendingApprovals || 0) > 0 ? "action needed" : "all clear" },
+          { label: "Open Risks", value: stats?.openRisks || 0, icon: AlertTriangle, color: (stats?.openRisks || 0) > 2 ? "text-red-500" : "text-muted-foreground", bg: (stats?.openRisks || 0) > 2 ? "bg-red-500/10" : "bg-muted/50", sub: (stats?.openRisks || 0) > 2 ? "needs review" : (stats?.openRisks || 0) > 0 ? "within tolerance" : "none flagged" },
         ].map((s) => (
-          <Card key={s.label}>
-            <CardContent className="pt-5">
-              <div className="flex items-center justify-between mb-1">
+          <Card key={s.label} className="hover:border-primary/20 transition-colors">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-start justify-between mb-2">
                 <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{s.label}</span>
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/10">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${s.bg}`}>
                   <s.icon className={`w-4 h-4 ${s.color}`} />
                 </div>
               </div>
-              <p className="text-[28px] font-bold">{s.value}</p>
+              <p className="text-2xl font-bold tracking-tight">{s.value}</p>
+              {s.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{s.sub}</p>}
             </CardContent>
           </Card>
         ))}
@@ -359,36 +390,38 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* Agent Fleet Summary — in left column to balance heights */}
-          <Card className="px-5">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-sm">Agent Fleet</CardTitle>
-              <Link href="/agents"><Button variant="ghost" size="sm" className="text-xs">View All</Button></Link>
-            </CardHeader>
-            <CardContent>
-              {agents.length === 0 ? (
-                <div className="text-center py-4">
-                  <Bot className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">No agents deployed yet</p>
-                  <Link href="/agents/deploy"><Button size="sm" className="mt-2">Deploy First Agent</Button></Link>
+          {/* Agent Fleet Summary — shows all agents with project assignments */}
+          {agents.length > 0 && (
+            <Card className="px-5">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-sm">Agent Fleet</CardTitle>
+                <Link href="/agents"><Button variant="ghost" size="sm" className="text-xs gap-1">Manage <ArrowRight className="w-3 h-3" /></Button></Link>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1.5">
+                  {agents.map((a: any) => {
+                    const agentProject = projects.find((p: any) => p.agent?.id === a.id);
+                    return (
+                      <Link key={a.id} href={`/agents/${a.id}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-muted/30 transition-colors group">
+                        <div className="relative flex-shrink-0">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
+                            style={{ background: a.gradient || "#6366F1" }}>{a.name[0]}</div>
+                          <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-[1.5px] border-background ${a.status === "ACTIVE" ? "bg-green-400" : a.status === "PAUSED" ? "bg-amber-400" : "bg-muted-foreground"}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium">{a.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {agentProject ? agentProject.name : "No project assigned"} · L{a.autonomyLevel}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
+                    );
+                  })}
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  {agents.map((a: any) => (
-                    <Link key={a.id} href={`/agents/${a.id}`} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                        style={{ background: a.gradient || "#6366F1" }}>{a.name[0]}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{a.name}</p>
-                        <p className="text-[10px] text-muted-foreground">L{a.autonomyLevel} · {a.status}</p>
-                      </div>
-                      <span className={`w-2 h-2 rounded-full ${a.status === "ACTIVE" ? "bg-green-400 animate-pulse" : a.status === "PAUSED" ? "bg-amber-400" : "bg-muted-foreground"}`} />
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right: Phase Gates + Activity + Credits + Upcoming */}
@@ -419,25 +452,30 @@ export default function DashboardPage() {
           {/* Activity Feed */}
           <Card className="px-5">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-sm">Agent Activity</CardTitle>
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <CardTitle className="text-sm">Activity</CardTitle>
+              {activities.length > 0 && <span className="text-[10px] text-muted-foreground">{activities.length} recent</span>}
             </CardHeader>
             <CardContent>
               {activities.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">No activity yet. Deploy an agent to get started.</p>
+                <div className="text-center py-6">
+                  <Activity className="w-5 h-5 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">No activity yet</p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-0">
                   {activities.map((a: any, i: number) => (
-                    <div key={a.id} className="flex gap-3">
+                    <div key={a.id} className="flex gap-3 group">
                       <div className="flex flex-col items-center">
-                        <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${ACTIVITY_COLORS[a.type] || "bg-muted-foreground"}`} />
-                        {i < activities.length - 1 && <div className="w-px flex-1 mt-1 bg-border" />}
+                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${ACTIVITY_COLORS[a.type] || "bg-muted-foreground/50"}`} />
+                        {i < activities.length - 1 && <div className="w-px flex-1 mt-1 bg-border/50" />}
                       </div>
-                      <div className="pb-3">
-                        <p className="text-[13px]">
-                          <span className="font-semibold text-primary">{a.agentName}</span> — {a.summary}
+                      <div className="pb-4 flex-1 min-w-0">
+                        <p className="text-[12px] leading-relaxed">
+                          <span className="font-semibold">{a.agentName || "Agent"}</span>
+                          <span className="text-muted-foreground"> · </span>
+                          <span className="text-muted-foreground">{a.summary}</span>
                         </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{timeAgo(a.createdAt)}</p>
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5">{timeAgo(a.createdAt)}</p>
                       </div>
                     </div>
                   ))}
@@ -448,13 +486,25 @@ export default function DashboardPage() {
 
           {/* Credits */}
           <Card className="px-5">
-            <CardContent className="pt-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Credit Balance</span>
-                <Zap className="w-4 h-4 text-chart-4" />
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Credits</span>
+                <Link href="/billing/credits" className="text-[10px] text-primary hover:underline">Top up</Link>
               </div>
-              <p className="text-2xl font-bold">{stats?.creditBalance?.toLocaleString() || 0}</p>
-              <Link href="/billing/credits"><Button variant="ghost" size="sm" className="text-xs mt-2 p-0 h-auto">View Credit Centre →</Button></Link>
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-2xl font-bold tracking-tight">{(stats?.creditBalance || 0).toLocaleString()}</p>
+                <span className="text-xs text-muted-foreground">remaining</span>
+              </div>
+              {(() => {
+                const bal = stats?.creditBalance || 0;
+                const pct = Math.min(100, (bal / 5000) * 100);
+                const color = pct < 10 ? "bg-red-500" : pct < 25 ? "bg-amber-500" : "bg-emerald-500";
+                return (
+                  <div className="h-1.5 rounded-full bg-border/30 mt-3 overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 
