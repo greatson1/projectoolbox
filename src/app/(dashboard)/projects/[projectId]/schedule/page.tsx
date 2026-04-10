@@ -34,47 +34,7 @@ interface ScheduleTask {
   isCriticalPath?: boolean;
 }
 
-// ── Sample data ──
-const TASKS: ScheduleTask[] = [
-  // Pre-Project
-  { id: "t1", name: "Feasibility Study", phase: "Pre-Project", start: "2026-01-06", end: "2026-01-24", progress: 100, status: "done", isCriticalPath: true },
-  { id: "t2", name: "Business Case Approval", phase: "Pre-Project", start: "2026-01-27", end: "2026-01-27", progress: 100, status: "done", dependsOn: ["t1"], isMilestone: true },
-  // Initiation
-  { id: "t3", name: "Project Charter", phase: "Initiation", start: "2026-01-28", end: "2026-02-07", progress: 100, status: "done", dependsOn: ["t2"], isCriticalPath: true, assignee: "Maya" },
-  { id: "t4", name: "Stakeholder Register", phase: "Initiation", start: "2026-02-03", end: "2026-02-14", progress: 100, status: "done", assignee: "Maya" },
-  { id: "t5", name: "Initial Risk Assessment", phase: "Initiation", start: "2026-02-10", end: "2026-02-21", progress: 100, status: "done", assignee: "Maya" },
-  { id: "t6", name: "Initiation Gate", phase: "Initiation", start: "2026-02-24", end: "2026-02-24", progress: 100, status: "done", dependsOn: ["t3", "t4", "t5"], isMilestone: true },
-  // Planning
-  { id: "t7", name: "Scope Management Plan", phase: "Planning", start: "2026-02-25", end: "2026-03-13", progress: 85, status: "active", dependsOn: ["t6"], isCriticalPath: true, assignee: "Maya" },
-  { id: "t8", name: "WBS Development", phase: "Planning", start: "2026-03-02", end: "2026-03-20", progress: 70, status: "active", assignee: "Maya" },
-  { id: "t9", name: "Schedule Baseline", phase: "Planning", start: "2026-03-16", end: "2026-04-03", progress: 40, status: "active", dependsOn: ["t8"], isCriticalPath: true, assignee: "Maya" },
-  { id: "t10", name: "Cost Baseline", phase: "Planning", start: "2026-03-16", end: "2026-04-03", progress: 35, status: "active", assignee: "Maya" },
-  { id: "t11", name: "Risk Management Plan", phase: "Planning", start: "2026-03-23", end: "2026-04-10", progress: 20, status: "active", assignee: "Maya" },
-  { id: "t12", name: "Quality Management Plan", phase: "Planning", start: "2026-03-30", end: "2026-04-14", progress: 10, status: "active", assignee: "Maya" },
-  { id: "t13", name: "Comms Management Plan", phase: "Planning", start: "2026-04-07", end: "2026-04-18", progress: 0, status: "pending", assignee: "Maya" },
-  { id: "t14", name: "Planning Gate", phase: "Planning", start: "2026-04-21", end: "2026-04-21", progress: 0, status: "pending", dependsOn: ["t7", "t9", "t10", "t11", "t12", "t13"], isMilestone: true },
-  // Execution
-  { id: "t15", name: "Data Migration – Phase 1", phase: "Execution", start: "2026-04-22", end: "2026-05-22", progress: 0, status: "pending", dependsOn: ["t14"], isCriticalPath: true },
-  { id: "t16", name: "Salesforce Configuration", phase: "Execution", start: "2026-04-22", end: "2026-06-05", progress: 0, status: "pending", dependsOn: ["t14"] },
-  { id: "t17", name: "Custom Development Sprint 1", phase: "Execution", start: "2026-05-04", end: "2026-05-29", progress: 0, status: "pending" },
-  { id: "t18", name: "Custom Development Sprint 2", phase: "Execution", start: "2026-06-01", end: "2026-06-26", progress: 0, status: "pending", dependsOn: ["t17"] },
-  { id: "t19", name: "Integration Testing", phase: "Execution", start: "2026-06-15", end: "2026-07-10", progress: 0, status: "pending", dependsOn: ["t15", "t16"], isCriticalPath: true },
-  { id: "t20", name: "UAT", phase: "Execution", start: "2026-07-06", end: "2026-07-24", progress: 0, status: "pending", dependsOn: ["t19"], isCriticalPath: true },
-  { id: "t21", name: "Go-Live Readiness Gate", phase: "Execution", start: "2026-07-27", end: "2026-07-27", progress: 0, status: "pending", dependsOn: ["t20"], isMilestone: true },
-  // Closing
-  { id: "t22", name: "Hypercare Support (30 days)", phase: "Closing", start: "2026-07-28", end: "2026-08-28", progress: 0, status: "pending", dependsOn: ["t21"] },
-  { id: "t23", name: "Lessons Learned Workshop", phase: "Closing", start: "2026-08-25", end: "2026-09-05", progress: 0, status: "pending" },
-  { id: "t24", name: "Project Closure Report", phase: "Closing", start: "2026-09-01", end: "2026-09-12", progress: 0, status: "pending", dependsOn: ["t22", "t23"], isCriticalPath: true },
-  { id: "t25", name: "Final Sign-Off", phase: "Closing", start: "2026-09-15", end: "2026-09-15", progress: 0, status: "pending", dependsOn: ["t24"], isMilestone: true },
-];
-
-const PHASES_SUMMARY = [
-  { name: "Pre-Project", status: "done" as const, tasks: 2, complete: 2, gate: "Approved" },
-  { name: "Initiation", status: "done" as const, tasks: 4, complete: 4, gate: "Approved" },
-  { name: "Planning", status: "active" as const, tasks: 8, complete: 0, gate: "Pending" },
-  { name: "Execution", status: "pending" as const, tasks: 7, complete: 0, gate: "Not started" },
-  { name: "Closing", status: "pending" as const, tasks: 4, complete: 0, gate: "Not started" },
-];
+// No mock data — everything is derived from API tasks
 
 type ZoomLevel = "week" | "month" | "quarter";
 type ViewMode = "gantt" | "list";
@@ -127,7 +87,7 @@ export default function SchedulePage() {
     assignee: t.assignee || t.assigneeName || "",
     isMilestone: t.isMilestone || false,
     isCriticalPath: t.isCriticalPath || false,
-  })) : [];
+  })) : [] as ScheduleTask[];
 
   const mode = "dark";
   const [zoom, setZoom] = useState<ZoomLevel>("month");
@@ -137,8 +97,15 @@ export default function SchedulePage() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
 
-  // Compute timeline range
+  // Compute timeline range (guard against empty data)
   const { timelineStart, timelineEnd, totalDays, dayWidth } = useMemo(() => {
+    if (TASKS_DATA.length === 0) {
+      const now = new Date();
+      const ts = addDays(now, -7);
+      const te = addDays(now, 30);
+      const dw = zoom === "week" ? 32 : zoom === "month" ? 16 : 6;
+      return { timelineStart: ts, timelineEnd: te, totalDays: diffDays(ts, te), dayWidth: dw };
+    }
     const allStarts = TASKS_DATA.map(t => parseDate(t.start));
     const allEnds = TASKS_DATA.map(t => parseDate(t.end));
     const minDate = new Date(Math.min(...allStarts.map(d => d.getTime())));
@@ -148,7 +115,7 @@ export default function SchedulePage() {
     const total = diffDays(ts, te);
     const dw = zoom === "week" ? 32 : zoom === "month" ? 16 : 6;
     return { timelineStart: ts, timelineEnd: te, totalDays: total, dayWidth: dw };
-  }, [zoom]);
+  }, [zoom, TASKS_DATA]);
 
   const months = useMemo(() => getMonths(timelineStart, timelineEnd), [timelineStart, timelineEnd]);
 
@@ -177,7 +144,20 @@ export default function SchedulePage() {
       map.get(t.phase)!.push(t);
     }
     return map;
-  }, []);
+  }, [TASKS_DATA]);
+
+  // Derive phases summary from actual data
+  const phasesSummary = useMemo(() => {
+    const phases: { name: string; status: "done" | "active" | "pending"; tasks: number; complete: number; gate: string }[] = [];
+    for (const [name, tasks] of tasksByPhase) {
+      const complete = tasks.filter(t => t.status === "done").length;
+      const hasActive = tasks.some(t => t.status === "active");
+      const status = complete === tasks.length ? "done" as const : hasActive ? "active" as const : "pending" as const;
+      const gate = status === "done" ? "Approved" : hasActive ? "Pending" : "Not started";
+      phases.push({ name, status, tasks: tasks.length, complete, gate });
+    }
+    return phases;
+  }, [tasksByPhase]);
 
   // Stats
   const totalTasks = TASKS_DATA.length;
@@ -185,7 +165,7 @@ export default function SchedulePage() {
   const milestonesHit = TASKS_DATA.filter(t => t.isMilestone && t.status === "done").length;
   const totalMilestones = TASKS_DATA.filter(t => t.isMilestone).length;
   const criticalTasks = TASKS_DATA.filter(t => t.isCriticalPath).length;
-  const overallProgress = Math.round(TASKS_DATA.reduce((s, t) => s + t.progress, 0) / totalTasks);
+  const overallProgress = totalTasks > 0 ? Math.round(TASKS_DATA.reduce((s, t) => s + t.progress, 0) / totalTasks) : 0;
 
   const ROW_HEIGHT = 36;
 
@@ -193,7 +173,7 @@ export default function SchedulePage() {
   const visibleTasks = useMemo(() => {
     const result: { type: "phase"; phase: string; expanded: boolean }[] | { type: "task"; task: ScheduleTask }[] = [];
     const flat: Array<{ type: "phase"; phase: string; expanded: boolean } | { type: "task"; task: ScheduleTask }> = [];
-    for (const ps of PHASES_SUMMARY) {
+    for (const ps of phasesSummary) {
       flat.push({ type: "phase", phase: ps.name, expanded: expandedPhases.has(ps.name) });
       if (expandedPhases.has(ps.name)) {
         for (const t of tasksByPhase.get(ps.name) || []) {
@@ -202,7 +182,7 @@ export default function SchedulePage() {
       }
     }
     return flat;
-  }, [expandedPhases, tasksByPhase]);
+  }, [expandedPhases, tasksByPhase, phasesSummary]);
 
   // ── List View ──
   if (view === "list") {
@@ -257,7 +237,7 @@ export default function SchedulePage() {
           </div>
         </Card>
 
-        <PhaseGatesSidebar />
+        <PhaseGatesSidebar phases={phasesSummary} />
       </div>
     );
   }
@@ -423,7 +403,7 @@ export default function SchedulePage() {
         </Card>
 
         {/* ── Phase Gates Sidebar ── */}
-        <PhaseGatesSidebar />
+        <PhaseGatesSidebar phases={phasesSummary} />
       </div>
     </div>
   );
@@ -502,7 +482,7 @@ function StatPill({ label, value, color,  }: { label: string; value: string; col
 }
 
 // ── Phase Gates Sidebar ──
-function PhaseGatesSidebar({  }: { mode: string }) {
+function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string }[] }) {
   const gateStatusColor = (s: string) => s === "Approved" ? "#10B981" : s === "Pending" ? "#F59E0B" : "var(--muted-foreground)";
 
   return (
@@ -510,13 +490,13 @@ function PhaseGatesSidebar({  }: { mode: string }) {
       <Card>
         <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Phase Gates</h3>
         <div className="space-y-2">
-          {([] as any[]).map(p => (
+          {phases.map(p => (
             <div key={p.name} className="p-2 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)" }}>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{p.name}</span>
                 <span className="text-[10px] font-semibold" style={{ color: gateStatusColor(p.gate) }}>{p.gate}</span>
               </div>
-              <Progress value={Math.round((p.complete / p.tasks) * 100)} className="h-1.5" />
+              <Progress value={p.tasks > 0 ? Math.round((p.complete / p.tasks) * 100) : 0} className="h-1.5" />
               <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{p.complete}/{p.tasks} tasks complete</span>
             </div>
           ))}
@@ -526,15 +506,15 @@ function PhaseGatesSidebar({  }: { mode: string }) {
       <Card>
         <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>AI Insights</h3>
         <div className="space-y-2 text-[12px]" style={{ color: "var(--muted-foreground)" }}>
-          <div className="p-2 rounded-[8px]" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
-            <span className="font-semibold text-red-400">Schedule Risk:</span> Planning phase may slip 5 days based on current velocity. Consider parallel-tracking Comms Plan.
-          </div>
-          <div className="p-2 rounded-[8px]" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
-            <span className="font-semibold text-amber-400">Dependency Alert:</span> Integration Testing depends on both Data Migration and Salesforce Config. Monitor for convergence risk.
-          </div>
-          <div className="p-2 rounded-[8px]" style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
-            <span className="font-semibold text-emerald-400">On Track:</span> Pre-Project and Initiation completed ahead of schedule. Planning gate forecast: 21 Apr.
-          </div>
+          {phases.length === 0 ? (
+            <div className="p-2 rounded-[8px]" style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.2)" }}>
+              <span className="font-semibold" style={{ color: "var(--muted-foreground)" }}>No tasks yet.</span> Add tasks to this project to see schedule insights.
+            </div>
+          ) : (
+            <div className="p-2 rounded-[8px]" style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
+              <span className="font-semibold text-emerald-400">Summary:</span> {phases.length} phase{phases.length !== 1 ? "s" : ""} with {phases.reduce((s, p) => s + p.tasks, 0)} tasks tracked.
+            </div>
+          )}
         </div>
       </Card>
     </div>
