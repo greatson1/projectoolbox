@@ -58,77 +58,14 @@ interface TeamMember {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MOCK DATA — 34 issues, 5 team members, 3 epics, Sprint 7 Day 6
+// DATA DEFAULTS — populated from API via useProjectTasks
 // ═══════════════════════════════════════════════════════════════════
 
-const TEAM: TeamMember[] = [
-  { name: "Sarah Chen", initials: "SC", capacity: 13, assigned: 11 },
-  { name: "James Okafor", initials: "JO", capacity: 13, assigned: 10 },
-  { name: "Priya Sharma", initials: "PS", capacity: 10, assigned: 8 },
-  { name: "Liam Barrett", initials: "LB", capacity: 10, assigned: 9 },
-  { name: "Mia Novak", initials: "MN", capacity: 8, assigned: 7 },
-];
+const TEAM: TeamMember[] = [];
 
-const EPICS = [
-  { name: "User Onboarding", color: "#6366F1" },
-  { name: "Billing Engine", color: "#F59E0B" },
-  { name: "Dashboard Analytics", color: "#22D3EE" },
-];
+const EPICS: { name: string; color: string }[] = [];
 
-const LABELS: { name: string; color: string }[] = [
-  { name: "frontend", color: "#6366F1" },
-  { name: "backend", color: "#10B981" },
-  { name: "API", color: "#22D3EE" },
-  { name: "UX", color: "#EC4899" },
-  { name: "infra", color: "#64748B" },
-  { name: "security", color: "#EF4444" },
-];
-
-const ISSUES: Issue[] = [
-  // Backlog (8)
-  { id: "PTX-101", title: "Design empty state illustrations for all dashboard widgets", type: "story", column: "backlog", priority: "low", storyPoints: 3, assignee: "Mia Novak", labels: ["UX", "frontend"], epic: "Dashboard Analytics" },
-  { id: "PTX-102", title: "Add CSV export for billing history table", type: "story", column: "backlog", priority: "medium", storyPoints: 2, assignee: "Liam Barrett", labels: ["backend", "API"], epic: "Billing Engine" },
-  { id: "PTX-103", title: "Spike: evaluate real-time notification options (SSE vs WS)", type: "spike", column: "backlog", priority: "medium", storyPoints: 3, assignee: "James Okafor", labels: ["infra"], epic: "Dashboard Analytics" },
-  { id: "PTX-104", title: "Create onboarding progress API endpoint", type: "task", column: "backlog", priority: "high", storyPoints: 2, assignee: "Sarah Chen", labels: ["backend", "API"], epic: "User Onboarding" },
-  { id: "PTX-105", title: "Add dark mode toggle persistence to user preferences", type: "task", column: "backlog", priority: "low", storyPoints: 1, assignee: "Priya Sharma", labels: ["frontend"], epic: "User Onboarding" },
-  { id: "PTX-106", title: "Write integration tests for Stripe webhook handler", type: "task", column: "backlog", priority: "medium", storyPoints: 3, assignee: "Liam Barrett", labels: ["backend", "security"], epic: "Billing Engine" },
-  { id: "PTX-107", title: "Responsive layout fixes for mobile onboarding flow", type: "bug", column: "backlog", priority: "high", storyPoints: 2, assignee: "Mia Novak", labels: ["frontend", "UX"], epic: "User Onboarding" },
-  { id: "PTX-108", title: "Document billing API v2 endpoints in OpenAPI spec", type: "task", column: "backlog", priority: "low", storyPoints: 2, assignee: "James Okafor", labels: ["API"], epic: "Billing Engine" },
-
-  // To Do (6)
-  { id: "PTX-109", title: "Build subscription plan comparison component", type: "story", column: "todo", priority: "high", storyPoints: 5, assignee: "Mia Novak", labels: ["frontend", "UX"], epic: "Billing Engine" },
-  { id: "PTX-110", title: "Implement credit usage aggregation cron job", type: "task", column: "todo", priority: "high", storyPoints: 3, assignee: "Liam Barrett", labels: ["backend"], epic: "Billing Engine" },
-  { id: "PTX-111", title: "Add step-by-step tooltip walkthrough for first login", type: "story", column: "todo", priority: "medium", storyPoints: 3, assignee: "Priya Sharma", labels: ["frontend", "UX"], epic: "User Onboarding" },
-  { id: "PTX-112", title: "Create dashboard widget configuration API", type: "task", column: "todo", priority: "medium", storyPoints: 3, assignee: "James Okafor", labels: ["backend", "API"], epic: "Dashboard Analytics" },
-  { id: "PTX-113", title: "Fix timezone handling in sprint date calculations", type: "bug", column: "todo", priority: "critical", storyPoints: 2, assignee: "Sarah Chen", labels: ["backend"], epic: "Dashboard Analytics", dueDate: "2026-04-03" },
-  { id: "PTX-114", title: "Add retry logic for failed payment webhook deliveries", type: "task", column: "todo", priority: "high", storyPoints: 2, assignee: "Liam Barrett", labels: ["backend", "infra"], epic: "Billing Engine" },
-
-  // In Progress (5)
-  { id: "PTX-115", title: "Build onboarding wizard multi-step form with validation", type: "story", column: "in_progress", priority: "critical", storyPoints: 8, assignee: "Sarah Chen", labels: ["frontend", "UX"], epic: "User Onboarding", subtasks: { total: 5, done: 3 } },
-  { id: "PTX-116", title: "Implement real-time dashboard data refresh via polling", type: "story", column: "in_progress", priority: "high", storyPoints: 5, assignee: "James Okafor", labels: ["frontend", "API"], epic: "Dashboard Analytics", subtasks: { total: 4, done: 2 } },
-  { id: "PTX-117", title: "Stripe subscription lifecycle webhook handlers", type: "story", column: "in_progress", priority: "high", storyPoints: 5, assignee: "Liam Barrett", labels: ["backend", "security"], epic: "Billing Engine", blocked: true, subtasks: { total: 3, done: 1 } },
-  { id: "PTX-118", title: "Fix duplicate onboarding email trigger on retry", type: "bug", column: "in_progress", priority: "critical", storyPoints: 2, assignee: "Priya Sharma", labels: ["backend"], epic: "User Onboarding" },
-  { id: "PTX-119", title: "Add analytics chart drill-down interaction", type: "story", column: "in_progress", priority: "medium", storyPoints: 3, assignee: "Mia Novak", labels: ["frontend"], epic: "Dashboard Analytics", subtasks: { total: 3, done: 1 } },
-
-  // In Review (3)
-  { id: "PTX-120", title: "User role-based access control for billing pages", type: "story", column: "in_review", priority: "high", storyPoints: 5, assignee: "Priya Sharma", labels: ["backend", "security"], epic: "Billing Engine" },
-  { id: "PTX-121", title: "Onboarding email template with dynamic content blocks", type: "task", column: "in_review", priority: "medium", storyPoints: 3, assignee: "Sarah Chen", labels: ["backend"], epic: "User Onboarding" },
-  { id: "PTX-122", title: "Dashboard KPI sparkline components", type: "story", column: "in_review", priority: "medium", storyPoints: 3, assignee: "Mia Novak", labels: ["frontend"], epic: "Dashboard Analytics" },
-
-  // Done (12)
-  { id: "PTX-123", title: "Set up project scaffold with Vite + Tailwind", type: "task", column: "done", priority: "high", storyPoints: 2, assignee: "James Okafor", labels: ["infra"], epic: "Dashboard Analytics" },
-  { id: "PTX-124", title: "Create design system tokens andprovider", type: "story", column: "done", priority: "high", storyPoints: 5, assignee: "Mia Novak", labels: ["frontend", "UX"], epic: "Dashboard Analytics" },
-  { id: "PTX-125", title: "Implement JWT auth with refresh token rotation", type: "story", column: "done", priority: "critical", storyPoints: 5, assignee: "Sarah Chen", labels: ["backend", "security"], epic: "User Onboarding" },
-  { id: "PTX-126", title: "Build reusable data table component with sorting", type: "story", column: "done", priority: "medium", storyPoints: 3, assignee: "Priya Sharma", labels: ["frontend"], epic: "Dashboard Analytics" },
-  { id: "PTX-127", title: "Stripe API integration + payment intent flow", type: "story", column: "done", priority: "critical", storyPoints: 5, assignee: "Liam Barrett", labels: ["backend", "API"], epic: "Billing Engine" },
-  { id: "PTX-128", title: "User signup + email verification flow", type: "story", column: "done", priority: "high", storyPoints: 3, assignee: "Sarah Chen", labels: ["backend", "frontend"], epic: "User Onboarding" },
-  { id: "PTX-129", title: "Dashboard layout shell with responsive sidebar", type: "story", column: "done", priority: "high", storyPoints: 3, assignee: "Mia Novak", labels: ["frontend"], epic: "Dashboard Analytics" },
-  { id: "PTX-130", title: "Credit ledger database schema + migration", type: "task", column: "done", priority: "high", storyPoints: 2, assignee: "Liam Barrett", labels: ["backend"], epic: "Billing Engine" },
-  { id: "PTX-131", title: "Implement password reset email flow", type: "task", column: "done", priority: "medium", storyPoints: 2, assignee: "Priya Sharma", labels: ["backend"], epic: "User Onboarding" },
-  { id: "PTX-132", title: "Fix CORS headers for API preflight requests", type: "bug", column: "done", priority: "high", storyPoints: 1, assignee: "James Okafor", labels: ["infra"], epic: "Dashboard Analytics" },
-  { id: "PTX-133", title: "Add loading skeleton components for all pages", type: "task", column: "done", priority: "low", storyPoints: 2, assignee: "Mia Novak", labels: ["frontend", "UX"], epic: "Dashboard Analytics" },
-  { id: "PTX-134", title: "Invoice PDF generation with branded template", type: "story", column: "done", priority: "medium", storyPoints: 3, assignee: "James Okafor", labels: ["backend"], epic: "Billing Engine" },
-];
+const LABELS: { name: string; color: string }[] = [];
 
 const COLUMNS: { id: ColumnId; label: string; color: string; wipLimit?: number }[] = [
   { id: "backlog", label: "Backlog", color: "#64748B" },
@@ -138,31 +75,7 @@ const COLUMNS: { id: ColumnId; label: string; color: string; wipLimit?: number }
   { id: "done", label: "Done", color: "#10B981" },
 ];
 
-const SPRINTS = [
-  { id: 7, name: "Sprint 7", goal: "Complete onboarding wizard & billing subscription flow", start: "2026-04-01", end: "2026-04-14", daysPassed: 6 },
-  { id: 6, name: "Sprint 6", goal: "Auth system & design tokens", start: "2026-03-18", end: "2026-03-31", daysPassed: 14 },
-  { id: 5, name: "Sprint 5", goal: "Project scaffold & base components", start: "2026-03-04", end: "2026-03-17", daysPassed: 14 },
-];
-
-const BURNDOWN = [
-  { day: "Day 1", ideal: 55, actual: 55 }, { day: "Day 2", ideal: 51, actual: 53 },
-  { day: "Day 3", ideal: 47, actual: 50 }, { day: "Day 4", ideal: 43, actual: 46 },
-  { day: "Day 5", ideal: 39, actual: 42 }, { day: "Day 6", ideal: 35, actual: 38 },
-  { day: "Day 7", ideal: 31, actual: null }, { day: "Day 8", ideal: 27, actual: null },
-  { day: "Day 9", ideal: 23, actual: null }, { day: "Day 10", ideal: 18, actual: null },
-  { day: "Day 11", ideal: 14, actual: null }, { day: "Day 12", ideal: 9, actual: null },
-  { day: "Day 13", ideal: 5, actual: null }, { day: "Day 14", ideal: 0, actual: null },
-];
-
-const VELOCITY = [
-  { sprint: "S3", committed: 42, completed: 38 },
-  { sprint: "S4", committed: 45, completed: 40 },
-  { sprint: "S5", committed: 48, completed: 44 },
-  { sprint: "S6", committed: 50, completed: 46 },
-  { sprint: "S7", committed: 55, completed: 34 },
-];
-
-const MINI_BURNDOWN = [55, 53, 50, 46, 42, 38];
+const SPRINTS: { id: number; name: string; goal: string; start: string; end: string; daysPassed: number }[] = [];
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
@@ -203,12 +116,12 @@ export default function AgileBoardPage() {
     blocked: t.blocked || false,
     subtasks: t.subtasks,
     description: t.description,
-  })) : ISSUES;
+  })) : [];
 
   // Derive chart data from apiTasks
   const agileBurndown = useMemo(() => {
     const tasks = apiTasks || [];
-    if (tasks.length === 0) return BURNDOWN;
+    if (tasks.length === 0) return [];
     const total = tasks.length;
     const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
     const remaining = total - done;
@@ -222,7 +135,7 @@ export default function AgileBoardPage() {
 
   const agileVelocity = useMemo(() => {
     const tasks = apiTasks || [];
-    if (tasks.length === 0) return VELOCITY;
+    if (tasks.length === 0) return [];
     const total = tasks.length;
     const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
     return [
@@ -237,7 +150,7 @@ export default function AgileBoardPage() {
 
   // State
   const [boardType, setBoardType] = useState<BoardType>("scrum");
-  const [selectedSprint, setSelectedSprint] = useState(7);
+  const [selectedSprint, setSelectedSprint] = useState(0);
   const [swimlane, setSwimlane] = useState<SwimlaneSetting>("none");
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(true);
@@ -265,15 +178,43 @@ export default function AgileBoardPage() {
       result = result.filter(i => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q));
     }
     return result;
-  }, [filterMyItems, filterBlocked, filterBugs, filterUnassigned, filterAssignee, filterLabel, searchQuery]);
+  }, [ISSUES_DATA, filterMyItems, filterBlocked, filterBugs, filterUnassigned, filterAssignee, filterLabel, searchQuery]);
 
   const hasActiveFilters = filterMyItems || filterBlocked || filterBugs || filterUnassigned || filterAssignee || filterLabel || searchQuery;
 
-  const sprint = SPRINTS.find(s => s.id === selectedSprint)!;
+  const sprint = SPRINTS.find(s => s.id === selectedSprint) || { id: 0, name: "No Sprint", goal: "", start: "", end: "", daysPassed: 0 };
   const daysRemaining = 14 - sprint.daysPassed;
   const completedSP = ISSUES_DATA.filter(i => i.column === "done").reduce((s, i) => s + i.storyPoints, 0);
   const committedSP = ISSUES_DATA.reduce((s, i) => s + i.storyPoints, 0);
-  const lastSprintVelocity = 46;
+  const lastSprintVelocity = 0;
+
+  // Derive team members from current issues
+  const derivedTeam = useMemo(() => {
+    if (ISSUES_DATA.length === 0) return TEAM;
+    const map = new Map<string, number>();
+    for (const issue of ISSUES_DATA) {
+      if (issue.assignee) {
+        map.set(issue.assignee, (map.get(issue.assignee) || 0) + issue.storyPoints);
+      }
+    }
+    return Array.from(map.entries()).map(([name, assigned]) => ({
+      name,
+      initials: name.split(" ").map(w => w[0] || "").join("").toUpperCase().slice(0, 2),
+      capacity: assigned,
+      assigned,
+    }));
+  }, [ISSUES_DATA]);
+
+  // Derive labels from current issues
+  const derivedLabels = useMemo(() => {
+    if (ISSUES_DATA.length === 0) return LABELS;
+    const LABEL_COLORS = ["#6366F1", "#10B981", "#22D3EE", "#EC4899", "#64748B", "#EF4444", "#F59E0B", "#8B5CF6"];
+    const set = new Set<string>();
+    for (const issue of ISSUES_DATA) {
+      for (const l of issue.labels) set.add(l);
+    }
+    return Array.from(set).map((name, i) => ({ name, color: LABEL_COLORS[i % LABEL_COLORS.length] }));
+  }, [ISSUES_DATA]);
 
   return (
     <div className="space-y-4 max-w-[1800px]">
@@ -335,7 +276,7 @@ export default function AgileBoardPage() {
                 <span className="text-[11px] font-medium" style={{ color: "var(--muted-foreground)" }}>Story Points</span>
                 <span className="text-[12px] font-bold" style={{ color: "var(--primary)" }}>{completedSP}/{committedSP} SP</span>
               </div>
-              <Progress value={Math.round((completedSP / committedSP) * 100)} className="h-1.5" />
+              <Progress value={committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0} className="h-1.5" />
             </div>
 
             {/* Velocity vs last sprint */}
@@ -344,7 +285,7 @@ export default function AgileBoardPage() {
                 <span className="text-[14px] font-bold" style={{ color: completedSP >= lastSprintVelocity * 0.8 ? "#10B981" : "#F59E0B" }}>
                   {completedSP > lastSprintVelocity ? "↑" : completedSP < lastSprintVelocity * 0.8 ? "↓" : "→"}
                 </span>
-                <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>vs S6: {lastSprintVelocity} SP</span>
+                <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>Last: {lastSprintVelocity} SP</span>
               </div>
               <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Velocity</p>
             </div>
@@ -354,16 +295,16 @@ export default function AgileBoardPage() {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Capacity</span>
                 <span className="text-[11px] font-semibold" style={{ color: "var(--foreground)" }}>
-                  {TEAM.reduce((s, t) => s + t.assigned, 0)}/{TEAM.reduce((s, t) => s + t.capacity, 0)} SP
+                  {derivedTeam.reduce((s, t) => s + t.assigned, 0)}/{derivedTeam.reduce((s, t) => s + t.capacity, 0)} SP
                 </span>
               </div>
-              <Progress value={Math.round((TEAM.reduce((s, t) => s + t.assigned, 0) / TEAM.reduce((s, t) => s + t.capacity, 0)) * 100)} className="h-1.5" />
+              <Progress value={derivedTeam.reduce((s, t) => s + t.capacity, 0) > 0 ? Math.round((derivedTeam.reduce((s, t) => s + t.assigned, 0) / derivedTeam.reduce((s, t) => s + t.capacity, 0)) * 100) : 0} className="h-1.5" />
             </div>
 
             {/* Mini burndown sparkline */}
             <div className="w-[100px] h-[36px] flex-shrink-0">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={MINI_BURNDOWN.map((v, i) => ({ d: i, v }))}>
+                <LineChart data={agileBurndown.filter(d => d.actual != null).map((d, i) => ({ d: i, v: d.actual }))}>
                   <Line type="monotone" dataKey="v" stroke={"var(--primary)"} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -383,7 +324,7 @@ export default function AgileBoardPage() {
         <div className="w-px h-5" style={{ background: "var(--border)" }} />
 
         {/* Assignee pills */}
-        {TEAM.map(m => (
+        {derivedTeam.map(m => (
           <button key={m.name} className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-all"
             onClick={() => setFilterAssignee(filterAssignee === m.name ? null : m.name)}
             style={{
@@ -403,7 +344,7 @@ export default function AgileBoardPage() {
           value={filterLabel || ""} onChange={e => setFilterLabel(e.target.value || null)}
           style={{ background: "var(--card)", color: "var(--muted-foreground)", border: `1px solid ${"var(--border)"}` }}>
           <option value="">All Labels</option>
-          {LABELS.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          {derivedLabels.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
         </select>
 
         {/* Search */}
@@ -483,10 +424,9 @@ export default function AgileBoardPage() {
             <Card>
               <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Sprint Health</h3>
               <div className="space-y-2">
-                <HealthRow label="Scope Creep" value="+3 items added" color="#F59E0B" />
-                <HealthRow label="Blocked Items" value="1 blocked" color="#EF4444" />
-                <HealthRow label="Review Bottleneck" value="3 items queued" color="#F97316" />
-                <HealthRow label="Bug Ratio" value="3/34 (8.8%)" color="#10B981" />
+                <HealthRow label="Blocked Items" value={`${ISSUES_DATA.filter(i => i.blocked).length} blocked`} color={ISSUES_DATA.some(i => i.blocked) ? "#EF4444" : "#10B981"} />
+                <HealthRow label="Review Bottleneck" value={`${ISSUES_DATA.filter(i => i.column === "in_review").length} items queued`} color={ISSUES_DATA.filter(i => i.column === "in_review").length > 3 ? "#F97316" : "#10B981"} />
+                <HealthRow label="Bug Ratio" value={ISSUES_DATA.length > 0 ? `${ISSUES_DATA.filter(i => i.type === "bug").length}/${ISSUES_DATA.length} (${((ISSUES_DATA.filter(i => i.type === "bug").length / ISSUES_DATA.length) * 100).toFixed(1)}%)` : "0/0"} color="#10B981" />
               </div>
             </Card>
 
@@ -494,8 +434,8 @@ export default function AgileBoardPage() {
             <Card>
               <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Team Workload</h3>
               <div className="space-y-2">
-                {TEAM.map(m => {
-                  const pct = Math.round((m.assigned / m.capacity) * 100);
+                {derivedTeam.map(m => {
+                  const pct = m.capacity > 0 ? Math.round((m.assigned / m.capacity) * 100) : 0;
                   const overloaded = pct > 90;
                   return (
                     <div key={m.name}>
@@ -519,15 +459,22 @@ export default function AgileBoardPage() {
             <Card>
               <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>AI Insights</h3>
               <div className="space-y-2 text-[11px]">
-                <InsightBox color="#F59E0B">
-                  <strong>Velocity Trend:</strong> Current pace projects 40 SP completion. Sprint goal at risk — 15 SP remaining with 8 days left.
-                </InsightBox>
-                <InsightBox color="#EF4444">
-                  <strong>Carry-over Risk:</strong> PTX-115 (8 SP) is 60% done with complex remaining subtasks. Consider splitting for next sprint.
-                </InsightBox>
-                <InsightBox color="#6366F1">
-                  <strong>Pairing Suggestion:</strong> Priya is under capacity (8/10 SP). Pair with Liam on blocked PTX-117 to unblock Stripe webhooks.
-                </InsightBox>
+                {ISSUES_DATA.length > 0 ? (
+                  <>
+                    <InsightBox color="#F59E0B">
+                      <strong>Progress:</strong> {completedSP}/{committedSP} SP completed ({committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0}%). {committedSP - completedSP} SP remaining.
+                    </InsightBox>
+                    {ISSUES_DATA.some(i => i.blocked) && (
+                      <InsightBox color="#EF4444">
+                        <strong>Blocked:</strong> {ISSUES_DATA.filter(i => i.blocked).length} item(s) blocked. Review and resolve blockers to maintain velocity.
+                      </InsightBox>
+                    )}
+                  </>
+                ) : (
+                  <InsightBox color="#64748B">
+                    <strong>No data yet.</strong> Create issues to see AI-powered sprint insights here.
+                  </InsightBox>
+                )}
               </div>
             </Card>
           </div>
@@ -813,7 +760,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
             </div>
           </FieldRow>
           <FieldRow label="Sprint">
-            <span className="text-[12px]" style={{ color: "var(--foreground)" }}>Sprint 7</span>
+            <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{sprint.name || "—"}</span>
           </FieldRow>
           <FieldRow label="Labels">
             <div className="flex flex-wrap gap-1">
@@ -850,7 +797,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
                     {i < issue.subtasks!.done ? "✓" : ""}
                   </span>
                   <span style={{ textDecoration: i < issue.subtasks!.done ? "line-through" : "none", opacity: i < issue.subtasks!.done ? 0.6 : 1 }}>
-                    {["Set up form scaffold", "Email validation step", "Company info step", "Plan selection step", "Review & confirm"][i] || `Subtask ${i + 1}`}
+                    {`Subtask ${i + 1}`}
                   </span>
                 </div>
               ))}
@@ -921,9 +868,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
 
           {activeTab === "details" && (
             <div className="text-[12px] space-y-2" style={{ color: "var(--muted-foreground)" }}>
-              <p>Created in Sprint 7 planning session. This issue was refined during the 1 Apr backlog grooming meeting.</p>
-              <p><strong style={{ color: "var(--foreground)" }}>Linked Issues:</strong> PTX-128 (depends on), PTX-104 (related)</p>
-              <p><strong style={{ color: "var(--foreground)" }}>Acceptance Criteria:</strong> Form must handle 5 steps, support back navigation, persist state on refresh, and validate each step before proceeding.</p>
+              <p>Issue details and history will appear here once activity is tracked.</p>
             </div>
           )}
         </div>
