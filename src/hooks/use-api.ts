@@ -49,7 +49,9 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api<any>("/api/agents"),
-    refetchInterval: 30000,
+    refetchInterval: 15000,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 }
 
@@ -186,10 +188,11 @@ export function useProjectIssues(projectId: string | null) {
 
 export function useProjectArtefacts(projectId: string | null) {
   return useQuery({
-    queryKey: ["artefacts", projectId],
+    queryKey: ["project-artefacts", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/artefacts`),
     enabled: !!projectId,
     refetchInterval: 30000,
+    staleTime: 0,
   });
 }
 

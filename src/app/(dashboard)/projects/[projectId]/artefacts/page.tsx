@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useProjectArtefacts, useProject } from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,13 +43,20 @@ function markdownToHtml(md: string): string {
 
 export default function ArtefactsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: artefacts, isLoading } = useProjectArtefacts(projectId);
+  const { data: artefacts, isLoading, refetch } = useProjectArtefacts(projectId);
   const { data: project } = useProject(projectId);
+  const qc = useQueryClient();
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [editorArt, setEditorArt] = useState<any>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [generating, setGenerating] = useState(false);
+
+  /** Refresh artefacts list without a full page reload */
+  const refreshArtefacts = () => {
+    qc.invalidateQueries({ queryKey: ["project-artefacts", projectId] });
+    refetch();
+  };
 
   if (isLoading) {
     return (
@@ -76,7 +84,9 @@ export default function ArtefactsPage() {
     });
     if (res.ok) {
       toast.success("Document saved");
-      window.location.reload();
+      // Update local copy in editor so it reflects the saved content
+      setEditorArt((prev: any) => prev ? { ...prev, content } : null);
+      refreshArtefacts();
     } else {
       toast.error("Save failed");
     }
@@ -85,28 +95,38 @@ export default function ArtefactsPage() {
   const handleApprove = async (id?: string) => {
     const artId = id || editorArt?.id;
     if (!artId) return;
-    await fetch(`/api/agents/artefacts/${artId}`, {
+    const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "APPROVED" }),
     });
-    toast.success("Artefact approved");
-    window.location.reload();
+    if (res.ok) {
+      toast.success("Artefact approved ✓");
+    } else {
+      toast.error("Approval failed");
+    }
+    // Close editor and return to list — refresh the list
+    setEditorArt(null);
+    refreshArtefacts();
   };
 
   const handleReject = async (reason: string) => {
     const artId = editorArt?.id || feedbackId;
     if (!artId) return;
-    await fetch(`/api/agents/artefacts/${artId}`, {
+    const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "REJECTED", feedback: reason || "Rejected" }),
     });
-    toast.success("Artefact rejected");
+    if (res.ok) {
+      toast.success("Artefact rejected");
+    } else {
+      toast.error("Rejection failed");
+    }
     setFeedbackId(null);
     setFeedbackText("");
     setEditorArt(null);
-    window.location.reload();
+    refreshArtefacts();
   };
 
   const handleGenerate = async () => {
@@ -120,7 +140,7 @@ export default function ArtefactsPage() {
         const { generated, skipped, phase } = json.data;
         if (generated > 0) {
           toast.success(`Generated ${generated} artefact(s) for ${phase} phase`);
-          window.location.reload();
+          refreshArtefacts();
         } else {
           toast.info(`All ${phase} artefacts already exist (${skipped} found)`);
         }
