@@ -577,10 +577,10 @@ REQUIRED HTML ELEMENTS:
 • Status indicators: use text labels — ON TRACK / AT RISK / DELAYED (no emoji in tables)
 • Horizontal rules: <hr> to separate major sections
 
-DO NOT USE: # ## ### * ** __ - for bullets → `• ` in text or <li> | (pipe) for tables → use <table>
+DO NOT USE: # ## ### * ** __ - for bullets (use bullet char or <li>) | (pipe) for tables (use <table>)
 Any asterisk, hash, or pipe character in prose output = FAILURE.
 
-━━━ DOCUMENT STANDARDS ━━━
+--- DOCUMENT STANDARDS ---
 1. SPECIFIC — use "${project.name}", actual dates, actual budget £${budget}
 2. OWNED — every action, risk, and deliverable has a named owner or role
 3. CURRENT — as at ${today}; pre-start items = "Not Started", with realistic % complete
