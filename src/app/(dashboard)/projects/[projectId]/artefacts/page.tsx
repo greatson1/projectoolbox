@@ -15,9 +15,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 import { marked } from "marked";
+import { Progress } from "@/components/ui/progress";
 import {
   FileText, FolderOpen, Upload, Clock, Download, Eye, CheckCircle2,
-  XCircle, ChevronDown, Edit3, RefreshCw,
+  XCircle, ChevronDown, Edit3, RefreshCw, Bot, ArrowRight, Sparkles, AlertCircle,
 } from "lucide-react";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -108,13 +109,26 @@ export default function ArtefactsPage() {
     // Optimistically mark as APPROVED immediately — list never goes empty
     const rollback = optimisticPatch(artId, { status: "APPROVED" });
     setEditorArt(null); // close editor, show list (already has updated cache)
+
+    // Check if this is the last non-approved artefact BEFORE the API call
+    const pendingAfter = items.filter((a: any) =>
+      a.id !== artId && (a.status === "DRAFT" || a.status === "PENDING_REVIEW")
+    );
+    const wasLastPending = pendingAfter.length === 0 && items.length > 0;
+
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "APPROVED" }),
     });
     if (res.ok) {
-      toast.success("Artefact approved ✓");
+      if (wasLastPending) {
+        toast.success("All artefacts approved! Generating next phase documents…", { duration: 5000 });
+        // Auto-advance: generate next phase artefacts immediately
+        handleGenerate();
+      } else {
+        toast.success("Artefact approved ✓");
+      }
       refreshArtefacts(); // background sync
     } else {
       rollback();
@@ -287,6 +301,14 @@ export default function ArtefactsPage() {
         </Card>
       </div>
 
+      {/* ── Agent Status Banner ── */}
+      <AgentStatusBanner
+        items={items}
+        project={project}
+        generating={generating}
+        onGenerate={handleGenerate}
+      />
+
       {/* Document Library */}
       {items.length === 0 ? (
         <Card>
@@ -405,5 +427,171 @@ export default function ArtefactsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Agent Status Banner ──────────────────────────────────────────────────────
+function AgentStatusBanner({
+  items, project, generating, onGenerate,
+}: {
+  items: any[];
+  project: any;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  if (!project) return null;
+
+  const approved  = items.filter((a: any) => a.status === "APPROVED").length;
+  const pending   = items.filter((a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
+  const total     = items.length;
+  const pct       = total > 0 ? Math.round((approved / total) * 100) : 0;
+  const allDone   = total > 0 && pending === 0 && !generating;
+  const noneYet   = total === 0 && !generating;
+
+  // Derive current phase from project phases
+  const activePhase   = project.phases?.find((p: any) => p.status === "ACTIVE");
+  const nextPhase     = (() => {
+    if (!project.phases?.length) return null;
+    const idx = project.phases.findIndex((p: any) => p.status === "ACTIVE");
+    return idx >= 0 && idx < project.phases.length - 1 ? project.phases[idx + 1] : null;
+  })();
+  const phaseName     = activePhase?.name || project.phases?.[0]?.name || "Pre-Project";
+  const phaseNumber   = project.phases ? (project.phases.findIndex((p: any) => p.name === phaseName) + 1) : 1;
+  const totalPhases   = project.phases?.length || 0;
+
+  // Pick the agent from the first artefact that has one, or fall back to project agents
+  const agentInfo     = items.find((a: any) => a.agent)?.agent
+    || project.agents?.[0]?.agent
+    || null;
+  const agentColor    = agentInfo?.gradient?.match(/#[0-9A-Fa-f]{6}/)?.[0] || "#6366f1";
+
+  // Determine state
+  let state: "generating" | "review" | "complete" | "empty" = "review";
+  if (generating)     state = "generating";
+  else if (noneYet)   state = "empty";
+  else if (allDone)   state = "complete";
+
+  const stateConfig = {
+    generating: {
+      border: "border-primary/30 bg-primary/5",
+      badge: "bg-primary/10 text-primary",
+      badgeText: "Generating…",
+      icon: <RefreshCw className="w-4 h-4 animate-spin" />,
+      headline: `Generating ${phaseName} documents…`,
+      sub: "Your agent is writing the documents for this phase. This takes about 30–60 seconds.",
+    },
+    review: {
+      border: "border-amber-500/30 bg-amber-500/5",
+      badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      badgeText: "Awaiting Review",
+      icon: <AlertCircle className="w-4 h-4" />,
+      headline: `Review ${pending} document${pending === 1 ? "" : "s"} to advance`,
+      sub: `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, your agent will automatically generate the ${nextPhase ? nextPhase.name : "next"} phase documents.`,
+    },
+    complete: {
+      border: "border-emerald-500/30 bg-emerald-500/5",
+      badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      badgeText: "Phase Complete",
+      icon: <CheckCircle2 className="w-4 h-4" />,
+      headline: `${phaseName} phase complete — all ${total} documents approved`,
+      sub: nextPhase
+        ? `Your agent is ready to start the ${nextPhase.name} phase. Click "Generate Next Phase" to continue.`
+        : "All project phases complete. Your full document set is approved.",
+    },
+    empty: {
+      border: "border-border bg-muted/20",
+      badge: "bg-muted text-muted-foreground",
+      badgeText: "No Documents Yet",
+      icon: <FileText className="w-4 h-4" />,
+      headline: "No documents generated yet",
+      sub: `Click "Generate Artefacts" to have your agent create the ${phaseName} phase documents.`,
+    },
+  };
+
+  const cfg = stateConfig[state];
+
+  return (
+    <Card className={`border ${cfg.border} transition-colors`}>
+      <CardContent className="p-4">
+        <div className="flex items-start gap-4">
+
+          {/* Agent avatar */}
+          {agentInfo ? (
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 mt-0.5"
+              style={{ background: agentColor }}>
+              {agentInfo.name[0]}
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Bot className="w-5 h-5 text-primary" />
+            </div>
+          )}
+
+          {/* Main content */}
+          <div className="flex-1 min-w-0">
+            {/* Top row */}
+            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+              {agentInfo && (
+                <span className="text-sm font-semibold">{agentInfo.name}</span>
+              )}
+              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
+                {cfg.icon}
+                {cfg.badgeText}
+              </span>
+              {totalPhases > 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  Phase {phaseNumber} of {totalPhases} · {phaseName}
+                </span>
+              )}
+            </div>
+
+            {/* Headline */}
+            <p className="text-sm font-semibold mb-0.5">{cfg.headline}</p>
+            <p className="text-xs text-muted-foreground">{cfg.sub}</p>
+
+            {/* Progress bar — only show when there are documents */}
+            {total > 0 && (
+              <div className="flex items-center gap-3 mt-3">
+                <Progress value={pct} className="flex-1 h-1.5" />
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap font-medium">
+                  {approved}/{total} approved
+                </span>
+              </div>
+            )}
+
+            {/* Phase dots */}
+            {project.phases?.length > 0 && (
+              <div className="flex gap-1.5 mt-3 items-center">
+                {project.phases.map((p: any, i: number) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium transition-all ${
+                      p.status === "COMPLETED" ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                      : p.status === "ACTIVE"    ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                      : "bg-muted text-muted-foreground"
+                    }`}>
+                      {p.status === "COMPLETED" && "✓ "}
+                      {p.name}
+                    </div>
+                    {i < project.phases.length - 1 && (
+                      <ArrowRight className="w-2.5 h-2.5 text-muted-foreground/40 flex-shrink-0" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* CTA button */}
+          {(state === "complete" || state === "empty") && (
+            <Button size="sm" onClick={onGenerate} disabled={generating} className="flex-shrink-0 mt-0.5">
+              <Sparkles className="w-4 h-4 mr-1.5" />
+              {state === "complete"
+                ? (nextPhase ? `Generate ${nextPhase.name} Phase` : "Generate Next Phase")
+                : "Generate Artefacts"}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
