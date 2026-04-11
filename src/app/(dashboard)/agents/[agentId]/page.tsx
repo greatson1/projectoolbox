@@ -42,125 +42,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
-// ═══════════════════════════════════════════════════════════════════
-// MOCK DATA — Agent Alpha, Project Atlas, PRINCE2, 78 days, L3, 92%
-// ═══════════════════════════════════════════════════════════════════
-
-const AGENT = {
-  id: "mock-alpha", codename: "ALPHA-03",
-  name: "Alpha", initials: "A",
-  gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1",
-  project: "Project Atlas", methodology: "Traditional" as const,
-  status: "active" as const, autonomyLevel: 3, autonomyLabel: "Co-pilot",
-  performanceScore: 92, deployedDate: "2026-01-15", uptimeDays: 78,
-  currentTask: "Generating Risk Register v3 for Execution phase gate review — analysing 12 identified risks against tolerance thresholds and drafting mitigation strategies.",
-};
-
-const STATS = [
-  { label: "Tasks Completed", value: "342", icon: "✅", color: "#6366F1" },
-  { label: "Documents Generated", value: "89", icon: "📄", color: "#22D3EE" },
-  { label: "Approvals Processed", value: "156", sub: "94% approval rate", icon: "✓", color: "#10B981" },
-  { label: "Meetings Attended", value: "34", icon: "🎙️", color: "#F59E0B" },
-  { label: "Risks Identified", value: "28", sub: "19 mitigated", icon: "⚠️", color: "#EF4444" },
-  { label: "Credits Consumed", value: "12,450", icon: "⚡", color: "#8B5CF6" },
-];
-
-// Overview tab
-const ACTIVE_QUEUE = [
-  { id: "T-347", title: "Risk Register v3 — Execution gate", sp: 5, status: "in_progress", eta: "~2h" },
-  { id: "T-348", title: "Weekly status report generation", sp: 2, status: "queued", eta: "~3h" },
-  { id: "T-349", title: "Stakeholder update email draft", sp: 1, status: "queued", eta: "~4h" },
-  { id: "T-350", title: "Budget EVM snapshot for April", sp: 3, status: "queued", eta: "~5h" },
-];
-
-const RECENT_ARTEFACTS = [
-  { name: "Risk Register v2", type: "Document", status: "approved", date: "31 Mar" },
-  { name: "Phase Gate Checklist — Execution", type: "Checklist", status: "approved", date: "29 Mar" },
-  { name: "Change Request CR-008", type: "Document", status: "pending", date: "28 Mar" },
-  { name: "Weekly Report W13", type: "Report", status: "approved", date: "27 Mar" },
-  { name: "Stakeholder Comms Plan v2", type: "Plan", status: "approved", date: "25 Mar" },
-];
-
-const MODEL_USAGE = [
-  { name: "Sonnet", value: 62, color: "#6366F1" },
-  { name: "Haiku", value: 28, color: "#22D3EE" },
-  { name: "Opus", value: 10, color: "#8B5CF6" },
-];
-
-// Activity tab
-const ACTIVITY_EVENTS = [
-  { date: "Today", items: [
-    { time: "10:24", type: "Document", msg: "Started generating Risk Register v3" },
-    { time: "09:45", type: "Meeting", msg: "Processed daily stand-up transcript — 3 actions extracted" },
-    { time: "09:00", type: "System", msg: "Morning health check completed — all systems nominal" },
-  ]},
-  { date: "Yesterday", items: [
-    { time: "17:30", type: "Report", msg: "Generated end-of-day summary for stakeholders" },
-    { time: "15:12", type: "Risk", msg: "Identified new risk: vendor API deprecation in Q3" },
-    { time: "14:00", type: "Approval", msg: "Submitted Phase Gate Checklist for review" },
-    { time: "11:30", type: "Document", msg: "Completed Risk Register v2 final draft" },
-    { time: "09:15", type: "Meeting", msg: "Attended project board meeting — 6 decisions logged" },
-  ]},
-  { date: "30 Mar", items: [
-    { time: "16:45", type: "Approval", msg: "Budget reforecast approved by sponsor" },
-    { time: "14:20", type: "Document", msg: "Generated change impact assessment for CR-008" },
-    { time: "10:00", type: "System", msg: "Autonomy level reviewed — maintaining L3" },
-  ]},
-];
-
-const HEATMAP_DATA: number[][] = Array.from({ length: 13 }, (_, i) =>
-  Array.from({ length: 7 }, (_, j) => ((i * 3 + j * 7) % 5))
-);
-
-const HOURLY_DIST = Array.from({ length: 24 }, (_, h) => ({
-  hour: `${h}:00`,
-  actions: h >= 8 && h <= 18 ? 5 + ((h * 3) % 12) : h % 2,
-}));
-
-// Decisions tab
-const DECISIONS = [
-  { id: "D-089", desc: "Escalated vendor risk to executive sponsor", rationale: "Risk probability exceeded 70% threshold with £45K potential impact", confidence: 94, outcome: "Accepted" },
-  { id: "D-088", desc: "Recommended 2-week schedule buffer for Phase 4", rationale: "Historical velocity data shows 85% chance of overrun without buffer", confidence: 88, outcome: "Approved" },
-  { id: "D-087", desc: "Auto-approved minor scope change CR-009", rationale: "Within L3 autonomy bounds: <£5K, no schedule impact, aligned with project objectives", confidence: 96, outcome: "Implemented" },
-  { id: "D-086", desc: "Deferred non-critical training to Phase 5", rationale: "Resource conflict with critical path task T-312; training has 3-week float", confidence: 91, outcome: "Approved" },
-  { id: "D-085", desc: "Flagged budget variance for review", rationale: "CPI dropped below 0.95 threshold — PRINCE2 exception process triggered", confidence: 97, outcome: "Reviewed" },
-];
-
-const DECISION_QUALITY = [
-  { week: "W8", score: 88 }, { week: "W9", score: 91 }, { week: "W10", score: 89 },
-  { week: "W11", score: 93 }, { week: "W12", score: 95 }, { week: "W13", score: 96 },
-];
-
-const ESCALATION_HISTORY = [
-  { date: "31 Mar", issue: "Vendor API deprecation risk", escalatedTo: "Sponsor", resolution: "Mitigation plan approved", daysToResolve: 1 },
-  { date: "25 Mar", issue: "Budget CPI below 0.95", escalatedTo: "PMO", resolution: "Exception report filed", daysToResolve: 2 },
-  { date: "18 Mar", issue: "Resource conflict — 2 critical path tasks", escalatedTo: "Programme Manager", resolution: "Additional resource allocated", daysToResolve: 3 },
-];
-
-// Performance tab
-const PERF_RADAR = [
-  { axis: "Speed", value: 88, fleet: 82 },
-  { axis: "Quality", value: 95, fleet: 85 },
-  { axis: "Risk Detection", value: 92, fleet: 78 },
-  { axis: "Communication", value: 87, fleet: 80 },
-  { axis: "Stakeholder", value: 90, fleet: 83 },
-  { axis: "Budget", value: 85, fleet: 79 },
-  { axis: "Schedule", value: 91, fleet: 81 },
-  { axis: "HITL", value: 97, fleet: 92 },
-];
-
-const EFFICIENCY_TREND = Array.from({ length: 12 }, (_, i) => ({
-  week: `W${i + 1}`,
-  tasksPerDay: 3.2 + (i * 0.15) + ((i % 3) * 0.1),
-  fleetAvg: 3.0 + (i * 0.08),
-}));
-
-const CREDIT_EFFICIENCY = Array.from({ length: 12 }, (_, i) => ({
-  week: `W${i + 1}`,
-  creditsPerTask: 42 - (i * 1.5) + ((i % 3) - 1),
-  fleetAvg: 45 - (i * 0.8),
-}));
-
 // Config tab
 const AUTONOMY_LEVELS = [
   { level: 1, name: "Assistant", desc: "Suggests actions, human executes everything" },
@@ -255,7 +136,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [configAutonomy, setConfigAutonomy] = useState(AGENT.autonomyLevel);
+  const [configAutonomy, setConfigAutonomy] = useState(3);
   const [personality, setPersonality] = useState(40);
   const [notifs, setNotifs] = useState(NOTIFICATION_PREFS.map((n) => n.enabled));
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
@@ -322,28 +203,48 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
 
-  // Merge real API data over the mock defaults
+  // Defaults used when API data is absent
+  const AGENT_DEFAULTS = {
+    id: agentId,
+    codename: "",
+    name: "Agent",
+    initials: "A",
+    gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)",
+    color: "#6366F1",
+    project: "",
+    methodology: "",
+    status: "active" as const,
+    autonomyLevel: 3,
+    autonomyLabel: "Co-pilot",
+    performanceScore: 0,
+    deployedDate: "",
+    uptimeDays: 0,
+    currentTask: "",
+  };
+
+  // Merge real API data over the defaults
   const AGENT_RESOLVED = useMemo(() => {
-    if (!apiAgent) return AGENT;
+    if (!apiAgent) return AGENT_DEFAULTS;
     const project = apiAgent.deployments?.[0]?.project;
     return {
-      ...AGENT,
+      ...AGENT_DEFAULTS,
       id: apiAgent.id,
-      name: apiAgent.name || AGENT.name,
-      codename: apiAgent.codename || AGENT.codename,
-      initials: (apiAgent.name || AGENT.name)[0].toUpperCase(),
-      gradient: apiAgent.gradient || AGENT.gradient,
-      color: apiAgent.gradient ? "#6366F1" : AGENT.color,
+      name: apiAgent.name || AGENT_DEFAULTS.name,
+      codename: apiAgent.codename || AGENT_DEFAULTS.codename,
+      initials: (apiAgent.name || AGENT_DEFAULTS.name)[0].toUpperCase(),
+      gradient: apiAgent.gradient || AGENT_DEFAULTS.gradient,
+      color: apiAgent.gradient ? "#6366F1" : AGENT_DEFAULTS.color,
       project: project?.name || "No project assigned",
       methodology: project?.methodology || "",
-      status: (apiAgent.status?.toLowerCase() || AGENT.status) as "active" | "paused" | "idle" | "error",
-      autonomyLevel: apiAgent.autonomyLevel || AGENT.autonomyLevel,
-      autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT.autonomyLevel],
+      status: (apiAgent.status?.toLowerCase() || AGENT_DEFAULTS.status) as "active" | "paused" | "idle" | "error",
+      autonomyLevel: apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel,
+      autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
       performanceScore: apiAgent.performanceScore || 0,
       currentTask: apiAgent.activities?.[0]?.summary || "",
       deployedDate: apiAgent.createdAt ? new Date(apiAgent.createdAt).toISOString().split("T")[0] : "",
       uptimeDays: apiAgent.createdAt ? Math.floor((Date.now() - new Date(apiAgent.createdAt).getTime()) / 86400000) : 0,
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiAgent]);
 
   // Derive real stats from API data
@@ -1680,26 +1581,14 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             </div>
             <div>
               <p className="text-xs font-semibold text-white">Chat with Agent {AGENT_RESOLVED.name}</p>
-              <p className="text-[9px] text-white/70">Online · Project Atlas</p>
+              <p className="text-[9px] text-white/70">{AGENT_RESOLVED.project ? `Online · ${AGENT_RESOLVED.project}` : "Online"}</p>
             </div>
           </div>
           {/* Messages */}
           <div className="h-[220px] space-y-2.5 overflow-y-auto p-3">
-            <ChatBubble
-              from="agent"
-              text="Good morning! I'm currently generating the Risk Register v3. Would you like a progress update?"
-              agentColor={AGENT_RESOLVED.color}
-            />
-            <ChatBubble
-              from="user"
-              text="Yes, how's it looking?"
-              agentColor={AGENT_RESOLVED.color}
-            />
-            <ChatBubble
-              from="agent"
-              text="12 risks identified — 2 rated red (vendor delay, resource conflict). I've drafted mitigation strategies for all. ETA for completion: ~2 hours. Shall I prioritise the red risks for your review?"
-              agentColor={AGENT_RESOLVED.color}
-            />
+            <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+              Start a conversation with {AGENT_RESOLVED.name}
+            </div>
           </div>
           {/* Input */}
           <div className="flex gap-2 px-3 pb-3">

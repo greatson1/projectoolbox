@@ -106,38 +106,6 @@ const TOPUP_BUNDLES = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════
-// MOCK DATA (invoices, charts)
-// ═══════════════════════════════════════════════════════════════════
-
-const MOCK_INVOICES = [
-  { id: "INV-2026-06", date: "01 Apr 2026", desc: "Professional Plan -- April", amount: 79.0, vat: 15.8, total: 94.8, status: "upcoming" as const },
-  { id: "INV-2026-05", date: "01 Mar 2026", desc: "Professional Plan -- March", amount: 79.0, vat: 15.8, total: 94.8, status: "paid" as const },
-  { id: "INV-2026-05T", date: "12 Mar 2026", desc: "Credit Top-up -- 2,000 credits", amount: 35.0, vat: 7.0, total: 42.0, status: "paid" as const },
-  { id: "INV-2026-04", date: "01 Feb 2026", desc: "Professional Plan -- February", amount: 79.0, vat: 15.8, total: 94.8, status: "paid" as const },
-  { id: "INV-2026-03", date: "01 Jan 2026", desc: "Professional Plan -- January", amount: 79.0, vat: 15.8, total: 94.8, status: "paid" as const },
-  { id: "INV-2026-02", date: "01 Dec 2025", desc: "Professional Plan -- December", amount: 79.0, vat: 15.8, total: 94.8, status: "paid" as const },
-  { id: "INV-2026-01", date: "15 Nov 2025", desc: "Starter Plan -- November (upgrade mid-month)", amount: 29.0, vat: 5.8, total: 34.8, status: "paid" as const },
-];
-
-const SPEND_MONTHLY = [
-  { month: "Nov", spend: 34.8 },
-  { month: "Dec", spend: 94.8 },
-  { month: "Jan", spend: 94.8 },
-  { month: "Feb", spend: 94.8 },
-  { month: "Mar", spend: 136.8 },
-  { month: "Apr", spend: 94.8 },
-];
-
-const CREDIT_USAGE = [
-  { month: "Nov", purchased: 500, consumed: 320 },
-  { month: "Dec", purchased: 2000, consumed: 1650 },
-  { month: "Jan", purchased: 2000, consumed: 1820 },
-  { month: "Feb", purchased: 2000, consumed: 1940 },
-  { month: "Mar", purchased: 2500, consumed: 2180 },
-  { month: "Apr", purchased: 2000, consumed: 1247 },
-];
-
-// ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -194,8 +162,7 @@ export default function BillingPage() {
   const remaining = Math.max(0, balance);
   const customPrice = Math.round(topupCustom * 0.018);
 
-  // Use real invoices if available, fall back to mock
-  const invoices = invoicesFromAPI.length > 0 ? invoicesFromAPI : [];
+  const invoices = invoicesFromAPI;
 
   const monthlySpendData = useMemo(() => {
     const invoiceList: any[] = data?.invoices || [];
@@ -208,14 +175,18 @@ export default function BillingPage() {
     return Object.entries(map).map(([month, spend]) => ({ month, spend }));
   }, [data?.invoices]);
 
-  const creditChartData = useMemo(() => [
-    { month: "Nov", purchased: 500, consumed: 420 },
-    { month: "Dec", purchased: 500, consumed: 380 },
-    { month: "Jan", purchased: 1000, consumed: 650 },
-    { month: "Feb", purchased: 500, consumed: 490 },
-    { month: "Mar", purchased: 500, consumed: 510 },
-    { month: "Apr", purchased: 500, consumed: 120 },
-  ], []);
+  const creditChartData = useMemo(() => {
+    const txns: any[] = data?.creditTransactions || [];
+    const map: Record<string, { purchased: number; consumed: number }> = {};
+    txns.forEach((t: any) => {
+      const d = new Date(t.createdAt || Date.now());
+      const key = d.toLocaleString("en-GB", { month: "short", year: "2-digit" });
+      if (!map[key]) map[key] = { purchased: 0, consumed: 0 };
+      if ((t.amount || 0) > 0) map[key].purchased += t.amount;
+      else map[key].consumed += Math.abs(t.amount || 0);
+    });
+    return Object.entries(map).map(([month, v]) => ({ month, ...v }));
+  }, [data?.creditTransactions]);
 
   return (
     <div className="space-y-6 max-w-[1200px]">
@@ -538,32 +509,41 @@ export default function BillingPage() {
             <CardTitle className="text-sm">Monthly Spend</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlySpendData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} className="text-muted-foreground" />
-                  <Tooltip
-                    contentStyle={{ borderRadius: 8, fontSize: 11 }}
-                    formatter={(v: any) => [`$${v.toFixed(2)}`, "Spend"]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="spend"
-                    stroke="var(--primary)"
-                    fill="var(--primary)"
-                    fillOpacity={0.15}
-                    strokeWidth={2.5}
-                    dot={{ r: 3, fill: "var(--primary)" }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <MiniStat label="Avg Monthly" value="$91.80" />
-              <MiniStat label="Projected Next" value="$94.80" />
-            </div>
+            {monthlySpendData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-[200px] text-center">
+                <p className="text-sm text-muted-foreground">No spending data yet.</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Monthly spend will appear here after your first payment.</p>
+              </div>
+            ) : (
+              <>
+                <div className="h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={monthlySpendData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} className="text-muted-foreground" />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 8, fontSize: 11 }}
+                        formatter={(v: any) => [`$${v.toFixed(2)}`, "Spend"]}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="spend"
+                        stroke="var(--primary)"
+                        fill="var(--primary)"
+                        fillOpacity={0.15}
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: "var(--primary)" }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <MiniStat label="Avg Monthly" value={`$${(monthlySpendData.reduce((s: any, d: any) => s + d.spend, 0) / monthlySpendData.length).toFixed(2)}`} />
+                  <MiniStat label="This Month" value={`$${price.toFixed(2)}`} />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -572,26 +552,35 @@ export default function BillingPage() {
             <CardTitle className="text-sm">Credit Purchase vs Consumption</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={creditChartData} barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
-                  <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />
-                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  <Bar dataKey="purchased" fill="var(--primary)" fillOpacity={0.3} radius={[3, 3, 0, 0]} name="Purchased" />
-                  <Bar dataKey="consumed" fill="var(--primary)" radius={[3, 3, 0, 0]} name="Consumed" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex items-center justify-center gap-4 mt-2 text-[10px] text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-2 rounded-sm bg-primary/30" /> Purchased
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-2 rounded-sm bg-primary" /> Consumed
-              </span>
-            </div>
+            {creditChartData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-[200px] text-center">
+                <p className="text-sm text-muted-foreground">No credit usage data yet.</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Credit history will appear here once you start using your agents.</p>
+              </div>
+            ) : (
+              <>
+                <div className="h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={creditChartData} barGap={2}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                      <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
+                      <Bar dataKey="purchased" fill="var(--primary)" fillOpacity={0.3} radius={[3, 3, 0, 0]} name="Purchased" />
+                      <Bar dataKey="consumed" fill="var(--primary)" radius={[3, 3, 0, 0]} name="Consumed" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex items-center justify-center gap-4 mt-2 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-2 rounded-sm bg-primary/30" /> Purchased
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-3 h-2 rounded-sm bg-primary" /> Consumed
+                  </span>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

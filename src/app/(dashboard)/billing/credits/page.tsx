@@ -22,83 +22,6 @@ import {
 } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
-// MOCK DATA
-// ═══════════════════════════════════════════════════════════════════
-
-const MOCK_BALANCE = {
-  burnRate: 84, depletionDays: 9, depletionDate: "11 Apr",
-  resetDays: 29, resetDate: "1 May", dayOfCycle: 19,
-};
-
-const realUsageStream = [
-  { agent: "Alpha", initials: "A", color: "#6366F1", action: "Generated Risk Register v3 (12 pages)", cost: 18, time: "10:24" },
-  { agent: "Bravo", initials: "B", color: "#22D3EE", action: "Processed sprint retro transcript", cost: 12, time: "10:21" },
-  { agent: "Echo", initials: "E", color: "#EC4899", action: "Drafted stakeholder update email", cost: 4, time: "10:18" },
-  { agent: "Alpha", initials: "A", color: "#6366F1", action: "Risk probability analysis (Monte Carlo)", cost: 22, time: "10:15" },
-  { agent: "Charlie", initials: "C", color: "#10B981", action: "Change impact assessment CR-012", cost: 14, time: "10:12" },
-  { agent: "Bravo", initials: "B", color: "#22D3EE", action: "Sprint burndown chart generation", cost: 6, time: "10:08" },
-  { agent: "Alpha", initials: "A", color: "#6366F1", action: "Meeting summary extraction (45 min call)", cost: 15, time: "10:02" },
-  { agent: "Echo", initials: "E", color: "#EC4899", action: "Brand consistency audit across 3 deliverables", cost: 11, time: "09:55" },
-  { agent: "Charlie", initials: "C", color: "#10B981", action: "Weekly status report generation", cost: 8, time: "09:48" },
-  { agent: "Bravo", initials: "B", color: "#22D3EE", action: "Backlog grooming -- priority re-scoring", cost: 9, time: "09:40" },
-  { agent: "Alpha", initials: "A", color: "#6366F1", action: "EVM snapshot: CPI/SPI calculation", cost: 7, time: "09:32" },
-  { agent: "Echo", initials: "E", color: "#EC4899", action: "Design asset checklist compilation", cost: 5, time: "09:25" },
-];
-
-const realCategoryData = [
-  { name: "Documents", value: 375, color: "#6366F1" },
-  { name: "Meetings", value: 250, color: "#22D3EE" },
-  { name: "Chat", value: 200, color: "#10B981" },
-  { name: "Risk Analysis", value: 175, color: "#F59E0B" },
-  { name: "Research", value: 125, color: "#8B5CF6" },
-  { name: "Reports", value: 75, color: "#EC4899" },
-  { name: "Email", value: 47, color: "#64748B" },
-];
-
-const PROJECT_DATA = [
-  { project: "Atlas", credits: 412, budget: 500 },
-  { project: "SprintForge", credits: 356, budget: 450 },
-  { project: "Riverside", credits: 289, budget: 400 },
-  { project: "Cloud Migration", credits: 0, budget: 350 },
-  { project: "Brand Refresh", credits: 190, budget: 300 },
-];
-
-const realDailyUsage = Array.from({ length: 30 }, (_, i) => {
-  const base = 55 + (i * 1.2) + (((i * 7 + 3) % 20) - 10);
-  const val = Math.round(Math.max(20, base));
-  return { day: `D${i + 1}`, usage: val, avg7: null as number | null, budget: 67 };
-});
-realDailyUsage.forEach((d, i) => {
-  if (i >= 6) {
-    d.avg7 = Math.round(realDailyUsage.slice(i - 6, i + 1).reduce((s, x) => s + x.usage, 0) / 7);
-  }
-});
-
-const HOURLY_DATA = Array.from({ length: 24 }, (_, h) => ({
-  hour: `${h.toString().padStart(2, "0")}:00`,
-  credits: h >= 8 && h <= 18 ? 3 + ((h * 7 + 5) % 13) : ((h * 3 + 1) % 3),
-}));
-
-const MODEL_DATA = [
-  { name: "Haiku", value: 50, color: "#22D3EE", desc: "Routine tasks, chat, quick lookups" },
-  { name: "Sonnet", value: 40, color: "#6366F1", desc: "Documents, analysis, reports" },
-  { name: "Opus", value: 10, color: "#8B5CF6", desc: "Premium decisions, complex reasoning" },
-];
-
-const AGENT_COLORS: Record<string, string> = {
-  Alpha: "#6366F1", Bravo: "#22D3EE", Charlie: "#10B981", Delta: "#F97316", Echo: "#EC4899",
-};
-
-const AGENT_30D = Array.from({ length: 30 }, (_, i) => ({
-  day: `D${i + 1}`,
-  Alpha: 15 + ((i * 7 + 3) % 13),
-  Bravo: 12 + ((i * 5 + 2) % 11),
-  Charlie: 10 + ((i * 3 + 1) % 9),
-  Delta: i < 20 ? 8 + ((i * 4 + 6) % 7) : 0,
-  Echo: 7 + ((i * 6 + 4) % 9),
-}));
-
-// ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -142,8 +65,6 @@ export default function CreditCentrePage() {
   const [alertRules, setAlertRules] = useState([
     { id: 1, label: "Balance below 200 credits", enabled: true, type: "balance" as const },
     { id: 2, label: "Daily spend exceeds 120 credits", enabled: true, type: "daily" as const },
-    { id: 3, label: "Alpha exceeds 30 credits/day", enabled: false, type: "agent" as const },
-    { id: 4, label: "Bravo exceeds 25 credits/day", enabled: false, type: "agent" as const },
   ]);
 
   if (isLoading) {
@@ -307,28 +228,8 @@ export default function CreditCentrePage() {
               ))}
             </div>
           ) : (
-            <div className="space-y-0 max-h-[260px] overflow-y-auto">
-              {([] as any[]).map((item, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex items-center gap-3 py-2 border-b border-border/10",
-                    streamPaused && i > 2 && "opacity-40"
-                  )}
-                >
-                  <span className="text-[10px] font-mono w-[40px] flex-shrink-0 text-muted-foreground">{item.time}</span>
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-                    style={{ background: item.color }}
-                  >
-                    {item.initials}
-                  </div>
-                  <span className="text-xs flex-1 truncate text-foreground">{item.action}</span>
-                  <span className={cn("text-xs font-bold flex-shrink-0", item.cost >= 15 ? "text-amber-500" : "text-muted-foreground")}>
-                    -{item.cost}
-                  </span>
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <p className="text-sm text-muted-foreground">No credit usage data yet. Start using your agents to see usage here.</p>
             </div>
           )}
         </CardContent>
@@ -342,68 +243,52 @@ export default function CreditCentrePage() {
             <CardTitle className="text-sm">Usage by Agent (This Cycle)</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Stacked bar chart */}
-            <div className="h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={forecastData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
-                  <XAxis dataKey="day" tick={{ fontSize: 8 }} className="text-muted-foreground" interval={4} />
-                  <YAxis tick={{ fontSize: 8 }} className="text-muted-foreground" />
-                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  {Object.keys(AGENT_COLORS).map(name => (
-                    <Bar key={name} dataKey={name} stackId="a" fill={AGENT_COLORS[name]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {/* Breakdown table -- use real data if available, else mock */}
-            <div className="mt-3 space-y-1.5">
-              {agentBreakdown.length > 0 ? (
-                agentBreakdown.map((a: any) => {
-                  const pct = totalUsed > 0 ? Math.round((a.creditsUsed / totalUsed) * 100) : 0;
-                  return (
-                    <div key={a.agentId || "system"} className="flex items-center gap-2">
-                      <div
-                        className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                        style={{ background: a.agentGradient || "#6366F1" }}
-                      >
-                        {a.agentName?.[0] || "?"}
+            {agentBreakdown.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <p className="text-sm text-muted-foreground">No credit usage data yet.</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Start using your agents to see usage here.</p>
+              </div>
+            ) : (
+              <>
+                {/* Stacked bar chart */}
+                <div className="h-[180px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={forecastData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
+                      <XAxis dataKey="day" tick={{ fontSize: 8 }} className="text-muted-foreground" interval={4} />
+                      <YAxis tick={{ fontSize: 8 }} className="text-muted-foreground" />
+                      <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
+                      {agentBreakdown.map((a: any, i: number) => {
+                        const fallbackColors = ["#6366F1", "#22D3EE", "#10B981", "#F97316", "#EC4899"];
+                        return <Bar key={a.agentId} dataKey={a.agentName} stackId="a" fill={a.agentGradient || fallbackColors[i % 5]} />;
+                      })}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Breakdown table */}
+                <div className="mt-3 space-y-1.5">
+                  {agentBreakdown.map((a: any) => {
+                    const pct = totalUsed > 0 ? Math.round((a.creditsUsed / totalUsed) * 100) : 0;
+                    return (
+                      <div key={a.agentId || "system"} className="flex items-center gap-2">
+                        <div
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                          style={{ background: a.agentGradient || "#6366F1" }}
+                        >
+                          {a.agentName?.[0] || "?"}
+                        </div>
+                        <span className="text-xs font-medium w-[60px] text-foreground">{a.agentName}</span>
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-border/20">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-[11px] font-bold w-[50px] text-right text-primary">{a.creditsUsed}</span>
+                        <span className="text-[10px] w-[35px] text-right text-muted-foreground">{pct}%</span>
                       </div>
-                      <span className="text-xs font-medium w-[60px] text-foreground">{a.agentName}</span>
-                      <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-border/20">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="text-[11px] font-bold w-[50px] text-right text-primary">{a.creditsUsed}</span>
-                      <span className="text-[10px] w-[35px] text-right text-muted-foreground">{pct}%</span>
-                    </div>
-                  );
-                })
-              ) : (
-                [
-                  { name: "Alpha", initials: "A", color: "#6366F1", credits: 412, pct: 33, daily: 21.7 },
-                  { name: "Bravo", initials: "B", color: "#22D3EE", credits: 356, pct: 28, daily: 18.7 },
-                  { name: "Charlie", initials: "C", color: "#10B981", credits: 289, pct: 23, daily: 15.2 },
-                  { name: "Delta", initials: "D", color: "#F97316", credits: 0, pct: 0, daily: 0 },
-                  { name: "Echo", initials: "E", color: "#EC4899", credits: 190, pct: 15, daily: 10.0 },
-                ].map(a => (
-                  <div key={a.name} className="flex items-center gap-2">
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                      style={{ background: a.color }}
-                    >
-                      {a.initials}
-                    </div>
-                    <span className="text-xs font-medium w-[60px] text-foreground">{a.name}</span>
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden bg-border/20">
-                      <div className="h-full rounded-full" style={{ width: `${a.pct}%`, background: a.color }} />
-                    </div>
-                    <span className="text-[11px] font-bold w-[50px] text-right" style={{ color: a.color }}>{a.credits}</span>
-                    <span className="text-[10px] w-[35px] text-right text-muted-foreground">{a.pct}%</span>
-                    <span className="text-[9px] w-[55px] text-right text-muted-foreground">{a.daily}/day</span>
-                  </div>
-                ))
-              )}
-            </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -464,31 +349,39 @@ export default function CreditCentrePage() {
           <CardTitle className="text-sm">Usage by Project</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {(agentBreakdown.length > 0 ? agentBreakdown : []).map((p: any) => {
-              const pct = Math.round((p.credits / p.budget) * 100);
-              const overBudget = pct > 90;
-              return (
-                <div key={p.project}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-foreground">{p.project}</span>
-                    <span className={cn("text-[11px]", overBudget ? "text-destructive" : "text-muted-foreground")}>
-                      {p.credits} / {p.budget} budget ({pct}%)
-                    </span>
+          {agentBreakdown.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 text-center">
+              <p className="text-sm text-muted-foreground">No project usage data yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {agentBreakdown.map((p: any) => {
+                const used = p.creditsUsed || 0;
+                const budget = p.creditBudget || 0;
+                const pct = budget > 0 ? Math.round((used / budget) * 100) : 0;
+                const overBudget = pct > 90;
+                return (
+                  <div key={p.agentId || p.agentName}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-foreground">{p.agentName}</span>
+                      <span className={cn("text-[11px]", overBudget ? "text-destructive" : "text-muted-foreground")}>
+                        {used}{budget > 0 ? ` / ${budget} budget (${pct}%)` : " credits"}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full overflow-hidden relative bg-border/20">
+                      <div
+                        className={cn(
+                          "h-full rounded-full transition-all",
+                          overBudget ? "bg-destructive" : pct > 70 ? "bg-amber-500" : "bg-primary"
+                        )}
+                        style={{ width: budget > 0 ? `${Math.min(pct, 100)}%` : "100%" }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 rounded-full overflow-hidden relative bg-border/20">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all",
-                        overBudget ? "bg-destructive" : pct > 70 ? "bg-amber-500" : "bg-primary"
-                      )}
-                      style={{ width: `${Math.min(pct, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -500,24 +393,32 @@ export default function CreditCentrePage() {
               <CardTitle className="text-sm">Daily Usage Trend (30 Days)</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={realDailyUsage}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
-                    <XAxis dataKey="day" tick={{ fontSize: 9 }} className="text-muted-foreground" interval={4} />
-                    <YAxis tick={{ fontSize: 9 }} className="text-muted-foreground" />
-                    <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                    <Bar dataKey="usage" fill="var(--primary)" fillOpacity={0.35} radius={[2, 2, 0, 0]} name="Daily Usage" />
-                    <Line type="monotone" dataKey="avg7" stroke="var(--primary)" strokeWidth={2.5} dot={false} name="7-Day Avg" connectNulls />
-                    <ReferenceLine y={67} stroke="#EF4444" strokeDasharray="5 5" label={{ value: "Budget", position: "right", fontSize: 9, fill: "#EF4444" }} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex items-center gap-4 mt-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-primary/35" /> Daily</span>
-                <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-primary rounded" /> 7-Day Avg</span>
-                <span className="flex items-center gap-1"><span className="w-4 h-0.5 border-t-2 border-dashed border-destructive" /> Daily Budget (67)</span>
-              </div>
+              {realDailyUsage.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[220px] text-center">
+                  <p className="text-sm text-muted-foreground">No daily usage data yet.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Start using your agents to see usage trends here.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="h-[220px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={realDailyUsage}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
+                        <XAxis dataKey="day" tick={{ fontSize: 9 }} className="text-muted-foreground" interval={4} />
+                        <YAxis tick={{ fontSize: 9 }} className="text-muted-foreground" />
+                        <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
+                        <Bar dataKey="usage" fill="var(--primary)" fillOpacity={0.35} radius={[2, 2, 0, 0]} name="Daily Usage" />
+                        <Line type="monotone" dataKey="avg7" stroke="var(--primary)" strokeWidth={2.5} dot={false} name="7-Day Avg" connectNulls />
+                        {dailyBurn > 0 && <ReferenceLine y={dailyBurn} stroke="#EF4444" strokeDasharray="5 5" label={{ value: "Avg/Day", position: "right", fontSize: 9, fill: "#EF4444" }} />}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-primary/35" /> Daily</span>
+                    <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-primary rounded" /> 7-Day Avg</span>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -528,21 +429,10 @@ export default function CreditCentrePage() {
             <CardTitle className="text-sm">Hourly Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[220px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={realDailyUsage}>
-                  <XAxis dataKey="hour" tick={{ fontSize: 7 }} className="text-muted-foreground" interval={3} />
-                  <YAxis tick={{ fontSize: 8 }} className="text-muted-foreground" />
-                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  <Bar dataKey="usage" radius={[2, 2, 0, 0]}>
-                    {realDailyUsage.map((h, i) => (
-                      <Cell key={i} fill="var(--primary)" fillOpacity={h.usage > 10 ? 1 : 0.4} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="flex flex-col items-center justify-center h-[220px] text-center">
+              <p className="text-sm text-muted-foreground">Hourly breakdown unavailable.</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Requires detailed per-hour transaction data.</p>
             </div>
-            <p className="text-[10px] text-center mt-1 text-muted-foreground">Peak: 09:00--12:00 (42% of daily usage)</p>
           </CardContent>
         </Card>
       </div>
@@ -555,36 +445,9 @@ export default function CreditCentrePage() {
             <CardTitle className="text-sm">AI Model Tier Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="w-[130px] h-[130px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={[] as any[]} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={3}>
-                      {([{name:"Sonnet",value:70,color:"#6366F1",desc:"Primary model"},{name:"Haiku",value:30,color:"#22D3EE",desc:"Quick tasks"}] as any[]).map(m => <Cell key={m.name} fill={m.color} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 space-y-2">
-                {([{name:"Sonnet",value:70,color:"#6366F1",desc:"Primary model"},{name:"Haiku",value:30,color:"#22D3EE",desc:"Quick tasks"}] as any[]).map(m => (
-                  <div key={m.name}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: m.color }} />
-                      <span className="text-xs font-semibold text-foreground">{m.name}</span>
-                      <span className="text-[11px] font-bold" style={{ color: m.color }}>{m.value}%</span>
-                    </div>
-                    <p className="text-[10px] ml-[18px] text-muted-foreground">{m.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {/* Insight */}
-            <div className="mt-3 p-2.5 rounded-lg bg-primary/5 border border-primary/20">
-              <p className="text-[11px] text-primary">
-                <strong>Optimization:</strong> 12% of Sonnet calls could be routed to Haiku (routine summaries, status checks).
-                Estimated saving: ~45 credits/month.
-              </p>
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <p className="text-sm text-muted-foreground">Model breakdown unavailable.</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Per-model usage tracking will appear here once available.</p>
             </div>
           </CardContent>
         </Card>

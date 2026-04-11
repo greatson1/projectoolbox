@@ -84,114 +84,6 @@ interface Alert {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// MOCK DATA — 5 agents, 5 projects
-// ═══════════════════════════════════════════════════════════════════
-
-const AGENTS: Agent[] = [
-  {
-    id: "alpha", name: "Alpha", initials: "A",
-    gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1",
-    project: "Project Atlas", methodology: "Traditional", status: "active",
-    currentTask: "Generating Risk Register v3 for Execution phase gate review",
-    autonomyLevel: 4, autonomyLabel: "Autonomous",
-    performanceScore: 92, creditsToday: 234,
-    creditSparkline: [18, 22, 30, 28, 35, 40, 32, 29],
-    phase: "Execution", health: "green", tasksWeek: 24, pendingApprovals: 2, totalCredits: 3420,
-  },
-  {
-    id: "bravo", name: "Bravo", initials: "B",
-    gradient: "linear-gradient(135deg, #22D3EE, #06B6D4)", color: "#22D3EE",
-    project: "SprintForge", methodology: "Scrum", status: "active",
-    currentTask: "Processing Sprint 7 retrospective notes and extracting action items",
-    autonomyLevel: 3, autonomyLabel: "Co-pilot",
-    performanceScore: 87, creditsToday: 189,
-    creditSparkline: [15, 20, 18, 25, 22, 30, 24, 26],
-    phase: "Sprint 7", health: "green", tasksWeek: 31, pendingApprovals: 1, totalCredits: 2890,
-  },
-  {
-    id: "charlie", name: "Charlie", initials: "C",
-    gradient: "linear-gradient(135deg, #10B981, #34D399)", color: "#10B981",
-    project: "Riverside Development", methodology: "Waterfall", status: "active",
-    currentTask: "Drafting Change Request CR-012 impact analysis document",
-    autonomyLevel: 2, autonomyLabel: "Advisor",
-    performanceScore: 78, creditsToday: 156,
-    creditSparkline: [12, 15, 20, 18, 16, 22, 19, 20],
-    phase: "Planning", health: "amber", tasksWeek: 18, pendingApprovals: 3, totalCredits: 2150,
-  },
-  {
-    id: "delta", name: "Delta", initials: "D",
-    gradient: "linear-gradient(135deg, #F97316, #FB923C)", color: "#F97316",
-    project: "Cloud Migration", methodology: "Kanban", status: "paused",
-    currentTask: "Paused — awaiting stakeholder feedback on migration sequence",
-    autonomyLevel: 3, autonomyLabel: "Co-pilot",
-    performanceScore: 71, creditsToday: 45,
-    creditSparkline: [25, 30, 28, 22, 15, 8, 5, 6],
-    phase: "Migration Wave 2", health: "amber", tasksWeek: 12, pendingApprovals: 0, totalCredits: 1780,
-  },
-  {
-    id: "echo", name: "Echo", initials: "E",
-    gradient: "linear-gradient(135deg, #EC4899, #F472B6)", color: "#EC4899",
-    project: "Brand Refresh", methodology: "Hybrid", status: "active",
-    currentTask: "Compiling design asset handoff checklist for development team",
-    autonomyLevel: 5, autonomyLabel: "Strategic",
-    performanceScore: 95, creditsToday: 223,
-    creditSparkline: [20, 25, 28, 32, 30, 35, 28, 30],
-    phase: "Execution", health: "green", tasksWeek: 28, pendingApprovals: 1, totalCredits: 3100,
-  },
-];
-
-const ACTIVITY_EVENTS: ActivityEvent[] = [
-  { id: 1, agentId: "alpha", agentName: "Alpha", agentColor: "#6366F1", agentInitials: "A", type: "Document", message: "Generated Risk Register v3", project: "Atlas", time: "2 min ago", minutesAgo: 2 },
-  { id: 2, agentId: "echo", agentName: "Echo", agentColor: "#EC4899", agentInitials: "E", type: "Meeting", message: "Attended design review standup and extracted 4 action items", project: "Brand Refresh", time: "8 min ago", minutesAgo: 8 },
-  { id: 3, agentId: "bravo", agentName: "Bravo", agentColor: "#22D3EE", agentInitials: "B", type: "Approval", message: "Requested approval for Sprint 7 scope change (+2 SP)", project: "SprintForge", time: "15 min ago", minutesAgo: 15 },
-  { id: 4, agentId: "charlie", agentName: "Charlie", agentColor: "#10B981", agentInitials: "C", type: "Risk", message: "Identified new risk: supplier delivery delay for Phase 3 materials", project: "Riverside", time: "28 min ago", minutesAgo: 28 },
-  { id: 5, agentId: "alpha", agentName: "Alpha", agentColor: "#6366F1", agentInitials: "A", type: "Phase Gate", message: "Passed Execution phase gate — all 7 prerequisites verified", project: "Atlas", time: "45 min ago", minutesAgo: 45 },
-  { id: 6, agentId: "echo", agentName: "Echo", agentColor: "#EC4899", agentInitials: "E", type: "Document", message: "Created design asset handoff checklist (38 items)", project: "Brand Refresh", time: "1h ago", minutesAgo: 60 },
-  { id: 7, agentId: "bravo", agentName: "Bravo", agentColor: "#22D3EE", agentInitials: "B", type: "Document", message: "Generated Sprint 7 burndown report with velocity analysis", project: "SprintForge", time: "1.5h ago", minutesAgo: 90 },
-  { id: 8, agentId: "delta", agentName: "Delta", agentColor: "#F97316", agentInitials: "D", type: "Approval", message: "Submitted migration sequence proposal for stakeholder review", project: "Cloud Migration", time: "2h ago", minutesAgo: 120 },
-  { id: 9, agentId: "charlie", agentName: "Charlie", agentColor: "#10B981", agentInitials: "C", type: "Document", message: "Drafted Change Request CR-012 for additional site survey", project: "Riverside", time: "3h ago", minutesAgo: 180 },
-  { id: 10, agentId: "alpha", agentName: "Alpha", agentColor: "#6366F1", agentInitials: "A", type: "Meeting", message: "Processed project board meeting transcript — 6 decisions logged", project: "Atlas", time: "4h ago", minutesAgo: 240 },
-  { id: 11, agentId: "echo", agentName: "Echo", agentColor: "#EC4899", agentInitials: "E", type: "Risk", message: "Flagged brand guideline inconsistency across 3 deliverables", project: "Brand Refresh", time: "5h ago", minutesAgo: 300 },
-  { id: 12, agentId: "bravo", agentName: "Bravo", agentColor: "#22D3EE", agentInitials: "B", type: "Phase Gate", message: "Sprint 6 retrospective complete — 5 improvement actions logged", project: "SprintForge", time: "6h ago", minutesAgo: 360 },
-];
-
-const COMPARISON_DATA = [
-  { metric: "Tasks", Alpha: 24, Bravo: 31, Charlie: 18, Delta: 12, Echo: 28 },
-  { metric: "Docs", Alpha: 8, Bravo: 6, Charlie: 5, Delta: 3, Echo: 9 },
-  { metric: "Approvals", Alpha: 4, Bravo: 3, Charlie: 5, Delta: 2, Echo: 3 },
-  { metric: "Meetings", Alpha: 3, Bravo: 5, Charlie: 2, Delta: 1, Echo: 4 },
-  { metric: "Risks", Alpha: 6, Bravo: 4, Charlie: 7, Delta: 3, Echo: 5 },
-];
-
-// Deterministic pseudo-random using sin seed (no Math.random — prevents hydration mismatch)
-const _s = (seed: number) => Math.abs(Math.round((Math.sin(seed) + 1) * 50));
-const CREDIT_30D = Array.from({ length: 30 }, (_, i) => ({
-  day: `D${i + 1}`,
-  Alpha: 60 + _s(i * 7 + 1) % 40,
-  Bravo: 50 + _s(i * 11 + 2) % 35,
-  Charlie: 40 + _s(i * 13 + 3) % 30,
-  Delta: i > 20 ? 10 + _s(i * 17 + 4) % 15 : 45 + _s(i * 17 + 4) % 25,
-  Echo: 55 + _s(i * 19 + 5) % 35,
-}));
-
-const FLEET_RADAR = [
-  { axis: "Productivity", value: 85 },
-  { axis: "Quality", value: 90 },
-  { axis: "Speed", value: 78 },
-  { axis: "Autonomy", value: 82 },
-  { axis: "HITL Compliance", value: 95 },
-  { axis: "Satisfaction", value: 88 },
-];
-
-const ALERTS: Alert[] = [
-  { id: 1, agentId: "charlie", agentName: "Charlie", agentInitials: "C", agentColor: "#10B981", priority: "critical", message: "Change Request CR-012 requires budget approval before proceeding — exceeds £15K threshold", project: "Riverside Development", time: "12 min ago", actions: ["Approve", "Reject", "Defer"] },
-  { id: 2, agentId: "bravo", agentName: "Bravo", agentInitials: "B", agentColor: "#22D3EE", priority: "high", message: "Sprint 7 scope change adds 2 SP to committed work — velocity at risk of missing target", project: "SprintForge", time: "15 min ago", actions: ["Approve", "Reject"] },
-  { id: 3, agentId: "alpha", agentName: "Alpha", agentInitials: "A", agentColor: "#6366F1", priority: "high", message: "Risk Register v3 contains 2 red-rated risks requiring executive sponsor review", project: "Project Atlas", time: "35 min ago", actions: ["Review", "Acknowledge"] },
-  { id: 4, agentId: "delta", agentName: "Delta", agentInitials: "D", agentColor: "#F97316", priority: "medium", message: "Agent paused for 4 hours awaiting migration sequence approval — SLA approaching", project: "Cloud Migration", time: "2h ago", actions: ["Resume", "Reassign"] },
-  { id: 5, agentId: "echo", agentName: "Echo", agentInitials: "E", agentColor: "#EC4899", priority: "medium", message: "3 brand deliverables have inconsistent colour values — auto-fix available", project: "Brand Refresh", time: "5h ago", actions: ["Auto-fix", "Review Manually"] },
-];
-
-// ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
@@ -228,7 +120,7 @@ export default function AgentFleetPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Real API data — falls back to mock AGENTS when no agents deployed yet
+  // Real API data
   const { data: apiData, isLoading, refetch } = useAgents();
 
   const deleteAgent = async (id: string, name: string) => {

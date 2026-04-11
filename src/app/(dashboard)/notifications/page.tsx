@@ -46,114 +46,6 @@ interface Notification {
   related?: string[];
 }
 
-const AGENTS = [
-  { id: "alpha", name: "Alpha", initials: "A", color: "#6366F1", status: "active" as const },
-  { id: "bravo", name: "Bravo", initials: "B", color: "#22D3EE", status: "active" as const },
-  { id: "charlie", name: "Charlie", initials: "C", color: "#10B981", status: "active" as const },
-  { id: "delta", name: "Delta", initials: "D", color: "#F97316", status: "paused" as const },
-  { id: "echo", name: "Echo", initials: "E", color: "#EC4899", status: "active" as const },
-];
-
-const NOTIFS: Notification[] = [
-  {
-    id: 1, type: "approval", agentId: "alpha", agentName: "Alpha", agentInitials: "A", agentColor: "#6366F1",
-    project: "Project Atlas", title: "Phase Gate Approval Required — Execution",
-    description: "All 7 prerequisites verified. Risk Register v3 and Budget Reforecast attached. Awaiting your sign-off to proceed.",
-    detail: "Agent Alpha has completed the Execution phase gate checklist for Project Atlas. All 7 mandatory prerequisites have been verified:\n\n✓ Scope Management Plan (approved)\n✓ Schedule Baseline (approved)\n✓ Cost Baseline (approved)\n✓ Risk Management Plan (approved)\n✓ Quality Management Plan (approved)\n✓ Communications Plan (approved)\n✓ Stakeholder Register (updated)\n\nThe Risk Register v3 contains 12 risks — 2 rated red (vendor delay, resource conflict). Budget reforecast shows CPI of 0.97, within tolerance.\n\nRecommendation: Approve with condition to review red risks weekly.",
-    time: "5 min ago", minutesAgo: 5, priority: "high", read: false,
-    actions: ["Approve", "Reject", "Request Changes"],
-    related: ["Risk Register v3", "Budget Reforecast", "Phase Gate Checklist"],
-  },
-  {
-    id: 2, type: "risk", agentId: "charlie", agentName: "Charlie", agentInitials: "C", agentColor: "#10B981",
-    project: "Riverside Development", title: "Critical Risk Escalation — Supplier Delay",
-    description: "Phase 3 materials supplier has notified a 3-week delay. Impact: £45K additional cost, 15-day schedule slip.",
-    detail: "Risk ID: R-047\nProbability: 85% (confirmed by supplier)\nImpact: High (£45K cost, 15-day schedule)\nRisk Score: 20 (Critical)\n\nThe concrete supplier for Phase 3 foundations has confirmed a 3-week delivery delay due to production issues at their Birmingham plant. This affects:\n- Foundation works (delayed start)\n- Structural steel erection (knock-on)\n- Electrical rough-in (dependent)\n\nMitigation options:\n1. Source from alternative supplier (Hanson) — +£8K premium, saves 2 weeks\n2. Re-sequence Phase 3B works to run in parallel — saves 1 week, no cost\n3. Accept delay and negotiate liquidated damages waiver with client\n\nAgent recommendation: Option 1+2 combined. Net cost +£8K but recovers 3 weeks.",
-    time: "12 min ago", minutesAgo: 12, priority: "high", read: false,
-    actions: ["Accept Mitigation", "Escalate to Sponsor", "Review Options"],
-    related: ["Risk Register", "Schedule Impact Analysis", "Supplier Contract"],
-  },
-  {
-    id: 3, type: "approval", agentId: "bravo", agentName: "Bravo", agentInitials: "B", agentColor: "#22D3EE",
-    project: "SprintForge", title: "Sprint 7 Scope Change — +2 Story Points",
-    description: "PTX-113 (timezone fix, 2 SP) added mid-sprint. Total commitment now 57 SP. Velocity at 89% of target.",
-    detail: "A critical bug (PTX-113: timezone handling in sprint dates) was discovered during testing and needs to be addressed this sprint.\n\nImpact: +2 SP to Sprint 7 commitment (55→57 SP)\nCurrent velocity: 34/57 SP completed (Day 6 of 10)\nProjected completion: 52 SP at current pace\n\nRisk: Sprint goal may not be fully met. The timezone fix is critical for correct date calculations across all dashboards.\n\nRecommendation: Approve the addition but defer PTX-109 (plan comparison, 5 SP) to Sprint 8 to maintain capacity.",
-    time: "18 min ago", minutesAgo: 18, priority: "medium", read: false,
-    actions: ["Approve", "Reject", "Defer Other Item"],
-  },
-  {
-    id: 4, type: "document", agentId: "alpha", agentName: "Alpha", agentInitials: "A", agentColor: "#6366F1",
-    project: "Project Atlas", title: "Risk Register v3 Ready for Review",
-    description: "12 risks identified, 2 red-rated. Mitigation strategies drafted for all. Requires PM review before gate submission.",
-    detail: "Risk Register v3 has been generated with the following summary:\n\n🔴 Red (2): Vendor API deprecation (Q3), Resource conflict on critical path\n🟡 Amber (4): Budget variance trending, Stakeholder availability, Test environment, Integration complexity\n🟢 Green (6): Routine risks with active mitigations\n\nAll risks have assigned owners, probability/impact scores, and mitigation strategies. The register is ready for your review before submission to the Execution phase gate.",
-    time: "35 min ago", minutesAgo: 35, priority: "medium", read: false,
-    actions: ["Review Document", "Approve", "Request Changes"],
-  },
-  {
-    id: 5, type: "risk", agentId: "echo", agentName: "Echo", agentInitials: "E", agentColor: "#EC4899",
-    project: "Brand Refresh", title: "Brand Inconsistency Detected Across Deliverables",
-    description: "3 deliverables using outdated colour values (#4A90D9 instead of #6366F1). Auto-fix available.",
-    detail: "During routine quality scan, Agent Echo detected brand guideline violations:\n\n1. Marketing brochure (page 3, 7) — using old primary blue\n2. Social media templates — header gradient incorrect\n3. Email signature template — logo using deprecated version\n\nAll instances can be automatically corrected. No manual intervention needed if you approve the auto-fix.",
-    time: "1h ago", minutesAgo: 60, priority: "medium", read: false,
-    actions: ["Auto-Fix All", "Review Manually"],
-  },
-  {
-    id: 6, type: "meeting", agentId: "bravo", agentName: "Bravo", agentInitials: "B", agentColor: "#22D3EE",
-    project: "SprintForge", title: "Sprint 7 Retro Summary Available",
-    description: "45-min retrospective processed. 5 action items extracted, 3 improvements identified, team sentiment: positive.",
-    detail: "Meeting: Sprint 7 Retrospective\nDuration: 45 minutes\nAttendees: 5 team members\n\nKey takeaways:\n✅ What went well: Pair programming on PTX-125 was effective, daily standups are more focused\n⚠️ What to improve: PR review turnaround (avg 6h → target 2h), test coverage on billing module\n🔄 Actions:\n1. Implement PR review SLA (2h max) — Owner: James\n2. Add billing module test coverage to Sprint 8 — Owner: Liam\n3. Schedule knowledge sharing session on Stripe webhooks — Owner: Priya\n4. Update Definition of Done to include test coverage threshold — Owner: Sarah\n5. Investigate CI pipeline optimisation — Owner: James",
-    time: "2h ago", minutesAgo: 120, priority: "none", read: true,
-    actions: ["View Full Transcript", "Open Actions"],
-  },
-  {
-    id: 7, type: "approval", agentId: "charlie", agentName: "Charlie", agentInitials: "C", agentColor: "#10B981",
-    project: "Riverside Development", title: "Procurement Authorisation — £28,500",
-    description: "Steel reinforcement order for Phase 3. Above £10K threshold. Supplier: Barrett Steel. Delivery: 3 weeks.",
-    detail: "Procurement Request PR-089\nItem: Steel reinforcement bars (16mm, 20mm) for Phase 3 foundations\nSupplier: Barrett Steel Ltd (preferred supplier)\nAmount: £28,500 + VAT\nDelivery: 3 weeks from order\n\nThis exceeds the £10,000 HITL budget threshold. Agent Charlie has verified:\n- 3 quotes obtained (Barrett £28.5K, Tata £31.2K, ArcelorMittal £29.8K)\n- Barrett is preferred supplier with existing framework agreement\n- Specification matches structural engineer's requirements\n- Budget allocation confirmed in Phase 3 cost plan",
-    time: "3h ago", minutesAgo: 180, priority: "high", read: false,
-    actions: ["Approve", "Reject", "Request Quotes"],
-  },
-  {
-    id: 8, type: "risk", agentId: "alpha", agentName: "Alpha", agentInitials: "A", agentColor: "#6366F1",
-    project: "Project Atlas", title: "Budget Variance Alert — CPI Below 0.95",
-    description: "Current CPI: 0.93. PRINCE2 exception threshold breached. EAC revised to £268,000 (budget: £250,000).",
-    detail: "Earned Value Alert\nCPI: 0.93 (threshold: 0.95)\nSPI: 1.02 (on track)\nEAC: £268,000 (BAC: £250,000)\nVariance: £18,000 over budget\n\nRoot cause: Unplanned vendor consultation fees (£12,000) and extended testing cycle (£6,000).\n\nPRINCE2 Exception Process triggered. An exception report is required for the Project Board.\n\nAgent Alpha has drafted the exception report with three recovery options for your review.",
-    time: "4h ago", minutesAgo: 240, priority: "high", read: false,
-    actions: ["Review Exception Report", "Escalate to Board"],
-  },
-  {
-    id: 9, type: "document", agentId: "echo", agentName: "Echo", agentInitials: "E", agentColor: "#EC4899",
-    project: "Brand Refresh", title: "Design Asset Handoff Checklist Complete",
-    description: "38-item checklist compiled for development team. All assets verified, specs documented, Figma links attached.",
-    detail: "The design-to-development handoff checklist for the Brand Refresh project is complete:\n\n📦 38 assets total\n✅ 38 verified and export-ready\n🔗 Figma links attached for all components\n📐 Responsive specifications documented\n🎨 Colour tokens mapped to design system\n\nThe checklist has been shared with the development team via Slack and is available in the project knowledge base.",
-    time: "5h ago", minutesAgo: 300, priority: "none", read: true,
-    actions: ["View Checklist", "Share"],
-  },
-  {
-    id: 10, type: "approval", agentId: "bravo", agentName: "Bravo", agentInitials: "B", agentColor: "#22D3EE",
-    project: "SprintForge", title: "Sprint 8 Planning — Backlog Ready",
-    description: "28 items groomed and estimated. Recommended commitment: 52 SP based on velocity trend. Ready for planning session.",
-    detail: "Sprint 8 backlog has been prepared:\n\n📋 28 items groomed\n📊 Total estimates: 124 SP available\n🎯 Recommended commitment: 52 SP (based on 3-sprint velocity average)\n\nTop priority items:\n1. PTX-109: Subscription plan comparison (5 SP) — carried over\n2. PTX-135: Billing integration tests (3 SP)\n3. PTX-136: Dashboard widget customisation (8 SP)\n\nPlanning session scheduled: Monday 6 Apr at 10:00.",
-    time: "6h ago", minutesAgo: 360, priority: "none", read: true,
-    actions: ["Review Backlog", "Adjust Commitment"],
-  },
-  {
-    id: 11, type: "billing", agentId: "alpha", agentName: "Alpha", agentInitials: "A", agentColor: "#6366F1",
-    project: "System", title: "Credit Balance Alert — 753 Remaining",
-    description: "At current burn rate (84/day), credits will deplete in 9 days — 20 days before reset. Consider top-up.",
-    detail: "Credit Usage Alert\n\nBalance: 753 / 2,000 credits\nBurn rate: ~84 credits/day\nProjected depletion: 11 April (9 days)\nNext reset: 1 May (29 days)\n\nTop consumers:\n- Alpha: 33% (412 credits)\n- Bravo: 28% (356 credits)\n- Charlie: 23% (289 credits)\n\nRecommendation: Purchase a 500-credit top-up (£30) or enable auto top-up to prevent agent interruption.",
-    time: "8h ago", minutesAgo: 480, priority: "medium", read: true,
-    actions: ["Top Up Credits", "Enable Auto Top-Up", "View Usage"],
-  },
-  {
-    id: 12, type: "system", agentId: "delta", agentName: "Delta", agentInitials: "D", agentColor: "#F97316",
-    project: "Cloud Migration", title: "Agent Delta Paused — Awaiting Input",
-    description: "Paused for 6 hours. Migration sequence proposal requires stakeholder approval before agent can proceed.",
-    detail: "Agent Delta has been paused since 04:00 today.\n\nReason: The migration sequence proposal (Wave 2: Database → Application → DNS) requires stakeholder approval before execution planning can begin.\n\nThe proposal was submitted 2 days ago. SLA for stakeholder response is 48 hours — now exceeded.\n\nOptions:\n1. Resume agent with approved sequence\n2. Escalate to programme manager\n3. Reassign agent to different project temporarily",
-    time: "6h ago", minutesAgo: 360, priority: "medium", read: false,
-    actions: ["Resume Agent", "Escalate", "Reassign"],
-  },
-];
 
 const TYPE_CONFIG: Record<NType, { icon: string; color: string; label: string }> = {
   approval: { icon: "✅", color: "#6366F1", label: "Approvals" },
@@ -236,12 +128,12 @@ export default function NotificationsPage() {
   }
 
   // Empty state — shown once API has resolved with nothing
-  if (filtered.length === 0 && activeTab === "all" && !agentFilter && !highPriorityOnly) {
+  if (!notifsLoading && filtered.length === 0 && activeTab === "all" && !agentFilter && !highPriorityOnly) {
     return (
       <div className="max-w-[600px] mx-auto text-center py-20">
         <div className="text-[48px] mb-4">🎉</div>
         <h2 className="text-[22px] font-bold mb-2" style={{ color: "var(--foreground)" }}>All caught up!</h2>
-        <p className="text-[14px] mb-6" style={{ color: "var(--muted-foreground)" }}>No new notifications. Your agents are working smoothly.</p>
+        <p className="text-[14px] mb-6" style={{ color: "var(--muted-foreground)" }}>You're all caught up — no notifications right now.</p>
         <Link href="/agents"><Button variant="default" size="sm">View Agent Fleet</Button></Link>
       </div>
     );

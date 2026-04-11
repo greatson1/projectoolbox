@@ -18,50 +18,9 @@ import { toast } from "sonner";
  */
 
 
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ScatterChart, Scatter, ZAxis, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { PageHeader } from "@/components/layout/page-header";
 
-
-// ================================================================
-// DATA
-// ================================================================
-
-const PROJECTS = [
-  { id: "p1", name: "CRM Migration", health: "secondary" as const, progress: 32, agent: "Maya", milestone: "Data Migration Start — 12 days", budget: 850000, spent: 247000, forecast: 890000, start: 0, duration: 9, phases: [{ name: "Init", w: 1, color: "#34D399" }, { name: "Plan", w: 2, color: "#6366F1" }, { name: "Exec", w: 5, color: "#22D3EE" }, { name: "Close", w: 1, color: "#F59E0B" }] },
-  { id: "p2", name: "Office Renovation", health: "destructive" as const, progress: 67, agent: "Jordan", milestone: "Structural Complete — 5 days", budget: 420000, spent: 327000, forecast: 465000, start: 1, duration: 7, phases: [{ name: "Plan", w: 1, color: "#6366F1" }, { name: "Exec", w: 5, color: "#22D3EE" }, { name: "Close", w: 1, color: "#F59E0B" }] },
-  { id: "p3", name: "Mobile App MVP", health: "default" as const, progress: 45, agent: "Alex", milestone: "Sprint 4 Demo — 8 days", budget: 280000, spent: 112000, forecast: 270000, start: 2, duration: 6, phases: [{ name: "S0", w: 1, color: "#34D399" }, { name: "Sprints", w: 4, color: "#6366F1" }, { name: "Release", w: 1, color: "#F59E0B" }] },
-];
-
-const TEAM = [
-  { name: "Sarah Chen", allocations: [80, 90, 70, 60, 80, 100, 90, 110, 85, 75, 60, 50] },
-  { name: "Dave Wilson", allocations: [100, 110, 120, 100, 80, 60, 70, 80, 90, 100, 110, 100] },
-  { name: "Tom Harris", allocations: [60, 70, 80, 90, 100, 100, 90, 80, 70, 60, 50, 40] },
-  { name: "Lisa Park", allocations: [40, 50, 60, 70, 80, 90, 100, 110, 120, 100, 80, 60] },
-  { name: "James Park", allocations: [20, 30, 40, 50, 60, 60, 50, 40, 30, 20, 10, 10] },
-];
-
-const WEEKS = ["W14", "W15", "W16", "W17", "W18", "W19", "W20", "W21", "W22", "W23", "W24", "W25"];
-
-const RISKS_SCATTER = [
-  { prob: 4, impact: 5, size: 16, name: "Contract expiry penalty", project: "CRM Migration", color: "#6366F1" },
-  { prob: 3, impact: 4, size: 12, name: "Data quality issues", project: "CRM Migration", color: "#6366F1" },
-  { prob: 4, impact: 3, size: 10, name: "Structural delays", project: "Office Renovation", color: "#F87171" },
-  { prob: 2, impact: 4, size: 8, name: "Budget overrun", project: "Office Renovation", color: "#F87171" },
-  { prob: 3, impact: 3, size: 9, name: "API dependency", project: "Mobile App", color: "#22D3EE" },
-  { prob: 2, impact: 2, size: 6, name: "Resource conflict", project: "CRM Migration", color: "#6366F1" },
-  { prob: 4, impact: 2, size: 7, name: "Vendor delays", project: "Office Renovation", color: "#F87171" },
-];
-
-const TOP_RISKS = RISKS_SCATTER.sort((a, b) => (b.prob * b.impact) - (a.prob * a.impact)).slice(0, 5);
-
-const BUDGET_DATA = PROJECTS.map((p) => ({
-  name: p.name.split(" ").slice(0, 2).join(" "),
-  budget: p.budget / 1000,
-  spent: p.spent / 1000,
-  forecast: p.forecast / 1000,
-}));
-
-const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // ================================================================
 // COMPONENT
