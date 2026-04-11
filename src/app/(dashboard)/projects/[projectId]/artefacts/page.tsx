@@ -27,8 +27,8 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 };
 
 const FORMAT_LABEL: Record<string, string> = {
-  markdown: "Markdown", table: "Table", html: "HTML",
-  pdf: "PDF", docx: "Word", xlsx: "Excel",
+  markdown: "Word", html: "Word", table: "Excel",
+  pdf: "PDF", docx: "Word", xlsx: "Excel", csv: "Excel",
 };
 
 /** Convert markdown to HTML for TipTap editor */
@@ -166,9 +166,13 @@ export default function ArtefactsPage() {
       );
     }
 
-    const htmlContent = editorArt.content?.startsWith("<")
-      ? editorArt.content
-      : markdownToHtml(editorArt.content || "");
+    // Determine HTML content:
+    // 1. format === "html" or content starts with "<" → already HTML, pass directly
+    // 2. format === "markdown" → convert via marked
+    const rawContent = editorArt.content || "";
+    const htmlContent = (editorArt.format === "html" || rawContent.trimStart().startsWith("<"))
+      ? rawContent
+      : markdownToHtml(rawContent);
 
     return (
       <DocumentEditor
@@ -301,10 +305,13 @@ export default function ArtefactsPage() {
                         {art.content && ` · ${Math.ceil(art.content.length / 5)} words`}
                       </p>
 
-                      {/* Inline Preview — rendered markdown, no raw symbols */}
+                      {/* Inline Preview — renders both HTML and markdown cleanly */}
                       {isPreview && art.content && (
                         <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/30 max-h-[500px] overflow-y-auto prose prose-sm dark:prose-invert max-w-none text-sm">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content}</ReactMarkdown>
+                          {(art.format === "html" || art.content.trimStart().startsWith("<"))
+                            ? <div dangerouslySetInnerHTML={{ __html: art.content }} />
+                            : <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content}</ReactMarkdown>
+                          }
                         </div>
                       )}
 

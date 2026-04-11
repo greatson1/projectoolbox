@@ -13,7 +13,9 @@ import { useAppStore } from "@/stores/app";
 import {
   Calendar, Columns3, Timer, Target, DollarSign, Users, ShieldAlert,
   AlertTriangle, GitPullRequest, TestTube2, TrendingUp, FileText, Bot,
+  ArrowRight, Sheet, FileCheck2,
 } from "lucide-react";
+import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 
 const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
 
@@ -176,61 +178,86 @@ function ArtefactSection({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   if (loading) return <Skeleton className="h-24 rounded-xl" />;
-  if (artefacts.length === 0) return null; // Don't show section if no artefacts
+  if (artefacts.length === 0) return null;
 
   const statusColors: Record<string, string> = {
-    DRAFT: "bg-amber-500/10 text-amber-500",
-    PENDING_REVIEW: "bg-blue-500/10 text-blue-500",
-    APPROVED: "bg-emerald-500/10 text-emerald-500",
-    REJECTED: "bg-red-500/10 text-red-500",
+    DRAFT: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+    PENDING_REVIEW: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    APPROVED: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+    REJECTED: "bg-red-500/10 text-red-500 border-red-500/20",
   };
 
-  const formatIcons: Record<string, string> = {
-    markdown: "📄",
-    docx: "📝",
-    xlsx: "📊",
-    pdf: "📕",
-  };
+  const approved = artefacts.filter(a => a.status === "APPROVED").length;
+  const pending = artefacts.filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Agent-Generated Artefacts</CardTitle>
-          <Badge variant="secondary" className="text-[10px]">{artefacts.length} document{artefacts.length !== 1 ? "s" : ""}</Badge>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">Agent-Generated Artefacts</CardTitle>
+            <Badge variant="secondary" className="text-[10px]">{artefacts.length}</Badge>
+            {pending > 0 && (
+              <Badge variant="outline" className="text-[9px] text-amber-500 border-amber-500/30">
+                {pending} awaiting review
+              </Badge>
+            )}
+            {approved > 0 && (
+              <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/30">
+                {approved} approved
+              </Badge>
+            )}
+          </div>
+          <Link href={`/projects/${projectId}/artefacts`}
+            className="flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+            View all &amp; edit <ArrowRight className="w-3 h-3" />
+          </Link>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          {artefacts.map((a: any) => (
-            <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/30 transition-colors">
-              <span className="text-lg">{formatIcons[a.format] || "📄"}</span>
-              {a.agent && (
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0"
-                  style={{ background: a.agent.gradient?.match(/#[0-9A-Fa-f]{6}/)?.[0] || "#6366F1" }}
-                  title={a.agent.name}>{a.agent.name[0]}</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{a.name}</p>
-                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                  {a.agent && <span className="font-medium">{a.agent.name}</span>}
-                  {a.agent && <span>·</span>}
-                  <span>v{a.version}</span>
-                  <span>·</span>
-                  <span>{new Date(a.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+      <CardContent className="pt-0">
+        <div className="space-y-1.5">
+          {artefacts.map((a: any) => {
+            const isSheet = a.format === "csv" || isSpreadsheetArtefact(a.name);
+            return (
+              <Link key={a.id} href={`/projects/${projectId}/artefacts`}
+                className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/40 transition-colors group cursor-pointer">
+                {/* Format icon */}
+                <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${
+                  isSheet ? "bg-emerald-500/10 text-emerald-600" : "bg-blue-500/10 text-blue-600"
+                }`}>
+                  {isSheet ? <Sheet className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
                 </div>
-              </div>
-              <Badge variant="secondary" className={`text-[9px] ${statusColors[a.status] || ""}`}>
-                {a.status.replace("_", " ")}
-              </Badge>
-              {a.status === "DRAFT" && (
-                <Button variant="ghost" size="sm" className="text-xs" onClick={async () => {
-                  await fetch(`/api/agents/artefacts/${a.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "APPROVED" }) });
-                  setArtefacts(prev => prev.map(x => x.id === a.id ? { ...x, status: "APPROVED" } : x));
-                }}>Approve</Button>
-              )}
-            </div>
-          ))}
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{a.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
+                    <span className="uppercase tracking-wide">{isSheet ? "Spreadsheet" : "Document"}</span>
+                    <span>·</span>
+                    <span>v{a.version}</span>
+                    <span>·</span>
+                    <span>{new Date(a.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full border font-medium ${statusColors[a.status] || "bg-muted text-muted-foreground"}`}>
+                    {a.status === "PENDING_REVIEW" ? "In Review" : a.status === "DRAFT" ? "Draft" : a.status === "APPROVED" ? "Approved" : a.status}
+                  </span>
+                  {a.status === "APPROVED" && <FileCheck2 className="w-3.5 h-3.5 text-emerald-500" />}
+                  <ArrowRight className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Footer CTA */}
+        <div className="mt-3 pt-3 border-t border-border/40">
+          <Link href={`/projects/${projectId}/artefacts`}
+            className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors">
+            <FileText className="w-3.5 h-3.5" />
+            Open Document Library — review, edit &amp; approve
+          </Link>
         </div>
       </CardContent>
     </Card>

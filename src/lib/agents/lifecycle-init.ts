@@ -118,8 +118,12 @@ export async function generatePhaseArtefacts(
           const artName = matchingDef || title;
           // Skip if now already exists (race condition guard)
           if (existingNames.has(artName.toLowerCase())) continue;
+          // Detect format: CSV for spreadsheets, HTML if content starts with tag, else markdown
+          let detectedFmt = "markdown";
+          if (isSheet) { detectedFmt = "csv"; }
+          else if (content.trimStart().startsWith("<")) { detectedFmt = "html"; }
           await db.agentArtefact.create({
-            data: { agentId, projectId, name: artName, format: isSheet ? "csv" : "markdown", content, status: "DRAFT", version: 1 },
+            data: { agentId, projectId, name: artName, format: detectedFmt, content, status: "DRAFT", version: 1 },
           });
           existingNames.add(artName.toLowerCase());
           totalGenerated++;
@@ -274,12 +278,19 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
               });
 
               const artName = matchingDef || title;
+              // Detect format: CSV for spreadsheets, HTML if content starts with an HTML tag, else markdown
+              let detectedFormat = "markdown";
+              if (isSheet) {
+                detectedFormat = "csv";
+              } else if (content.trimStart().startsWith("<")) {
+                detectedFormat = "html";
+              }
               await db.agentArtefact.create({
                 data: {
                   agentId,
                   projectId: project.id,
                   name: artName,
-                  format: isSheet ? "csv" : "markdown",
+                  format: detectedFormat,
                   content,
                   status: "DRAFT",
                   version: 1,
@@ -528,20 +539,17 @@ function buildArtefactPrompt(project: any, phaseName: string, artefactNames: str
   const budget = (project.budget || 0).toLocaleString();
 
   const domainContext = isTravel
-    ? `\n🧳 TRAVEL PROJECT — Frame ALL documents in travel PM terms: itinerary, bookings, logistics, visa/health requirements, safety planning, destination-specific risks. Do NOT use software development language (no sprints, no code, no UAT).`
+    ? `TRAVEL PROJECT: Frame ALL documents in travel PM terms — itinerary, bookings, logistics, visa/health requirements, safety planning, destination-specific risks. Do NOT use software development language.`
     : "";
 
   const destinationContext = isNigeria
-    ? `\n🇳🇬 DESTINATION — NIGERIA / LAGOS. Include these specifics in ALL relevant documents:
-- FCO Travel Advisory: currently advises high vigilance in Lagos; some areas (not including Lagos city centre/VI) are advise-against-all-travel
-- Yellow Fever Vaccination Certificate: MANDATORY for entry — travellers without a valid yellow card WILL be refused entry. No exceptions.
-- Malaria prophylaxis: REQUIRED — consult GP at least 6 weeks before travel (Doxycycline or Malarone)
-- Currency: Nigerian Naira (NGN). Parallel exchange market. Take mixed GBP cash + USD + cards. Avoid street changers.
-- Power: frequent outages ("NEPA"/"up NEPA"). Only book hotels confirmed to have generator backup.
-- Connectivity: 4G available in Lagos but patchy. Purchase local SIM on arrival (Airtel or MTN). Download offline maps.
-- Local transport: Bolt and Uber available and recommended. Avoid unofficial taxis. Danfo buses not recommended.
-- Safe areas for accommodation: Victoria Island, Ikoyi, Lekki. Avoid mainland late at night.
-- Emergency contacts: British High Commission Lagos: +234 (0)1 277-0780`
+    ? `DESTINATION — NIGERIA / LAGOS. Include these specifics in ALL relevant documents:
+FCO Travel Advisory: currently advises high vigilance in Lagos.
+Yellow Fever Vaccination Certificate: MANDATORY for entry.
+Malaria prophylaxis: REQUIRED (Doxycycline or Malarone).
+Currency: Nigerian Naira (NGN). Take mixed GBP cash + USD + cards.
+Local transport: Bolt and Uber recommended. Safe areas: Victoria Island, Ikoyi, Lekki.
+Emergency: British High Commission Lagos: +234 (0)1 277-0780`
     : "";
 
   const artefactSections = artefactNames.map(n => {
@@ -549,40 +557,57 @@ function buildArtefactPrompt(project: any, phaseName: string, artefactNames: str
     return `## ARTEFACT: ${n}\n${guidance}`;
   }).join("\n\n");
 
-  return `You are an expert AI Project Manager generating professional, highly specific project management artefacts.
+  return `You are a senior AI Project Manager producing enterprise-grade project management documents.
 
-TODAY'S DATE: ${today}
-CURRENT PHASE: ${phaseName}
+TODAY: ${today} | PHASE: ${phaseName} | PROJECT: ${project.name}
+METHODOLOGY: ${methodologyName} | BUDGET: £${budget}
+DURATION: ${startDt ? startDt.toLocaleDateString("en-GB") : "TBD"} → ${endDt ? endDt.toLocaleDateString("en-GB") : "TBD"}${totalDays ? ` (${totalDays} days)` : ""}${daysRemaining !== null ? ` · ${daysRemaining} days remaining` : ""}
+DESCRIPTION: ${project.description || "No description provided"}
+${domainContext ? `\n${domainContext}` : ""}${destinationContext ? `\n${destinationContext}` : ""}
 
-## PROJECT DETAILS
-- **Name:** ${project.name}
-- **Description:** ${project.description || "No description provided"}
-- **Category:** ${category}
-- **Methodology:** ${methodologyName}
-- **Budget:** £${budget}
-- **Start Date:** ${startDt ? startDt.toLocaleDateString("en-GB") : "TBD"}
-- **End Date:** ${endDt ? endDt.toLocaleDateString("en-GB") : "TBD"}
-- **Total Duration:** ${totalDays ? `${totalDays} days` : "TBD"}
-- **Days Remaining:** ${daysRemaining !== null ? `${daysRemaining} days from ${today}` : "TBD"}
-${domainContext}${destinationContext}
+━━━ OUTPUT FORMAT — CRITICAL ━━━
+You MUST output clean HTML only. Zero markdown. Zero exceptions.
 
-## GENERATION RULES — APPLY TO ALL ARTEFACTS
-1. **SPECIFIC** — use the actual project name "${project.name}", actual dates, actual budget £${budget}
-2. **OWNED** — every task, risk, action, or deliverable must have a named owner or responsible role
-3. **TRACKABLE** — include Status (🟢 On Track / 🟡 At Risk / 🔴 Delayed), % Complete, and Last Updated fields wherever tables are used
-4. **CURRENT** — reference today (${today}) for all "as at" status fields. Mark pre-start items as "Not Started", in-progress items with realistic % Complete
-5. **ACTIONABLE** — the agent must be able to read these documents and know: what is the current state, what needs to happen next, who is responsible
-6. **PROGRESS PROTOCOL** — every document must end with an "Agent Progress Tracking Protocol" section explaining how the AI agent will monitor and update this document
-7. British English throughout (colour, organisation, prioritise, centre, authorise)
+REQUIRED HTML ELEMENTS:
+• Headings: <h2> for document title, <h3> for major sections, <h4> for sub-sections
+• Paragraphs: <p> for all body text
+• Tables: <table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table>
+• Lists: <ul><li> for bullets, <ol><li> for numbered
+• Bold labels: <strong>label:</strong> followed by text
+• Status indicators: use text labels — ON TRACK / AT RISK / DELAYED (no emoji in tables)
+• Horizontal rules: <hr> to separate major sections
 
-Produce the COMPLETE version of each artefact. Do not truncate, abbreviate, or use placeholders.
+DO NOT USE: # ## ### * ** __ - for bullets → `• ` in text or <li> | (pipe) for tables → use <table>
+Any asterisk, hash, or pipe character in prose output = FAILURE.
 
----
+━━━ DOCUMENT STANDARDS ━━━
+1. SPECIFIC — use "${project.name}", actual dates, actual budget £${budget}
+2. OWNED — every action, risk, and deliverable has a named owner or role
+3. CURRENT — as at ${today}; pre-start items = "Not Started", with realistic % complete
+4. COMPLETE — no placeholders, no "[insert here]", no truncation
+5. PROFESSIONAL — British English (colour, organisation, prioritise, authorise)
+6. Each document ends with an <h3>Agent Monitoring Protocol</h3> section
 
+━━━ DOCUMENT CONTROL HEADER (use this exact structure for every document) ━━━
+<table>
+  <thead><tr><th>Field</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Document</strong></td><td>[Document Name]</td></tr>
+    <tr><td><strong>Project</strong></td><td>${project.name}</td></tr>
+    <tr><td><strong>Version</strong></td><td>1.0</td></tr>
+    <tr><td><strong>Date</strong></td><td>${today}</td></tr>
+    <tr><td><strong>Status</strong></td><td>DRAFT — Awaiting Approval</td></tr>
+    <tr><td><strong>Owner</strong></td><td>[Role]</td></tr>
+    <tr><td><strong>Methodology</strong></td><td>${methodologyName}</td></tr>
+  </tbody>
+</table>
+
+━━━ ARTEFACTS TO GENERATE ━━━
 ${artefactSections}
 
----
-REMINDER: Start each section with exactly "## ARTEFACT: <name>" on its own line. No preamble or commentary between artefacts.`;
+━━━ SEPARATOR RULE ━━━
+Start each artefact with exactly "## ARTEFACT: <name>" on its own line (this line only may use ##).
+Everything inside the artefact body must be HTML. No preamble or commentary between artefacts.`;
 }
 
 // ─── Per-artefact structural guidance ───
