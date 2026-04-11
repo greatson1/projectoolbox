@@ -124,8 +124,12 @@ export default function ArtefactsPage() {
     if (res.ok) {
       if (wasLastPending) {
         toast.success("All artefacts approved! Generating next phase documents…", { duration: 5000 });
-        // Auto-advance: generate next phase artefacts immediately
-        handleGenerate();
+        // Auto-advance: compute next phase from project data and pass it explicitly
+        const activeIdx = project?.phases?.findIndex((p: any) => p.status === "ACTIVE") ?? -1;
+        const nextPhaseName = (activeIdx >= 0 && activeIdx < (project?.phases?.length ?? 0) - 1)
+          ? project.phases[activeIdx + 1].name
+          : undefined;
+        handleGenerate(nextPhaseName);
       } else {
         toast.success("Artefact approved ✓");
       }
@@ -158,10 +162,14 @@ export default function ArtefactsPage() {
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (explicitPhase?: string) => {
     setGenerating(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/artefacts/generate`, { method: "POST" });
+      const res = await fetch(`/api/projects/${projectId}/artefacts/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(explicitPhase ? { phase: explicitPhase } : {}),
+      });
       const text = await res.text();
       let json: any = null;
       try { json = JSON.parse(text); } catch { /* not JSON */ }
@@ -437,7 +445,7 @@ function AgentStatusBanner({
   items: any[];
   project: any;
   generating: boolean;
-  onGenerate: () => void;
+  onGenerate: (phase?: string) => void;
 }) {
   if (!project) return null;
 
@@ -583,7 +591,7 @@ function AgentStatusBanner({
 
           {/* CTA button */}
           {(state === "complete" || state === "empty") && (
-            <Button size="sm" onClick={onGenerate} disabled={generating} className="flex-shrink-0 mt-0.5">
+            <Button size="sm" onClick={() => onGenerate(state === "complete" && nextPhase ? nextPhase.name : undefined)} disabled={generating} className="flex-shrink-0 mt-0.5">
               <Sparkles className="w-4 h-4 mr-1.5" />
               {state === "complete"
                 ? (nextPhase ? `Generate ${nextPhase.name} Phase` : "Generate Next Phase")
