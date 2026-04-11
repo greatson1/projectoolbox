@@ -53,6 +53,13 @@ export async function generatePhaseArtefacts(
 
   if (toGenerate.length === 0) return { generated: 0, skipped, phase: targetPhaseName };
 
+  // Resolve the Phase row ID so artefacts can be linked to their phase
+  const phaseRow = await db.phase.findFirst({
+    where: { projectId, name: targetPhaseName },
+    select: { id: true },
+  });
+  const phaseId = phaseRow?.id ?? null;
+
   await db.agentActivity.create({
     data: { agentId, type: "document", summary: `Generating ${toGenerate.length} artefact(s) for ${targetPhaseName} (${skipped} already exist)` },
   });
@@ -123,7 +130,7 @@ export async function generatePhaseArtefacts(
           if (isSheet) { detectedFmt = "csv"; }
           else if (content.trimStart().startsWith("<")) { detectedFmt = "html"; }
           await db.agentArtefact.create({
-            data: { agentId, projectId, name: artName, format: detectedFmt, content, status: "DRAFT", version: 1 },
+            data: { agentId, projectId, name: artName, format: detectedFmt, content, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
           });
           existingNames.add(artName.toLowerCase());
           totalGenerated++;

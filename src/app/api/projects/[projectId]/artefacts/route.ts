@@ -33,9 +33,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     : [];
   const agentMap = Object.fromEntries(agents.map(a => [a.id, a]));
 
+  // Fetch phase names for artefacts that have a phaseId
+  const phaseIds = [...new Set(artefacts.map(a => a.phaseId).filter(Boolean) as string[])];
+  const phases = phaseIds.length > 0
+    ? await db.phase.findMany({
+        where: { id: { in: phaseIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const phaseMap = Object.fromEntries(phases.map(p => [p.id, p.name]));
+
   const enriched = artefacts.map(a => ({
     ...a,
     agent: agentMap[a.agentId] ?? null,
+    phaseName: a.phaseId ? (phaseMap[a.phaseId] ?? null) : null,
   }));
 
   return NextResponse.json({ data: enriched });

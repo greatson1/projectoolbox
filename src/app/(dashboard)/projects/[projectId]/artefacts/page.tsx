@@ -467,6 +467,22 @@ function AgentStatusBanner({
   const phaseNumber   = project.phases ? (project.phases.findIndex((p: any) => p.name === phaseName) + 1) : 1;
   const totalPhases   = project.phases?.length || 0;
 
+  // Detect phases that are COMPLETED or ACTIVE but have zero artefacts in the DB
+  // (indicates a phase was skipped/failed) — show recovery prompt
+  const completedPhaseNames = (project.phases || [])
+    .filter((p: any) => p.status === "COMPLETED" || p.status === "ACTIVE")
+    .map((p: any) => p.name as string);
+  const artefactPhaseNames = new Set(items.map((a: any) => a.phaseName || "").filter(Boolean));
+  // Find earliest phase with no artefacts at all (not just no approved)
+  const missingPhase = completedPhaseNames.find((name: string) => {
+    // Check by matching artefact.phaseId or by checking if no artefacts belong to that phase
+    // If artefacts don't carry phaseName we fall back to checking if ANY artefact exists
+    const hasAny = artefactPhaseNames.has(name);
+    return !hasAny;
+  });
+  // Only surface the missing phase warning if there IS a mismatch AND we have some artefacts
+  const showMissingPhaseWarning = !!(missingPhase && items.length > 0 && missingPhase !== phaseName);
+
   // Pick the agent from the first artefact that has one, or fall back to project agents
   const agentInfo     = items.find((a: any) => a.agent)?.agent
     || project.agents?.[0]?.agent
@@ -519,6 +535,26 @@ function AgentStatusBanner({
   const cfg = stateConfig[state];
 
   return (
+    <>
+    {/* Missing phase recovery banner */}
+    {showMissingPhaseWarning && (
+      <Card className="border border-amber-500/40 bg-amber-500/5">
+        <CardContent className="p-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              <span className="font-semibold">{missingPhase} phase documents are missing.</span>{" "}
+              They were skipped when the phase advanced. Click to generate them now.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="border-amber-500/50 text-amber-600 hover:bg-amber-500/10 flex-shrink-0"
+            onClick={() => onGenerate(missingPhase)} disabled={generating}>
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+            Generate {missingPhase} Docs
+          </Button>
+        </CardContent>
+      </Card>
+    )}
     <Card className={`border ${cfg.border} transition-colors`}>
       <CardContent className="p-4">
         <div className="flex items-start gap-4">
@@ -601,5 +637,6 @@ function AgentStatusBanner({
         </div>
       </CardContent>
     </Card>
+    </>
   );
 }
