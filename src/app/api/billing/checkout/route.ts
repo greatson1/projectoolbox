@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { stripe, PLAN_PRICE_IDS, CREDIT_PACK_PRICES } from "@/lib/stripe";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/billing/checkout — Create Stripe Checkout session
 export async function POST(req: NextRequest) {
   const session = await auth();

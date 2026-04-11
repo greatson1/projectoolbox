@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,7 +117,16 @@ function formatCurrency(amount: number): string {
 }
 
 export default function InvoicesPage() {
-  const [invoices] = useState<Invoice[]>(DEMO_INVOICES);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/invoices")
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d?.data)) setInvoices(d.data); })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
   const [tab, setTab] = useState("all");
   const [sortField, setSortField] = useState<"amount" | "dueDate">("dueDate");
   const [sortAsc, setSortAsc] = useState(true);
@@ -151,6 +160,18 @@ export default function InvoicesPage() {
       setSortAsc(true);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="max-w-[1400px] space-y-6">
+        <div className="h-9 w-40 rounded-lg bg-muted animate-pulse" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1,2,3,4].map(i => <div key={i} className="h-24 rounded-xl bg-muted animate-pulse" />)}
+        </div>
+        <div className="h-64 rounded-xl bg-muted animate-pulse" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1400px] space-y-6">

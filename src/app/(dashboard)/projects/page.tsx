@@ -10,16 +10,37 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppStore } from "@/stores/app";
 import { useProjects } from "@/hooks/use-api";
-import { Plus, FolderKanban, Search } from "lucide-react";
+import { Plus, FolderKanban, Search, Trash2, MoreVertical } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
 
 export default function ProjectsPage() {
   usePageTitle("Projects");
   const [search, setSearch] = useState("");
-  const { setActiveProject } = useAppStore();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const { setActiveProject, activeProjectId, setActiveProject: clearProject } = useAppStore();
   const { data: projects, isLoading } = useProjects();
+  const qc = useQueryClient();
+
+  const deleteProject = async (id: string, name: string) => {
+    setDeletingId(id);
+    try {
+      const r = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Failed");
+      toast.success(`"${name}" deleted`);
+      if (activeProjectId === id) setActiveProject(null, null);
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    } catch {
+      toast.error("Delete failed");
+    } finally {
+      setDeletingId(null);
+      setConfirmId(null);
+    }
+  };
 
   const filtered = (projects || []).filter((p: any) => p.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -61,7 +82,8 @@ export default function ProjectsPage() {
           {filtered.map((p: any) => {
             const agent = p.agents?.[0]?.agent;
             return (
-              <Link key={p.id} href={`/projects/${p.id}`} onClick={() => setActiveProject(p.id, p.name)}>
+              <div key={p.id} className="relative group">
+                <Link href={`/projects/${p.id}`} onClick={() => setActiveProject(p.id, p.name)}>
                 <Card className="card-interactive h-full">
                   <CardContent className="pt-5">
                     <div className="flex items-start justify-between mb-3">
@@ -94,7 +116,29 @@ export default function ProjectsPage() {
                     )}
                   </CardContent>
                 </Card>
-              </Link>
+                </Link>
+
+                {/* Delete button — appears on hover */}
+                {confirmId === p.id ? (
+                  <div className="absolute top-2 right-2 flex items-center gap-1 bg-destructive/95 rounded-lg px-2 py-1 shadow-lg z-10">
+                    <span className="text-[10px] text-white font-medium">Delete?</span>
+                    <button className="text-[10px] text-white font-bold hover:text-white/70 px-1"
+                      onClick={() => deleteProject(p.id, p.name)}
+                      disabled={deletingId === p.id}>
+                      {deletingId === p.id ? "…" : "Yes"}
+                    </button>
+                    <button className="text-[10px] text-white/70 hover:text-white px-1"
+                      onClick={() => setConfirmId(null)}>No</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={e => { e.preventDefault(); setConfirmId(p.id); }}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center z-10"
+                    title="Delete project">
+                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

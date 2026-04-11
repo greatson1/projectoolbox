@@ -52,6 +52,7 @@ export const CREDIT_COSTS = {
   // ── External APIs (metered — cost reflects real provider pricing) ─────────
   WHISPER_PER_MINUTE:        1,   // £0.003/min actual → £0.01 charged → 3×
   RECALL_BOT_PER_HOUR:      60,   // £0.40/hr actual → £0.60 charged → 1.5×
+  CUSTOM_BOT_PER_HOUR:      10,   // VPS Playwright bot: ~8 credits/hr Whisper + 2 overhead
   PERPLEXITY_RESEARCH:       5,   // £0.01/call actual → £0.05 charged → 5×
   KNOWLEDGE_INGEST:          2,   // Claude Haiku extraction per ingest job
   EMAIL_PROCESSING:          2,   // auto-process inbound email into KB
@@ -78,80 +79,59 @@ export interface PlanDefinition {
   projects: number;         // max projects
   priceGbp: number;         // monthly price in GBP (0 = free)
   // Feature gates
-  whisperAudio: boolean;    // Whisper audio transcription
-  recallBot: boolean;       // Recall.ai live meeting bot
+  whisperAudio: boolean;       // Whisper audio transcription
+  customBot: boolean;          // VPS Playwright meeting bot (STARTER+, 10 credits/hr)
+  recallBot: boolean;          // Recall.ai live meeting bot (PROFESSIONAL+, 60 credits/hr)
   perplexityResearch: boolean; // Perplexity web research / PESTLE
-  autonomousCycle: boolean; // VPS background agent cycle
-  emailInbox: boolean;      // agent email address + inbox
-  apiAccess: boolean;       // REST API + API keys
-  topUpsAllowed: boolean;   // can buy extra credits
+  autonomousCycle: boolean;    // VPS background agent cycle
+  emailInbox: boolean;         // agent email address + inbox
+  apiAccess: boolean;          // REST API + API keys
+  topUpsAllowed: boolean;      // can buy extra credits
 }
 
 export const PLAN_LIMITS: Record<string, PlanDefinition> = {
   FREE: {
-    credits: 100,         // resets monthly — ~20 chats or 2 doc ingests
-    agents: 1,
-    projects: 1,
-    priceGbp: 0,
-    whisperAudio: false,
-    recallBot: false,
-    perplexityResearch: false,
-    autonomousCycle: false,
-    emailInbox: false,
-    apiAccess: false,
-    topUpsAllowed: false,
+    credits: 100,
+    agents: 1, projects: 1, priceGbp: 0,
+    whisperAudio: false, customBot: false, recallBot: false,
+    perplexityResearch: false, autonomousCycle: false,
+    emailInbox: false, apiAccess: false, topUpsAllowed: false,
   },
   STARTER: {
     credits: 2000,        // ~200 chats + 20 docs + some reports
-    agents: 1,
-    projects: 3,
-    priceGbp: 29,
-    whisperAudio: true,   // up to ~33 hrs audio/mo within credit budget
-    recallBot: false,     // upsell lever — live bot is Professional+
+    agents: 1, projects: 3, priceGbp: 29,
+    whisperAudio: true,   // upload recordings
+    customBot: true,      // 200 hrs of custom bot / month (10 credits/hr)
+    recallBot: false,     // upsell lever — Recall is Professional+
     perplexityResearch: true,
-    autonomousCycle: true,
-    emailInbox: true,
-    apiAccess: false,
-    topUpsAllowed: true,
+    autonomousCycle: true, emailInbox: true,
+    apiAccess: false, topUpsAllowed: true,
   },
   PROFESSIONAL: {
-    credits: 6000,        // covers ~3 agents + meetings + reports comfortably
-    agents: 3,
-    projects: 10,
-    priceGbp: 79,
+    credits: 6000,
+    agents: 3, projects: 10, priceGbp: 79,
     whisperAudio: true,
-    recallBot: true,      // ~8 hrs of live meeting bot/mo within budget
+    customBot: true,
+    recallBot: true,      // ~8 hrs Recall/mo within budget
     perplexityResearch: true,
-    autonomousCycle: true,
-    emailInbox: true,
-    apiAccess: true,
-    topUpsAllowed: true,
+    autonomousCycle: true, emailInbox: true,
+    apiAccess: true, topUpsAllowed: true,
   },
   BUSINESS: {
     credits: 20000,
-    agents: 10,
-    projects: 50,
-    priceGbp: 199,
-    whisperAudio: true,
-    recallBot: true,
+    agents: 10, projects: 50, priceGbp: 199,
+    whisperAudio: true, customBot: true, recallBot: true,
     perplexityResearch: true,
-    autonomousCycle: true,
-    emailInbox: true,
-    apiAccess: true,
-    topUpsAllowed: true,
+    autonomousCycle: true, emailInbox: true,
+    apiAccess: true, topUpsAllowed: true,
   },
   ENTERPRISE: {
     credits: 999999,
-    agents: 999,
-    projects: 999,
-    priceGbp: 0,          // custom — negotiated per client
-    whisperAudio: true,
-    recallBot: true,
+    agents: 999, projects: 999, priceGbp: 0,
+    whisperAudio: true, customBot: true, recallBot: true,
     perplexityResearch: true,
-    autonomousCycle: true,
-    emailInbox: true,
-    apiAccess: true,
-    topUpsAllowed: true,
+    autonomousCycle: true, emailInbox: true,
+    apiAccess: true, topUpsAllowed: true,
   },
 };
 

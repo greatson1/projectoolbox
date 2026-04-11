@@ -252,6 +252,68 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ═══ INTEGRATIONS ═══ */}
+      <section id="integrations" className="py-20 px-6 scroll-mt-20">
+        <div className="max-w-[1200px] mx-auto text-center">
+          <p className="text-xs font-bold uppercase tracking-widest text-primary mb-3">Integrations</p>
+          <h2 className="text-3xl font-bold mb-4">Connects to the tools your team already uses</h2>
+          <p className="text-muted-foreground text-lg mb-12 max-w-xl mx-auto">
+            Your PM agent plugs straight into Jira, MS Project, SAP and more — no manual data entry.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+            {[
+              { name: "Jira", color: "#0052CC", abbr: "J" },
+              { name: "MS Project", color: "#217346", abbr: "MSP" },
+              { name: "Slack", color: "#4A154B", abbr: "Sl" },
+              { name: "Teams", color: "#6264A7", abbr: "T" },
+              { name: "SAP", color: "#0070F2", abbr: "SAP" },
+              { name: "Azure DevOps", color: "#0078D4", abbr: "ADO" },
+              { name: "Google Drive", color: "#34A853", abbr: "GD" },
+              { name: "Zoom", color: "#2D8CFF", abbr: "Z" },
+              { name: "Google Meet", color: "#00897B", abbr: "GM" },
+              { name: "Salesforce", color: "#00A1E0", abbr: "SF" },
+              { name: "GitHub", color: "#24292F", abbr: "GH" },
+              { name: "Notion", color: "#000000", abbr: "N" },
+            ].map(int => (
+              <div key={int.name} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border/30 hover:border-primary/40 hover:bg-muted/30 transition-all group">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-xs" style={{ background: int.color }}>
+                  {int.abbr}
+                </div>
+                <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">{int.name}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-muted-foreground mt-8">
+            + more via MCP — <Link href="/integrations" className="text-primary font-semibold hover:underline">see all integrations</Link>
+          </p>
+        </div>
+      </section>
+
+      {/* ═══ VIDEO DEMO ═══ */}
+      <section className="py-20 px-6 bg-muted/30">
+        <div className="max-w-[900px] mx-auto text-center">
+          <p className="text-xs font-bold uppercase tracking-widest text-primary mb-3">See It In Action</p>
+          <h2 className="text-3xl font-bold mb-4">Watch your AI agent manage a real project</h2>
+          <p className="text-muted-foreground text-lg mb-10 max-w-xl mx-auto">
+            3-minute walkthrough: from project brief to first status report, entirely handled by your agent.
+          </p>
+          <div className="relative rounded-2xl overflow-hidden border border-border/40 shadow-2xl bg-card aspect-video flex items-center justify-center">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-purple-500/5" />
+            <div className="relative z-10 text-center">
+              <div className="w-16 h-16 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto mb-4 cursor-pointer hover:bg-primary/20 transition-all">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-primary ml-1">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+              <p className="text-sm text-muted-foreground">Demo video coming soon</p>
+              <Link href="/contact" className="mt-3 inline-block text-xs text-primary font-semibold hover:underline">
+                Request a live demo instead →
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ═══ PRICING ═══ */}
       <section id="pricing" className="py-20 px-6 scroll-mt-20">
         <div className="max-w-[1200px] mx-auto">

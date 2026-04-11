@@ -307,74 +307,466 @@ You have access to the full conversation history from all previous sessions with
     return NextResponse.json({ error: "No AI API key configured" }, { status: 500 });
   }
 
-  // Stream from Anthropic with full token budget for comprehensive PM responses
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
+  // ── Tool definitions available to the agent ──────────────────────────────
+  const agentTools = [
+    {
+      name: "schedule_meeting",
+      description:
+        "Schedule a Zoom or Google Meet meeting, send invites to attendees, and automatically join to record and transcribe. Use when the user asks to book, schedule, or set up a meeting.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          platform: {
+            type: "string",
+            enum: ["zoom", "meet"],
+            description: "The meeting platform to use: 'zoom' for Zoom or 'meet' for Google Meet.",
+          },
+          title: {
+            type: "string",
+            description: "The title or subject of the meeting.",
+          },
+          scheduledAt: {
+            type: "string",
+            description: "ISO 8601 datetime string for when the meeting should start (e.g. '2026-04-10T14:00:00Z'). Omit to start immediately.",
+          },
+          durationMins: {
+            type: "number",
+            description: "Duration of the meeting in minutes. Defaults to 60.",
+          },
+          invitees: {
+            type: "array",
+            items: { type: "string" },
+            description: "Array of email addresses of attendees to invite.",
+          },
+          agenda: {
+            type: "string",
+            description: "Optional agenda or description for the meeting.",
+          },
+        },
+        required: ["platform", "title"],
+      },
     },
-    body: JSON.stringify({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages,
-      stream: true,
-    }),
-  });
+  ];
 
-  if (!response.ok || !response.body) {
-    const errBody = await response.text().catch(() => "no body");
-    console.error(`[chat/stream] Anthropic API error: ${response.status} — ${errBody}`);
-    return NextResponse.json({ error: "LLM stream failed", status: response.status, detail: errBody.slice(0, 200) }, { status: 502 });
+  /**
+   * Execute the schedule_meeting tool by calling the meetings/create service layer directly.
+   * Avoids an internal HTTP round-trip by importing and running the same logic inline.
+   */
+  async function executeScheduleMeeting(
+    toolInput: Record<string, any>,
+    execAgentId: string,
+    execOrgId: string,
+  ): Promise<Record<string, any>> {
+    const {
+      platform = "zoom",
+      title = "Team Meeting",
+      scheduledAt,
+      durationMins = 60,
+      invitees = [] as string[],
+      agenda = "",
+    } = toolInput;
+
+    const startTime = scheduledAt ? new Date(scheduledAt) : new Date(Date.now() + 2 * 60 * 1000);
+
+    // ── Create the meeting on the provider ─────────────────────────────────
+    let joinUrl: string;
+
+    if (platform === "zoom") {
+      const { createZoomMeeting, isZoomConnected } = await import("@/lib/zoom");
+      const connected = await isZoomConnected(execOrgId);
+      if (!connected) {
+        const { getZoomAuthUrl } = await import("@/lib/zoom");
+        return {
+          error: "Zoom not connected",
+          code: "ZOOM_NOT_CONNECTED",
+          authUrl: getZoomAuthUrl(execOrgId),
+        };
+      }
+      const zoom = await createZoomMeeting(execOrgId, {
+        topic: title,
+        startTime: startTime.toISOString(),
+        duration: durationMins,
+        agenda,
+        invitees: invitees.map((e: string) => ({ email: e })),
+      });
+      if (!zoom) return { error: "Zoom meeting creation failed" };
+      joinUrl = zoom.joinUrl;
+    } else if (platform === "meet") {
+      const { createGoogleMeet, isGoogleCalendarConnected } = await import("@/lib/google-calendar");
+      const connected = await isGoogleCalendarConnected(execOrgId);
+      if (!connected) {
+        return {
+          error: "Google Calendar not connected",
+          code: "GOOGLE_NOT_CONNECTED",
+          authUrl: `/api/integrations/google-calendar/connect?orgId=${execOrgId}`,
+        };
+      }
+      const meet = await createGoogleMeet(execOrgId, {
+        summary: title,
+        startTime: startTime.toISOString(),
+        endTime: new Date(startTime.getTime() + durationMins * 60000).toISOString(),
+        attendees: invitees.map((e: string) => ({ email: e })),
+        description: agenda,
+      });
+      if (!meet) return { error: "Google Meet creation failed" };
+      joinUrl = meet.joinUrl;
+    } else {
+      return { error: "Invalid platform. Use 'zoom' or 'meet'" };
+    }
+
+    // ── Save CalendarEvent + Meeting records ────────────────────────────────
+    const execDeployment = await db.agentDeployment.findFirst({
+      where: { agentId: execAgentId, isActive: true },
+      select: { projectId: true },
+    });
+
+    const execAgent = await db.agent.findUnique({
+      where: { id: execAgentId },
+      select: { name: true },
+    });
+
+    const calEvent = await db.calendarEvent.create({
+      data: {
+        orgId: execOrgId,
+        agentId: execAgentId,
+        projectId: execDeployment?.projectId || null,
+        title,
+        startTime,
+        endTime: new Date(startTime.getTime() + durationMins * 60000),
+        meetingUrl: joinUrl,
+        attendees: invitees.map((email: string) => ({ email })),
+        source: "MANUAL",
+        description: agenda || null,
+      },
+    });
+
+    const { detectPlatform } = await import("@/lib/recall-client");
+
+    const meeting = await db.meeting.create({
+      data: {
+        title,
+        orgId: execOrgId,
+        agentId: execAgentId,
+        projectId: execDeployment?.projectId || null,
+        platform: detectPlatform(joinUrl),
+        meetingUrl: joinUrl,
+        calendarEventId: calEvent.id,
+        scheduledAt: startTime,
+        status: "SCHEDULED",
+        recallBotStatus: "idle",
+        botProvider: "recall",
+      },
+    });
+
+    // ── Send invite emails via agent email ────────────────────────────────
+    if (invitees.length > 0) {
+      try {
+        const agentWithEmail = await db.agent.findUnique({
+          where: { id: execAgentId },
+          include: { agentEmail: true },
+        });
+        if (agentWithEmail?.agentEmail?.isActive) {
+          const { EmailService } = await import("@/lib/email");
+          const platformLabel = platform === "zoom" ? "Zoom" : "Google Meet";
+          const platformColor = platform === "zoom" ? "#2D8CFF" : "#1A73E8";
+          await EmailService.sendAgentEmail(execAgentId, {
+            to: invitees,
+            subject: `Meeting Invitation: ${title}`,
+            html: `
+              <div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);padding:20px 24px;border-radius:12px 12px 0 0">
+                <h1 style="color:white;margin:0;font-size:18px">Meeting Invitation</h1>
+              </div>
+              <div style="padding:24px;background:#fff;border:1px solid #E2E8F0;border-top:0;border-radius:0 0 12px 12px">
+                <h2 style="margin:0 0 12px;font-size:16px;color:#0F172A">${title}</h2>
+                <table style="font-size:14px;color:#475569">
+                  <tr><td style="padding:4px 12px 4px 0;font-weight:600">When:</td>
+                      <td>${startTime.toLocaleString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"})}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;font-weight:600">Duration:</td><td>${durationMins} minutes</td></tr>
+                  ${agenda ? `<tr><td style="padding:4px 12px 4px 0;font-weight:600">Agenda:</td><td>${agenda}</td></tr>` : ""}
+                </table>
+                <a href="${joinUrl}" style="display:inline-block;margin-top:20px;background:${platformColor};color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
+                  Join ${platformLabel} Meeting
+                </a>
+                <p style="margin-top:16px;color:#94A3B8;font-size:12px">Organised by ${execAgent?.name ?? "AI Project Manager"}</p>
+              </div>
+            `,
+          });
+        }
+      } catch (e) {
+        console.error("[schedule_meeting tool] invite email failed:", e);
+      }
+    }
+
+    // ── Log agent activity ────────────────────────────────────────────────
+    await db.agentActivity.create({
+      data: {
+        agentId: execAgentId,
+        type: "meeting",
+        summary: `Scheduled ${platform === "zoom" ? "Zoom" : "Google Meet"}: "${title}" · ${invitees.length} invitee(s)`,
+        metadata: { meetingId: meeting.id, joinUrl, invitees, platform },
+      },
+    });
+
+    return {
+      success: true,
+      meetingId: meeting.id,
+      calendarEventId: calEvent.id,
+      joinUrl,
+      platform,
+      title,
+      scheduledAt: startTime.toISOString(),
+      durationMins,
+      invitesSent: invitees.length,
+      message: `${title} scheduled successfully. ${invitees.length > 0 ? `Invites sent to ${invitees.length} attendee(s).` : ""} The agent will join automatically to record and transcribe.`,
+    };
   }
 
-  // Transform Anthropic SSE stream into our own SSE format
-  let fullContent = "";
+  // ── Helper: drain a streaming Anthropic response into text + tool calls ──
+  async function drainStream(
+    streamResponse: Response,
+  ): Promise<{ textContent: string; toolUseBlocks: Array<{ id: string; name: string; input: Record<string, any> }>; stopReason: string }> {
+    const reader = streamResponse.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let textContent = "";
+    const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, any> }> = [];
+    let stopReason = "end_turn";
+
+    // We accumulate tool_use input as a JSON string built from input_json_delta events
+    const pendingToolInputs: Record<number, string> = {};
+    const pendingToolMeta: Record<number, { id: string; name: string }> = {};
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6);
+        if (raw === "[DONE]") continue;
+        try {
+          const event = JSON.parse(raw);
+          if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+            const idx: number = event.index;
+            pendingToolMeta[idx] = { id: event.content_block.id, name: event.content_block.name };
+            pendingToolInputs[idx] = "";
+          }
+          if (event.type === "content_block_delta") {
+            if (event.delta?.type === "text_delta") {
+              textContent += event.delta.text ?? "";
+            }
+            if (event.delta?.type === "input_json_delta") {
+              const idx: number = event.index;
+              pendingToolInputs[idx] = (pendingToolInputs[idx] ?? "") + (event.delta.partial_json ?? "");
+            }
+          }
+          if (event.type === "content_block_stop") {
+            const idx: number = event.index;
+            if (pendingToolMeta[idx]) {
+              let parsedInput: Record<string, any> = {};
+              try { parsedInput = JSON.parse(pendingToolInputs[idx] || "{}"); } catch {}
+              toolUseBlocks.push({ ...pendingToolMeta[idx], input: parsedInput });
+              delete pendingToolMeta[idx];
+              delete pendingToolInputs[idx];
+            }
+          }
+          if (event.type === "message_delta" && event.delta?.stop_reason) {
+            stopReason = event.delta.stop_reason;
+          }
+        } catch {}
+      }
+    }
+    return { textContent, toolUseBlocks, stopReason };
+  }
+
+  // ── First Anthropic call (streaming for text tokens, non-streaming for tool calls) ──
+  // We use a two-phase approach:
+  //   Phase 1 — stream the response to the client token-by-token (text only)
+  //   Phase 2 — if a tool_use stop occurs, execute the tool and make a follow-up call
+  //
+  // Because we need to inspect stop_reason before deciding whether to do Phase 2,
+  // we stream Phase 1 normally and buffer tool-related SSE events. If stop_reason
+  // is "tool_use" we execute the tool and send a follow-up non-streaming response.
+
   const encoder = new TextEncoder();
+  let fullContent = "";
 
   const stream = new ReadableStream({
     async start(controller) {
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        // ── Phase 1: initial streaming call ───────────────────────────────
+        const phase1Response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.ANTHROPIC_API_KEY!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages,
+            tools: agentTools,
+            stream: true,
+          }),
+        });
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+        if (!phase1Response.ok || !phase1Response.body) {
+          const errBody = await phase1Response.text().catch(() => "no body");
+          console.error(`[chat/stream] Anthropic API error: ${phase1Response.status} — ${errBody}`);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "LLM stream failed" })}\n\n`));
+          controller.close();
+          return;
+        }
+
+        // Drain the Phase 1 stream, forwarding text tokens to the client as we go
+        const p1Reader = phase1Response.body.getReader();
+        const p1Decoder = new TextDecoder();
+        let p1Buf = "";
+        let p1StopReason = "end_turn";
+        const p1ToolBlocks: Array<{ id: string; name: string; input: Record<string, any> }> = [];
+        const p1PendingInputs: Record<number, string> = {};
+        const p1PendingMeta: Record<number, { id: string; name: string }> = {};
+        let p1AssistantTextContent = "";
+
+        while (true) {
+          const { done, value } = await p1Reader.read();
+          if (done) break;
+          p1Buf += p1Decoder.decode(value, { stream: true });
+          const lines = p1Buf.split("\n");
+          p1Buf = lines.pop() || "";
 
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
-            const data = line.slice(6);
-            if (data === "[DONE]") continue;
-
+            const raw = line.slice(6);
+            if (raw === "[DONE]") continue;
             try {
-              const event = JSON.parse(data);
-              if (event.type === "content_block_delta" && event.delta?.text) {
-                fullContent += event.delta.text;
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: event.delta.text })}\n\n`));
+              const event = JSON.parse(raw);
+
+              // Track tool_use content block starts
+              if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+                const idx: number = event.index;
+                p1PendingMeta[idx] = { id: event.content_block.id, name: event.content_block.name };
+                p1PendingInputs[idx] = "";
+              }
+
+              // Stream text tokens to client; accumulate tool input JSON
+              if (event.type === "content_block_delta") {
+                if (event.delta?.type === "text_delta" && event.delta.text) {
+                  p1AssistantTextContent += event.delta.text;
+                  fullContent += event.delta.text;
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: event.delta.text })}\n\n`));
+                }
+                if (event.delta?.type === "input_json_delta") {
+                  const idx: number = event.index;
+                  p1PendingInputs[idx] = (p1PendingInputs[idx] ?? "") + (event.delta.partial_json ?? "");
+                }
+              }
+
+              // Finalise completed tool_use blocks
+              if (event.type === "content_block_stop") {
+                const idx: number = event.index;
+                if (p1PendingMeta[idx]) {
+                  let parsedInput: Record<string, any> = {};
+                  try { parsedInput = JSON.parse(p1PendingInputs[idx] || "{}"); } catch {}
+                  p1ToolBlocks.push({ ...p1PendingMeta[idx], input: parsedInput });
+                  delete p1PendingMeta[idx];
+                  delete p1PendingInputs[idx];
+                }
+              }
+
+              if (event.type === "message_delta" && event.delta?.stop_reason) {
+                p1StopReason = event.delta.stop_reason;
               }
             } catch {}
           }
         }
 
-        // Save complete response
+        // ── Phase 2: tool execution + follow-up if needed ─────────────────
+        if (p1StopReason === "tool_use" && p1ToolBlocks.length > 0) {
+          // Execute each tool call and collect results
+          const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
+
+          for (const toolBlock of p1ToolBlocks) {
+            if (toolBlock.name === "schedule_meeting") {
+              // Notify client that the agent is scheduling
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: "\n\n*Scheduling meeting…*\n\n" })}\n\n`));
+              fullContent += "\n\n*Scheduling meeting…*\n\n";
+
+              let toolResult: Record<string, any>;
+              try {
+                toolResult = await executeScheduleMeeting(toolBlock.input, agentId, orgId);
+              } catch (err: any) {
+                toolResult = { error: err.message || "Meeting scheduling failed" };
+              }
+
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: toolBlock.id,
+                content: JSON.stringify(toolResult),
+              });
+            }
+          }
+
+          if (toolResults.length > 0) {
+            // Build the messages array for the follow-up call:
+            // existing messages + assistant turn (with tool_use blocks) + tool_result turn
+            const assistantContentBlocks: any[] = [];
+            if (p1AssistantTextContent) {
+              assistantContentBlocks.push({ type: "text", text: p1AssistantTextContent });
+            }
+            for (const tb of p1ToolBlocks) {
+              assistantContentBlocks.push({ type: "tool_use", id: tb.id, name: tb.name, input: tb.input });
+            }
+
+            const followUpMessages = [
+              ...messages,
+              { role: "assistant" as const, content: assistantContentBlocks },
+              { role: "user" as const, content: toolResults },
+            ];
+
+            // Follow-up streaming call to get the final response
+            const phase2Response = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": process.env.ANTHROPIC_API_KEY!,
+                "anthropic-version": "2023-06-01",
+              },
+              body: JSON.stringify({
+                model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+                max_tokens: 2048,
+                system: systemPrompt,
+                messages: followUpMessages,
+                tools: agentTools,
+                stream: true,
+              }),
+            });
+
+            if (phase2Response.ok && phase2Response.body) {
+              const { textContent: p2Text } = await drainStream(phase2Response);
+              if (p2Text) {
+                fullContent += p2Text;
+                // Stream the follow-up tokens to the client
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: p2Text })}\n\n`));
+              }
+            }
+          }
+        }
+
+        // ── Persist + finalise ────────────────────────────────────────────
         await db.chatMessage.create({
           data: { agentId, conversationId, role: "agent", content: fullContent },
         });
 
-        // Log activity
         await db.agentActivity.create({
           data: { agentId, type: "chat", summary: `Chat response: ${message.slice(0, 80)}${message.length > 80 ? "…" : ""}` },
         }).catch(() => {});
 
-        // Deduct credits — scale by response complexity
         const creditCost = fullContent.length > 2000 ? 8 : fullContent.length > 800 ? 4 : 2;
         await CreditService.deduct(orgId, creditCost, `Agent chat: ${message.slice(0, 40)}`, agentId);
 

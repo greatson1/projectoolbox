@@ -22,6 +22,8 @@ import { resolveApiCaller } from "@/lib/api-auth";
 import { CreditService, orgCanUseFeature, getOrgPlan } from "@/lib/credits/service";
 import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export const maxDuration = 300; // 5 min — Whisper on large files needs time
 
 // Audio/video MIME types and extensions we'll route through Whisper

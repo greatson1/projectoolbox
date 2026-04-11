@@ -27,27 +27,41 @@ import {
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  // ── Optional signature verification ──────────────────────────────────────
-  const secret = process.env.RECALL_WEBHOOK_SECRET;
-  if (secret) {
+  const body = await req.text();
+  const { createHmac } = await import("crypto");
+
+  // Determine source: custom bot vs Recall.ai
+  const botSource = req.headers.get("x-ptx-bot-source"); // "custom" or null
+
+  if (botSource === "custom") {
+    // ── Custom bot signature verification ──────────────────────────────────
+    const customSecret = process.env.CUSTOM_BOT_WEBHOOK_SECRET;
+    if (customSecret) {
+      const sig = req.headers.get("x-ptx-signature") || "";
+      const expected = createHmac("sha256", customSecret).update(body).digest("hex");
+      if (sig !== expected) {
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+    }
+    const payload = JSON.parse(body);
+    return handlePayload(payload, "custom");
+  }
+
+  // ── Recall.ai signature verification ─────────────────────────────────────
+  const recallSecret = process.env.RECALL_WEBHOOK_SECRET;
+  if (recallSecret) {
     const sig = req.headers.get("x-recall-signature") || "";
-    // Recall uses HMAC-SHA256 of the raw body
-    const body = await req.text();
-    const { createHmac } = await import("crypto");
-    const expected = createHmac("sha256", secret).update(body).digest("hex");
+    const expected = createHmac("sha256", recallSecret).update(body).digest("hex");
     if (sig !== expected) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
-    // Re-parse since we consumed the stream
-    const payload = JSON.parse(body);
-    return handlePayload(payload);
   }
 
-  const payload = await req.json();
-  return handlePayload(payload);
+  const payload = JSON.parse(body);
+  return handlePayload(payload, "recall");
 }
 
-async function handlePayload(payload: any) {
+async function handlePayload(payload: any, source: "recall" | "custom" = "recall") {
   const event = payload.event || payload.type;
   const botId = payload.data?.bot_id || payload.bot_id;
 
@@ -199,9 +213,29 @@ async function handlePayload(payload: any) {
         return NextResponse.json({ ok: true });
       }
 
-      // Fetch full transcript from Recall
-      const utterances = await getRecallTranscript(botId);
-      const rawTranscript = formatTranscript(utterances);
+      // Fetch or extract transcript depending on provider
+      let utterances: Awaited<ReturnType<typeof getRecallTranscript>>;
+      let rawTranscript: string;
+
+      if (source === "custom") {
+        // Custom bot embeds the full transcript in the webhook payload
+        const embedded = payload.data?.transcript as Array<{ speaker: string; text: string; start_time: number; end_time: number }> | undefined;
+        if (embedded?.length) {
+          // Convert to Recall-compatible utterance shape so formatTranscript works
+          utterances = embedded.map(u => ({
+            speaker: u.speaker,
+            words: [{ text: u.text, start_time: u.start_time, end_time: u.end_time, confidence: 1 }],
+          }));
+          rawTranscript = embedded.map(u => `${u.speaker}: ${u.text}`).join("\n");
+        } else {
+          utterances = [];
+          rawTranscript = "";
+        }
+      } else {
+        // Recall.ai — fetch from Recall API
+        utterances = await getRecallTranscript(botId);
+        rawTranscript = formatTranscript(utterances);
+      }
 
       if (!rawTranscript.trim()) {
         await db.meeting.update({
@@ -227,16 +261,23 @@ async function handlePayload(payload: any) {
         },
       });
 
+      // Credit cost: custom bot charges Whisper per-minute; Recall charges flat processing fee
+      const { CREDIT_COSTS } = await import("@/lib/utils");
+      const processingCost = source === "custom"
+        ? (durationMinutes ?? 1) * CREDIT_COSTS.WHISPER_PER_MINUTE
+        : CREDIT_COSTS.MEETING_PROCESSING;
+
       // Run AI processing (extracts decisions, risks, action items → KB)
-      if (meeting.org.creditBalance >= 5) {
+      if (meeting.org.creditBalance >= processingCost) {
         const { processMeetingTranscript } = await import("@/lib/agents/meeting-processor");
         await processMeetingTranscript(meeting.id);
 
         const { CreditService } = await import("@/lib/credits/service");
+        const providerLabel = source === "custom" ? "Custom bot" : "Recall.ai";
         await CreditService.deduct(
           meeting.orgId,
-          5,
-          `Recall.ai transcript processed: ${meeting.title}`,
+          processingCost,
+          `${providerLabel} transcript processed: ${meeting.title}`,
         );
       } else {
         // No credits — store transcript but skip AI processing

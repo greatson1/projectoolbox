@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
 
+export const dynamic = "force-dynamic";
+
 export const maxDuration = 60;
 
 export async function POST(

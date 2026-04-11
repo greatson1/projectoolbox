@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/approvals — Pending approvals for user's org
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -32,5 +34,17 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  return NextResponse.json({ data: approvals });
+  // Resolve requestedById → agent (no FK relation defined on the model)
+  const requesterIds = [...new Set(approvals.map(a => a.requestedById).filter(Boolean))];
+  const requestingAgents = requesterIds.length > 0
+    ? await db.agent.findMany({ where: { id: { in: requesterIds } }, select: { id: true, name: true, gradient: true } })
+    : [];
+  const agentById = Object.fromEntries(requestingAgents.map(a => [a.id, a]));
+
+  const enriched = approvals.map(a => ({
+    ...a,
+    requestedByAgent: agentById[a.requestedById] ?? null,
+  }));
+
+  return NextResponse.json({ data: enriched });
 }

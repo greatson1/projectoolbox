@@ -4,6 +4,8 @@ import { resolveApiCaller } from "@/lib/api-auth";
 import { CreditService, orgCanUseFeature } from "@/lib/credits/service";
 import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/agents/:id/research — Trigger web research
  *

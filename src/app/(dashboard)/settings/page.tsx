@@ -4,7 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { User, Bell, Shield, Palette, Building2, Key, Moon, Sun, Check } from "lucide-react";
+import { User, Bell, Shield, Palette, Building2, Key, Moon, Sun, Check, Plug } from "lucide-react";
 import Link from "next/link";
 import { useAppStore, type AccentTheme } from "@/stores/app";
 
@@ -24,6 +24,7 @@ const SECTIONS = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "organisation", label: "Organisation", icon: Building2 },
   { id: "api", label: "API Keys", icon: Key },
+  { id: "integrations", label: "Integrations", icon: Plug },
 ];
 
 const ACCENT_THEMES: { id: AccentTheme; label: string; color: string; desc: string }[] = [
@@ -32,6 +33,8 @@ const ACCENT_THEMES: { id: AccentTheme; label: string; color: string; desc: stri
   { id: "emerald", label: "Emerald", color: "#059669", desc: "Growth" },
 ];
 
+type IntegrationStatus = { connected: boolean; authUrl: string | null } | null;
+
 export default function SettingsPage() {
   usePageTitle("Settings");
   const sessionResult = useSession();
@@ -39,6 +42,36 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { accentTheme, setAccentTheme } = useAppStore();
   const user = (sessionResult as any)?.data?.user ?? {};
+
+  const [zoomStatus, setZoomStatus] = useState<IntegrationStatus>(null);
+  const [gcalStatus, setGcalStatus] = useState<IntegrationStatus>(null);
+  const [loadingIntegrations, setLoadingIntegrations] = useState(false);
+
+  const fetchIntegrationStatuses = useCallback(async () => {
+    setLoadingIntegrations(true);
+    try {
+      const [zoomRes, gcalRes] = await Promise.all([
+        fetch("/api/integrations/zoom"),
+        fetch("/api/integrations/google-calendar/status"),
+      ]);
+      if (zoomRes.ok) {
+        const json = await zoomRes.json();
+        setZoomStatus(json?.data ?? null);
+      }
+      if (gcalRes.ok) {
+        const json = await gcalRes.json();
+        setGcalStatus(json?.data ?? null);
+      }
+    } finally {
+      setLoadingIntegrations(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active === "integrations") {
+      fetchIntegrationStatuses();
+    }
+  }, [active, fetchIntegrationStatuses]);
 
   return (
     <div className="max-w-[1100px] space-y-6">
@@ -252,6 +285,84 @@ export default function SettingsPage() {
                   API documentation is available at{" "}
                   <Link href="/docs" className="text-primary hover:underline">/docs</Link>.
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {active === "integrations" && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Integrations</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Connect third-party services to your workspace. Your agent will use these connections to join meetings, transcribe conversations, and update your project plan automatically.
+                </p>
+
+                {/* Zoom */}
+                <div className="rounded-lg border border-border p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🔵</span>
+                    <div>
+                      <p className="text-sm font-semibold">Zoom</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Let your agent join Zoom meetings, transcribe conversations, and extract action items.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    {loadingIntegrations ? (
+                      <span className="text-xs text-muted-foreground">Checking…</span>
+                    ) : zoomStatus?.connected ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-600 bg-green-500/10 px-3 py-1.5 rounded-full">
+                        <Check className="w-3.5 h-3.5" />
+                        Connected
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (zoomStatus?.authUrl) {
+                            window.location.href = zoomStatus.authUrl;
+                          }
+                        }}
+                        disabled={!zoomStatus?.authUrl}
+                      >
+                        Connect Zoom
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Google Calendar */}
+                <div className="rounded-lg border border-border p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🟢</span>
+                    <div>
+                      <p className="text-sm font-semibold">Google Calendar</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Allow your agent to create Google Meet links and sync project milestones with your calendar.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    {loadingIntegrations ? (
+                      <span className="text-xs text-muted-foreground">Checking…</span>
+                    ) : gcalStatus?.connected ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-600 bg-green-500/10 px-3 py-1.5 rounded-full">
+                        <Check className="w-3.5 h-3.5" />
+                        Connected
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          window.location.href = "/api/integrations/google-calendar/connect";
+                        }}
+                      >
+                        Connect Google Calendar
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

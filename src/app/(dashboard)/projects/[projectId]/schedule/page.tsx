@@ -94,6 +94,7 @@ export default function SchedulePage() {
   const [view, setView] = useState<ViewMode>("gantt");
   const [showCriticalPath, setShowCriticalPath] = useState(true);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set<string>());
+  const [selectedTask, setSelectedTask] = useState<ScheduleTask | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
 
@@ -197,16 +198,22 @@ export default function SchedulePage() {
             <table className="w-full text-[13px]" style={{ color: "var(--foreground)" }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${"var(--border)"}` }}>
-                  {["Task", "Phase", "Start", "End", "Duration", "Progress", "Status", "Assignee", "Dependencies"].map(h => (
+                  {["WBS", "Task", "Phase", "Start", "End", "Duration", "Progress", "Status", "Assignee", "Dependencies"].map(h => (
                     <th key={h} className="text-left py-2 px-3 font-semibold text-[12px]" style={{ color: "var(--muted-foreground)" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {TASKS_DATA.map(t => {
+                {TASKS_DATA.map((t, idx) => {
                   const dur = diffDays(parseDate(t.start), parseDate(t.end)) + 1;
+                  // Derive WBS code: phase index . task index within phase
+                  const phaseIdx = Array.from(tasksByPhase.keys()).indexOf(t.phase) + 1;
+                  const taskIdx = (tasksByPhase.get(t.phase) || []).indexOf(t) + 1;
+                  const wbs = `${phaseIdx}.${taskIdx}`;
                   return (
-                    <tr key={t.id} className="hover:opacity-80 transition-opacity" style={{ borderBottom: `1px solid ${"var(--border)"}22` }}>
+                    <tr key={t.id} className="hover:opacity-80 transition-opacity cursor-pointer" style={{ borderBottom: `1px solid ${"var(--border)"}22` }}
+                      onClick={() => setSelectedTask(selectedTask?.id === t.id ? null : t)}>
+                      <td className="py-2 px-3 text-[11px] font-mono" style={{ color: "var(--muted-foreground)" }}>{wbs}</td>
                       <td className="py-2 px-3 font-medium flex items-center gap-2">
                         {t.isMilestone && <span className="text-[#F59E0B]">◆</span>}
                         {t.isCriticalPath && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />}
@@ -282,8 +289,9 @@ export default function SchedulePage() {
                   }
                   const t = item.task;
                   return (
-                    <div key={t.id} className="flex items-center gap-2 px-3 text-[12px] truncate"
-                      style={{ height: ROW_HEIGHT, color: "var(--foreground)", borderBottom: `1px solid ${"var(--border)"}11` }}>
+                    <div key={t.id} className="flex items-center gap-2 px-3 text-[12px] truncate cursor-pointer"
+                      style={{ height: ROW_HEIGHT, color: "var(--foreground)", borderBottom: `1px solid ${"var(--border)"}11`, background: selectedTask?.id === t.id ? "rgba(99,102,241,0.08)" : undefined }}
+                      onClick={() => setSelectedTask(selectedTask?.id === t.id ? null : t)}>
                       {t.isCriticalPath && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#EF4444" }} />}
                       {t.isMilestone ? <span className="text-[#F59E0B] flex-shrink-0">◆</span> : <span className="w-3" />}
                       <span className="truncate">{t.name}</span>
@@ -368,7 +376,8 @@ export default function SchedulePage() {
                   }
 
                   return (
-                    <div key={t.id} className="absolute flex items-center group" style={{ top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, left }}>
+                    <div key={t.id} className="absolute flex items-center group" style={{ top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, left }}
+                      onClick={() => setSelectedTask(selectedTask?.id === t.id ? null : t)}>
                       <div className="relative rounded-[4px] overflow-hidden cursor-pointer transition-all"
                         style={{
                           width,
@@ -405,6 +414,70 @@ export default function SchedulePage() {
         {/* ── Phase Gates Sidebar ── */}
         <PhaseGatesSidebar phases={phasesSummary} />
       </div>
+
+      {/* ── Task Detail Panel ── */}
+      {selectedTask && (
+        <div style={{
+          position: "fixed", right: 0, top: 0, bottom: 0, width: 320, zIndex: 40,
+          background: "var(--card)", borderLeft: "1px solid var(--border)",
+          boxShadow: "-8px 0 32px rgba(0,0,0,0.2)", overflowY: "auto",
+          padding: 24, display: "flex", flexDirection: "column", gap: 20,
+        }}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Task Detail</p>
+              <h2 className="text-[15px] font-bold mt-1" style={{ color: "var(--foreground)", lineHeight: 1.3 }}>{selectedTask.name}</h2>
+            </div>
+            <button onClick={() => setSelectedTask(null)} className="w-7 h-7 rounded-full flex items-center justify-center hover:opacity-70 flex-shrink-0" style={{ background: "var(--muted)", color: "var(--muted-foreground)", border: "none", cursor: "pointer", fontSize: 16 }}>×</button>
+          </div>
+
+          {/* WBS + Phase */}
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: "Phase", value: selectedTask.phase },
+              { label: "Status", value: selectedTask.status },
+              { label: "Start", value: formatDate(parseDate(selectedTask.start)) },
+              { label: "End", value: formatDate(parseDate(selectedTask.end)) },
+              { label: "Duration", value: selectedTask.isMilestone ? "Milestone" : `${diffDays(parseDate(selectedTask.start), parseDate(selectedTask.end)) + 1}d` },
+              { label: "Assignee", value: selectedTask.assignee || "Unassigned" },
+            ].map(f => (
+              <div key={f.label} className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{f.label}</p>
+                <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{f.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Progress */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Progress</p>
+              <span className="text-[13px] font-bold" style={{ color: STATUS_COLORS[selectedTask.status] }}>{selectedTask.progress}%</span>
+            </div>
+            <div style={{ height: 8, borderRadius: 4, background: "var(--border)", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${selectedTask.progress}%`, background: STATUS_COLORS[selectedTask.status], borderRadius: 4, transition: "width 0.4s" }} />
+            </div>
+          </div>
+
+          {/* Flags */}
+          <div className="flex flex-wrap gap-2">
+            {selectedTask.isMilestone && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B" }}>◆ Milestone</span>}
+            {selectedTask.isCriticalPath && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}>Critical Path</span>}
+          </div>
+
+          {/* Dependencies */}
+          {selectedTask.dependsOn && selectedTask.dependsOn.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Depends On</p>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedTask.dependsOn.map(dep => (
+                  <span key={dep} className="px-2 py-1 rounded text-[10px] font-mono" style={{ background: "rgba(99,102,241,0.1)", color: "var(--primary)", border: "1px solid rgba(99,102,241,0.2)" }}>{dep}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

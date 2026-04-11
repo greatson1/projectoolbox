@@ -2072,6 +2072,22 @@ function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string;
   const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── Create Meeting modal state ────────────────────────────────────────────
+  const [showCreate, setShowCreate] = useState(false);
+  const [createPlatform, setCreatePlatform] = useState<"zoom" | "meet">("zoom");
+  const [createTitle, setCreateTitle] = useState("");
+  const [createDate, setCreateDate] = useState(() => {
+    const d = new Date(Date.now() + 10 * 60 * 1000);
+    return d.toISOString().slice(0, 16); // "YYYY-MM-DDTHH:MM"
+  });
+  const [createDuration, setCreateDuration] = useState(60);
+  const [createInvitees, setCreateInvitees] = useState("");
+  const [createAgenda, setCreateAgenda] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createResult, setCreateResult] = useState<{ joinUrl: string; message: string; botDispatched: boolean } | null>(null);
+  const [createError, setCreateError] = useState("");
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
+
   const load = async () => {
     try {
       const res = await fetch(`/api/agents/${agentId}/meetings`);
@@ -2115,6 +2131,44 @@ function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string;
     await load();
   };
 
+  const createMeeting = async () => {
+    setCreating(true); setCreateError(""); setCreateResult(null); setConnectUrl(null);
+    try {
+      const invitees = createInvitees
+        .split(/[\s,;]+/)
+        .map(e => e.trim())
+        .filter(e => e.includes("@"));
+
+      const res = await fetch(`/api/agents/${agentId}/meetings/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: createPlatform,
+          title: createTitle || "Team Meeting",
+          scheduledAt: new Date(createDate).toISOString(),
+          durationMins: createDuration,
+          invitees,
+          agenda: createAgenda,
+          autoBot: true,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        if (j.code === "ZOOM_NOT_CONNECTED" || j.code === "GOOGLE_NOT_CONNECTED") {
+          setConnectUrl(j.authUrl);
+          setCreateError(j.error + " — click the button below to connect.");
+        } else {
+          setCreateError(j.error || "Failed to create meeting");
+        }
+      } else {
+        setCreateResult(j.data);
+        setCreateTitle(""); setCreateInvitees(""); setCreateAgenda("");
+        await load();
+      }
+    } catch { setCreateError("Network error"); }
+    setCreating(false);
+  };
+
   const platformIcon = (p?: string) => ({ zoom: "💙", teams: "💜", meet: "🟢", webex: "🔵" }[p || ""] || "🎥");
 
   if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />)}</div>;
@@ -2122,14 +2176,129 @@ function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string;
   return (
     <div className="space-y-5">
 
-      {/* ── Send bot to a meeting ── */}
+      {/* ── Meeting actions card ── */}
       <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
-          <Video className="size-4" style={{ color: agentColor }} />
-          Invite {agentName} to a meeting
-        </h3>
-        <p className="text-[11px] text-muted-foreground mb-3">
-          Paste a Zoom, Teams, or Google Meet link. {agentName} will join, transcribe, and update its knowledge base automatically.
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Video className="size-4" style={{ color: agentColor }} />
+            Meetings
+          </h3>
+          <Button
+            size="sm"
+            variant={showCreate ? "outline" : "default"}
+            className="text-[12px] h-7 px-3"
+            onClick={() => { setShowCreate(v => !v); setCreateResult(null); setCreateError(""); setConnectUrl(null); }}
+          >
+            {showCreate ? <X className="size-3 mr-1" /> : <Calendar className="size-3 mr-1" />}
+            {showCreate ? "Cancel" : "Create Meeting"}
+          </Button>
+        </div>
+
+        {/* ── Create Meeting form ── */}
+        {showCreate && (
+          <div className="mb-4 p-3 rounded-xl border border-border/40 bg-muted/30 space-y-3">
+            {/* Platform selector */}
+            <div className="flex gap-2">
+              {(["zoom", "meet"] as const).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setCreatePlatform(p)}
+                  className={cn(
+                    "flex-1 py-2 rounded-lg text-[12px] font-semibold border transition-all",
+                    createPlatform === p
+                      ? "border-primary/50 bg-primary/10 text-primary"
+                      : "border-border/30 bg-background text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  {p === "zoom" ? "💙 Zoom" : "🟢 Google Meet"}
+                </button>
+              ))}
+            </div>
+
+            {/* Title */}
+            <Input
+              placeholder="Meeting title (e.g. Sprint Planning)"
+              value={createTitle}
+              onChange={e => setCreateTitle(e.target.value)}
+              className="text-sm"
+            />
+
+            {/* Date/time + duration */}
+            <div className="flex gap-2">
+              <input
+                type="datetime-local"
+                value={createDate}
+                onChange={e => setCreateDate(e.target.value)}
+                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+              <select
+                value={createDuration}
+                onChange={e => setCreateDuration(Number(e.target.value))}
+                className="w-28 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {[15, 30, 45, 60, 90, 120].map(m => (
+                  <option key={m} value={m}>{m} min</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Invitees */}
+            <Input
+              placeholder="Invite by email — comma separated (optional)"
+              value={createInvitees}
+              onChange={e => setCreateInvitees(e.target.value)}
+              className="text-sm"
+            />
+
+            {/* Agenda */}
+            <Textarea
+              placeholder="Agenda / notes for the meeting (optional)"
+              value={createAgenda}
+              onChange={e => setCreateAgenda(e.target.value)}
+              className="text-sm min-h-[60px] resize-none"
+            />
+
+            {createError && (
+              <div className="text-[11px] text-destructive space-y-1">
+                <p>{createError}</p>
+                {connectUrl && (
+                  <a href={connectUrl} className="inline-block mt-1 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-primary text-primary-foreground hover:bg-primary/90">
+                    Connect {createPlatform === "zoom" ? "Zoom" : "Google Calendar"} →
+                  </a>
+                )}
+              </div>
+            )}
+
+            {createResult ? (
+              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 space-y-1.5">
+                <p className="text-[12px] font-semibold text-emerald-600">{createResult.message}</p>
+                <a
+                  href={createResult.joinUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-primary hover:underline"
+                >
+                  <ExternalLink className="size-3" /> Join Meeting
+                </a>
+                {createResult.botDispatched && (
+                  <p className="text-[11px] text-muted-foreground">{agentName} has been dispatched and will join automatically.</p>
+                )}
+              </div>
+            ) : (
+              <Button
+                onClick={createMeeting}
+                disabled={creating}
+                className="w-full"
+              >
+                {creating ? "Creating…" : `Create ${createPlatform === "zoom" ? "Zoom" : "Google Meet"} + Send ${agentName}`}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* ── Or join an existing meeting ── */}
+        <p className="text-[11px] text-muted-foreground mb-2">
+          Or paste an existing meeting URL:
         </p>
         <div className="flex flex-col gap-2">
           <Input
@@ -2155,7 +2324,7 @@ function AgentMeetingsTab({ agentId, agentName, agentColor }: { agentId: string;
           </div>
         </div>
         {error && <p className="text-[11px] text-destructive mt-2">{error}</p>}
-        {sent && <p className="text-[11px] text-emerald-600 mt-2">✓ {agentName} will join shortly. Status updates appear below.</p>}
+        {sent && <p className="text-[11px] text-emerald-600 mt-2">✓ {agentName} will join shortly. Status updates below.</p>}
       </Card>
 
       {/* ── Upcoming calendar events ── */}

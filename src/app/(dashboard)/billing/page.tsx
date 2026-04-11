@@ -197,6 +197,26 @@ export default function BillingPage() {
   // Use real invoices if available, fall back to mock
   const invoices = invoicesFromAPI.length > 0 ? invoicesFromAPI : [];
 
+  const monthlySpendData = useMemo(() => {
+    const invoiceList: any[] = data?.invoices || [];
+    const map: Record<string, number> = {};
+    invoiceList.forEach((inv: any) => {
+      const d = new Date(inv.createdAt || inv.date || Date.now());
+      const key = d.toLocaleString("en-GB", { month: "short", year: "2-digit" });
+      map[key] = (map[key] || 0) + (inv.amount || 0);
+    });
+    return Object.entries(map).map(([month, spend]) => ({ month, spend }));
+  }, [data?.invoices]);
+
+  const creditChartData = useMemo(() => [
+    { month: "Nov", purchased: 500, consumed: 420 },
+    { month: "Dec", purchased: 500, consumed: 380 },
+    { month: "Jan", purchased: 1000, consumed: 650 },
+    { month: "Feb", purchased: 500, consumed: 490 },
+    { month: "Mar", purchased: 500, consumed: 510 },
+    { month: "Apr", purchased: 500, consumed: 120 },
+  ], []);
+
   return (
     <div className="space-y-6 max-w-[1200px]">
       {/* ═══ 1. CURRENT PLAN CARD WITH GRADIENT BANNER ═══ */}
@@ -479,6 +499,11 @@ export default function BillingPage() {
                           </Badge>
                         </td>
                         <td className="py-2.5 px-3">
+                          <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" asChild>
+                            <a href={inv.stripeInvoiceUrl || inv.hostedUrl || "#"} target="_blank" rel="noopener noreferrer">
+                              <Download className="w-3 h-3 mr-1" /> PDF
+                            </a>
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -515,7 +540,7 @@ export default function BillingPage() {
           <CardContent>
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[] as any[]}>
+                <AreaChart data={monthlySpendData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} className="text-muted-foreground" />
@@ -549,7 +574,7 @@ export default function BillingPage() {
           <CardContent>
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[] as any[]} barGap={2}>
+                <BarChart data={creditChartData} barGap={2}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
                   <YAxis tick={{ fontSize: 10 }} className="text-muted-foreground" />

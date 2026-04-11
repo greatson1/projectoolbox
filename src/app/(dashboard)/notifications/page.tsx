@@ -172,12 +172,13 @@ const FILTER_TABS: (NType | "all")[] = ["all", "approval", "risk", "document", "
 
 export default function NotificationsPage() {
   const mode = "dark";
-  const { data: apiNotifs } = useNotifications();
+  const { data: apiNotifs, isLoading: notifsLoading } = useNotifications();
   usePageTitle("Notifications");
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Sync from API when data arrives
+  // Populate from API when data arrives
   useEffect(() => {
+    if (apiNotifs === undefined) return; // still loading
     if (apiNotifs && apiNotifs.length > 0) {
       setNotifications(apiNotifs.map((n: any, i: number) => ({
         id: n.id || i, type: ({ AGENT_ALERT: "system", APPROVAL_REQUEST: "approval", BILLING: "billing", SYSTEM: "system", MILESTONE: "system", RISK_ESCALATION: "risk" }[n.type] || "system") as NType,
@@ -224,7 +225,17 @@ export default function NotificationsPage() {
   const typeCounts: Record<NType, number> = { approval: 0, risk: 0, document: 0, meeting: 0, billing: 0, system: 0 };
   notifications.filter(n => !n.read).forEach(n => typeCounts[n.type]++);
 
-  // Empty state
+  // Show loading skeleton while waiting for API
+  if (notifsLoading) {
+    return (
+      <div className="max-w-[1400px] space-y-4">
+        <div className="h-9 w-48 rounded-lg bg-muted animate-pulse" />
+        {[1,2,3].map(i => <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />)}
+      </div>
+    );
+  }
+
+  // Empty state — shown once API has resolved with nothing
   if (filtered.length === 0 && activeTab === "all" && !agentFilter && !highPriorityOnly) {
     return (
       <div className="max-w-[600px] mx-auto text-center py-20">

@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { resumeBlockedProposals } from "@/lib/agents/action-executor";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/agents/[id]/resume-blocked
  *

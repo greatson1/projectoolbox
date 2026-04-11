@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { createJob } from "@/lib/agents/job-queue";
 import { nudgeJobProcessor } from "@/lib/agents/agent-backend";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/approvals/[id] — Approve, reject, or defer
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();

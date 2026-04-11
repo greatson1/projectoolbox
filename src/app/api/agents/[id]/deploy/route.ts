@@ -6,6 +6,8 @@ import { createJob } from "@/lib/agents/job-queue";
 import { nudgeJobProcessor } from "@/lib/agents/agent-backend";
 import { resolveApiCaller } from "@/lib/api-auth";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/agents/[id]/deploy — Deploy agent to project
 // Accepts: browser session cookie OR Authorization: Bearer ptx_live_<key>
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

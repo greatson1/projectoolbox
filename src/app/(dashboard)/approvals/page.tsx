@@ -54,12 +54,18 @@ export default function ApprovalsPage() {
 
   const items = (approvals || []).filter((a: any) => a.status === "PENDING" || a.status === "DEFERRED");
 
-  // Extract unique agents from approvals
-  const agentNames = Array.from(new Set(items.map((i: any) => i.agentName || i.requestedById || "Agent").filter(Boolean)));
+  // Extract unique agents from approvals (use requestedByAgent or decision.agent)
+  const agentList: { id: string; name: string; gradient: string | null }[] = [];
+  const seenIds = new Set<string>();
+  items.forEach((item: any) => {
+    const ag = item.requestedByAgent || item.decision?.agent;
+    if (ag && !seenIds.has(ag.id)) { seenIds.add(ag.id); agentList.push(ag); }
+  });
 
   const filtered = items.filter((item: any) => {
     // Agent filter
-    if (agentFilter && (item.agentName || item.requestedById) !== agentFilter) return false;
+    const ag = item.requestedByAgent || item.decision?.agent;
+    if (agentFilter && ag?.id !== agentFilter) return false;
     // Type filter
     if (filter === "All") return true;
     if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
@@ -137,21 +143,33 @@ export default function ApprovalsPage() {
       </div>
 
       {/* Agent filter */}
-      {agentNames.length > 1 && (
-        <div className="flex items-center gap-2">
+      {agentList.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground">Agent:</span>
           <button onClick={() => setAgentFilter(null)}
             className={cn("px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all",
               !agentFilter ? "bg-primary/10 text-primary" : "text-muted-foreground")}>
             All
           </button>
-          {agentNames.map(name => (
-            <button key={name} onClick={() => setAgentFilter(agentFilter === name ? null : name)}
-              className={cn("px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all",
-                agentFilter === name ? "bg-primary/10 text-primary" : "text-muted-foreground")}>
-              {name}
-            </button>
-          ))}
+          {agentList.map(ag => {
+            const accentCol = (ag.gradient?.match(/#[0-9A-Fa-f]{6}/) || ["#6366F1"])[0];
+            const isActive = agentFilter === ag.id;
+            return (
+              <button key={ag.id} onClick={() => setAgentFilter(isActive ? null : ag.id)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all"
+                style={{
+                  background: isActive ? `${accentCol}18` : "transparent",
+                  color: isActive ? accentCol : "var(--muted-foreground)",
+                  border: `1px solid ${isActive ? accentCol + "44" : "transparent"}`,
+                }}>
+                <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[7px] font-bold text-white flex-shrink-0"
+                  style={{ background: ag.gradient || accentCol }}>
+                  {ag.name.charAt(0)}
+                </span>
+                {ag.name}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -173,21 +191,43 @@ export default function ApprovalsPage() {
             const tierColors = RISK_TIER_COLORS[riskTier] || RISK_TIER_COLORS.MEDIUM;
             const icon = TYPE_ICONS[item.type] || "📋";
 
+            // Agent attribution — prefer requestedByAgent (resolved in API), fall back to decision.agent
+            const agent = item.requestedByAgent || item.decision?.agent;
+            const agentName = agent?.name || null;
+            const agentGradient = agent?.gradient || "linear-gradient(135deg, #6366F1, #8B5CF6)";
+            const isAgentRaised = !!agentName;
+            const agentInitial = agentName ? agentName.charAt(0).toUpperCase() : null;
+            // Extract first colour from gradient for left border accent
+            const accentColor = (agentGradient.match(/#[0-9A-Fa-f]{6}/) || ["#6366F1"])[0];
+
             return (
-              <div key={item.id} className="rounded-xl bg-card border border-border overflow-hidden transition-all">
+              <div key={item.id} className="rounded-xl bg-card border border-border overflow-hidden transition-all"
+                style={{ borderLeft: isAgentRaised ? `3px solid ${accentColor}` : "3px solid hsl(var(--border))" }}>
                 {/* Collapsed row */}
                 <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : item.id)}>
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 bg-muted/50">{icon}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="text-sm font-semibold truncate">{item.title}</span>
                       <Badge variant="secondary" className={cn("text-[9px]", tierColors.bg, tierColors.text)}>{riskTier}</Badge>
                       {riskScore > 0 && <span className="text-[10px] text-muted-foreground">Score {riskScore}/16</span>}
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
                       <span>{item.project?.name || "—"}</span>
                       <span>·</span>
-                      <span className="text-primary">{item.decision?.agent?.name || "Agent"}</span>
+                      {isAgentRaised ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0"
+                            style={{ background: agentGradient }}>{agentInitial}</span>
+                          <span style={{ color: accentColor }} className="font-semibold">{agentName}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold"
+                            style={{ background: `${accentColor}18`, color: accentColor }}>Agent</span>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground">Manual</span>
+                        </span>
+                      )}
                       <span>·</span>
                       <span>{timeAgo(item.createdAt)}</span>
                       {item.iteration > 1 && <Badge variant="outline" className="text-[9px]">Iteration {item.iteration}</Badge>}
@@ -228,8 +268,31 @@ export default function ApprovalsPage() {
                 {/* Expanded content */}
                 <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0")}>
                   <div className="px-5 pb-5 space-y-4 border-t border-border">
+                    {/* AI Confidence + Change Summary */}
+                    <div className="pt-4 flex items-start gap-4 flex-wrap">
+                      {/* Confidence badge */}
+                      {(() => {
+                        const score = (scores.schedule || 1) + (scores.cost || 1) + (scores.scope || 1) + (scores.stakeholder || 1);
+                        const confidence = Math.max(50, Math.round(100 - (score - 4) * 6));
+                        const confColor = confidence >= 85 ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/30" : confidence >= 70 ? "text-amber-500 bg-amber-500/10 border-amber-500/30" : "text-red-500 bg-red-500/10 border-red-500/30";
+                        return (
+                          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${confColor}`}>
+                            <span>AI Confidence</span>
+                            <span className="text-base font-bold">{confidence}%</span>
+                          </div>
+                        );
+                      })()}
+                      {/* Proposed change summary */}
+                      {item.description && (
+                        <div className="flex-1 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-xs text-foreground min-w-[200px]">
+                          <span className="font-semibold text-primary block mb-0.5">Proposed Change</span>
+                          {item.description}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Description / Reasoning */}
-                    <div className="pt-4">
+                    <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Agent Reasoning</p>
                       <p className="text-sm text-foreground leading-relaxed">{item.reasoningChain || item.description}</p>
                     </div>

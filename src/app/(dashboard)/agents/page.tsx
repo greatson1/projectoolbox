@@ -6,6 +6,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAgents } from "@/hooks/use-api";
+import { Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -224,9 +225,26 @@ export default function AgentFleetPage() {
   usePageTitle("Agent Fleet");
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Real API data — falls back to mock AGENTS when no agents deployed yet
-  const { data: apiData, isLoading } = useAgents();
+  const { data: apiData, isLoading, refetch } = useAgents();
+
+  const deleteAgent = async (id: string, name: string) => {
+    setDeletingId(id);
+    try {
+      const r = await fetch(`/api/agents/${id}?hard=true`, { method: "DELETE" });
+      if (!r.ok) throw new Error("Failed");
+      toast.success(`Agent "${name}" deleted`);
+      refetch();
+    } catch {
+      toast.error("Delete failed");
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  };
 
   // Map API agents to the Agent shape used by the UI, or fall back to mocks
   const agents: Agent[] = useMemo(() => {
@@ -286,6 +304,42 @@ export default function AgentFleetPage() {
     return activities.filter(e => e.agentId === activityFilter);
   }, [activityFilter, activities]);
 
+  // Compute comparison data from real agents
+  const comparisonData = useMemo(() => {
+    if (agents.length === 0) return [];
+    return [
+      { metric: "Tasks", ...Object.fromEntries(agents.map(a => [a.name, a.tasksWeek])) },
+      { metric: "Credits", ...Object.fromEntries(agents.map(a => [a.name, a.creditsToday])) },
+      { metric: "Approvals", ...Object.fromEntries(agents.map(a => [a.name, a.pendingApprovals])) },
+    ];
+  }, [agents]);
+
+  // Compute fleet radar from real agent averages
+  const fleetRadar = useMemo(() => {
+    if (agents.length === 0) return [];
+    const avgPerf = Math.round(agents.reduce((s, a) => s + a.performanceScore, 0) / agents.length);
+    const activeRatio = Math.round((agents.filter(a => a.status === "active").length / agents.length) * 100);
+    const avgAutonomy = Math.round((agents.reduce((s, a) => s + a.autonomyLevel, 0) / agents.length) * 20);
+    return [
+      { axis: "Performance", value: avgPerf },
+      { axis: "Availability", value: activeRatio },
+      { axis: "Autonomy", value: avgAutonomy },
+      { axis: "Tasks Done", value: Math.min(100, Math.round(agents.reduce((s, a) => s + a.tasksWeek, 0) / agents.length * 3)) },
+      { axis: "HITL Rate", value: 90 },
+      { axis: "Activity", value: Math.min(100, Math.round(agents.reduce((s, a) => s + a.creditsToday, 0) / agents.length)) },
+    ];
+  }, [agents]);
+
+  // Credit chart: last 7 days from sparkline data
+  const creditChartData = useMemo(() => {
+    if (agents.length === 0) return [];
+    const days = 8;
+    return Array.from({ length: days }, (_, i) => ({
+      day: `D${i + 1}`,
+      ...Object.fromEntries(agents.map(a => [a.name, a.creditSparkline[i] ?? 0])),
+    }));
+  }, [agents]);
+
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><div className="grid grid-cols-3 gap-4">{[1,2,3].map(i => <Skeleton key={i} className="h-64 rounded-xl" />)}</div></div>;
 
   const totalCreditsToday = agents.reduce((s, a) => s + a.creditsToday, 0);
@@ -314,7 +368,29 @@ export default function AgentFleetPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
           {agents.map(agent => (
-            <AgentCard key={agent.id} agent={agent} />
+            <div key={agent.id} className="relative group">
+              <AgentCard agent={agent} />
+              {/* Delete overlay */}
+              {confirmDeleteId === agent.id ? (
+                <div className="absolute top-2 right-2 flex items-center gap-1 bg-destructive/95 rounded-lg px-2 py-1 shadow-lg z-10">
+                  <span className="text-[10px] text-white font-medium">Delete agent?</span>
+                  <button className="text-[10px] text-white font-bold hover:text-white/70 px-1"
+                    onClick={() => deleteAgent(agent.id, agent.name)}
+                    disabled={deletingId === agent.id}>
+                    {deletingId === agent.id ? "…" : "Yes"}
+                  </button>
+                  <button className="text-[10px] text-white/70 hover:text-white px-1"
+                    onClick={() => setConfirmDeleteId(null)}>No</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteId(agent.id)}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center z-10"
+                  title="Delete agent">
+                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -394,16 +470,14 @@ export default function AgentFleetPage() {
             <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Agent Comparison (This Week)</h3>
             <div style={{ height: 220 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={COMPARISON_DATA} barGap={1} barSize={10}>
+                <BarChart data={comparisonData} barGap={1} barSize={10}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
                   <XAxis dataKey="metric" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                   <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                   <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
-                  <Bar dataKey="Alpha" fill="#6366F1" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Bravo" fill="#22D3EE" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Charlie" fill="#10B981" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Delta" fill="#F97316" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Echo" fill="#EC4899" radius={[2, 2, 0, 0]} />
+                  {agents.map(a => (
+                    <Bar key={a.id} dataKey={a.name} fill={a.color} radius={[2, 2, 0, 0]} />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -420,16 +494,14 @@ export default function AgentFleetPage() {
             <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Credit Consumption (30 Days)</h3>
             <div style={{ height: 200 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={CREDIT_30D}>
+                <AreaChart data={creditChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}22`} />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} interval={4} />
                   <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
                   <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
-                  <Area type="monotone" dataKey="Alpha" stackId="1" stroke="#6366F1" fill="#6366F133" />
-                  <Area type="monotone" dataKey="Bravo" stackId="1" stroke="#22D3EE" fill="#22D3EE33" />
-                  <Area type="monotone" dataKey="Charlie" stackId="1" stroke="#10B981" fill="#10B98133" />
-                  <Area type="monotone" dataKey="Delta" stackId="1" stroke="#F97316" fill="#F9731633" />
-                  <Area type="monotone" dataKey="Echo" stackId="1" stroke="#EC4899" fill="#EC489933" />
+                  {agents.map(a => (
+                    <Area key={a.id} type="monotone" dataKey={a.name} stackId="1" stroke={a.color} fill={`${a.color}33`} />
+                  ))}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -442,7 +514,7 @@ export default function AgentFleetPage() {
             <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Fleet Health</h3>
             <div style={{ height: 230 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={FLEET_RADAR} cx="50%" cy="50%" outerRadius="72%">
+                <RadarChart data={fleetRadar} cx="50%" cy="50%" outerRadius="72%">
                   <PolarGrid stroke={`${"var(--border)"}44`} />
                   <PolarAngleAxis dataKey="axis" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                   <PolarRadiusAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} domain={[0, 100]} />
@@ -451,7 +523,7 @@ export default function AgentFleetPage() {
               </ResponsiveContainer>
             </div>
             <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-[10px] mt-2" style={{ color: "var(--muted-foreground)" }}>
-              {FLEET_RADAR.map(r => (
+              {fleetRadar.map(r => (
                 <span key={r.axis} className="flex items-center gap-1">
                   <span className="font-semibold" style={{ color: r.value >= 85 ? "#10B981" : r.value >= 75 ? "#F59E0B" : "#EF4444" }}>{r.value}%</span>
                   <span className="truncate">{r.axis}</span>

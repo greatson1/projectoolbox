@@ -5,6 +5,7 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useCreateProject, useCreateAgent, useDeployAgent, useCredits } from "@/hooks/use-api";
+import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -169,18 +170,54 @@ export default function ProjectWizardPage() {
     }
   }, [data.methodology]);
 
-  // Auto-recommend methodology
+  // Auto-recommend methodology — multi-signal scoring
   const recommended = useMemo(() => {
-    if (data.category === "software") return "scrum";
+    const budget = Number(data.budget) || 0;
+    const name = (data.projectName || "").toLowerCase();
+    const desc = (data.description || "").toLowerCase();
+    const text = name + " " + desc;
+    const durationDays = data.startDate && data.endDate
+      ? Math.max(1, Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / 86400000))
+      : null;
+
+    // Hard category rules first
+    if (data.category === "software") {
+      if (budget > 500000) return "safe";          // enterprise software → SAFe
+      if (durationDays && durationDays > 180) return "scrum"; // long software → Scrum
+      return "scrum";
+    }
     if (data.category === "construction") return "waterfall";
+    if (data.category === "events") {
+      return durationDays && durationDays <= 7 ? "kanban" : "waterfall";
+    }
     if (data.category === "marketing") return "kanban";
     if (data.category === "research") return "hybrid";
-    if (data.category === "events") return "waterfall";
-    if (data.category === "travel") return "kanban";
-    if (data.category === "personal") return "kanban";
-    if (Number(data.budget) > 500000) return "prince2";
-    return "hybrid";
-  }, [data.category, data.budget]);
+
+    // Travel & personal: short trips → Kanban, longer planning → Hybrid
+    if (data.category === "travel" || data.category === "personal") {
+      return durationDays && durationDays <= 5 ? "kanban" : "hybrid";
+    }
+
+    // Budget signals (apply to any category)
+    if (budget > 1000000) return "prince2";  // Very large budget → formal governance
+    if (budget > 500000) return "prince2";
+
+    // Keyword signals in project name / description
+    if (/\b(sprint|agile|mvp|iteration|backlog|epic)\b/.test(text)) return "scrum";
+    if (/\b(compliance|audit|regul|govern|formal|gate)\b/.test(text)) return "prince2";
+    if (/\b(flow|support|maintenance|ongoing|continuous)\b/.test(text)) return "kanban";
+    if (/\b(construction|build|civil|infra|infrastructure)\b/.test(text)) return "waterfall";
+    if (/\b(enterprise|programme|portfolio|transformation)\b/.test(text)) return "safe";
+
+    // Duration signals (when no other signal fires)
+    if (durationDays) {
+      if (durationDays <= 14) return "kanban";   // short bursts → Kanban
+      if (durationDays <= 90) return "scrum";    // 2 weeks–3 months → Scrum
+      if (durationDays > 365) return "prince2";  // 1 year+ → formal governance
+    }
+
+    return "hybrid"; // Sensible default
+  }, [data.category, data.budget, data.startDate, data.endDate, data.projectName, data.description]);
 
   // Auto-generate context-aware greeting placeholder
   const greetingPlaceholder = useMemo(() => {
@@ -225,6 +262,9 @@ export default function ProjectWizardPage() {
       setTimeout(resolve, 800);
     });
 
+    let createdProjectId: string | null = null;
+    let createdAgentId: string | null = null;
+
     try {
       // Stage 0: Initialising
       await advanceStage(0);
@@ -241,6 +281,7 @@ export default function ProjectWizardPage() {
         priority: data.priority,
         category: data.category,
       });
+      createdProjectId = project.id;
 
       // Stage 2: Create agent
       await advanceStage(2);
@@ -257,6 +298,7 @@ export default function ProjectWizardPage() {
         defaultGreeting: data.defaultGreeting || undefined,
         monthlyBudget: data.monthlyBudget ? parseInt(data.monthlyBudget) : undefined,
       });
+      createdAgentId = agent.id;
 
       // Stage 3: Deploy agent to project
       await advanceStage(3);
@@ -289,9 +331,29 @@ export default function ProjectWizardPage() {
       setTimeout(() => router.push("/agents"), 2000);
     } catch (err: any) {
       console.error("Deploy failed:", err);
+
+      // Roll back any partially created resources so nothing is orphaned
+      try {
+        if (createdAgentId) await fetch(`/api/agents/${createdAgentId}?hard=true`, { method: "DELETE" });
+        if (createdProjectId) await fetch(`/api/projects/${createdProjectId}`, { method: "DELETE" });
+      } catch (rollbackErr) {
+        console.error("Rollback failed:", rollbackErr);
+      }
+
       setDeploying(false);
       setDeployStage(0);
-      alert(`Deployment failed: ${err.message || "Unknown error"}`);
+
+      // Show a clear, readable error — not a raw browser alert
+      const msg = err.message || "Unknown error";
+      const isLimitError = msg.toLowerCase().includes("limit") || msg.toLowerCase().includes("plan");
+      const isCreditsError = msg.toLowerCase().includes("credit") || msg.toLowerCase().includes("insufficient");
+      const friendlyMsg = isLimitError
+        ? "Agent limit reached for your plan. Upgrade your plan to deploy more agents."
+        : isCreditsError
+        ? "Not enough credits to deploy. Top up your credits and try again."
+        : `Deployment failed: ${msg}`;
+
+      toast.error(friendlyMsg, { duration: 8000 });
     }
   };
 
@@ -451,10 +513,29 @@ export default function ProjectWizardPage() {
                   <div>
                     <p className="text-[12px] font-semibold mb-1" style={{ color: g.color }}>Why {METHODOLOGIES.find(m => m.id === data.methodology)?.name}?</p>
                     <p className="text-[12px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
-                      {data.methodology === recommended
-                        ? `This methodology aligns well with your ${data.category} project. It provides the right balance of governance and flexibility for a £${Number(data.budget).toLocaleString()} budget with your selected timeline.`
-                        : `While we recommended ${METHODOLOGIES.find(m => m.id === recommended)?.name}, your choice of ${METHODOLOGIES.find(m => m.id === data.methodology)?.name} is valid. The agent will adapt its governance framework accordingly.`
-                      }
+                      {(() => {
+                        const budget = Number(data.budget) || 0;
+                        const durationDays = data.startDate && data.endDate
+                          ? Math.max(1, Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / 86400000))
+                          : null;
+                        const signals: string[] = [];
+                        if (data.category && data.category !== "other") signals.push(`${data.category} project type`);
+                        if (budget > 0) signals.push(`£${budget.toLocaleString()} budget`);
+                        if (durationDays) signals.push(`${durationDays}-day timeline`);
+                        const signalStr = signals.length > 0 ? `Based on your ${signals.join(", ")}: ` : "";
+                        if (data.methodology === recommended) {
+                          const reasons: Record<string, string> = {
+                            scrum: "iterative sprints suit this type of work well, letting the agent deliver in short feedback loops.",
+                            kanban: "a visual flow board with no fixed sprints is ideal for short or ongoing work like this.",
+                            waterfall: "sequential phases with clear gates suit this project's fixed scope and requirements.",
+                            prince2: "formal governance and stage-gate controls are warranted at this budget scale.",
+                            hybrid: "a mix of upfront planning and agile delivery gives you structure without overhead.",
+                            safe: "enterprise-level programme coordination across multiple teams is best handled by SAFe.",
+                          };
+                          return `${signalStr}${reasons[recommended] || "This methodology is the best fit for your project."}`;
+                        }
+                        return `We recommended ${METHODOLOGIES.find(m => m.id === recommended)?.name} based on your project signals, but ${METHODOLOGIES.find(m => m.id === data.methodology)?.name} is a valid choice. The agent will adapt its governance framework accordingly.`;
+                      })()}
                     </p>
                   </div>
                 </div>

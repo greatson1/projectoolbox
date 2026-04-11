@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,8 +81,16 @@ function formatCurrency(v: number) {
 }
 
 export default function ProgrammesPage() {
-  const [programmes] = useState<Programme[]>(DEMO_PROGRAMMES);
-  const [isLoading] = useState(false);
+  const [programmes, setProgrammes] = useState<Programme[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/programmes")
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d?.data)) setProgrammes(d.data); })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
 
   if (isLoading) {
     return (

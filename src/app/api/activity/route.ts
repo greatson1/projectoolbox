@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/activity — Org-wide activity feed
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -44,13 +46,13 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  // Stats
+  // Stats — must match resolveFilterGroup() in the activity page
   const stats = {
     totalActions: total,
-    documents: await db.agentActivity.count({ where: { ...where, type: "document" } }),
+    documents: await db.agentActivity.count({ where: { ...where, type: { in: ["document", "artefact_generated", "artefact", "ingest", "knowledge"] } } }),
     decisions: await db.agentActivity.count({ where: { ...where, type: { in: ["approval", "decision"] } } }),
-    risks: await db.agentActivity.count({ where: { ...where, type: "risk" } }),
-    meetings: await db.agentActivity.count({ where: { ...where, type: "meeting" } }),
+    risks: await db.agentActivity.count({ where: { ...where, type: { in: ["risk", "proactive_alert", "risk_flag"] } } }),
+    meetings: await db.agentActivity.count({ where: { ...where, type: { in: ["meeting", "transcript"] } } }),
   };
 
   // Daily digest

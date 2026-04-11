@@ -21,6 +21,7 @@ const TABS = [
   { id: "integrations", label: "Integrations", icon: "🔗" },
   { id: "api", label: "API & Webhooks", icon: "⚡" },
   { id: "audit", label: "Audit Log", icon: "📜" },
+  { id: "danger", label: "Danger Zone", icon: "⚠️" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -510,6 +511,9 @@ export default function AdminSettingsPage() {
             </>
         )}
 
+        {/* ─── TAB 7: DANGER ZONE ─── */}
+        {tab === "danger" && <DangerZoneTab />}
+
         {/* ─── TAB 6: AUDIT LOG ─── */}
         {tab === "audit" && (
           <>
@@ -742,5 +746,196 @@ function ApiKeysSection({ orgId }: { orgId?: string }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DANGER ZONE TAB
+// ═══════════════════════════════════════════════════════════════════
+
+function DangerZoneTab() {
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [wipAgents, setWipAgents] = useState(true);
+  const [wipProjects, setWipProjects] = useState(true);
+  const [wipActivity, setWipActivity] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [result, setResult] = useState<{ agents: string[]; projects: string[] } | null>(null);
+
+  const doReset = async () => {
+    if (confirmText !== "RESET") return;
+    setResetting(true);
+    try {
+      const r = await fetch("/api/internal/reset-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "RESET_ACCOUNT", wipAgents, wipProjects, wipActivity }),
+      });
+      const text = await r.text();
+      let d: any = {};
+      try { d = JSON.parse(text); } catch { /* not JSON */ }
+      if (d.success) {
+        setResult(d.deleted);
+        toast.success("Account data reset successfully");
+      } else {
+        const msg = d.error || text.slice(0, 200) || `HTTP ${r.status}`;
+        toast.error(msg, { duration: 10000 });
+        console.error("[reset-account] server error:", text);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Network error", { duration: 10000 });
+      console.error("[reset-account] fetch error:", e);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  return (
+    <>
+      <TabHeader title="Danger Zone" desc="Irreversible actions — proceed with caution" />
+
+      <div className="space-y-4">
+
+        {/* Reset account data */}
+        <div className="rounded-xl border-2 border-destructive/30 bg-destructive/5 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🗑️</span>
+                <h3 className="text-[15px] font-bold text-foreground">Reset Account Data</h3>
+              </div>
+              <p className="text-[13px] text-muted-foreground mb-3">
+                Permanently delete agents, projects, and associated data for a fresh start.
+                This is useful for demos, training sessions, or starting over.
+                <strong className="text-destructive"> This cannot be undone.</strong>
+              </p>
+              <div className="flex gap-4 text-[12px] text-muted-foreground">
+                <span>✓ Removes all AI agents &amp; their conversations</span>
+                <span>✓ Removes all projects &amp; project data</span>
+                <span>✓ Clears activity log</span>
+              </div>
+            </div>
+            <Button variant="destructive" size="sm" className="flex-shrink-0" onClick={() => { setShowResetModal(true); setConfirmText(""); setResult(null); }}>
+              Reset Data
+            </Button>
+          </div>
+        </div>
+
+        {/* Export data */}
+        <div className="rounded-xl border border-border/50 bg-muted/20 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">📦</span>
+                <h3 className="text-[15px] font-bold text-foreground">Export Account Data</h3>
+              </div>
+              <p className="text-[13px] text-muted-foreground">Download a full export of your organisation's data (GDPR Article 20).</p>
+            </div>
+            <Button variant="outline" size="sm" className="flex-shrink-0" onClick={() => toast.info("Data export queued — you'll receive an email when ready.")}>
+              Request Export
+            </Button>
+          </div>
+        </div>
+
+        {/* Delete org */}
+        <div className="rounded-xl border-2 border-destructive/20 bg-destructive/5 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">💀</span>
+                <h3 className="text-[15px] font-bold text-foreground">Delete Organisation</h3>
+              </div>
+              <p className="text-[13px] text-muted-foreground">
+                Permanently close your account, cancel all subscriptions, and delete all data within 30 days.
+                <strong className="text-destructive"> Requires Owner role.</strong>
+              </p>
+            </div>
+            <Button variant="destructive" size="sm" className="flex-shrink-0 opacity-60 cursor-not-allowed" disabled>
+              Delete Org
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Reset Modal ── */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => !resetting && setShowResetModal(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-[480px] rounded-2xl p-6 space-y-5 shadow-2xl"
+            style={{ background: "var(--card)", border: "2px solid hsl(var(--destructive) / 0.4)" }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-destructive/15 flex items-center justify-center text-xl">⚠️</div>
+              <div>
+                <h3 className="text-[17px] font-bold text-foreground">Reset Account Data</h3>
+                <p className="text-[12px] text-muted-foreground">This action is permanent and cannot be undone.</p>
+              </div>
+            </div>
+
+            {result ? (
+              /* Success state */
+              <div className="space-y-3">
+                <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+                  <p className="text-[13px] font-semibold text-green-400 mb-1">✓ Reset complete</p>
+                  {result.agents.length > 0 && <p className="text-[12px] text-muted-foreground">Agents deleted: {result.agents.join(", ")}</p>}
+                  {result.projects.length > 0 && <p className="text-[12px] text-muted-foreground">Projects deleted: {result.projects.join(", ")}</p>}
+                  {result.agents.length === 0 && result.projects.length === 0 && <p className="text-[12px] text-muted-foreground">No data found — account was already clean.</p>}
+                </div>
+                <Button variant="default" size="sm" className="w-full" onClick={() => { setShowResetModal(false); window.location.reload(); }}>
+                  Done — Reload Page
+                </Button>
+              </div>
+            ) : (
+              /* Confirmation form */
+              <>
+                {/* What to wipe */}
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">What to reset</p>
+                  {[
+                    { label: "AI Agents & conversations", state: wipAgents, set: setWipAgents },
+                    { label: "Projects & all project data", state: wipProjects, set: setWipProjects },
+                    { label: "Activity log", state: wipActivity, set: setWipActivity },
+                  ].map(({ label, state, set }) => (
+                    <label key={label} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors">
+                      <input type="checkbox" checked={state} onChange={e => set(e.target.checked)}
+                        className="w-4 h-4 accent-destructive" />
+                      <span className="text-[13px] text-foreground">{label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {/* Confirm input */}
+                <div>
+                  <p className="text-[12px] text-muted-foreground mb-2">
+                    Type <strong className="text-destructive font-mono">RESET</strong> to confirm
+                  </p>
+                  <input
+                    className="w-full px-3 py-2.5 rounded-xl text-sm border-2 bg-background text-foreground outline-none font-mono tracking-widest"
+                    style={{ borderColor: confirmText === "RESET" ? "hsl(var(--destructive))" : "hsl(var(--border))" }}
+                    placeholder="RESET"
+                    value={confirmText}
+                    onChange={e => setConfirmText(e.target.value.toUpperCase())}
+                    autoFocus
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2.5">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowResetModal(false)} disabled={resetting}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" size="sm" className="flex-1" disabled={confirmText !== "RESET" || resetting}
+                    onClick={doReset}>
+                    {resetting ? "Resetting…" : "Reset Account Data"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

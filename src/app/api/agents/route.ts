@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { PLAN_LIMITS } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/agents — List org agents with activities and credit usage
 export async function GET() {
   const session = await auth();

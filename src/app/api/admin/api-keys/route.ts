@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { randomBytes, createHash } from "crypto";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/admin/api-keys — List org's API keys
 export async function GET() {
   const session = await auth();

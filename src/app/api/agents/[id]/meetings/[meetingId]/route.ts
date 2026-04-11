@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
 import { getRecallBot, deleteRecallBot, normaliseBotStatus } from "@/lib/recall-client";
 
+export const dynamic = "force-dynamic";
+
 // ── GET — poll current bot status ─────────────────────────────────────────────
 
 export async function GET(

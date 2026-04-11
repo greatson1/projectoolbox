@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/agents/:id/knowledge — List knowledge base items
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const caller = await resolveApiCaller(req);

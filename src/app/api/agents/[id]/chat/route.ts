@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { CreditService } from "@/lib/credits/service";
 import { AgentLLM } from "@/lib/agents/llm";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/agents/[id]/chat — Send message to agent
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();

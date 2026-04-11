@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/agents/[id]/chat/action — Execute an action proposed in chat
  * Handles inline approve/reject from the chat interface.

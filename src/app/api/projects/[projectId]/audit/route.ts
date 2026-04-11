@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/projects/:id/audit — Project-level audit trail
 export async function GET(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await auth();

@@ -67,6 +67,30 @@ export default function ReportsHubPage() {
   const [activeTab, setActiveTab] = useState("templates");
   const [search, setSearch] = useState("");
   const [viewingReport, setViewingReport] = useState<any>(null);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [schedName, setSchedName] = useState("");
+  const [schedTemplate, setSchedTemplate] = useState(TEMPLATES[0].id);
+  const [schedFrequency, setSchedFrequency] = useState("WEEKLY");
+  const [scheduling, setScheduling] = useState(false);
+
+  async function scheduleReport() {
+    setScheduling(true);
+    try {
+      await fetch("/api/reports/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: schedName || `${schedTemplate} Schedule`, frequency: schedFrequency, projectId, templateId: schedTemplate }),
+      });
+      toast.success("Schedule created");
+      setShowScheduleModal(false);
+      setSchedName("");
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    } catch {
+      toast.error("Failed to create schedule");
+    } finally {
+      setScheduling(false);
+    }
+  }
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><Skeleton className="h-64" /></div>;
 
@@ -122,7 +146,7 @@ export default function ReportsHubPage() {
           <p className="text-sm text-muted-foreground mt-1">{project?.name || "All Projects"} · {reportItems.length} reports generated</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => { const freq = prompt("Frequency (DAILY/WEEKLY/MONTHLY):", "WEEKLY"); if (!freq) return; fetch("/api/reports/schedule", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ frequency: freq.toUpperCase(), projectId: window.location.pathname.split("/")[2], name: "Scheduled Report" }) }).then(() => toast.success("Schedule created")).catch(() => toast.error("Failed")); }}><Calendar className="w-4 h-4 mr-1" /> Schedule</Button>
+          <Button variant="outline" size="sm" onClick={() => setShowScheduleModal(true)}><Calendar className="w-4 h-4 mr-1" /> Schedule</Button>
           <Button size="sm" onClick={() => { fetch("/api/reports", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "STATUS", projectId: window.location.pathname.split("/")[2], title: "Status Report" }) }).then(() => { toast.success("Report generated"); window.location.reload(); }).catch(() => toast.error("Failed")); }}><Plus className="w-4 h-4 mr-1" /> Generate Report</Button>
         </div>
       </div>
@@ -258,7 +282,44 @@ export default function ReportsHubPage() {
               </CardContent>
             </Card>
           ))}
-          <Button variant="outline" className="w-full" onClick={() => { const freq = prompt("Frequency (DAILY/WEEKLY/MONTHLY):", "WEEKLY"); if (!freq) return; fetch("/api/reports/schedule", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ frequency: freq.toUpperCase(), projectId: window.location.pathname.split("/")[2], name: "Scheduled Report" }) }).then(() => toast.success("Schedule added")).catch(() => toast.error("Failed")); }}><Plus className="w-4 h-4 mr-1" /> Add Schedule</Button>
+          <Button variant="outline" className="w-full" onClick={() => setShowScheduleModal(true)}><Plus className="w-4 h-4 mr-1" /> Add Schedule</Button>
+        </div>
+      )}
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={e => { if (e.target === e.currentTarget) setShowScheduleModal(false); }}>
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md shadow-2xl mx-4">
+            <h2 className="text-base font-bold mb-4">Schedule Report</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Schedule Name</label>
+                <input className="w-full px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm outline-none focus:border-primary" value={schedName} onChange={e => setSchedName(e.target.value)} placeholder="e.g. Weekly Status" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Template</label>
+                <select className="w-full px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm outline-none focus:border-primary" value={schedTemplate} onChange={e => setSchedTemplate(e.target.value)}>
+                  {TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Frequency</label>
+                <div className="flex gap-2">
+                  {["DAILY", "WEEKLY", "MONTHLY"].map(f => (
+                    <button key={f} onClick={() => setSchedFrequency(f)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all ${schedFrequency === f ? "bg-primary/10 border-primary/50 text-primary" : "border-border/30 text-muted-foreground"}`}>
+                      {f.charAt(0) + f.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <Button variant="outline" className="flex-1" onClick={() => setShowScheduleModal(false)}>Cancel</Button>
+              <Button className="flex-1" disabled={scheduling} onClick={scheduleReport}>{scheduling ? "Saving…" : "Create Schedule"}</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

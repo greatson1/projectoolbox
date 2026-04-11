@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/billing/portal — Create Stripe Customer Portal session
 export async function POST() {
   const session = await auth();

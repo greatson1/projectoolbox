@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { randomBytes } from "crypto";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/admin/webhooks — List webhook endpoints
 export async function GET() {
   const session = await auth();

@@ -583,8 +583,9 @@ model Meeting {
   sentiment     String?             // positive, neutral, concerned, negative
   speakers      Json?               // [{name, minutes, percentage}]
   confidence    Int?                // transcription confidence %
-  // Recall.ai bot
-  recallBotId     String?           // Recall.ai bot ID
+  // Bot integration (Recall.ai or custom Playwright bot)
+  botProvider     String?  @default("recall")  // "recall" | "custom"
+  recallBotId     String?           // bot ID (Recall or custom bot service)
   recallBotStatus String?           // idle | joining | waiting | recording | done | failed
   calendarEventId String?           // optional link to CalendarEvent
   meetingUrl      String?           // the video call URL the bot joined

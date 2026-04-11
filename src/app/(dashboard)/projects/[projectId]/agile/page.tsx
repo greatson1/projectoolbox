@@ -483,7 +483,7 @@ export default function AgileBoardPage() {
 
       {/* ═══ TASK DETAIL MODAL ═══ */}
       {selectedIssue && (
-        <TaskDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} />
+        <TaskDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} sprintName={sprint.name} />
       )}
     </div>
   );
@@ -700,7 +700,7 @@ function IssueCard({ issue, compact, onClick }: {
 // TASK DETAIL MODAL
 // ═══════════════════════════════════════════════════════════════════
 
-function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => void }) {
+function TaskDetailModal({ issue, onClose, sprintName }: { issue: Issue; onClose: () => void; sprintName?: string }) {
   const [activeTab, setActiveTab] = useState<"details" | "comments" | "activity">("details");
 
   const mockComments: { author: string; time: string; text: string }[] = [];
@@ -760,7 +760,7 @@ function TaskDetailModal({ issue, onClose,  }: { issue: Issue; onClose: () => vo
             </div>
           </FieldRow>
           <FieldRow label="Sprint">
-            <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{sprint.name || "—"}</span>
+            <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{sprintName || "—"}</span>
           </FieldRow>
           <FieldRow label="Labels">
             <div className="flex flex-wrap gap-1">

@@ -15,6 +15,12 @@ import {
   detectPlatform,
   normaliseBotStatus,
 } from "@/lib/recall-client";
+import {
+
+export const dynamic = "force-dynamic";
+  createCustomBot,
+  pingBotService,
+} from "@/lib/custom-bot-client";
 
 export const maxDuration = 30;
 
@@ -82,46 +88,68 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const body = await req.json();
-  const { meetingUrl, title, calendarEventId, joinAt } = body;
+  const { meetingUrl, title, calendarEventId, joinAt, provider: requestedProvider } = body;
 
   if (!meetingUrl?.trim()) {
     return NextResponse.json({ error: "meetingUrl is required" }, { status: 400 });
   }
 
-  // ── Plan gate: Recall bot requires Professional or above ────────────────
-  const canRecall = await orgCanUseFeature(caller.orgId, "recallBot");
-  if (!canRecall) {
-    return NextResponse.json(insufficientPlanResponse("recallBot"), { status: 403 });
+  // ── Resolve provider (recall | custom | auto) ────────────────────────────
+  const [canRecall, canCustomBot] = await Promise.all([
+    orgCanUseFeature(caller.orgId, "recallBot"),
+    orgCanUseFeature(caller.orgId, "customBot"),
+  ]);
+
+  let provider: "recall" | "custom";
+  if (requestedProvider === "recall") {
+    if (!canRecall) return NextResponse.json(insufficientPlanResponse("recallBot"), { status: 403 });
+    provider = "recall";
+  } else if (requestedProvider === "custom") {
+    if (!canCustomBot) return NextResponse.json(insufficientPlanResponse("customBot"), { status: 403 });
+    provider = "custom";
+  } else {
+    // auto: prefer custom (cheaper) if available, fall back to Recall
+    if (canCustomBot && process.env.CUSTOM_BOT_SERVICE_URL) {
+      provider = "custom";
+    } else if (canRecall && process.env.RECALL_API_KEY) {
+      provider = "recall";
+    } else {
+      return NextResponse.json({
+        error: "No meeting bot available. Upgrade to Starter for the custom bot or Professional for Recall.ai.",
+        code: "NO_BOT_PROVIDER",
+        upgradeUrl: "/billing",
+      }, { status: 403 });
+    }
   }
 
-  // ── Credit check: reserve 1 hour of bot time upfront ────────────────────
-  // We charge per meeting dispatch (not per actual hour — simpler UX).
-  // 60 credits = 1 hr of Recall time. If meeting runs over, we don't bill extra.
-  const recallCost = CREDIT_COSTS.RECALL_BOT_PER_HOUR;
-  const budgetCheck = await CreditService.checkAgentBudget(agent.id, caller.orgId, recallCost);
+  // ── Credit cost depends on provider ─────────────────────────────────────
+  const botCost = provider === "recall"
+    ? CREDIT_COSTS.RECALL_BOT_PER_HOUR
+    : CREDIT_COSTS.CUSTOM_BOT_PER_HOUR;
+
+  const budgetCheck = await CreditService.checkAgentBudget(agent.id, caller.orgId, botCost);
   if (!budgetCheck.allowed) {
     return NextResponse.json({
-      error: `Insufficient credits to dispatch meeting bot. Cost: ${recallCost} credits. Balance: ${budgetCheck.orgBalance}.`,
+      error: `Insufficient credits. Cost: ${botCost} credits. Balance: ${budgetCheck.orgBalance}.`,
       code: "INSUFFICIENT_CREDITS",
       upgradeUrl: "/billing",
     }, { status: 402 });
   }
 
-  // Check Recall is configured
-  if (!process.env.RECALL_API_KEY) {
-    return NextResponse.json(
-      { error: "RECALL_API_KEY not configured — add it in Vercel environment variables" },
-      { status: 503 },
-    );
+  // ── Validate provider config is in place ────────────────────────────────
+  if (provider === "recall" && !process.env.RECALL_API_KEY) {
+    return NextResponse.json({ error: "RECALL_API_KEY not configured" }, { status: 503 });
+  }
+  if (provider === "custom" && !process.env.CUSTOM_BOT_SERVICE_URL) {
+    return NextResponse.json({ error: "CUSTOM_BOT_SERVICE_URL not configured" }, { status: 503 });
   }
 
-  // Get project for this agent
+  // ── Get project context ──────────────────────────────────────────────────
   const deployment = await db.agentDeployment.findFirst({
     where: { agentId, isActive: true },
     select: { projectId: true },
   });
 
-  // Create Meeting record first so we have an ID for the webhook lookup
   const meetingTitle = title || (calendarEventId
     ? (await db.calendarEvent.findUnique({ where: { id: calendarEventId }, select: { title: true } }))?.title
     : null) || "Meeting";
@@ -135,72 +163,72 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       platform: detectPlatform(meetingUrl),
       meetingUrl,
       calendarEventId: calendarEventId || null,
+      botProvider: provider,
       status: "SCHEDULED",
       recallBotStatus: "idle",
       scheduledAt: joinAt ? new Date(joinAt) : new Date(),
     },
   });
 
-  // Build the webhook URL for Recall to call us back
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://projectoolbox.com";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://projectoolbox.vercel.app";
   const webhookUrl = `${appUrl}/api/webhooks/meeting-transcript`;
+  const botName = `${agent.name} (AI Assistant)`;
 
   try {
-    const bot = await createRecallBot(
-      meetingUrl,
-      `${agent.name} (AI Assistant)`,
-      webhookUrl,
-      { joinAt: joinAt ? new Date(joinAt) : undefined },
-    );
+    let botId: string;
+    let botStatus: string;
 
-    // Store the bot ID so the webhook can find this meeting
+    if (provider === "recall") {
+      const bot = await createRecallBot(meetingUrl, botName, webhookUrl, {
+        joinAt: joinAt ? new Date(joinAt) : undefined,
+      });
+      botId = bot.id;
+      botStatus = normaliseBotStatus(bot.status.code);
+    } else {
+      const bot = await createCustomBot(
+        meeting.id, agentId, caller.orgId, meetingUrl, botName,
+        { joinAt: joinAt ? new Date(joinAt) : undefined },
+      );
+      botId = bot.id;
+      botStatus = normaliseBotStatus(bot.status.code);
+    }
+
     await db.meeting.update({
       where: { id: meeting.id },
-      data: {
-        recallBotId: bot.id,
-        recallBotStatus: normaliseBotStatus(bot.status.code),
-        status: "SCHEDULED",
-      },
+      data: { recallBotId: botId, recallBotStatus: botStatus, status: "SCHEDULED" },
     });
 
-    // ── Deduct Recall bot cost ───────────────────────────────────────────
     await CreditService.deduct(
-      caller.orgId,
-      CREDIT_COSTS.RECALL_BOT_PER_HOUR,
-      `Recall.ai bot: "${meetingTitle}" on ${detectPlatform(meetingUrl)}`,
+      caller.orgId, botCost,
+      `${provider === "recall" ? "Recall.ai" : "Custom"} bot: "${meetingTitle}" on ${detectPlatform(meetingUrl)}`,
       agentId,
     );
     await CreditService.checkBudgetAlerts(agentId, caller.orgId);
 
-    // Log activity
     await db.agentActivity.create({
       data: {
         agentId,
         type: "meeting",
-        summary: `Meeting bot dispatched to "${meetingTitle}" on ${detectPlatform(meetingUrl)}`,
-        metadata: { meetingId: meeting.id, botId: bot.id, meetingUrl },
+        summary: `${provider === "recall" ? "Recall.ai" : "Custom"} bot dispatched to "${meetingTitle}"`,
+        metadata: { meetingId: meeting.id, botId, meetingUrl, provider },
       },
     });
 
     return NextResponse.json({
       data: {
         meetingId: meeting.id,
-        botId: bot.id,
-        status: normaliseBotStatus(bot.status.code),
-        message: `${agent.name} will join the meeting${joinAt ? " at the scheduled time" : " shortly"}.`,
+        botId,
+        provider,
+        status: botStatus,
+        message: `${agent.name} will join the meeting${joinAt ? " at the scheduled time" : " shortly"} via ${provider === "recall" ? "Recall.ai" : "custom bot"}.`,
       },
     }, { status: 201 });
 
   } catch (e: any) {
-    // Clean up the meeting record if bot creation failed
     await db.meeting.update({
       where: { id: meeting.id },
       data: { recallBotStatus: "failed", status: "CANCELLED" },
     });
-
-    return NextResponse.json(
-      { error: `Failed to dispatch bot: ${e.message}` },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: `Failed to dispatch bot: ${e.message}` }, { status: 502 });
   }
 }

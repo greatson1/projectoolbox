@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/agents/events — SSE stream for real-time agent activity
 export async function GET(req: NextRequest) {
   const session = await auth();

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/admin/team/remove — Remove member from org
 export async function POST(req: NextRequest) {
   const session = await auth();
