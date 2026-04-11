@@ -48,6 +48,7 @@ interface ProjectMetrics {
   phases: PhaseInfo[];
   recentActivities: AgentActivity[];
   agentName: string | null;
+  agentGradient: string | null;
   agentDeployed: boolean;
   lastActivity: string | null;
 }
@@ -225,6 +226,7 @@ const DEFAULT_METRICS: ProjectMetrics = {
   phases: [],
   recentActivities: [],
   agentName: null,
+  agentGradient: null,
   agentDeployed: false,
   lastActivity: null,
 };
@@ -275,52 +277,72 @@ export function AgentStatusBar() {
 
         if (cancelled) return;
 
-        // Support both { data: {...} } envelope and flat shapes
+        // Unwrap { data: {...} } envelope
         const m = metricsData?.data ?? metricsData;
         const p = projectData?.data ?? projectData;
 
-        // Build phases array from either shape
-        const rawPhases: PhaseInfo[] = (m?.phases ?? p?.phases ?? []).map((ph: any) => ({
+        // ── Agent info ──────────────────────────────────────────────
+        // metrics returns: data.agent = { name, status, level } | null
+        // project  returns: data.agents = [{ isActive, agent: { name, gradient } }]
+        const agentFromMetrics = m?.agent ?? null;
+        const agentFromProject = p?.agents?.find((a: any) => a.isActive !== false)?.agent ?? p?.agents?.[0]?.agent ?? null;
+        const resolvedAgent  = agentFromMetrics ?? agentFromProject;
+        const agentDeployed  = Boolean(resolvedAgent);
+        const agentName      = resolvedAgent?.name ?? null;
+        // Gradient comes from project agents (metrics doesn't return it)
+        const agentGradient  = agentFromProject?.gradient ?? null;
+
+        // ── Phases ──────────────────────────────────────────────────
+        // metrics returns: data.phases = { current: string, list: [{name,status,order}] }
+        // project  returns: data.phases = [{name, status}]
+        const phaseList: any[] = m?.phases?.list ?? (Array.isArray(p?.phases) ? p.phases : []);
+        const rawPhases: PhaseInfo[] = phaseList.map((ph: any) => ({
           name: ph.name ?? ph.phaseName ?? "Phase",
           status:
-            ph.status === "COMPLETED" || ph.status === "completed"
-              ? "completed"
-              : ph.status === "ACTIVE" || ph.status === "active"
-              ? "active"
-              : "upcoming",
+            ph.status === "COMPLETED" || ph.status === "completed" ? "completed"
+            : ph.status === "ACTIVE"    || ph.status === "active"   ? "active"
+            : "upcoming",
         }));
+        const currentPhase =
+          m?.phases?.current ??
+          rawPhases.find((ph) => ph.status === "active")?.name ??
+          null;
 
-        // Activities
-        const rawActivities: AgentActivity[] = (m?.activities ?? m?.recentActivities ?? []).map(
+        // Infer next phase from list
+        const activeIdx = rawPhases.findIndex((ph) => ph.status === "active");
+        const nextPhase = activeIdx >= 0 && activeIdx < rawPhases.length - 1
+          ? rawPhases[activeIdx + 1].name
+          : null;
+
+        // ── Activities ──────────────────────────────────────────────
+        // metrics returns: data.activities = [{ type, summary, date, metadata }]
+        const rawActivities: AgentActivity[] = (m?.activities ?? []).map(
           (a: any): AgentActivity => ({
             id: a.id ?? String(Math.random()),
             type: a.type ?? "chat",
             summary: a.summary ?? a.description ?? "",
-            createdAt: a.createdAt ?? a.created_at ?? new Date().toISOString(),
+            createdAt: a.date ?? a.createdAt ?? a.created_at ?? new Date().toISOString(),
           })
         );
 
+        // ── Artefacts ───────────────────────────────────────────────
+        const artefacts = m?.artefacts ?? [];
+        const pendingArtefacts = artefacts.filter(
+          (a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW"
+        ).length;
+
         const merged: ProjectMetrics = {
-          totalArtefacts: m?.totalArtefacts ?? m?.artefacts?.length ?? 0,
-          pendingArtefacts:
-            m?.pendingArtefacts ??
-            (m?.artefacts ?? []).filter(
-              (a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW"
-            ).length,
-          approvedArtefacts: m?.approvedArtefacts ?? 0,
-          currentPhase:
-            m?.currentPhase ??
-            p?.currentPhase ??
-            rawPhases.find((ph) => ph.status === "active")?.name ??
-            null,
-          nextPhase: m?.nextPhase ?? null,
-          phases: rawPhases,
-          recentActivities: rawActivities,
-          agentName: p?.agentName ?? m?.agentName ?? p?.agents?.[0]?.agent?.name ?? null,
-          agentDeployed:
-            p?.agentDeployed ?? m?.agentDeployed ?? Boolean(p?.agents?.length) ?? false,
-          lastActivity:
-            m?.lastActivity ?? rawActivities[0]?.summary ?? null,
+          totalArtefacts:    artefacts.length,
+          pendingArtefacts,
+          approvedArtefacts: artefacts.filter((a: any) => a.status === "APPROVED").length,
+          currentPhase,
+          nextPhase,
+          phases:            rawPhases,
+          recentActivities:  rawActivities,
+          agentName,
+          agentGradient,
+          agentDeployed,
+          lastActivity:      rawActivities[0]?.summary ?? null,
         };
 
         setMetrics(merged);
@@ -352,11 +374,14 @@ export function AgentStatusBar() {
   const state = deriveState(metrics);
   const colours = STATE_COLOURS[state];
   const commentary = buildCommentary(state, metrics);
-  const agentLabel = metrics.agentName ?? "PM Agent";
-  const pendingCount = metrics.pendingArtefacts;
-  const nextPhase = metrics.nextPhase;
+  const agentLabel    = metrics.agentName ?? "PM Agent";
+  const agentInitial  = agentLabel[0].toUpperCase();
+  // Extract first hex colour from gradient string, fall back to state badge colour
+  const agentColour   = metrics.agentGradient?.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? colours.badge;
+  const pendingCount  = metrics.pendingArtefacts;
+  const nextPhase     = metrics.nextPhase;
   const artefactsHref = `/projects/${activeProjectId}/artefacts`;
-  const sidebarW = sidebarCollapsed ? 60 : 240;
+  const sidebarW      = sidebarCollapsed ? 60 : 240;
 
   return (
     <div
@@ -381,7 +406,7 @@ export function AgentStatusBar() {
           <div className="max-w-screen-xl mx-auto flex gap-6 flex-wrap items-start">
             {/* Left: avatar block */}
             <div className="flex flex-col items-center gap-2 w-[72px] shrink-0">
-              <AvatarWithPulse size={40} colours={colours} loading={loading} />
+              <AvatarWithPulse size={40} colours={colours} loading={loading} agentColour={agentColour} agentInitial={agentInitial} />
               <span className="text-[11px] font-semibold text-foreground text-center leading-tight break-all">
                 {agentLabel}
               </span>
@@ -457,7 +482,7 @@ export function AgentStatusBar() {
       >
         <div className="max-w-screen-xl mx-auto flex items-center gap-3 w-full px-4">
           {/* 1. Agent avatar */}
-          <AvatarWithPulse size={28} colours={colours} loading={loading} />
+          <AvatarWithPulse size={28} colours={colours} loading={loading} agentColour={agentColour} agentInitial={agentInitial} />
 
           {/* 2. Agent name */}
           <span className="text-[12px] font-bold text-foreground leading-none whitespace-nowrap hidden sm:block">
@@ -548,43 +573,42 @@ function AvatarWithPulse({
   size,
   colours,
   loading,
+  agentColour,
+  agentInitial,
 }: {
   size: number;
   colours: StateColours;
   loading: boolean;
+  agentColour: string;
+  agentInitial: string;
 }) {
   const outer = size + 8;
+  const fontSize = Math.round(size * 0.42);
   return (
     <div className="relative shrink-0" style={{ width: outer, height: outer }}>
       {/* Animated ping ring */}
       <span
         className="absolute inset-0 rounded-full animate-ping"
-        style={{
-          background: colours.pulse,
-          animationDuration: "2s",
-        }}
+        style={{ background: colours.pulse, animationDuration: "2.5s" }}
       />
-      {/* Static ring */}
+      {/* Static ring — in state colour */}
       <span
         className="absolute inset-0 rounded-full"
         style={{ boxShadow: `0 0 0 2px ${colours.ring}` }}
       />
-      {/* Avatar circle */}
+      {/* Avatar circle — real agent gradient + initial */}
       <div
-        className="absolute inset-[4px] rounded-full flex items-center justify-center"
+        className="absolute inset-[4px] rounded-full flex items-center justify-center font-bold text-white"
         style={{
-          background: `linear-gradient(135deg, ${colours.badge}33, ${colours.badge}11)`,
-          border: `1px solid ${colours.badge}44`,
+          background: agentColour,
+          fontSize,
+          lineHeight: 1,
         }}
       >
         {loading ? (
-          <RefreshCw
-            size={Math.round(size * 0.45)}
-            style={{ color: colours.badge }}
-            className="animate-spin"
-          />
+          <RefreshCw size={fontSize} className="animate-spin" style={{ color: "#fff" }} />
         ) : (
-          <Bot size={Math.round(size * 0.45)} style={{ color: colours.badge }} />
+          agentInitial
         )}
       </div>
     </div>
