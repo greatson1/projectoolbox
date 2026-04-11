@@ -420,7 +420,7 @@ MANDATORY TRAVEL TASKS TO INCLUDE (with realistic dates):
 Task categories: ${taskCategories}
 ${nigeriaTaskDetails}
 Use REAL dates between ${startDate} and ${endDate}.
-Assign each task to a named owner or role.
+Assign each task to a ROLE TITLE only (e.g. "Project Manager", "Travel Booker") — NEVER invent personal names; use "TBD" if the person is unknown.
 Set Status for each task: tasks with planned start before ${today} and no completion should be "In Progress" or "At Risk".
 RAG column: Green = on track, Amber = at risk, Red = delayed.
 Critical Path: Yes/No — identify which tasks must not slip.
@@ -502,7 +502,7 @@ Quote fields containing commas.`;
     } else {
       dataInstructions = `Generate 8-15 relevant data rows specific to this project (${project.name}).
 Use real dates between ${startDate} and ${endDate}.
-Assign each row to a named owner or role.
+Assign each row to a ROLE TITLE (e.g. "Project Manager", "Finance Lead") — NEVER invent personal names.
 Set Status fields realistically based on today's date ${today}.
 Quote fields containing commas.`;
     }
@@ -526,6 +526,14 @@ METHODOLOGY: ${methodologyName}
 PHASE: ${phaseName}
 ${isTravel ? `\nTRAVEL PROJECT: Use travel-specific terminology. Real destination-specific tasks and risks.` : ""}
 ${isNigeria ? `DESTINATION: Nigeria / Lagos — include yellow fever requirements, malaria, NGN currency, FCO advisory, connectivity, safety.` : ""}
+
+⚠️ CRITICAL — NO HALLUCINATION RULE ⚠️
+NEVER invent or fabricate personal names (e.g. "James Hartley", "Sarah Mitchell", "David Okafor").
+- For any person whose actual name is not known: use "TBD" in the Name column
+- For owner/responsible columns: use the ROLE TITLE only (e.g. "Project Manager", "Finance Approver", "Executive Sponsor")
+- Only use a real name if it appears explicitly in the project description above
+- Roles and job titles ARE acceptable; invented full names are NOT
+- Format unknown names as: TBD — [Role description] (e.g. "TBD — Dubai Partner", "TBD — Hotel Staff")
 
 Generate the following artefacts as CSV data. Each must be SPECIFIC to this project.
 Start each with "## ARTEFACT: <name>" on its own line, then output the CSV immediately — no other text.
@@ -589,11 +597,12 @@ Any asterisk, hash, or pipe character in prose output = FAILURE.
 
 --- DOCUMENT STANDARDS ---
 1. SPECIFIC — use "${project.name}", actual dates, actual budget £${budget}
-2. OWNED — every action, risk, and deliverable has a named owner or role
+2. OWNED — every action, risk, and deliverable must have an owner; use ROLE TITLES (e.g. "Project Manager", "Executive Sponsor") — NEVER invent personal names; write "TBD" if the person is unknown
 3. CURRENT — as at ${today}; pre-start items = "Not Started", with realistic % complete
 4. COMPLETE — no placeholders, no "[insert here]", no truncation
 5. PROFESSIONAL — British English (colour, organisation, prioritise, authorise)
 6. Each document ends with an <h3>Agent Monitoring Protocol</h3> section
+⚠️ ANTI-HALLUCINATION: Do NOT invent names like "James Hartley" or "Sarah Mitchell". Use role titles or "TBD — [Role]" for unknown individuals. Only use names explicitly provided in the project description.
 
 ━━━ DOCUMENT CONTROL HEADER (use this exact structure for every document) ━━━
 <table>
