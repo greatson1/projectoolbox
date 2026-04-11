@@ -1,394 +1,708 @@
 "use client";
 
-/**
- * AgentStatusBar — Global floating status strip.
- *
- * Fixed to the bottom of every dashboard page.
- * Polls the active project's metrics every 20 s and tells the user
- * exactly what the agent is doing and what they need to do next.
- */
-
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app";
 import {
-  Bot, CheckCircle2, AlertCircle, Sparkles, ChevronUp,
-  ChevronDown, ArrowRight, RefreshCw, X, Clock,
+  Bot,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles,
+  ChevronUp,
+  ChevronDown,
+  ArrowRight,
+  RefreshCw,
+  X,
+  Clock,
+  Activity,
+  FileText,
+  Zap,
+  Shield,
 } from "lucide-react";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-type BarState = "generating" | "review" | "phase_complete" | "monitoring" | "idle";
+type AgentState = "generating" | "review" | "phase_complete" | "monitoring" | "idle";
 
-interface StatusData {
-  state:          BarState;
-  agentName:      string;
-  agentColor:     string;
-  agentInitial:   string;
-  phaseName:      string;
-  phaseNumber:    number;
-  totalPhases:    number;
-  nextPhaseName:  string | null;
-  pendingCount:   number;
-  lastActivity:   string | null;
-  lastActivityAt: Date | null;
-  projectId:      string;
+interface AgentActivity {
+  id: string;
+  type: "document" | "lifecycle_init" | "proactive_alert" | "approval" | "risk" | "chat" | string;
+  summary: string;
+  createdAt: string;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function timeAgo(d: Date): string {
-  const s = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (s < 60)  return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+interface PhaseInfo {
+  name: string;
+  status: "completed" | "active" | "upcoming";
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+interface ProjectMetrics {
+  totalArtefacts: number;
+  pendingArtefacts: number;
+  approvedArtefacts: number;
+  currentPhase: string | null;
+  nextPhase: string | null;
+  phases: PhaseInfo[];
+  recentActivities: AgentActivity[];
+  agentName: string | null;
+  agentDeployed: boolean;
+  lastActivity: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+interface StateColours {
+  border: string;
+  glow: string;
+  badge: string;
+  badgeBg: string;
+  ring: string;
+  pulse: string;
+  text: string;
+}
+
+const STATE_COLOURS: Record<AgentState, StateColours> = {
+  review: {
+    border: "#F59E0B",
+    glow: "rgba(245,158,11,0.25)",
+    badge: "#F59E0B",
+    badgeBg: "rgba(245,158,11,0.15)",
+    ring: "#F59E0B",
+    pulse: "rgba(245,158,11,0.4)",
+    text: "#F59E0B",
+  },
+  generating: {
+    border: "#6366F1",
+    glow: "rgba(99,102,241,0.25)",
+    badge: "#6366F1",
+    badgeBg: "rgba(99,102,241,0.15)",
+    ring: "#6366F1",
+    pulse: "rgba(99,102,241,0.4)",
+    text: "#6366F1",
+  },
+  phase_complete: {
+    border: "#10B981",
+    glow: "rgba(16,185,129,0.25)",
+    badge: "#10B981",
+    badgeBg: "rgba(16,185,129,0.15)",
+    ring: "#10B981",
+    pulse: "rgba(16,185,129,0.4)",
+    text: "#10B981",
+  },
+  monitoring: {
+    border: "rgba(148,163,184,0.25)",
+    glow: "rgba(148,163,184,0.08)",
+    badge: "#94A3B8",
+    badgeBg: "rgba(148,163,184,0.1)",
+    ring: "#64748B",
+    pulse: "rgba(100,116,139,0.3)",
+    text: "#94A3B8",
+  },
+  idle: {
+    border: "rgba(148,163,184,0.2)",
+    glow: "rgba(148,163,184,0.06)",
+    badge: "#94A3B8",
+    badgeBg: "rgba(148,163,184,0.1)",
+    ring: "#64748B",
+    pulse: "rgba(100,116,139,0.2)",
+    text: "#94A3B8",
+  },
+};
+
+const STATE_LABELS: Record<AgentState, string> = {
+  review: "Needs Review",
+  generating: "Generating",
+  phase_complete: "Phase Complete",
+  monitoring: "Monitoring",
+  idle: "Not Deployed",
+};
+
+const STATE_ICONS: Record<AgentState, React.ReactNode> = {
+  review: <AlertCircle size={11} />,
+  generating: <Sparkles size={11} />,
+  phase_complete: <CheckCircle2 size={11} />,
+  monitoring: <Shield size={11} />,
+  idle: <Bot size={11} />,
+};
+
+const ACTIVITY_COLOURS: Record<string, string> = {
+  document: "#22D3EE",
+  lifecycle_init: "#6366F1",
+  proactive_alert: "#F59E0B",
+  approval: "#10B981",
+  risk: "#EF4444",
+  chat: "#6366F1",
+};
+
+const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
+  document: <FileText size={10} />,
+  lifecycle_init: <Zap size={10} />,
+  proactive_alert: <AlertCircle size={10} />,
+  approval: <CheckCircle2 size={10} />,
+  risk: <AlertCircle size={10} />,
+  chat: <Activity size={10} />,
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function deriveState(metrics: ProjectMetrics): AgentState {
+  if (!metrics.agentDeployed) return "idle";
+
+  const recentActivities = metrics.recentActivities ?? [];
+  const fourMinutesAgo = Date.now() - 4 * 60 * 1000;
+
+  const isGenerating = recentActivities.some(
+    (a) =>
+      (a.type === "document" || a.type === "lifecycle_init") &&
+      new Date(a.createdAt).getTime() > fourMinutesAgo
+  );
+
+  if (isGenerating) return "generating";
+  if (metrics.pendingArtefacts > 0) return "review";
+  if (metrics.totalArtefacts > 0) return "phase_complete";
+  return "monitoring";
+}
+
+function buildCommentary(state: AgentState, metrics: ProjectMetrics): string {
+  const phaseName = metrics.currentPhase ?? "current";
+  const nextPhase = metrics.nextPhase ?? null;
+  const pendingCount = metrics.pendingArtefacts;
+  const lastActivity = metrics.lastActivity;
+
+  switch (state) {
+    case "generating":
+      return `I'm writing your ${phaseName} phase documents right now — this usually takes 30–60 seconds. They'll appear automatically in Artefacts when ready.`;
+
+    case "review":
+      if (pendingCount > 1) {
+        return `I've generated ${pendingCount} ${phaseName} documents and they're ready for your review. Open each one, read it, then approve it. Once all are approved I'll automatically start the ${nextPhase ?? "next"} phase.`;
+      }
+      return `I've generated 1 document that needs your sign-off before I can proceed. Open it in Artefacts, review it, and click Approve.`;
+
+    case "phase_complete":
+      if (nextPhase) {
+        return `All ${phaseName} documents are approved — excellent work. I'm ready to start the ${nextPhase} phase whenever you are. Click 'Generate ${nextPhase} Phase' to continue.`;
+      }
+      return `Every project document has been reviewed and approved. Your complete document set is ready. The project is fully documented.`;
+
+    case "monitoring":
+      return `I'm actively monitoring your project in real time. ${
+        lastActivity ? `Last action: ${lastActivity}.` : "Everything is under control."
+      } I'll alert you immediately if anything needs your attention.`;
+
+    case "idle":
+      return `No agent is deployed on this project yet. Deploy one from Fleet Overview to begin generating documents, tracking risks, and managing your project automatically.`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Default metrics
+// ---------------------------------------------------------------------------
+
+const DEFAULT_METRICS: ProjectMetrics = {
+  totalArtefacts: 0,
+  pendingArtefacts: 0,
+  approvedArtefacts: 0,
+  currentPhase: null,
+  nextPhase: null,
+  phases: [],
+  recentActivities: [],
+  agentName: null,
+  agentDeployed: false,
+  lastActivity: null,
+};
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export function AgentStatusBar() {
-  const pathname = usePathname();
   const { activeProjectId, sidebarCollapsed } = useAppStore();
 
-  const [status,    setStatus]    = useState<StatusData | null>(null);
-  const [expanded,  setExpanded]  = useState(false);
+  const [metrics, setMetrics] = useState<ProjectMetrics>(DEFAULT_METRICS);
+  const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-  const prevStateRef = useRef<BarState | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Re-show bar whenever state changes meaningfully
+  const prevStateRef = useRef<AgentState | null>(null);
+  const prevProjectRef = useRef<string | null>(null);
+
+  // Re-dismiss when project changes
   useEffect(() => {
-    if (status && status.state !== prevStateRef.current) {
+    if (activeProjectId !== prevProjectRef.current) {
       setDismissed(false);
-      prevStateRef.current = status.state;
+      prevProjectRef.current = activeProjectId;
     }
-  }, [status?.state]);
-
-  // Reset dismissed when project changes
-  useEffect(() => { setDismissed(false); }, [activeProjectId]);
-
-  useEffect(() => {
-    if (!activeProjectId) { setStatus(null); return; }
-
-    const load = async () => {
-      try {
-        const [metricsRes, projectRes] = await Promise.all([
-          fetch(`/api/projects/${activeProjectId}/metrics`).then(r => r.json()),
-          fetch(`/api/projects/${activeProjectId}`).then(r => r.json()),
-        ]);
-
-        const m  = metricsRes?.data;
-        const p  = projectRes?.data;
-        if (!m || !p) return;
-
-        // Agent info
-        const agent       = m.deployment?.agent || p.agents?.[0]?.agent || null;
-        const agentName   = agent?.name    || "Agent";
-        const rawGrad     = agent?.gradient || "#6366f1";
-        const agentColor  = rawGrad.match(/#[0-9A-Fa-f]{6}/)?.[0] || "#6366f1";
-        const agentInitial = agentName[0].toUpperCase();
-
-        // Phase info
-        const phases     = p.phases || [];
-        const activeIdx  = phases.findIndex((ph: any) => ph.status === "ACTIVE");
-        const activePh   = activeIdx >= 0 ? phases[activeIdx] : phases[0] || null;
-        const nextPh     = activeIdx >= 0 && activeIdx < phases.length - 1 ? phases[activeIdx + 1] : null;
-        const phaseName  = activePh?.name  || "Pre-Project";
-        const phaseNum   = activeIdx >= 0  ? activeIdx + 1 : 1;
-
-        // Artefacts
-        const arts         = m.artefacts || [];
-        const pendingCount = arts.filter((a: any) =>
-          a.status === "DRAFT" || a.status === "PENDING_REVIEW"
-        ).length;
-        const totalArts    = arts.length;
-
-        // Most recent activity
-        const activities    = m.activities || [];
-        const lastAct       = activities[0] || null;
-        const lastActivity  = lastAct?.summary || null;
-        const lastActAt     = lastAct?.createdAt ? new Date(lastAct.createdAt) : null;
-
-        // Detect "generating" — activity type document/lifecycle_init within last 4 min
-        const isGenerating  = lastAct
-          && (lastAct.type === "document" || lastAct.type === "lifecycle_init")
-          && lastActAt
-          && (Date.now() - lastActAt.getTime()) < 4 * 60 * 1000;
-
-        // Determine bar state
-        let state: BarState = "monitoring";
-        if (isGenerating)                     state = "generating";
-        else if (pendingCount > 0)            state = "review";
-        else if (totalArts > 0 && pendingCount === 0) state = "phase_complete";
-        else if (!agent)                      state = "idle";
-
-        setStatus({
-          state, agentName, agentColor, agentInitial,
-          phaseName, phaseNumber: phaseNum,
-          totalPhases: phases.length,
-          nextPhaseName: nextPh?.name || null,
-          pendingCount, lastActivity, lastActivityAt: lastActAt,
-          projectId: activeProjectId,
-        });
-      } catch { /* silent — bar is non-critical */ }
-    };
-
-    load();
-    const iv = setInterval(load, 20_000);
-    return () => clearInterval(iv);
   }, [activeProjectId]);
 
-  // Hide on sign-in / auth pages
-  if (!activeProjectId || !status || dismissed) return null;
+  // Polling loop
+  useEffect(() => {
+    if (!activeProjectId) return;
 
-  const { state, agentName, agentColor, agentInitial,
-          phaseName, phaseNumber, totalPhases, nextPhaseName,
-          pendingCount, lastActivity, lastActivityAt, projectId } = status;
+    let cancelled = false;
 
+    async function fetchData() {
+      if (!activeProjectId) return;
+      try {
+        const [metricsRes, projectRes] = await Promise.all([
+          fetch(`/api/projects/${activeProjectId}/metrics`),
+          fetch(`/api/projects/${activeProjectId}`),
+        ]);
+
+        if (!metricsRes.ok || !projectRes.ok) return;
+
+        const [metricsData, projectData] = await Promise.all([
+          metricsRes.json(),
+          projectRes.json(),
+        ]);
+
+        if (cancelled) return;
+
+        // Support both { data: {...} } envelope and flat shapes
+        const m = metricsData?.data ?? metricsData;
+        const p = projectData?.data ?? projectData;
+
+        // Build phases array from either shape
+        const rawPhases: PhaseInfo[] = (m?.phases ?? p?.phases ?? []).map((ph: any) => ({
+          name: ph.name ?? ph.phaseName ?? "Phase",
+          status:
+            ph.status === "COMPLETED" || ph.status === "completed"
+              ? "completed"
+              : ph.status === "ACTIVE" || ph.status === "active"
+              ? "active"
+              : "upcoming",
+        }));
+
+        // Activities
+        const rawActivities: AgentActivity[] = (m?.activities ?? m?.recentActivities ?? []).map(
+          (a: any): AgentActivity => ({
+            id: a.id ?? String(Math.random()),
+            type: a.type ?? "chat",
+            summary: a.summary ?? a.description ?? "",
+            createdAt: a.createdAt ?? a.created_at ?? new Date().toISOString(),
+          })
+        );
+
+        const merged: ProjectMetrics = {
+          totalArtefacts: m?.totalArtefacts ?? m?.artefacts?.length ?? 0,
+          pendingArtefacts:
+            m?.pendingArtefacts ??
+            (m?.artefacts ?? []).filter(
+              (a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW"
+            ).length,
+          approvedArtefacts: m?.approvedArtefacts ?? 0,
+          currentPhase:
+            m?.currentPhase ??
+            p?.currentPhase ??
+            rawPhases.find((ph) => ph.status === "active")?.name ??
+            null,
+          nextPhase: m?.nextPhase ?? null,
+          phases: rawPhases,
+          recentActivities: rawActivities,
+          agentName: p?.agentName ?? m?.agentName ?? p?.agents?.[0]?.agent?.name ?? null,
+          agentDeployed:
+            p?.agentDeployed ?? m?.agentDeployed ?? Boolean(p?.agents?.length) ?? false,
+          lastActivity:
+            m?.lastActivity ?? rawActivities[0]?.summary ?? null,
+        };
+
+        setMetrics(merged);
+
+        // Un-dismiss if state changed
+        const newState = deriveState(merged);
+        if (prevStateRef.current !== null && prevStateRef.current !== newState) {
+          setDismissed(false);
+        }
+        prevStateRef.current = newState;
+      } catch {
+        // Non-critical — bar silently retains last known state
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    setLoading(true);
+    fetchData();
+    const interval = setInterval(fetchData, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeProjectId]);
+
+  if (!activeProjectId || dismissed) return null;
+
+  const state = deriveState(metrics);
+  const colours = STATE_COLOURS[state];
+  const commentary = buildCommentary(state, metrics);
+  const agentLabel = metrics.agentName ?? "PM Agent";
+  const pendingCount = metrics.pendingArtefacts;
+  const nextPhase = metrics.nextPhase;
+  const artefactsHref = `/projects/${activeProjectId}/artefacts`;
   const sidebarW = sidebarCollapsed ? 60 : 240;
-
-  // ── Per-state config ────────────────────────────────────────────────────
-  const CFG: Record<BarState, {
-    border: string; bg: string; pulse: string;
-    icon: React.ReactNode; label: string;
-    headline: string; sub: string;
-    ctaLabel: string | null; ctaHref: string | null;
-  }> = {
-    generating: {
-      border: "border-primary/40",
-      bg: "bg-card/95",
-      pulse: "bg-primary animate-pulse",
-      icon: <RefreshCw className="w-3.5 h-3.5 animate-spin text-primary" />,
-      label: "Generating",
-      headline: `Writing ${phaseName} documents…`,
-      sub: "Your agent is generating phase documents. This takes 30–60 seconds — they will appear in Artefacts when ready.",
-      ctaLabel: "View Artefacts",
-      ctaHref: `/projects/${projectId}/artefacts`,
-    },
-    review: {
-      border: "border-amber-500/40",
-      bg: "bg-card/95",
-      pulse: "bg-amber-500 animate-pulse",
-      icon: <AlertCircle className="w-3.5 h-3.5 text-amber-500" />,
-      label: "Action Required",
-      headline: `${pendingCount} document${pendingCount === 1 ? "" : "s"} waiting for your review`,
-      sub: `Open the Artefacts page, read each document, then click the green ✓ to approve. Once all are approved your agent will automatically generate the ${nextPhaseName ?? "next"} phase documents.`,
-      ctaLabel: `Review ${pendingCount} Document${pendingCount === 1 ? "" : "s"} →`,
-      ctaHref: `/projects/${projectId}/artefacts`,
-    },
-    phase_complete: {
-      border: "border-emerald-500/40",
-      bg: "bg-card/95",
-      pulse: "bg-emerald-500",
-      icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />,
-      label: "Phase Complete",
-      headline: nextPhaseName
-        ? `${phaseName} approved — ready to start ${nextPhaseName}`
-        : `All phases complete — full document set approved`,
-      sub: nextPhaseName
-        ? `All ${phaseName} documents are approved. Go to Artefacts and click "Generate ${nextPhaseName} Phase" to continue.`
-        : "Every project phase is complete and approved. Well done.",
-      ctaLabel: nextPhaseName ? `Generate ${nextPhaseName} Phase →` : null,
-      ctaHref: nextPhaseName ? `/projects/${projectId}/artefacts` : null,
-    },
-    monitoring: {
-      border: "border-border/60",
-      bg: "bg-card/95",
-      pulse: "bg-emerald-400",
-      icon: <Bot className="w-3.5 h-3.5 text-muted-foreground" />,
-      label: "Monitoring",
-      headline: `Monitoring project health · ${phaseName}`,
-      sub: lastActivity
-        ? `Last action: ${lastActivity}`
-        : "Agent is active and monitoring your project in the background.",
-      ctaLabel: null,
-      ctaHref: null,
-    },
-    idle: {
-      border: "border-border/40",
-      bg: "bg-card/95",
-      pulse: "bg-muted-foreground/40",
-      icon: <Bot className="w-3.5 h-3.5 text-muted-foreground" />,
-      label: "Idle",
-      headline: "No agent deployed on this project",
-      sub: "Deploy an agent from the Fleet Overview to start generating documents and monitoring your project.",
-      ctaLabel: "Deploy Agent →",
-      ctaHref: "/agents/deploy",
-    },
-  };
-
-  const cfg = CFG[state];
 
   return (
     <div
-      className={cn(
-        "fixed bottom-0 right-0 z-50 transition-all duration-300",
-        `border-t ${cfg.border} ${cfg.bg} backdrop-blur-md shadow-lg`,
-      )}
-      style={{ left: sidebarW }}
+      className="fixed bottom-0 right-0 z-50 transition-[left] duration-300"
+      style={{
+        left: sidebarW,
+        borderTop: `2px solid ${colours.border}`,
+        boxShadow: `0 -6px 32px 0 ${colours.glow}, 0 -1px 0 0 ${colours.border}22`,
+      }}
     >
-      {/* ── Compact bar (always visible) ─────────────────────────────── */}
-      <div className="flex items-center gap-3 px-5 h-12">
-
-        {/* Agent avatar + pulse */}
-        <div className="relative flex-shrink-0">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white"
-            style={{ background: agentColor }}
-          >
-            {agentInitial}
-          </div>
-          <span className={cn("absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card", cfg.pulse)} />
-        </div>
-
-        {/* Agent name */}
-        <span className="text-[12px] font-semibold text-foreground whitespace-nowrap hidden sm:block">
-          {agentName}
-        </span>
-
-        {/* Divider */}
-        <span className="text-border/60 hidden sm:block">|</span>
-
-        {/* Status icon + label */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {cfg.icon}
-          <span className={cn(
-            "text-[11px] font-semibold whitespace-nowrap",
-            state === "review"         ? "text-amber-500"
-            : state === "phase_complete" ? "text-emerald-500"
-            : state === "generating"     ? "text-primary"
-            : "text-muted-foreground"
-          )}>
-            {cfg.label}
-          </span>
-        </div>
-
-        {/* Headline */}
-        <span className="text-[12px] text-foreground/80 truncate flex-1 min-w-0">
-          {cfg.headline}
-        </span>
-
-        {/* Phase pill */}
-        {totalPhases > 0 && (
-          <span className="hidden md:inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
-            <Clock className="w-2.5 h-2.5" />
-            {phaseName} {totalPhases > 1 && `· ${phaseNumber}/${totalPhases}`}
-          </span>
-        )}
-
-        {/* Last activity time */}
-        {lastActivityAt && state === "monitoring" && (
-          <span className="hidden lg:block text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-            {timeAgo(lastActivityAt)}
-          </span>
-        )}
-
-        {/* CTA */}
-        {cfg.ctaLabel && cfg.ctaHref && (
-          <Link
-            href={cfg.ctaHref}
-            className={cn(
-              "flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap",
-              state === "review"
-                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/30"
-                : state === "phase_complete"
-                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30"
-                : "bg-primary/10 text-primary hover:bg-primary/20 border border-primary/30"
-            )}
-          >
-            {state === "review" && <AlertCircle className="w-3 h-3" />}
-            {state === "phase_complete" && <Sparkles className="w-3 h-3" />}
-            {state === "generating" && <ArrowRight className="w-3 h-3" />}
-            {cfg.ctaLabel}
-          </Link>
-        )}
-
-        {/* Expand toggle */}
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors"
-          title={expanded ? "Collapse" : "Expand"}
-        >
-          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-        </button>
-
-        {/* Dismiss */}
-        <button
-          onClick={() => setDismissed(true)}
-          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md hover:bg-muted/40 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-          title="Dismiss"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* ── Expanded detail panel ─────────────────────────────────────── */}
+      {/* ── Expanded panel ──────────────────────────────────────────────── */}
       {expanded && (
-        <div className={cn("border-t px-5 py-4", cfg.border)}>
-          <div className="flex items-start gap-4 max-w-3xl">
-
-            {/* Big agent avatar */}
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-              style={{ background: agentColor }}
-            >
-              {agentInitial}
+        <div
+          className="w-full border-t px-5 py-4"
+          style={{
+            background: "hsl(var(--background) / 0.97)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            borderColor: `${colours.border}33`,
+          }}
+        >
+          <div className="max-w-screen-xl mx-auto flex gap-6 flex-wrap items-start">
+            {/* Left: avatar block */}
+            <div className="flex flex-col items-center gap-2 w-[72px] shrink-0">
+              <AvatarWithPulse size={40} colours={colours} loading={loading} />
+              <span className="text-[11px] font-semibold text-foreground text-center leading-tight break-all">
+                {agentLabel}
+              </span>
+              <StateBadge state={state} colours={colours} />
             </div>
 
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold mb-0.5">{cfg.headline}</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">{cfg.sub}</p>
+            {/* Centre: blockquote + phases */}
+            <div className="flex-1 min-w-[200px] flex flex-col gap-3">
+              <blockquote
+                className="text-[13px] italic leading-relaxed text-foreground/80 pl-3 py-1 m-0"
+                style={{ borderLeft: `3px solid ${colours.border}` }}
+              >
+                {commentary}
+              </blockquote>
 
-              {/* Phase progress pills */}
-              {totalPhases > 0 && (
-                <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-                  {Array.from({ length: totalPhases }).map((_, i) => {
-                    const isDone    = i < phaseNumber - 1;
-                    const isActive  = i === phaseNumber - 1;
-                    return (
-                      <div key={i} className="flex items-center gap-1">
-                        <div className={cn(
-                          "text-[9px] font-semibold px-2 py-0.5 rounded-full",
-                          isDone   ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                          : isActive ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                          : "bg-muted text-muted-foreground"
-                        )}>
-                          {isDone && "✓ "}
-                          Phase {i + 1}
-                        </div>
-                        {i < totalPhases - 1 && (
-                          <ArrowRight className="w-2.5 h-2.5 text-muted-foreground/30" />
-                        )}
-                      </div>
-                    );
-                  })}
+              {metrics.phases.length > 0 && (
+                <div className="flex items-center flex-wrap gap-1">
+                  {metrics.phases.map((phase, i) => (
+                    <div key={`${phase.name}-${i}`} className="flex items-center gap-1">
+                      <PhasePill phase={phase} colours={colours} />
+                      {i < metrics.phases.length - 1 && (
+                        <ArrowRight size={10} className="text-muted-foreground/40 shrink-0" />
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
-            {/* CTA in expanded view */}
-            {cfg.ctaLabel && cfg.ctaHref && (
-              <Link
-                href={cfg.ctaHref}
-                onClick={() => setExpanded(false)}
-                className={cn(
-                  "flex-shrink-0 flex items-center gap-1.5 text-[12px] font-semibold px-4 py-2 rounded-lg border transition-colors",
-                  state === "review"
-                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border-amber-500/30"
-                    : state === "phase_complete"
-                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30"
-                    : "bg-primary/10 text-primary hover:bg-primary/20 border-primary/30"
-                )}
-              >
-                {cfg.ctaLabel}
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+            {/* Right: activity feed */}
+            {metrics.recentActivities.length > 0 && (
+              <div className="min-w-[200px] max-w-[280px] flex flex-col gap-1.5 shrink-0">
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-0.5 font-medium">
+                  Recent Activity
+                </p>
+                {metrics.recentActivities.slice(0, 3).map((activity, i) => {
+                  const dotColour = ACTIVITY_COLOURS[activity.type] ?? "#64748B";
+                  const icon = ACTIVITY_ICONS[activity.type] ?? <Activity size={10} />;
+                  return (
+                    <div key={activity.id ?? i} className="flex items-start gap-2">
+                      <div
+                        className="mt-[3px] shrink-0 w-4 h-4 rounded-full flex items-center justify-center"
+                        style={{ background: `${dotColour}22`, color: dotColour }}
+                      >
+                        {icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] text-foreground/80 leading-snug truncate">
+                          {activity.summary}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {timeAgo(activity.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
       )}
+
+      {/* ── Compact bar ─────────────────────────────────────────────────── */}
+      <div
+        className="w-full flex items-center"
+        style={{
+          height: 56,
+          background: "hsl(var(--background) / 0.97)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+        }}
+      >
+        <div className="max-w-screen-xl mx-auto flex items-center gap-3 w-full px-4">
+          {/* 1. Agent avatar */}
+          <AvatarWithPulse size={28} colours={colours} loading={loading} />
+
+          {/* 2. Agent name */}
+          <span className="text-[12px] font-bold text-foreground leading-none whitespace-nowrap hidden sm:block">
+            {agentLabel}
+          </span>
+
+          {/* 3. Vertical divider */}
+          <div className="h-4 w-px bg-border/50 shrink-0 hidden sm:block" />
+
+          {/* 4. State badge */}
+          <StateBadge state={state} colours={colours} />
+
+          {/* 5. Commentary text */}
+          <p className="text-[13px] text-foreground/70 flex-1 truncate min-w-0 hidden md:block">
+            {commentary}
+          </p>
+
+          {/* 6. Phase progress dots */}
+          {metrics.phases.length > 0 && (
+            <div className="items-center gap-1 shrink-0 hidden lg:flex">
+              {metrics.phases.map((phase, i) => (
+                <div
+                  key={`dot-${i}`}
+                  className="rounded-full transition-all duration-200"
+                  title={phase.name}
+                  style={{
+                    width: phase.status === "active" ? 8 : 6,
+                    height: phase.status === "active" ? 8 : 6,
+                    background:
+                      phase.status === "upcoming"
+                        ? "hsl(var(--muted-foreground) / 0.25)"
+                        : colours.border,
+                    boxShadow:
+                      phase.status === "active"
+                        ? `0 0 6px ${colours.glow}`
+                        : undefined,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* 7. Last activity time */}
+          {metrics.recentActivities[0] && (
+            <div className="items-center gap-1 text-[11px] text-muted-foreground whitespace-nowrap shrink-0 hidden xl:flex">
+              <Clock size={10} />
+              <span>{timeAgo(metrics.recentActivities[0].createdAt)}</span>
+            </div>
+          )}
+
+          {/* 8. CTA */}
+          <CtaButton
+            state={state}
+            colours={colours}
+            href={artefactsHref}
+            pendingCount={pendingCount}
+            nextPhase={nextPhase}
+          />
+
+          {/* 9. Expand chevron */}
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            aria-label={expanded ? "Collapse agent status" : "Expand agent status"}
+          >
+            {expanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
+
+          {/* 10. Dismiss */}
+          <button
+            onClick={() => setDismissed(true)}
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50 transition-colors"
+            aria-label="Dismiss agent status bar"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function AvatarWithPulse({
+  size,
+  colours,
+  loading,
+}: {
+  size: number;
+  colours: StateColours;
+  loading: boolean;
+}) {
+  const outer = size + 8;
+  return (
+    <div className="relative shrink-0" style={{ width: outer, height: outer }}>
+      {/* Animated ping ring */}
+      <span
+        className="absolute inset-0 rounded-full animate-ping"
+        style={{
+          background: colours.pulse,
+          animationDuration: "2s",
+        }}
+      />
+      {/* Static ring */}
+      <span
+        className="absolute inset-0 rounded-full"
+        style={{ boxShadow: `0 0 0 2px ${colours.ring}` }}
+      />
+      {/* Avatar circle */}
+      <div
+        className="absolute inset-[4px] rounded-full flex items-center justify-center"
+        style={{
+          background: `linear-gradient(135deg, ${colours.badge}33, ${colours.badge}11)`,
+          border: `1px solid ${colours.badge}44`,
+        }}
+      >
+        {loading ? (
+          <RefreshCw
+            size={Math.round(size * 0.45)}
+            style={{ color: colours.badge }}
+            className="animate-spin"
+          />
+        ) : (
+          <Bot size={Math.round(size * 0.45)} style={{ color: colours.badge }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StateBadge({
+  state,
+  colours,
+}: {
+  state: AgentState;
+  colours: StateColours;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-1 rounded-full shrink-0"
+      style={{
+        background: colours.badgeBg,
+        border: `1px solid ${colours.badge}44`,
+        color: colours.badge,
+      }}
+    >
+      {STATE_ICONS[state]}
+      <span className="text-[11px] font-semibold leading-none whitespace-nowrap">
+        {STATE_LABELS[state]}
+      </span>
+    </div>
+  );
+}
+
+function PhasePill({
+  phase,
+  colours,
+}: {
+  phase: PhaseInfo;
+  colours: StateColours;
+}) {
+  const isCompleted = phase.status === "completed";
+  const isActive = phase.status === "active";
+
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+      style={{
+        background: isActive
+          ? `${colours.badge}20`
+          : isCompleted
+          ? `${colours.badge}10`
+          : "hsl(var(--muted) / 0.4)",
+        border: isActive
+          ? `1px solid ${colours.badge}66`
+          : isCompleted
+          ? `1px solid ${colours.badge}33`
+          : "1px solid hsl(var(--border) / 0.3)",
+        color: isActive
+          ? colours.badge
+          : isCompleted
+          ? `${colours.badge}bb`
+          : "hsl(var(--muted-foreground))",
+      }}
+    >
+      {isCompleted && <CheckCircle2 size={9} />}
+      <span>{phase.name}</span>
+    </div>
+  );
+}
+
+function CtaButton({
+  state,
+  colours,
+  href,
+  pendingCount,
+  nextPhase,
+}: {
+  state: AgentState;
+  colours: StateColours;
+  href: string;
+  pendingCount: number;
+  nextPhase: string | null;
+}) {
+  if (state === "monitoring" || state === "idle") return null;
+
+  let label: string;
+  let variant: "solid" | "ghost";
+
+  if (state === "review") {
+    label = `Review ${pendingCount} Document${pendingCount !== 1 ? "s" : ""} →`;
+    variant = "solid";
+  } else if (state === "phase_complete") {
+    label = nextPhase ? `Generate ${nextPhase} Phase →` : "View Artefacts →";
+    variant = "solid";
+  } else {
+    // generating
+    label = "View Artefacts →";
+    variant = "ghost";
+  }
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-md text-[12px] font-semibold transition-all hover:brightness-110 whitespace-nowrap"
+      )}
+      style={
+        variant === "solid"
+          ? {
+              background: colours.badge,
+              color: "#fff",
+              boxShadow: `0 2px 10px ${colours.glow}`,
+            }
+          : {
+              background: "transparent",
+              border: `1px solid ${colours.badge}`,
+              color: colours.badge,
+            }
+      }
+    >
+      {label}
+    </Link>
   );
 }
