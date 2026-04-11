@@ -43,7 +43,7 @@ function markdownToHtml(md: string): string {
 
 export default function ArtefactsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: artefacts, isLoading, refetch } = useProjectArtefacts(projectId);
+  const { data: artefacts, isLoading } = useProjectArtefacts(projectId);
   const { data: project } = useProject(projectId);
   const qc = useQueryClient();
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -52,10 +52,9 @@ export default function ArtefactsPage() {
   const [feedbackText, setFeedbackText] = useState("");
   const [generating, setGenerating] = useState(false);
 
-  /** Refresh artefacts list without a full page reload */
+  /** Invalidate cache so next render fetches fresh data from server */
   const refreshArtefacts = () => {
     qc.invalidateQueries({ queryKey: ["project-artefacts", projectId] });
-    refetch();
   };
 
   if (isLoading) {
@@ -75,8 +74,20 @@ export default function ArtefactsPage() {
   const inReview = items.filter((a: any) => a.status === "PENDING_REVIEW").length;
   const drafts = items.filter((a: any) => a.status === "DRAFT").length;
 
+  /** Optimistically patch a single artefact in the cache; returns a rollback fn */
+  const optimisticPatch = (artId: string, patch: Record<string, any>) => {
+    const prev = qc.getQueryData(["project-artefacts", projectId]);
+    qc.setQueryData(["project-artefacts", projectId], (old: any) =>
+      Array.isArray(old) ? old.map((a: any) => a.id === artId ? { ...a, ...patch } : a) : old
+    );
+    return () => qc.setQueryData(["project-artefacts", projectId], prev);
+  };
+
   const handleSave = async (content: string, comment?: string) => {
     if (!editorArt) return;
+    // Optimistically update content in list cache
+    const rollback = optimisticPatch(editorArt.id, { content });
+    setEditorArt((prev: any) => prev ? { ...prev, content } : null);
     const res = await fetch(`/api/agents/artefacts/${editorArt.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -84,10 +95,9 @@ export default function ArtefactsPage() {
     });
     if (res.ok) {
       toast.success("Document saved");
-      // Update local copy in editor so it reflects the saved content
-      setEditorArt((prev: any) => prev ? { ...prev, content } : null);
-      refreshArtefacts();
+      refreshArtefacts(); // background sync
     } else {
+      rollback();
       toast.error("Save failed");
     }
   };
@@ -95,6 +105,9 @@ export default function ArtefactsPage() {
   const handleApprove = async (id?: string) => {
     const artId = id || editorArt?.id;
     if (!artId) return;
+    // Optimistically mark as APPROVED immediately — list never goes empty
+    const rollback = optimisticPatch(artId, { status: "APPROVED" });
+    setEditorArt(null); // close editor, show list (already has updated cache)
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -102,17 +115,21 @@ export default function ArtefactsPage() {
     });
     if (res.ok) {
       toast.success("Artefact approved ✓");
+      refreshArtefacts(); // background sync
     } else {
+      rollback();
       toast.error("Approval failed");
     }
-    // Close editor and return to list — refresh the list
-    setEditorArt(null);
-    refreshArtefacts();
   };
 
   const handleReject = async (reason: string) => {
     const artId = editorArt?.id || feedbackId;
     if (!artId) return;
+    // Optimistically mark as REJECTED immediately
+    const rollback = optimisticPatch(artId, { status: "REJECTED", feedback: reason || "Rejected" });
+    setFeedbackId(null);
+    setFeedbackText("");
+    setEditorArt(null);
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -120,13 +137,11 @@ export default function ArtefactsPage() {
     });
     if (res.ok) {
       toast.success("Artefact rejected");
+      refreshArtefacts(); // background sync
     } else {
+      rollback();
       toast.error("Rejection failed");
     }
-    setFeedbackId(null);
-    setFeedbackText("");
-    setEditorArt(null);
-    refreshArtefacts();
   };
 
   const handleGenerate = async () => {
