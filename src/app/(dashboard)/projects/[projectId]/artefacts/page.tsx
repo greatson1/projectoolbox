@@ -307,7 +307,7 @@ export default function ArtefactsPage() {
 
                       {/* Inline Preview — renders both HTML and markdown cleanly */}
                       {isPreview && art.content && (
-                        <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/30 max-h-[500px] overflow-y-auto prose prose-sm dark:prose-invert max-w-none text-sm">
+                        <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/30 max-h-[500px] overflow-y-auto doc-preview max-w-none text-sm">
                           {(art.format === "html" || art.content.trimStart().startsWith("<"))
                             ? <div dangerouslySetInnerHTML={{ __html: art.content }} />
                             : <ReactMarkdown remarkPlugins={[remarkGfm]}>{art.content}</ReactMarkdown>
