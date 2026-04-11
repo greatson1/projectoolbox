@@ -36,12 +36,15 @@ export async function POST(req: NextRequest) {
 
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-    // Map lowercase methodology keys to Prisma enum values
+    // Map methodology keys to Prisma enum values (handles any casing from the deploy wizard)
     const METHODOLOGY_MAP: Record<string, string> = {
       prince2: "PRINCE2", waterfall: "WATERFALL", scrum: "AGILE_SCRUM",
       kanban: "AGILE_KANBAN", safe: "SAFE", hybrid: "HYBRID",
-      PRINCE2: "PRINCE2", WATERFALL: "WATERFALL", AGILE_SCRUM: "AGILE_SCRUM",
-      AGILE_KANBAN: "AGILE_KANBAN", SAFE: "SAFE", HYBRID: "HYBRID",
+      // Uppercase variants (deploy wizard sends .toUpperCase())
+      PRINCE2: "PRINCE2", WATERFALL: "WATERFALL", SCRUM: "AGILE_SCRUM",
+      KANBAN: "AGILE_KANBAN", SAFE: "SAFE", HYBRID: "HYBRID",
+      // Already-mapped enum values (idempotent)
+      AGILE_SCRUM: "AGILE_SCRUM", AGILE_KANBAN: "AGILE_KANBAN",
     };
     const methodology = (METHODOLOGY_MAP[body.methodology] || "WATERFALL") as any;
 

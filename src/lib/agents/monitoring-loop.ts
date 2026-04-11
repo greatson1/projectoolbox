@@ -223,23 +223,32 @@ export async function runMonitoringLoop(
     } catch {}
   }
 
-  // ── 4. Phase gate readiness check (always) ──
-  if (currentPhase) {
+  // ── 4. Phase gate readiness check ──
+  // Skip if already waiting for a gate approval — avoid duplicate proposals
+  const isWaitingOnGate = deployment.phaseStatus === "waiting_approval";
+  if (currentPhase && !isWaitingOnGate) {
     const gateCheck = await checkGateCriteria(projectId, methodology, currentPhase);
     if (gateCheck.ready) {
-      const nextPhase = getNextPhase(methodology, currentPhase);
-      if (nextPhase) {
-        proposals.push({
-          type: "PHASE_GATE",
-          description: `Phase gate ready: "${currentPhase}" → "${nextPhase}". All ${gateCheck.criteria.length} prerequisites met.`,
-          reasoning: `Gate criteria assessment:\n${gateCheck.criteria.map(c => `${c.met ? "✅" : "❌"} ${c.text}`).join("\n")}\n\nAll prerequisites for advancing to the "${nextPhase}" phase are satisfied.`,
-          confidence: 0.95,
-          scheduleImpact: 2,
-          costImpact: 1,
-          scopeImpact: 1,
-          stakeholderImpact: 3,
-        });
-        cadencesRun.push("gate_ready");
+      // Also skip if there is already a PENDING PHASE_GATE approval for this project
+      const existingGate = await db.approval.findFirst({
+        where: { projectId, type: "PHASE_GATE", status: "PENDING" },
+        select: { id: true },
+      });
+      if (!existingGate) {
+        const nextPhase = getNextPhase(methodology, currentPhase);
+        if (nextPhase) {
+          proposals.push({
+            type: "PHASE_GATE",
+            description: `Phase gate ready: "${currentPhase}" → "${nextPhase}". All ${gateCheck.criteria.length} prerequisites met.`,
+            reasoning: `Gate criteria assessment:\n${gateCheck.criteria.map(c => `${c.met ? "✅" : "❌"} ${c.text}`).join("\n")}\n\nAll prerequisites for advancing to the "${nextPhase}" phase are satisfied.`,
+            confidence: 0.95,
+            scheduleImpact: 2,
+            costImpact: 1,
+            scopeImpact: 1,
+            stakeholderImpact: 3,
+          });
+          cadencesRun.push("gate_ready");
+        }
       }
     }
   }

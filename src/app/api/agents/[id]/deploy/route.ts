@@ -110,16 +110,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  // Always queue a lifecycle_init job first — this is the guaranteed path.
-  // Even if inline init succeeds, the job will be a no-op (generatePhaseArtefacts is idempotent).
-  await createJob({
-    agentId,
-    deploymentId: deployment.id,
-    type: "lifecycle_init",
-    priority: 1,
-    payload: { projectId, methodology: (await db.project.findUnique({ where: { id: projectId } }))?.methodology },
-  });
-  nudgeJobProcessor().catch(() => {});
+  // Run lifecycle init directly inline — do not rely on VPS stub.
+  // Fire-and-forget so the deploy response is instant. The function is idempotent.
+  (async () => {
+    try {
+      const { runLifecycleInit } = await import("@/lib/agents/lifecycle-init");
+      await runLifecycleInit(agentId, deployment.id);
+    } catch (e) {
+      console.error(`[deploy] inline lifecycle_init failed for ${agentId}:`, e);
+      // Fallback: queue a job so the cron picks it up
+      try {
+        await createJob({
+          agentId,
+          deploymentId: deployment.id,
+          type: "lifecycle_init",
+          priority: 1,
+          payload: { projectId },
+        });
+        nudgeJobProcessor().catch(() => {});
+      } catch {}
+    }
+  })();
 
   return NextResponse.json({ data: { deployment, agentId } }, { status: 201 });
 }

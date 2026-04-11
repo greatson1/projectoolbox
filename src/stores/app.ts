@@ -42,6 +42,14 @@ export const useAppStore = create<AppState>()(
       accentTheme: "indigo",
       setAccentTheme: (t) => set({ accentTheme: t }),
     }),
-    { name: "projectoolbox-app" }
+    {
+      name: "projectoolbox-app",
+      // Do NOT persist active project context — it becomes stale after data resets / org switches.
+      // The sidebar validates and restores it from the live project list on mount.
+      partialize: (state) => ({
+        sidebarCollapsed: state.sidebarCollapsed,
+        accentTheme: state.accentTheme,
+      }),
+    }
   )
 );
