@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/dashboard — Aggregated dashboard data
 export async function GET() {
+  try {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -74,4 +77,8 @@ export async function GET() {
       })),
     },
   });
+  } catch (err: any) {
+    console.error("[dashboard] GET error:", err?.message || err);
+    return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
+  }
 }

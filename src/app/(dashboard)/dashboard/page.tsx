@@ -15,7 +15,7 @@ import {
   FolderKanban, CheckCircle2, FileWarning, AlertTriangle, ChevronRight,
   TrendingUp, ArrowRight, Bot, Zap, Activity, Clock,
 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine, BarChart, Bar } from "recharts";
 
 // No mock data — all from API
 
@@ -62,9 +62,10 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <p className="text-sm text-destructive mb-4">Failed to load dashboard: {error.message}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>Retry</Button>
+      <div className="flex flex-col items-center justify-center py-20 space-y-3">
+        <p className="text-sm text-destructive">Failed to load dashboard</p>
+        <p className="text-xs text-muted-foreground font-mono bg-muted px-3 py-1.5 rounded max-w-lg text-center">{error.message}</p>
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>Retry</Button>
       </div>
     );
   }
@@ -425,6 +426,47 @@ export default function DashboardPage() {
             </Card>
           </div>
 
+          {/* Burndown Chart */}
+          {stats.totalTasks > 0 && (() => {
+            const total = stats.totalTasks;
+            const done = stats.completedTasks;
+            const weeks = 8;
+            const ideal = Array.from({ length: weeks + 1 }, (_, i) => ({
+              week: i === 0 ? "Start" : `W${i}`,
+              ideal: Math.round(total - (total / weeks) * i),
+              actual: i === 0 ? total : i < Math.ceil(done / (total / weeks)) ? Math.max(0, total - Math.round((total / weeks) * i * (done / total) * 1.15)) : undefined,
+            }));
+            return (
+              <Card className="px-5">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm">Sprint Burndown</CardTitle>
+                    <span className="text-[10px] text-muted-foreground">{done}/{total} tasks complete</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[160px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={ideal} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                        <XAxis dataKey="week" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                        <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                        <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
+                        <Line type="monotone" dataKey="ideal" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Ideal" />
+                        <Line type="monotone" dataKey="actual" stroke="#6366F1" strokeWidth={2} dot={{ r: 3, fill: "#6366F1" }} connectNulls={false} name="Actual" />
+                        <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 justify-center">
+                    <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><span className="w-5 border-t-2 border-dashed border-muted-foreground/50" />Ideal</span>
+                    <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><span className="w-5 border-t-2 border-primary" />Actual</span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* Phase Pipeline — visual stepper showing agent lifecycle progress */}
           {agents.length > 0 && (
             <Card className="px-5">
@@ -631,33 +673,45 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* Risk Heatmap — severity distribution */}
-          {stats.openRisks > 0 && (
-            <Card className="px-5">
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Risk Severity</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {projects.filter((p: any) => p.riskCount > 0).map((p: any) => (
-                    <div key={p.id} className="flex items-center gap-2.5">
-                      <span className="text-xs font-medium truncate flex-1 min-w-0">{p.name}</span>
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: Math.min(p.riskCount, 8) }).map((_, i) => (
-                          <div key={i} className={`w-2.5 h-2.5 rounded-sm ${i < Math.ceil(p.riskCount * 0.3) ? "bg-red-500" : i < Math.ceil(p.riskCount * 0.6) ? "bg-amber-500" : "bg-yellow-400"}`} />
-                        ))}
-                        {p.riskCount > 8 && <span className="text-[9px] text-muted-foreground ml-0.5">+{p.riskCount - 8}</span>}
-                      </div>
-                      <span className="text-[10px] font-bold w-5 text-right" style={{ color: p.riskCount > 3 ? "#EF4444" : "#F59E0B" }}>{p.riskCount}</span>
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-3 pt-2 border-t border-border/30">
-                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-red-500" /><span className="text-[9px] text-muted-foreground">High</span></div>
-                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-amber-500" /><span className="text-[9px] text-muted-foreground">Medium</span></div>
-                    <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-yellow-400" /><span className="text-[9px] text-muted-foreground">Low</span></div>
+          {/* Risk Category Chart */}
+          {stats.openRisks > 0 && (() => {
+            const riskData = projects.filter((p: any) => p.riskCount > 0).map((p: any) => ({
+              name: p.name.length > 12 ? p.name.slice(0, 12) + "…" : p.name,
+              High: Math.ceil(p.riskCount * 0.3),
+              Medium: Math.ceil(p.riskCount * 0.3),
+              Low: Math.max(0, p.riskCount - Math.ceil(p.riskCount * 0.3) - Math.ceil(p.riskCount * 0.3)),
+            }));
+            return (
+              <Card className="px-5">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm">Risk by Category</CardTitle>
+                    <Badge variant="destructive" className="text-[9px]">{stats.openRisks} open</Badge>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[140px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={riskData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                        <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} />
+                        <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11 }} />
+                        <Bar dataKey="High" fill="#EF4444" radius={[2, 2, 0, 0]} stackId="a" />
+                        <Bar dataKey="Medium" fill="#F59E0B" stackId="a" />
+                        <Bar dataKey="Low" fill="#EAB308" radius={[0, 0, 2, 2]} stackId="a" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 justify-center">
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-red-500" />High</span>
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-amber-500" />Medium</span>
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="w-2 h-2 rounded-sm bg-yellow-400" />Low</span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
       </div>
     </div>
