@@ -35,6 +35,11 @@ export async function generatePhaseArtefacts(
     orderBy: { deployedAt: "desc" },
   });
   const targetPhaseName = phaseName || deployment?.currentPhase || methodology.phases[0].name;
+
+  // ── Load knowledge base context ─────────────────────────────────────────
+  // Pull approved artefact facts + workspace policies before calling Claude
+  const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
+  const knowledgeContext = await getProjectKnowledgeContext(agentId, projectId, agent.orgId);
   const phaseDef = methodology.phases.find(p => p.name === targetPhaseName) || methodology.phases[0];
 
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
@@ -76,8 +81,8 @@ export async function generatePhaseArtefacts(
 
   for (const { names: batch, isSheet } of allBatches) {
     const prompt = isSheet
-      ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name)
-      : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name);
+      ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext)
+      : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext);
 
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -207,6 +212,10 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   });
 
   // ── Step 3: Generate initial artefacts via Claude ──
+  // Load KB context (may be empty on first deploy — that's fine)
+  const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
+  const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
+
   if (process.env.ANTHROPIC_API_KEY) {
     const artefactNames = firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
@@ -231,8 +240,8 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       for (let batchIdx = 0; batchIdx < allBatches.length; batchIdx++) {
         const { names: batch, isSheet } = allBatches[batchIdx];
         const prompt = isSheet
-          ? buildSpreadsheetPrompt(project, firstPhase.name, batch, methodology.name)
-          : buildArtefactPrompt(project, firstPhase.name, batch, methodology.name);
+          ? buildSpreadsheetPrompt(project, firstPhase.name, batch, methodology.name, knowledgeContext)
+          : buildArtefactPrompt(project, firstPhase.name, batch, methodology.name, knowledgeContext);
 
         try {
           const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -381,7 +390,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   return { phases: methodology.phases.length, currentPhase: firstPhase.name };
 }
 
-function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string): string {
+function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = ""): string {
   const category = (project.category || "other").toLowerCase();
   const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
   const isNigeria = (project.name || "").toLowerCase().includes("nigeria") || (project.name || "").toLowerCase().includes("lagos");
@@ -535,13 +544,13 @@ NEVER invent or fabricate personal names (e.g. "James Hartley", "Sarah Mitchell"
 - Roles and job titles ARE acceptable; invented full names are NOT
 - Format unknown names as: TBD — [Role description] (e.g. "TBD — Dubai Partner", "TBD — Hotel Staff")
 
-Generate the following artefacts as CSV data. Each must be SPECIFIC to this project.
+${knowledgeContext ? knowledgeContext : ""}Generate the following artefacts as CSV data. Each must be SPECIFIC to this project.
 Start each with "## ARTEFACT: <name>" on its own line, then output the CSV immediately — no other text.
 
 ${artefactInstructions}`;
 }
 
-function buildArtefactPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string): string {
+function buildArtefactPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = ""): string {
   const category = (project.category || "other").toLowerCase();
   const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
   const isNigeria = (project.name || "").toLowerCase().includes("nigeria") || (project.name || "").toLowerCase().includes("lagos");
@@ -618,7 +627,7 @@ Any asterisk, hash, or pipe character in prose output = FAILURE.
   </tbody>
 </table>
 
-━━━ ARTEFACTS TO GENERATE ━━━
+${knowledgeContext ? knowledgeContext : ""}━━━ ARTEFACTS TO GENERATE ━━━
 ${artefactSections}
 
 ━━━ SEPARATOR RULE ━━━
