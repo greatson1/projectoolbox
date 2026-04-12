@@ -1,6 +1,7 @@
 "use client";
 
 import { ThemeProvider } from "next-themes";
+import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, useEffect, type ReactNode } from "react";
 import { AppProgressBar as ProgressBar } from "next-nprogress-bar";
@@ -39,6 +40,7 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
+    <SessionProvider>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider
         attribute="class"
@@ -55,5 +57,6 @@ export function Providers({ children }: { children: ReactNode }) {
         {children}
       </ThemeProvider>
     </QueryClientProvider>
+    </SessionProvider>
   );
 }
