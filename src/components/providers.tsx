@@ -26,8 +26,13 @@ export function Providers({ children }: { children: ReactNode }) {
             staleTime: 5 * 60 * 1000,     // 5 min — data stays fresh, no refetch on navigate
             gcTime: 15 * 60 * 1000,        // 15 min — keep unused data in cache
             refetchOnWindowFocus: false,
-            retry: 1,                       // only retry once (faster failure)
             refetchOnMount: false,          // don't refetch if data is fresh
+            // Retry on 403 "session loading" errors (orgId not yet in JWT after refresh)
+            retry: (failureCount, error: any) => {
+              if (error?.message?.includes("session may still be loading") && failureCount < 3) return true;
+              return failureCount < 1; // normal errors retry once
+            },
+            retryDelay: 1500,
           },
         },
       })

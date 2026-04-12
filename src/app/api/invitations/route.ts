@@ -10,7 +10,7 @@ export async function GET() {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const orgId = (session.user as any).orgId;
-  if (!orgId) return NextResponse.json({ data: [] });
+  if (!orgId) return NextResponse.json({ error: "No organisation — session may still be loading" }, { status: 403 });
 
   const invitations = await db.invitation.findMany({
     where: { orgId },

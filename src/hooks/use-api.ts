@@ -15,11 +15,6 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return json.data ?? json;
 }
 
-// Retry strategy: retry on 403 (session loading) up to 3 times with delay
-const retryFn = (failureCount: number, error: any) => {
-  if (error?.message?.includes("session may still be loading") && failureCount < 3) return true;
-  return false;
-};
 
 // ── Dashboard ──
 
@@ -28,8 +23,6 @@ export function useDashboard() {
     queryKey: ["dashboard"],
     queryFn: () => api<any>("/api/dashboard"),
     refetchInterval: 60000,
-    retry: retryFn,
-    retryDelay: 1500,
   });
 }
 
@@ -40,8 +33,6 @@ export function useProjects() {
     queryKey: ["projects"],
     queryFn: () => api<any[]>("/api/projects"),
     refetchInterval: 30000,
-    retry: retryFn,
-    retryDelay: 1500,
   });
 }
 
@@ -62,8 +53,6 @@ export function useAgents() {
     refetchInterval: 15000,
     refetchOnMount: "always",
     staleTime: 0,
-    retry: retryFn,
-    retryDelay: 1500,
   });
 }
 

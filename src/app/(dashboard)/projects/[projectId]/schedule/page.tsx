@@ -76,19 +76,43 @@ export default function SchedulePage() {
   const { data: project } = useProject(projectId);
   const { data: apiTasks } = useProjectTasks(projectId);
 
-  const TASKS_DATA: ScheduleTask[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any) => ({
-    id: t.id,
-    name: t.title || t.name,
-    phase: t.phase || "Execution",
-    start: t.startDate || t.start || "2026-01-06",
-    end: t.endDate || t.end || "2026-01-20",
-    progress: t.progress ?? 0,
-    status: t.status === "completed" || t.status === "done" ? "done" : t.status === "in_progress" || t.status === "active" ? "active" : t.status === "at-risk" ? "at-risk" : t.isMilestone ? "milestone" : "pending" as TaskStatus,
-    dependsOn: t.dependsOn || t.dependencies || [],
-    assignee: t.assignee || t.assigneeName || "",
-    isMilestone: t.isMilestone || false,
-    isCriticalPath: t.isCriticalPath || false,
-  })) : [] as ScheduleTask[];
+  // Build a phaseId → phase name lookup from the project's phases
+  const phaseNameById = useMemo(() => {
+    const phases: any[] = (project as any)?.phases || [];
+    return Object.fromEntries(phases.map((p: any) => [p.id, p.name]));
+  }, [project]);
+
+  const TASKS_DATA: ScheduleTask[] = useMemo(() => {
+    if (!apiTasks || apiTasks.length === 0) return [];
+    return apiTasks.map((t: any) => {
+      // DB stores uppercase: "DONE", "IN_PROGRESS", "AT_RISK", "TODO", "BLOCKED"
+      const s = (t.status || "").toUpperCase();
+      const status: TaskStatus =
+        s === "DONE" || s === "COMPLETED" ? "done"
+        : s === "IN_PROGRESS" || s === "ACTIVE" ? "active"
+        : s === "AT_RISK" || s === "BLOCKED" ? "at-risk"
+        : "pending";
+
+      // phaseId is a UUID — resolve to name, fall back to "Execution"
+      const phase = (t.phaseId && phaseNameById[t.phaseId])
+        || t.phase  // in case the API ever normalises this
+        || "Execution";
+
+      return {
+        id: t.id,
+        name: t.title || t.name,
+        phase,
+        start: t.startDate ? t.startDate.slice(0, 10) : (t.start || new Date().toISOString().slice(0, 10)),
+        end: t.endDate ? t.endDate.slice(0, 10) : (t.end || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)),
+        progress: t.progress ?? 0,
+        status,
+        dependsOn: Array.isArray(t.dependencies) ? t.dependencies : [],
+        assignee: t.assigneeName || t.assignee || "",
+        isMilestone: false, // no isMilestone field in Task schema
+        isCriticalPath: t.isCriticalPath || false,
+      };
+    });
+  }, [apiTasks, phaseNameById]);
 
   const mode = "dark";
   const [zoom, setZoom] = useState<ZoomLevel>("month");
