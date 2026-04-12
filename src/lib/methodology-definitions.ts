@@ -227,10 +227,11 @@ const WATERFALL: MethodologyDefinition = {
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
         { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
         { name: "Cost Management Plan", required: true, aiGeneratable: true },
-        { name: "Resource Management Plan", required: true, aiGeneratable: true },
+        { name: "Resource Management Plan", required: false, aiGeneratable: true },
         { name: "Risk Management Plan", required: true, aiGeneratable: true },
-        { name: "Quality Management Plan", required: true, aiGeneratable: true },
+        { name: "Quality Management Plan", required: false, aiGeneratable: true },
         { name: "Change Control Plan", required: true, aiGeneratable: true },
+        { name: "RACI Matrix", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Project Baseline Approval",
@@ -455,6 +456,9 @@ const SAFE: MethodologyDefinition = {
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Solution Vision", required: false, aiGeneratable: true },
+        { name: "Architectural Runway", required: false, aiGeneratable: true },
+        { name: "Team Topologies", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "PI Commitment",
@@ -473,6 +477,8 @@ const SAFE: MethodologyDefinition = {
         { name: "Iteration Plans", required: true, aiGeneratable: true },
         { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "System Demos", required: true, aiGeneratable: false },
+        { name: "Risk Reviews", required: false, aiGeneratable: true },
+        { name: "Status Reports", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "System Demo",
@@ -520,6 +526,9 @@ const HYBRID: MethodologyDefinition = {
         { name: "Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
+        { name: "Team Charter", required: false, aiGeneratable: true },
+        { name: "Outline Business Case", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Foundation Approval",
@@ -539,6 +548,10 @@ const HYBRID: MethodologyDefinition = {
         { name: "WBS", required: true, aiGeneratable: true },
         { name: "Backlog", required: true, aiGeneratable: true },
         { name: "Risk Plan", required: true, aiGeneratable: true },
+        { name: "Schedule Baseline", required: false, aiGeneratable: true },
+        { name: "Resource Plan", required: false, aiGeneratable: true },
+        { name: "Quality Plan", required: false, aiGeneratable: true },
+        { name: "Change Control Plan", required: false, aiGeneratable: true },
         { name: "Gate Criteria", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -560,6 +573,9 @@ const HYBRID: MethodologyDefinition = {
         { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Phase Progress Reports", required: false, aiGeneratable: true },
+        { name: "Retrospectives", required: false, aiGeneratable: true },
+        { name: "Risk Reviews", required: false, aiGeneratable: true },
+        { name: "Burndown Chart", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Delivery Review",
