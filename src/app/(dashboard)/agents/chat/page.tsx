@@ -255,9 +255,11 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
-  // Parse and strip <ASK> tags from content
-  const askMatches = [...(msg.content || "").matchAll(/<ASK\s+([^>]*)>([^<]*)<\/ASK>/gi)];
-  const cleanContent = (msg.content || "").replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
+  // Strip sentinel values and <ASK> tags from content
+  const rawContent = (msg.content || "")
+    .replace(/^__(?:AGENT_QUESTION|CLARIFICATION_SESSION|CLARIFICATION_COMPLETE|PROJECT_STATUS)__$/g, "");
+  const askMatches = [...rawContent.matchAll(/<ASK\s+([^>]*)>([^<]*)<\/ASK>/gi)];
+  const cleanContent = rawContent.replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
 
   // Default text — render with proper markdown (tables, headings, lists, bold, etc.)
   return (
