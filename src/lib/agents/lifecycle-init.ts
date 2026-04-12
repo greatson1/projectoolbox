@@ -482,15 +482,32 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     where: { orgId: agent.orgId, role: { in: ["OWNER", "ADMIN"] } },
     select: { id: true },
   });
+  // Calculate real impact scores for the phase gate
+  const [artefactCount, riskCount, taskCount] = await Promise.all([
+    db.agentArtefact.count({ where: { projectId: project.id, agentId } }),
+    db.risk.count({ where: { projectId: project.id, status: "OPEN" } }),
+    db.task.count({ where: { projectId: project.id } }),
+  ]);
+  const budget = project.budget || 0;
+  // Schedule: 1 if early phases, 2 if mid, 3 if late phases have dependencies
+  const scheduleImpact = phases.length > 3 ? 2 : 1;
+  // Cost: based on budget size
+  const costImpact = budget > 100000 ? 3 : budget > 10000 ? 2 : 1;
+  // Scope: based on artefact count (more docs = more scope defined)
+  const scopeImpact = artefactCount > 8 ? 2 : 1;
+  // Stakeholder: based on risk count (more risks = more stakeholder concern)
+  const stakeholderImpact = riskCount > 5 ? 3 : riskCount > 2 ? 2 : 1;
+
   const gateApproval = await db.approval.create({
     data: {
       projectId: project.id,
-      requestedById: agentId, // Agent ID — so the approvals page can resolve the agent name/avatar
+      requestedById: agentId,
       title: `${firstPhase.name} Gate: ${firstPhase.gate.criteria}`,
-      description: `Agent ${agent.name} has completed the ${firstPhase.name} phase. Review the generated artefacts and approve to advance to the next phase.`,
+      description: `Agent ${agent.name} has completed the ${firstPhase.name} phase. Generated ${artefactCount} artefact(s), identified ${riskCount} risk(s), scaffolded ${taskCount} task(s). Review and approve to advance.`,
       type: "PHASE_GATE",
       status: "PENDING",
-      impact: { level: "MEDIUM", description: "Phase gate approval", agentId, agentName: agent.name } as any,
+      impactScores: { schedule: scheduleImpact, cost: costImpact, scope: scopeImpact, stakeholder: stakeholderImpact } as any,
+      impact: { level: costImpact >= 3 || stakeholderImpact >= 3 ? "HIGH" : "MEDIUM", agentId, agentName: agent.name, artefactCount, riskCount, taskCount } as any,
     },
   });
 
