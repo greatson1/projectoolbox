@@ -1065,46 +1065,78 @@ export default function ProjectWizardPage() {
                   </FieldGroup>
                 </Card>
 
-                {/* Personality */}
+                {/* Personality — Communication Style */}
                 <Card className="px-5">
-                  <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Communication Style</h3>
-                  <div className="space-y-4">
-                    <SliderField label="Tone" value={data.personalityFormal} onChange={v => upd({ personalityFormal: v })} color={g.color} labelLeft="Formal" labelRight="Friendly" />
-                    <SliderField label="Detail" value={data.personalityConcise} onChange={v => upd({ personalityConcise: v })} color={g.color} labelLeft="Concise" labelRight="Detailed" />
+                  <h3 className="text-[14px] font-semibold mb-4" style={{ color: "var(--foreground)" }}>Communication Style</h3>
+                  <div className="space-y-5">
+                    {/* Tone slider with preview */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-bold" style={{ color: data.personalityFormal < 35 ? g.color : "var(--muted-foreground)" }}>🏢 Formal</span>
+                        <span className="text-[11px] font-bold" style={{ color: data.personalityFormal > 65 ? g.color : "var(--muted-foreground)" }}>😊 Friendly</span>
+                      </div>
+                      <input type="range" min={0} max={100} value={data.personalityFormal} onChange={e => upd({ personalityFormal: Number(e.target.value) })}
+                        className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                        style={{ background: `linear-gradient(to right, ${g.color} ${data.personalityFormal}%, var(--border) ${data.personalityFormal}%)` }} />
+                      <p className="text-[10px] mt-1.5 rounded-lg px-3 py-2" style={{ background: `${g.color}08`, border: `1px solid ${g.color}15`, color: "var(--muted-foreground)" }}>
+                        {data.personalityFormal < 25 ? "\"The risk register indicates three HIGH-rated items requiring immediate mitigation. I recommend we schedule a formal review.\""
+                          : data.personalityFormal < 50 ? "\"I've identified 3 high risks that need attention. Let's set up a review to work through the mitigations.\""
+                          : data.personalityFormal < 75 ? "\"Hey — heads up, I found 3 risks we should look at. Want me to set up a quick review?\""
+                          : "\"Found a few risks we should chat about! Nothing scary, but let's get ahead of them 😊\""}
+                      </p>
+                    </div>
+
+                    {/* Detail slider with preview */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-bold" style={{ color: data.personalityConcise < 35 ? g.color : "var(--muted-foreground)" }}>⚡ Concise</span>
+                        <span className="text-[11px] font-bold" style={{ color: data.personalityConcise > 65 ? g.color : "var(--muted-foreground)" }}>📖 Detailed</span>
+                      </div>
+                      <input type="range" min={0} max={100} value={data.personalityConcise} onChange={e => upd({ personalityConcise: Number(e.target.value) })}
+                        className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                        style={{ background: `linear-gradient(to right, ${g.color} ${data.personalityConcise}%, var(--border) ${data.personalityConcise}%)` }} />
+                      <p className="text-[10px] mt-1.5 rounded-lg px-3 py-2" style={{ background: `${g.color}08`, border: `1px solid ${g.color}15`, color: "var(--muted-foreground)" }}>
+                        {data.personalityConcise < 25 ? "Short, direct updates. Bullet points. No fluff."
+                          : data.personalityConcise < 50 ? "Clear summaries with key context. Tables where helpful."
+                          : data.personalityConcise < 75 ? "Thorough explanations with reasoning, alternatives, and recommendations."
+                          : "Comprehensive analysis with full context, options appraisal, risk assessment, and detailed rationale for every recommendation."}
+                      </p>
+                    </div>
                   </div>
                 </Card>
 
-                {/* Reporting + Notifications + Integrations */}
+                {/* Reporting */}
                 <Card className="px-5">
-                  <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Reporting & Integrations</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <FieldGroup label="Report Schedule">
-                      <select className="w-full px-3 py-2 rounded-[10px] text-[13px]" value={data.reportSchedule}
-                        onChange={e => upd({ reportSchedule: e.target.value })}
-                        style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="biweekly">Bi-weekly</option>
-                        <option value="monthly">Monthly</option>
-                      </select>
-                    </FieldGroup>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Notification Channels</p>
-                      <div className="flex gap-2">
-                        <ToggleChip label="Slack" checked={data.notifSlack} onChange={v => upd({ notifSlack: v })} color={g.color} />
-                        <ToggleChip label="Email" checked={data.notifEmail} onChange={v => upd({ notifEmail: v })} color={g.color} />
-                        <ToggleChip label="Telegram" checked={data.notifTelegram} onChange={v => upd({ notifTelegram: v })} color={g.color} />
-                      </div>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Integrations</p>
-                      <div className="flex gap-2">
-                        <ToggleChip label="🔗 Jira" checked={data.intJira} onChange={v => upd({ intJira: v })} color={g.color} />
-                        <ToggleChip label="🐙 GitHub" checked={data.intGithub} onChange={v => upd({ intGithub: v })} color={g.color} />
-                        <ToggleChip label="📝 Confluence" checked={data.intConfluence} onChange={v => upd({ intConfluence: v })} color={g.color} />
-                      </div>
-                    </div>
+                  <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Reporting</h3>
+                  <FieldGroup label="Status Report Schedule">
+                    <select className="w-full px-3 py-2 rounded-[10px] text-[13px]" value={data.reportSchedule}
+                      onChange={e => upd({ reportSchedule: e.target.value })}
+                      style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid var(--border)` }}>
+                      <option value="daily">Daily — agent generates a status report every day</option>
+                      <option value="weekly">Weekly — agent generates a status report every Monday</option>
+                      <option value="biweekly">Bi-weekly — status report every two weeks</option>
+                      <option value="monthly">Monthly — status report on the 1st of each month</option>
+                    </select>
+                  </FieldGroup>
+                </Card>
+
+                {/* Integrations — Coming Soon */}
+                <Card className="px-5" style={{ opacity: 0.5 }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Integrations</h3>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider" style={{ background: `${g.color}15`, color: g.color }}>Coming Soon</span>
                   </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <ToggleChip label="🔗 Jira" checked={false} onChange={() => {}} color={g.color} />
+                    <ToggleChip label="🐙 GitHub" checked={false} onChange={() => {}} color={g.color} />
+                    <ToggleChip label="📝 Confluence" checked={false} onChange={() => {}} color={g.color} />
+                    <ToggleChip label="💬 Slack" checked={false} onChange={() => {}} color={g.color} />
+                    <ToggleChip label="📧 Email" checked={false} onChange={() => {}} color={g.color} />
+                    <ToggleChip label="✈️ Telegram" checked={false} onChange={() => {}} color={g.color} />
+                  </div>
+                  <p className="text-[10px] mt-2" style={{ color: "var(--muted-foreground)" }}>
+                    Connect your tools for two-way sync. Available on Pro and Enterprise plans.
+                  </p>
                 </Card>
               </div>
 
