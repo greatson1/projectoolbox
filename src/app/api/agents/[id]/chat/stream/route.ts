@@ -277,23 +277,21 @@ Gate: Sponsor sign-off, all artefacts archived
 - Be specific — use the actual project name, budget figures, dates, and locations in all documents
 
 ## INTERACTIVE QUESTIONS
-When you need information from the user during a conversation, NEVER use a markdown bullet list of questions.
-Instead, ask each question as an interactive card using this exact XML format:
+When you need information from the user, ask exactly ONE question per response using this XML format:
 
 <ASK type="text" id="field_name">Your question here?</ASK>
 <ASK type="choice" options="Option A|Option B|Option C" id="field_name">Which of these?</ASK>
 <ASK type="yesno" id="field_name">Is this correct?</ASK>
 <ASK type="number" id="field_name">How many / how much?</ASK>
 <ASK type="date" id="field_name">When is / what date?</ASK>
-<ASK type="multi" options="A|B|C|D" id="field_name">Select all that apply…</ASK>
 
-Rules for interactive questions:
-- Use ONLY <ASK> blocks — never markdown bullet lists like "• What is X?" or "1. Tell me Y"
-- Ask ONE question at a time as a general rule; group 2–3 only if they are tightly related
-- Put any explanatory text BEFORE the <ASK> block, not inside it
-- The id should be a short snake_case descriptor (e.g. departure_city, num_travellers, go_live_date)
-- For questions with clear options (methodology, priority, yes/no), always use choice or yesno types
-- For open-ended text, use type="text"
+STRICT RULES:
+- Ask exactly ONE <ASK> per response — NEVER multiple questions at once
+- Put explanatory text BEFORE the <ASK> block, not inside it
+- Wait for the user to answer before asking the next question
+- The id should be a short snake_case descriptor (e.g. departure_city, num_travellers)
+- For questions with clear options, use choice type. For yes/no, use yesno type
+- NEVER use markdown bullet lists of questions — one <ASK> block only
 
 ## KNOWLEDGE BASE
 ${knowledgeItems.length > 0
@@ -850,9 +848,12 @@ You have access to the full conversation history from all previous sessions with
           data: { agentId, conversationId, role: "agent", content: cleanedContent || fullContent },
         });
 
-        // Save each extracted question as its own interactive message
-        for (let qi = 0; qi < extractedQuestions.length; qi++) {
-          const q = extractedQuestions[qi];
+        // Save only the FIRST question as an interactive card.
+        // If Claude sent multiple despite the "one at a time" rule, queue the
+        // rest into a clarification session so they are asked sequentially
+        // without burning credits on each answer.
+        if (extractedQuestions.length > 0) {
+          const firstQ = extractedQuestions[0];
           await db.chatMessage.create({
             data: {
               agentId,
@@ -861,12 +862,51 @@ You have access to the full conversation history from all previous sessions with
               content: "__AGENT_QUESTION__",
               metadata: {
                 type: "agent_question",
-                question: { id: q.id, question: q.question, type: q.type, options: q.options },
-                questionIndex: qi,
+                question: { id: firstQ.id, question: firstQ.question, type: firstQ.type, options: firstQ.options },
+                questionIndex: 0,
                 totalQuestions: extractedQuestions.length,
               } as any,
             },
           }).catch(() => {});
+
+          // Queue remaining questions as a clarification session (zero-credit sequential flow)
+          if (extractedQuestions.length > 1 && deployment?.projectId) {
+            try {
+              const { getActiveSession } = await import("@/lib/agents/clarification-session");
+              const existingSession = await getActiveSession(agentId, deployment.projectId);
+              if (!existingSession) {
+                const sessionQuestions = extractedQuestions.slice(1).map((q, i) => ({
+                  id: q.id,
+                  artefact: "General",
+                  field: q.id,
+                  question: q.question,
+                  type: (q.type || "text") as any,
+                  options: q.options,
+                  answered: false,
+                }));
+                const session = {
+                  sessionId: `cs_${Date.now()}`,
+                  agentId,
+                  projectId: deployment.projectId,
+                  artefactNames: [],
+                  questions: sessionQuestions,
+                  startedAt: new Date().toISOString(),
+                  status: "active" as const,
+                  currentQuestionIndex: 0,
+                };
+                await db.knowledgeBaseItem.create({
+                  data: {
+                    orgId, agentId, projectId: deployment.projectId,
+                    layer: "PROJECT", type: "TEXT",
+                    title: "__clarification_session__",
+                    content: JSON.stringify(session),
+                    trustLevel: "STANDARD",
+                    tags: ["clarification_session", "active"],
+                  },
+                }).catch(() => {});
+              }
+            } catch {}
+          }
         }
 
         // ── Status card: append DB-derived project status for status queries ──
