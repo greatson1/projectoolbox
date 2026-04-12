@@ -136,10 +136,25 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
+  // Initialise from real agent data once loaded (not hardcoded defaults)
   const [configAutonomy, setConfigAutonomy] = useState(3);
-  const [personality, setPersonality] = useState(40);
+  const [personality, setPersonality] = useState(50);
   const [notifs, setNotifs] = useState(NOTIFICATION_PREFS.map((n) => n.enabled));
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
+
+  // Sync Configuration tab state from real API data when it arrives
+  const [configSynced, setConfigSynced] = useState(false);
+  React.useEffect(() => {
+    if (apiAgent && !configSynced) {
+      if (apiAgent.autonomyLevel) setConfigAutonomy(apiAgent.autonomyLevel);
+      const p = apiAgent.personality as any;
+      if (p) {
+        const formalityVal = p.formalityLevel ?? p.formal ?? 50;
+        setPersonality(formalityVal);
+      }
+      setConfigSynced(true);
+    }
+  }, [apiAgent, configSynced]);
 
   // ── Knowledge tab state ──
   const [kbMode, setKbMode] = useState<"transcript" | "document" | "url" | "audio">("transcript");
@@ -1417,6 +1432,17 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     </div>
                   ))}
                 </div>
+                <Button variant="outline" size="sm" className="mt-3 w-full" onClick={async () => {
+                  const prefMap = Object.fromEntries(NOTIFICATION_PREFS.map((n, i) => [n.label.toLowerCase().replace(/\s+/g, "_"), notifs[i]]));
+                  try {
+                    const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}`, {
+                      method: "PATCH", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ notificationPrefs: prefMap }),
+                    });
+                    if (res.ok) toast.success("Notification preferences saved");
+                    else toast.error("Failed to save");
+                  } catch { toast.error("Network error"); }
+                }}>Save Preferences</Button>
               </Card>
 
               {/* Personality slider */}
@@ -1461,26 +1487,34 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               {/* Integrations */}
               <Card className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-foreground">Integrations</h3>
-                <div className="space-y-2">
-                  {INTEGRATIONS.map((int) => (
-                    <div key={int.name} className="flex items-center justify-between py-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{int.icon}</span>
-                        <span className="text-xs font-medium text-foreground">{int.name}</span>
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          int.status === "connected"
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                            : "border-border bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {int.status}
-                      </Badge>
+                {(() => {
+                  const depConfig = (apiAgent?.deployments?.[0] as any)?.config || {};
+                  const integrations = [
+                    { name: "Jira", icon: "🔗", key: "jiraUrl", connectPath: "/settings/integrations" },
+                    { name: "Slack", icon: "💬", key: "slackWebhook", connectPath: "/settings/integrations" },
+                    { name: "MS Teams", icon: "📺", key: "teamsWebhook", connectPath: "/settings/integrations" },
+                    { name: "GitHub", icon: "🐙", key: "githubToken", connectPath: "/settings/integrations" },
+                    { name: "Google Calendar", icon: "📅", key: "googleCalendar", connectPath: "/settings/integrations" },
+                  ].map(i => ({ ...i, connected: !!depConfig[i.key] }));
+                  const connected = integrations.filter(i => i.connected);
+                  const disconnected = integrations.filter(i => !i.connected);
+                  return (
+                    <div className="space-y-2">
+                      {connected.map(int => (
+                        <div key={int.name} className="flex items-center justify-between py-1.5">
+                          <div className="flex items-center gap-2"><span className="text-sm">{int.icon}</span><span className="text-xs font-medium text-foreground">{int.name}</span></div>
+                          <Badge variant="secondary" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600">Connected</Badge>
+                        </div>
+                      ))}
+                      {disconnected.map(int => (
+                        <div key={int.name} className="flex items-center justify-between py-1.5 opacity-60">
+                          <div className="flex items-center gap-2"><span className="text-sm">{int.icon}</span><span className="text-xs font-medium text-foreground">{int.name}</span></div>
+                          <a href={int.connectPath} className="text-[10px] text-primary hover:underline">Connect →</a>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
               </Card>
             </div>
           </div>
@@ -1488,41 +1522,50 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           {/* Credit limits + Reporting */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card className="p-4">
-              <h3 className="mb-3 text-sm font-semibold text-foreground">Credit Limits</h3>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Credit & Budget</h3>
               <div className="space-y-3">
-                <LimitRow label="Daily limit" value="500" unit="credits/day" />
-                <LimitRow label="Monthly limit" value="10,000" unit="credits/month" />
-                <LimitRow label="Per-action cap" value="50" unit="credits" />
-                <LimitRow label="Alert threshold" value="80%" unit="of daily limit" />
+                {agentMetrics?.monthlyBudget ? (
+                  <>
+                    <LimitRow label="Monthly budget" value={agentMetrics.monthlyBudget.toLocaleString()} unit="credits" />
+                    <LimitRow label="Used this month" value={agentMetrics.creditsUsedThisMonth.toLocaleString()} unit="credits" />
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, (agentMetrics.creditsUsedThisMonth / agentMetrics.monthlyBudget) * 100)}%`, background: AGENT_RESOLVED.gradient }} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground text-right">{Math.round((agentMetrics.creditsUsedThisMonth / agentMetrics.monthlyBudget) * 100)}% of monthly budget used</p>
+                  </>
+                ) : (
+                  <>
+                    <LimitRow label="Used this month" value={String(agentMetrics?.creditsUsedThisMonth ?? 0)} unit="credits" />
+                    <LimitRow label="Total credits used" value={String(apiAgent?.creditsUsed ?? 0)} unit="credits" />
+                    <LimitRow label="HITL budget threshold" value={`£${((apiAgent?.deployments?.[0] as any)?.config?.hitlBudgetThreshold || (apiAgent?.deployments?.[0] as any)?.config?.hitleBudgetThreshold || "500").toLocaleString()}`} unit="" />
+                    <p className="text-[10px] text-muted-foreground">No monthly budget cap set. Set one in agent configuration.</p>
+                  </>
+                )}
               </div>
             </Card>
 
             <Card className="p-4">
-              <h3 className="mb-3 text-sm font-semibold text-foreground">Reporting Schedule</h3>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Governance Settings</h3>
               <div className="space-y-2">
-                {[
-                  { report: "Daily status summary", schedule: "Every day at 17:00", enabled: true },
-                  { report: "Weekly progress report", schedule: "Every Friday at 16:00", enabled: true },
-                  { report: "Risk register update", schedule: "Every Monday at 09:00", enabled: true },
-                  { report: "Budget EVM snapshot", schedule: "1st and 15th of month", enabled: false },
-                ].map((r) => (
-                  <div key={r.report} className="flex items-center justify-between py-1.5">
-                    <div>
-                      <span className="text-xs font-medium text-foreground">{r.report}</span>
-                      <p className="text-[10px] text-muted-foreground/60">{r.schedule}</p>
+                {(() => {
+                  const cfg = (apiAgent?.deployments?.[0] as any)?.config || {};
+                  return [
+                    { label: "Phase gate approvals", value: cfg.hitlPhaseGates !== false ? "Required" : "Disabled", enabled: cfg.hitlPhaseGates !== false },
+                    { label: "Budget threshold", value: cfg.hitlBudgetThreshold ? `£${Number(cfg.hitlBudgetThreshold).toLocaleString()}` : cfg.hitleBudgetThreshold ? `£${Number(cfg.hitleBudgetThreshold).toLocaleString()}` : "£500", enabled: true },
+                    { label: "Risk escalation level", value: cfg.hitlRiskThreshold || "high", enabled: true },
+                    { label: "External comms approval", value: "Always required", enabled: true },
+                  ].map((r) => (
+                    <div key={r.label} className="flex items-center justify-between py-1.5">
+                      <div>
+                        <span className="text-xs font-medium text-foreground">{r.label}</span>
+                        <p className="text-[10px] text-muted-foreground/60">{r.value}</p>
+                      </div>
+                      <Badge variant="secondary" className={cn(r.enabled ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600" : "border-border bg-muted text-muted-foreground")}>
+                        {r.enabled ? "Active" : "Off"}
+                      </Badge>
                     </div>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        r.enabled
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                          : "border-border bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {r.enabled ? "Active" : "Off"}
-                    </Badge>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </Card>
           </div>
