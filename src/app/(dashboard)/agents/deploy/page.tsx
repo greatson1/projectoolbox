@@ -537,7 +537,26 @@ export default function ProjectWizardPage() {
               <div className="flex-1">
                 <p className="text-[12px] font-semibold" style={{ color: g.color }}>AI Recommendation</p>
                 <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
-                  Based on {data.category} category{Number(data.budget) > 500000 ? " and budget size" : ""}, we recommend <strong style={{ color: "var(--foreground)" }}>{METHODOLOGIES.find(m => m.id === recommended)?.name}</strong> methodology.
+                  {(() => {
+                    const budget = Number(data.budget) || 0;
+                    const durationDays = data.startDate && data.endDate
+                      ? Math.max(1, Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / 86400000))
+                      : null;
+                    const signals: string[] = [];
+                    if (data.category && data.category !== "other") signals.push(`${data.category} project`);
+                    if (budget > 0) signals.push(`£${budget.toLocaleString()} budget`);
+                    if (durationDays) signals.push(`${durationDays}-day timeline`);
+                    const methodName = METHODOLOGIES.find(m => m.id === recommended)?.name || recommended;
+                    const reasons: Record<string, string> = {
+                      scrum: "Iterative sprints with short feedback loops suit this type of work — the agent delivers in 2-week cycles with regular reviews.",
+                      kanban: "A visual flow board without fixed sprints is ideal for short or ongoing work — focuses on throughput and reduces overhead.",
+                      waterfall: "Sequential phases with clear gates suit projects with fixed scope and well-defined requirements upfront.",
+                      prince2: "Formal governance with stage-gate controls provides the rigour needed for projects of this scale and complexity.",
+                      hybrid: "Combines structured planning phases (requirements, feasibility) with flexible delivery — gives you governance without excessive ceremony.",
+                      safe: "Enterprise-level programme coordination across multiple teams and workstreams — structured scaling of agile practices.",
+                    };
+                    return <>Based on {signals.length > 0 ? signals.join(", ") : "your project"}, we recommend <strong style={{ color: "var(--foreground)" }}>{methodName}</strong>. {reasons[recommended] || ""}</>;
+                  })()}
                 </p>
               </div>
             </div>
