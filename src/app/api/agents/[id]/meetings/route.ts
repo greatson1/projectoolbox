@@ -16,12 +16,11 @@ import {
   normaliseBotStatus,
 } from "@/lib/recall-client";
 import {
-
-export const dynamic = "force-dynamic";
   createCustomBot,
   pingBotService,
 } from "@/lib/custom-bot-client";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // ── GET — list meetings ───────────────────────────────────────────────────────
