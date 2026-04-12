@@ -110,6 +110,7 @@ const NAV: NavGroup[] = [
     projectScoped: true,
     items: [
       { label: "Cost",         href: "/cost",      icon: DollarSign, projectScoped: true },
+      { label: "Estimate",     href: "/estimate",  icon: Calculator, projectScoped: true },
       { label: "EVM",          href: "/evm",       icon: TrendingUp, projectScoped: true },
       { label: "Scorecard",    href: "/scorecard", icon: Award,      projectScoped: true },
       { label: "Benefits",     href: "/benefits",  icon: BarChart3,  projectScoped: true },

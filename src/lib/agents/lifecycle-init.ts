@@ -490,7 +490,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   ]);
   const budget = project.budget || 0;
   // Schedule: 1 if early phases, 2 if mid, 3 if late phases have dependencies
-  const scheduleImpact = phases.length > 3 ? 2 : 1;
+  const scheduleImpact = methodology.phases.length > 3 ? 2 : 1;
   // Cost: based on budget size
   const costImpact = budget > 100000 ? 3 : budget > 10000 ? 2 : 1;
   // Scope: based on artefact count (more docs = more scope defined)
