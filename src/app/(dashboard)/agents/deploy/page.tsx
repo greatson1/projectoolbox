@@ -108,6 +108,26 @@ const PHASE_TEMPLATES: Record<string, PhaseGate[]> = Object.fromEntries(
   ])
 );
 
+// Map artefact names to the app features they feed — shown as "→ Feeds: X" in the wizard
+const ARTEFACT_APP_FEATURES: Record<string, string> = {
+  "wbs": "Schedule / Gantt chart, Task Board",
+  "work breakdown structure": "Schedule / Gantt chart, Task Board",
+  "schedule baseline": "Schedule / Gantt chart, Critical Path",
+  "schedule with dependencies": "Schedule / Gantt chart, Critical Path",
+  "initial risk register": "Risk Register page, Risk monitoring",
+  "risk management plan": "Risk Register page, Risk monitoring",
+  "stakeholder register": "Stakeholders page, Communication tracking",
+  "initial stakeholder register": "Stakeholders page, Communication tracking",
+  "budget breakdown": "Cost page, Budget tracking, EVM",
+  "cost management plan": "Cost page, Budget tracking, EVM",
+  "sprint plans": "Agile Board, Sprint Tracker",
+  "iteration plans": "Agile Board, Sprint Tracker",
+  "flow metrics reports": "Agile Board, Flow metrics",
+  "project brief": "Project overview, Agent context",
+  "project charter": "Project overview, Governance",
+  "communication plan": "Stakeholder notifications",
+};
+
 // Short descriptions for each artefact type — shown as a tooltip in the wizard
 const ARTEFACT_DESCRIPTIONS: Record<string, string> = {
   // PRINCE2 / Traditional
@@ -656,10 +676,15 @@ export default function ProjectWizardPage() {
                   const noneSelected = aiArtefacts.every(a => !a.required);
 
                   const toggleAll = (select: boolean) => {
+                    const origPhase = PHASE_TEMPLATES[data.methodology]?.[pi];
                     const phases = [...data.phases];
-                    phases[pi].artefacts = phases[pi].artefacts.map(a =>
-                      a.aiGeneratable === false ? a : { ...a, required: select }
-                    );
+                    phases[pi].artefacts = phases[pi].artefacts.map(a => {
+                      if (a.aiGeneratable === false) return a;
+                      // Never deselect mandatory artefacts
+                      const orig = origPhase?.artefacts.find((oa: any) => oa.name === a.name);
+                      if (!select && orig?.required) return { ...a, required: true };
+                      return { ...a, required: select };
+                    });
                     upd({ phases });
                   };
 
@@ -692,23 +717,35 @@ export default function ProjectWizardPage() {
                         )}
                       </div>
 
-                      {/* AI-generatable artefacts — selectable */}
+                      {/* AI-generatable artefacts — selectable (mandatory ones locked) */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-2">
                         {aiArtefacts.map((a, ai) => {
                           const realIdx = phase.artefacts.indexOf(a);
                           const desc = ARTEFACT_DESCRIPTIONS[a.name];
+                          // Check if this artefact is mandatory from the methodology definition
+                          const origPhase = PHASE_TEMPLATES[data.methodology]?.[pi];
+                          const origArt = origPhase?.artefacts.find((oa: any) => oa.name === a.name);
+                          const isMandatory = origArt?.required === true;
+                          // Check if this artefact feeds a core app feature
+                          const appFeature = ARTEFACT_APP_FEATURES[a.name.toLowerCase()] || null;
+                          const isLocked = isMandatory;
+
                           return (
                             <label
                               key={ai}
-                              className="flex items-start gap-2.5 p-2.5 rounded-[8px] cursor-pointer transition-all select-none"
+                              className={`flex items-start gap-2.5 p-2.5 rounded-[8px] transition-all select-none ${isLocked ? "cursor-default" : "cursor-pointer"}`}
                               style={{
                                 background: a.required ? `${g.color}10` : "hsl(var(--muted)/0.3)",
                                 border: `1px solid ${a.required ? g.color + "30" : "hsl(var(--border)/0.5)"}`,
+                                opacity: isLocked && !a.required ? 0.6 : 1,
                               }}
                             >
                               {/* Custom checkbox */}
                               <div className="mt-0.5 shrink-0 w-4 h-4 rounded-[4px] flex items-center justify-center transition-all"
-                                style={{ background: a.required ? g.color : "transparent", border: `1.5px solid ${a.required ? g.color : "hsl(var(--border))"}` }}>
+                                style={{
+                                  background: a.required ? g.color : "transparent",
+                                  border: `1.5px solid ${a.required ? g.color : "hsl(var(--border))"}`,
+                                }}>
                                 {a.required && (
                                   <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
                                     <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -716,18 +753,30 @@ export default function ProjectWizardPage() {
                                 )}
                               </div>
                               <input type="checkbox" className="hidden" checked={a.required}
+                                disabled={isLocked}
                                 onChange={() => {
+                                  if (isLocked) return;
                                   const phases = [...data.phases];
                                   phases[pi].artefacts[realIdx] = { ...a, required: !a.required };
                                   upd({ phases });
                                 }} />
                               <div className="flex-1 min-w-0">
-                                <p className="text-[12px] font-semibold leading-tight" style={{ color: a.required ? "var(--foreground)" : "var(--muted-foreground)" }}>
-                                  {a.name}
-                                </p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-[12px] font-semibold leading-tight" style={{ color: a.required ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                                    {a.name}
+                                  </p>
+                                  {isLocked && (
+                                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold uppercase tracking-wider">Required</span>
+                                  )}
+                                </div>
                                 {desc && (
                                   <p className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--muted-foreground)" }}>
                                     {desc}
+                                  </p>
+                                )}
+                                {appFeature && (
+                                  <p className="text-[9px] mt-0.5 leading-snug" style={{ color: g.color }}>
+                                    → Feeds: {appFeature}
                                   </p>
                                 )}
                               </div>
