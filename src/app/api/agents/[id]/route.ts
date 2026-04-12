@@ -33,6 +33,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!agent) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Find active deployment's projectId for cross-scoped queries
+  const activeDeployment = (agent.deployments as any[]).find((d: any) => d.isActive) || agent.deployments[0];
+  const projectId = activeDeployment?.projectId || null;
+
+  // Artefact count — query by both agentId and projectId so we catch all artefacts
+  const artefactWhereClause = projectId
+    ? { OR: [{ agentId: id }, { projectId }] }
+    : { agentId: id };
+  const artefactCount = await db.agentArtefact.count({ where: artefactWhereClause });
+
   // Credit usage for this agent
   const creditUsage = await db.creditTransaction.aggregate({
     where: { agentId: id, type: "USAGE" },
@@ -43,6 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({
     data: {
       ...agent,
+      artefactCount,
       creditsUsed: Math.abs(creditUsage._sum.amount || 0),
       actionCount: creditUsage._count,
     },

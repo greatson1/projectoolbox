@@ -252,15 +252,17 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
     const counts = apiAgent?._count || { activities: 0, decisions: 0, chatMessages: 0 };
     const creditsUsed = apiAgent?.creditsUsed || 0;
     const actionCount = apiAgent?.actionCount || 0;
+    // artefactCount comes from the API (cross-scoped by agentId + projectId)
+    const docCount = apiAgent?.artefactCount ?? (agentArtefactsData ? (Array.isArray(agentArtefactsData) ? agentArtefactsData.length : 0) : 0);
     return [
       { label: "Tasks Completed", value: String(actionCount), icon: "✅", color: "#6366F1" },
-      { label: "Documents Generated", value: "0", icon: "📄", color: "#22D3EE" },
+      { label: "Documents Generated", value: String(docCount), icon: "📄", color: "#22D3EE" },
       { label: "Decisions Made", value: String(counts.decisions), icon: "✓", color: "#10B981" },
       { label: "Chat Messages", value: String(counts.chatMessages), icon: "💬", color: "#F59E0B" },
       { label: "Activities Logged", value: String(counts.activities), icon: "📊", color: "#EF4444" },
       { label: "Credits Consumed", value: creditsUsed.toLocaleString(), icon: "⚡", color: "#8B5CF6" },
     ];
-  }, [apiAgent]);
+  }, [apiAgent, agentArtefactsData]);
 
   // Derive activity timeline from real data
   const resolvedActivityEvents = useMemo(() => {
@@ -562,10 +564,10 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               </Card>
             );
 
-            // Group by phase
+            // Group by phase name (phaseName resolved by the API via the Phase table)
             const phases: Record<string, any[]> = {};
             artefacts.forEach((a: any) => {
-              const phase = a.phaseId || "General";
+              const phase = a.phaseName || "General";
               if (!phases[phase]) phases[phase] = [];
               phases[phase].push(a);
             });
@@ -583,7 +585,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 {/* Artefact cards grouped by phase */}
                 {Object.entries(phases).map(([phase, items]) => (
                   <div key={phase}>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{phase} Phase</h3>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{phase === "General" ? "General" : `${phase} Phase`}</h3>
                     <div className="space-y-2">
                       {items.map((artefact: any) => (
                         <Card key={artefact.id} className="p-4">
