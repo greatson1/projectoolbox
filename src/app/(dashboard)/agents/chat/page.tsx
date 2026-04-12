@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink } from "lucide-react";
+import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
 import { AgentQuestionCard, ProjectStatusCard } from "@/components/agents/AgentResponseCards";
 import ReactMarkdown from "react-markdown";
@@ -543,7 +544,8 @@ function AgentChatPage() {
             m.content === "__CLARIFICATION_SESSION__" ||
             m.content === "__CLARIFICATION_COMPLETE__" ||
             m.content === "__AGENT_QUESTION__" ||
-            m.content === "__PROJECT_STATUS__"
+            m.content === "__PROJECT_STATUS__" ||
+            m.content === "__CHANGE_PROPOSAL__"
           ));
         });
 
