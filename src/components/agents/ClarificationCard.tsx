@@ -13,7 +13,18 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, ChevronRight, SkipForward, FileText, ExternalLink } from "lucide-react";
-import type { ClarificationQuestion } from "@/lib/agents/clarification-session";
+// Inlined from clarification-session.ts to avoid importing server-only module (db) into client component
+type QuestionType = "text" | "choice" | "multi" | "yesno" | "number" | "date";
+interface ClarificationQuestion {
+  id: string;
+  artefact: string;
+  field: string;
+  question: string;
+  type: QuestionType;
+  options?: string[];
+  answered: boolean;
+  answer?: string;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
