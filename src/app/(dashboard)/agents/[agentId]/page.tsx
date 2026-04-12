@@ -169,6 +169,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const { data: knowledgeItems, isLoading: kbLoading } = useAgentKnowledge(agentId);
   const deleteKb = useDeleteKnowledgeItem(agentId);
   const ingest = useIngest(agentId);
+  // Declared here (before resolvedStats useMemo) to avoid "used before declaration" TS error
+  const { data: agentArtefactsData, isLoading: artefactsLoading } = useAgentArtefacts(agentId);
 
   const handleKbSubmit = useCallback(async () => {
     if (!agentId) return;
@@ -276,12 +278,12 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
     const dataCount = Array.isArray(agentArtefactsData) ? agentArtefactsData.length : 0;
     const docCount = Math.max(apiCount, dataCount);
     return [
-      { label: "Tasks Completed", value: String(actionCount), icon: "✅", color: "#6366F1" },
-      { label: "Documents Generated", value: String(docCount), icon: "📄", color: "#22D3EE" },
-      { label: "Decisions Made", value: String(counts.decisions), icon: "✓", color: "#10B981" },
-      { label: "Chat Messages", value: String(counts.chatMessages), icon: "💬", color: "#F59E0B" },
-      { label: "Activities Logged", value: String(counts.activities), icon: "📊", color: "#EF4444" },
-      { label: "Credits Consumed", value: creditsUsed.toLocaleString(), icon: "⚡", color: "#8B5CF6" },
+      { label: "Tasks Completed", value: String(actionCount), icon: "✅", color: "#6366F1", sub: undefined as string | undefined },
+      { label: "Documents Generated", value: String(docCount), icon: "📄", color: "#22D3EE", sub: undefined as string | undefined },
+      { label: "Decisions Made", value: String(counts.decisions), icon: "✓", color: "#10B981", sub: undefined as string | undefined },
+      { label: "Chat Messages", value: String(counts.chatMessages), icon: "💬", color: "#F59E0B", sub: undefined as string | undefined },
+      { label: "Activities Logged", value: String(counts.activities), icon: "📊", color: "#EF4444", sub: undefined as string | undefined },
+      { label: "Credits Consumed", value: creditsUsed.toLocaleString(), icon: "⚡", color: "#8B5CF6", sub: undefined as string | undefined },
     ];
   }, [apiAgent, agentArtefactsData]);
 
@@ -325,7 +327,6 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   }, [apiAgent]);
 
   const { data: pendingApprovals } = useApprovals("PENDING");
-  const { data: agentArtefactsData, isLoading: artefactsLoading } = useAgentArtefacts(agentId);
   const { data: agentMetrics } = useAgentMetrics(agentId);
   const updateArtefact = useUpdateArtefact();
   const [reviewingId, setReviewingId] = useState<string | null>(null);
@@ -1058,7 +1059,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     </tr>
                   </thead>
                   <tbody>
-                    {resolvedDecisions.map((d) => (
+                    {resolvedDecisions.map((d: any) => (
                       <tr key={d.id} className="border-b border-border/10">
                         <td className="px-3 py-2.5 font-bold" style={{ color: AGENT_RESOLVED.color }}>
                           {d.id}
@@ -1452,6 +1453,94 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     else toast.error("Failed to save");
                   } catch { toast.error("Network error"); }
                 }}>Save Preferences</Button>
+              </Card>
+
+              {/* Notification Channels — email, slack, telegram */}
+              <Card className="p-4">
+                <h3 className="mb-1 text-sm font-semibold text-foreground">Notification Channels</h3>
+                <p className="text-[10px] text-muted-foreground mb-3">Configure where your agent sends notifications. Changes apply immediately.</p>
+                <div className="space-y-3">
+                  {/* Email */}
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📧</span>
+                      <div>
+                        <p className="text-xs font-semibold">Email</p>
+                        <p className="text-[10px] text-muted-foreground">Sends to all org admin email addresses via Resend</p>
+                      </div>
+                    </div>
+                    <button className="relative h-5 w-9 rounded-full transition-all"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}/config`, {
+                            method: "PATCH", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ notifEmail: true }),
+                          });
+                          if (res.ok) toast.success("Email notifications enabled");
+                        } catch { toast.error("Failed"); }
+                      }}
+                      style={{ background: AGENT_RESOLVED.color }}>
+                      <div className="absolute top-0.5 size-4 rounded-full bg-white shadow-sm" style={{ left: 18 }} />
+                    </button>
+                  </div>
+
+                  {/* Slack */}
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">💬</span>
+                        <div>
+                          <p className="text-xs font-semibold">Slack</p>
+                          <p className="text-[10px] text-muted-foreground">Posts to a Slack channel via webhook</p>
+                        </div>
+                      </div>
+                    </div>
+                    <input type="url" placeholder="https://hooks.slack.com/services/..."
+                      className="w-full px-3 py-2 rounded-lg text-xs bg-background border border-input"
+                      onBlur={async (e) => {
+                        const url = e.target.value.trim();
+                        if (!url) return;
+                        try {
+                          await fetch(`/api/agents/${AGENT_RESOLVED.id}/config`, {
+                            method: "PATCH", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ notifSlack: true, slackWebhookUrl: url }),
+                          });
+                          toast.success("Slack webhook saved");
+                        } catch { toast.error("Failed"); }
+                      }} />
+                  </div>
+
+                  {/* Telegram */}
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✈️</span>
+                        <div>
+                          <p className="text-xs font-semibold">Telegram</p>
+                          <p className="text-[10px] text-muted-foreground">Sends via Telegram Bot API</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" placeholder="Bot Token"
+                        className="w-full px-3 py-2 rounded-lg text-xs bg-background border border-input" />
+                      <input type="text" placeholder="Chat ID"
+                        className="w-full px-3 py-2 rounded-lg text-xs bg-background border border-input"
+                        onBlur={async (e) => {
+                          const chatId = e.target.value.trim();
+                          const botToken = (e.target.previousElementSibling as HTMLInputElement)?.value?.trim();
+                          if (!chatId || !botToken) return;
+                          try {
+                            await fetch(`/api/agents/${AGENT_RESOLVED.id}/config`, {
+                              method: "PATCH", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ notifTelegram: true, telegramBotToken: botToken, telegramChatId: chatId }),
+                            });
+                            toast.success("Telegram saved");
+                          } catch { toast.error("Failed"); }
+                        }} />
+                    </div>
+                  </div>
+                </div>
               </Card>
 
               {/* Personality slider */}

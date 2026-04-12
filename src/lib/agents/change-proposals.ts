@@ -169,24 +169,20 @@ export async function createChangeProposal(
     },
   }).catch(() => {});
 
-  // Notify org admins
+  // Notify via all configured channels (in-app + email + slack + telegram)
   try {
-    const admins = await db.user.findMany({
-      where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
-      select: { id: true },
+    const agent = await db.agent.findUnique({ where: { id: agentId }, select: { name: true } });
+    const project = await db.project.findUnique({ where: { id: projectId }, select: { name: true } });
+    const { dispatchNotification } = await import("@/lib/agents/notification-channels");
+    await dispatchNotification(orgId, {
+      agentId,
+      agentName: agent?.name || "Agent",
+      projectName: project?.name,
+      title: `Change Proposal: ${proposal.title}`,
+      body: `${proposal.changes.length} change(s) proposed. Review and approve.`,
+      actionUrl: "/approvals",
+      urgency: proposal.impact.schedule >= 3 || proposal.impact.cost >= 3 ? "high" : "medium",
     });
-    for (const admin of admins) {
-      await db.notification.create({
-        data: {
-          userId: admin.id,
-          type: "AGENT_ALERT",
-          title: `Change Proposal: ${proposal.title}`,
-          body: `${proposal.changes.length} change(s) proposed. Review and approve.`,
-          actionUrl: `/approvals`,
-          metadata: { agentId, approvalId: approval.id } as any,
-        },
-      }).catch(() => {});
-    }
   } catch {}
 
   return { decisionId: decision.id, approvalId: approval.id };
