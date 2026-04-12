@@ -620,6 +620,21 @@ function AgentChatPage() {
                 }));
                 scrollToBottom();
               }
+              // Surface server-side errors (e.g. Anthropic API failure, credit exhaustion)
+              if (data.error && !fullContent) {
+                const errMsg = data.error === "LLM stream failed"
+                  ? "I'm having trouble connecting to the AI right now. Please try again in a moment."
+                  : data.error;
+                setMessagesByAgent(prev => ({
+                  ...prev,
+                  [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
+                    m.id === streamId ? { ...m, content: errMsg } : m
+                  ),
+                }));
+                setSending(false);
+                scrollToBottom();
+                return; // don't fall through to the empty-stream throw
+              }
             } catch {}
           }
         }
@@ -718,7 +733,7 @@ function AgentChatPage() {
         setMessagesByAgent(prev => ({
           ...prev,
           [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
-            m.id === streamId ? { ...m, content: "Connection error. Please try again." } : m
+            m.id === streamId ? { ...m, content: "I'm unable to respond right now — the server may be restarting. Please try again in a moment." } : m
           ),
         }));
       }

@@ -64,6 +64,16 @@ export function useAgent(id: string | null) {
   });
 }
 
+export function useAgentMetrics(id: string | null) {
+  return useQuery({
+    queryKey: ["agent-metrics", id],
+    queryFn: () => api<any>(`/api/agents/${id}/metrics`),
+    enabled: !!id,
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
+}
+
 export function useCreateAgent() {
   const qc = useQueryClient();
   return useMutation({
@@ -227,6 +237,24 @@ export function useCreateTask(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: any) => api(`/api/projects/${projectId}/tasks`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
+  });
+}
+
+export function useUpdateTask(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, ...data }: { taskId: string; [key: string]: any }) =>
+      api(`/api/projects/${projectId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
+  });
+}
+
+export function useDeleteTask(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) =>
+      api(`/api/projects/${projectId}/tasks/${taskId}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", projectId] }),
   });
 }

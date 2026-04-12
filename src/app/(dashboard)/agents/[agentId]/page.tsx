@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest } from "@/hooks/use-api";
+import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest, useAgentMetrics } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -303,6 +303,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
   const { data: pendingApprovals } = useApprovals("PENDING");
   const { data: agentArtefactsData, isLoading: artefactsLoading } = useAgentArtefacts(agentId);
+  const { data: agentMetrics } = useAgentMetrics(agentId);
   const updateArtefact = useUpdateArtefact();
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const projectId = apiAgent?.deployments?.[0]?.project?.id;
@@ -710,38 +711,112 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           </Card>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 items-start">
-            {/* Task queue */}
+            {/* Recent activity queue */}
             <Card className="p-4">
-              <h3 className="mb-3 text-sm font-semibold text-foreground">Active Task Queue</h3>
-              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
-                No tasks in queue
-              </div>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Recent Activity</h3>
+              {(apiAgent?.activities || []).filter((a: any) => a.type !== "comms_reminder").length === 0 ? (
+                <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">No activity recorded yet</div>
+              ) : (
+                <div className="space-y-2">
+                  {(apiAgent?.activities || []).filter((a: any) => a.type !== "comms_reminder").slice(0, 5).map((a: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2.5 rounded-lg bg-muted/40 px-3 py-2">
+                      <div className="mt-1 size-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: AGENT_RESOLVED.color }}>{a.type}</span>
+                        <p className="truncate text-xs text-foreground">{a.summary}</p>
+                        <p className="text-[10px] text-muted-foreground">{new Date(a.createdAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
 
             {/* Recent artefacts */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Recent Artefacts</h3>
-              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
-                No artefacts generated yet
-              </div>
+              {recentArtefactsReal.length === 0 ? (
+                <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">No artefacts generated yet</div>
+              ) : (
+                <div className="space-y-2">
+                  {recentArtefactsReal.map((art: any) => (
+                    <div key={art.id} className="flex items-center gap-2.5 rounded-lg border border-border/30 px-3 py-2">
+                      <FileText className="size-3.5 flex-shrink-0 text-primary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-foreground">{art.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{art.phase || "Draft"}</p>
+                      </div>
+                      <Badge variant="secondary" className={cn("text-[9px]", art.status === "APPROVED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600" : art.status === "PENDING_REVIEW" ? "border-amber-500/30 bg-amber-500/10 text-amber-600" : "border-border bg-muted text-muted-foreground")}>{art.status?.replace("_", " ") || "DRAFT"}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
 
-            {/* AI Model usage pie */}
+            {/* Credit & performance snapshot */}
             <Card className="p-4">
-              <h3 className="mb-2 text-sm font-semibold text-foreground">AI Model Usage</h3>
-              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
-                No model usage data yet
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Performance Snapshot</h3>
+              <div className="space-y-3">
+                {[
+                  { label: "Decision Accuracy", value: agentMetrics?.decisionAccuracy ?? 0, suffix: "%" },
+                  { label: "Autonomy Utilisation", value: agentMetrics?.autonomyUtilisation ?? 0, suffix: "%" },
+                  { label: "Approval Rate", value: agentMetrics?.approvalRate ?? 0, suffix: "%" },
+                ].map(({ label, value, suffix }) => (
+                  <div key={label}>
+                    <div className="mb-1 flex justify-between text-[11px]">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="font-semibold" style={{ color: AGENT_RESOLVED.color }}>{value}{suffix}</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${value}%`, background: AGENT_RESOLVED.gradient }} />
+                    </div>
+                  </div>
+                ))}
+                <div className="mt-3 grid grid-cols-2 gap-2 pt-1">
+                  <div className="rounded-lg bg-muted/50 px-3 py-2 text-center">
+                    <p className="text-[18px] font-bold" style={{ color: AGENT_RESOLVED.color }}>{agentMetrics?.totalActions ?? 0}</p>
+                    <p className="text-[10px] text-muted-foreground">Total Actions</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-3 py-2 text-center">
+                    <p className="text-[18px] font-bold text-amber-500">{agentMetrics?.creditsUsedThisMonth ?? 0}</p>
+                    <p className="text-[10px] text-muted-foreground">Credits This Month</p>
+                  </div>
+                </div>
               </div>
             </Card>
           </div>
 
-          {/* Project progress */}
-          <Card className="p-4">
-            <h3 className="mb-3 text-sm font-semibold text-foreground">Project Progress</h3>
-            <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
-              No project progress data available yet
-            </div>
-          </Card>
+          {/* Project phase progress */}
+          {(() => {
+            const phases = apiAgent?.deployments?.[0]?.project?.phases || [];
+            if (phases.length === 0) return (
+              <Card className="p-4">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">Project Progress</h3>
+                <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">No project assigned or phases initialised yet</div>
+              </Card>
+            );
+            const completed = phases.filter((p: any) => p.status === "COMPLETED").length;
+            const pct = Math.round((completed / phases.length) * 100);
+            return (
+              <Card className="p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">Project Progress</h3>
+                  <span className="text-xs font-semibold" style={{ color: AGENT_RESOLVED.color }}>{pct}% complete</span>
+                </div>
+                <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: AGENT_RESOLVED.gradient }} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {phases.map((p: any, i: number) => (
+                    <div key={i} className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px]" style={{ borderColor: p.status === "COMPLETED" ? "#10B981" : p.status === "ACTIVE" ? AGENT_RESOLVED.color : "var(--border)", background: p.status === "COMPLETED" ? "#10B98110" : p.status === "ACTIVE" ? AGENT_RESOLVED.color + "12" : "transparent" }}>
+                      <span className={cn("size-1.5 rounded-full", p.status === "COMPLETED" ? "bg-emerald-500" : p.status === "ACTIVE" ? "" : "bg-muted-foreground/30")} style={p.status === "ACTIVE" ? { background: AGENT_RESOLVED.color } : {}} />
+                      <span className={p.status === "ACTIVE" ? "font-semibold" : ""}>{p.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            );
+          })()}
         </TabsContent>
 
         {/* ─── ACTIVITY ─── */}
@@ -827,21 +902,75 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             {/* Heatmap + hourly */}
             <div className="space-y-4">
               <Card className="p-4">
-                <h3 className="mb-2 text-[13px] font-semibold text-foreground">
-                  Activity Heatmap (90 Days)
-                </h3>
-                <div className="flex items-center justify-center py-8 text-[11px] text-muted-foreground">
-                  Not enough data for heatmap
-                </div>
+                <h3 className="mb-3 text-[13px] font-semibold text-foreground">Activity Heatmap (90 Days)</h3>
+                {(() => {
+                  const allActivities = (apiAgent?.activities || []) as any[];
+                  // Build a map of date → count for the last 90 days
+                  const dayCounts: Record<string, number> = {};
+                  const now = Date.now();
+                  for (const a of allActivities) {
+                    const d = new Date(a.createdAt);
+                    if (now - d.getTime() > 90 * 86400000) continue;
+                    const key = d.toISOString().slice(0, 10);
+                    dayCounts[key] = (dayCounts[key] || 0) + 1;
+                  }
+                  const days: { date: string; count: number }[] = [];
+                  for (let i = 89; i >= 0; i--) {
+                    const d = new Date(now - i * 86400000);
+                    const key = d.toISOString().slice(0, 10);
+                    days.push({ date: key, count: dayCounts[key] || 0 });
+                  }
+                  const maxCount = Math.max(...days.map(d => d.count), 1);
+                  // Render as a 13-column × 7-row grid (weeks × days)
+                  const weeks: typeof days[] = [];
+                  for (let w = 0; w < 13; w++) weeks.push(days.slice(w * 7, w * 7 + 7));
+                  const totalEvents = Object.values(dayCounts).reduce((s, c) => s + c, 0);
+                  return (
+                    <>
+                      <div className="flex gap-1 overflow-hidden">
+                        {weeks.map((week, wi) => (
+                          <div key={wi} className="flex flex-col gap-1">
+                            {week.map((day, di) => {
+                              const intensity = day.count === 0 ? 0 : Math.max(0.15, day.count / maxCount);
+                              return (
+                                <div
+                                  key={di}
+                                  title={`${day.date}: ${day.count} event${day.count !== 1 ? "s" : ""}`}
+                                  className="size-3.5 rounded-[2px] transition-all"
+                                  style={{ background: day.count === 0 ? "var(--muted)" : AGENT_RESOLVED.color + Math.round(intensity * 255).toString(16).padStart(2, "0") }}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[10px] text-muted-foreground">{totalEvents} events in the last 90 days</p>
+                    </>
+                  );
+                })()}
               </Card>
 
               <Card className="p-4">
-                <h3 className="mb-2 text-[13px] font-semibold text-foreground">
-                  Hourly Distribution
-                </h3>
-                <div className="flex items-center justify-center py-8 text-[11px] text-muted-foreground">
-                  Not enough data for distribution chart
-                </div>
+                <h3 className="mb-3 text-[13px] font-semibold text-foreground">Hourly Distribution</h3>
+                {(() => {
+                  const allActivities = (apiAgent?.activities || []) as any[];
+                  const hourCounts = Array.from({ length: 24 }, (_, h) => ({ hour: `${h.toString().padStart(2, "0")}:00`, count: 0 }));
+                  for (const a of allActivities) {
+                    const h = new Date(a.createdAt).getHours();
+                    hourCounts[h].count++;
+                  }
+                  if (allActivities.length === 0) return <div className="flex items-center justify-center py-8 text-[11px] text-muted-foreground">No activity data yet</div>;
+                  return (
+                    <ResponsiveContainer width="100%" height={100}>
+                      <BarChart data={hourCounts} margin={{ top: 0, right: 0, left: -30, bottom: 0 }}>
+                        <XAxis dataKey="hour" tick={{ fontSize: 8 }} interval={5} tickLine={false} axisLine={false} />
+                        <YAxis tick={{ fontSize: 8 }} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: any) => [v, "Events"]} />
+                        <Bar dataKey="count" radius={[2, 2, 0, 0]} fill={AGENT_RESOLVED.color} opacity={0.8} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
               </Card>
             </div>
           </div>
@@ -938,51 +1067,182 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           </Card>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* Quality trend */}
+            {/* Decision quality trend */}
             <Card className="p-4">
-              <h3 className="mb-2 text-sm font-semibold text-foreground">
-                Decision Quality Trend
-              </h3>
-              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
-                Not enough data for quality trend
-              </div>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Decision Quality Trend</h3>
+              {(() => {
+                const rawDecisions = (apiAgent?.decisions || []) as any[];
+                if (rawDecisions.length === 0) return <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">No decisions logged yet</div>;
+                const chartData = rawDecisions
+                  .slice()
+                  .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                  .map((d: any, i: number) => ({
+                    idx: i + 1,
+                    confidence: Math.round((d.confidence || 0) * 100),
+                    label: `D-${String(i + 1).padStart(3, "0")}`,
+                  }));
+                return (
+                  <ResponsiveContainer width="100%" height={160}>
+                    <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="qualGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={AGENT_RESOLVED.color} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={AGENT_RESOLVED.color} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.4} />
+                      <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} axisLine={false} unit="%" />
+                      <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: any) => [`${v}%`, "Confidence"]} />
+                      <Area type="monotone" dataKey="confidence" stroke={AGENT_RESOLVED.color} fill="url(#qualGrad)" strokeWidth={2} dot={{ r: 3, fill: AGENT_RESOLVED.color }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                );
+              })()}
             </Card>
 
             {/* Escalation history */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Escalation History</h3>
-              <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">
-                No escalations recorded yet
-              </div>
+              {(() => {
+                const escalated = (apiAgent?.decisions || []).filter((d: any) =>
+                  d.status === "PENDING" || d.status === "DEFERRED" || d.approvalId
+                ) as any[];
+                if (escalated.length === 0) return <div className="flex items-center justify-center py-12 text-xs text-muted-foreground">No escalations recorded yet — the agent has operated within its autonomy bounds</div>;
+                return (
+                  <div className="space-y-2">
+                    {escalated.slice(0, 6).map((d: any, i: number) => (
+                      <div key={i} className="flex items-start gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                        <AlertTriangle className="mt-0.5 size-3.5 flex-shrink-0 text-amber-500" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-foreground">{d.description}</p>
+                          <p className="text-[10px] text-muted-foreground">{new Date(d.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · {d.status}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </Card>
           </div>
         </TabsContent>
 
         {/* ─── PERFORMANCE ─── */}
         <TabsContent value="performance" className="space-y-4">
+          {/* KPI row */}
+          {agentMetrics && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: "Decision Accuracy", value: `${agentMetrics.decisionAccuracy}%`, sub: `${agentMetrics.totalDecisions} decisions` },
+                { label: "Approval Rate", value: `${agentMetrics.approvalRate}%`, sub: "HITL approvals" },
+                { label: "Autonomy Utilisation", value: `${agentMetrics.autonomyUtilisation}%`, sub: "auto-executed" },
+                { label: "Avg Time to Approval", value: `${agentMetrics.avgTimeToApproval}h`, sub: "human review" },
+              ].map(({ label, value, sub }) => (
+                <Card key={label} className="p-3 text-center">
+                  <p className="text-[22px] font-bold" style={{ color: AGENT_RESOLVED.color }}>{value}</p>
+                  <p className="text-[11px] font-semibold text-foreground">{label}</p>
+                  <p className="text-[10px] text-muted-foreground">{sub}</p>
+                </Card>
+              ))}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* 8-axis radar */}
+            {/* Radar */}
             <Card className="p-4">
-              <h3 className="mb-2 text-sm font-semibold text-foreground">Performance Radar</h3>
-              <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
-                Not enough data for performance metrics
-              </div>
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Performance Radar</h3>
+              {(() => {
+                const m = agentMetrics;
+                if (!m) return <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">Loading metrics…</div>;
+                const radarData = [
+                  { axis: "Accuracy", value: m.decisionAccuracy },
+                  { axis: "Autonomy", value: m.autonomyUtilisation },
+                  { axis: "Approval", value: m.approvalRate },
+                  { axis: "Speed", value: Math.max(0, 100 - m.avgTimeToApproval * 5) },
+                  { axis: "Activity", value: Math.min(100, m.totalActions * 2) },
+                  { axis: "Efficiency", value: Math.min(100, m.creditEfficiency * 20) },
+                ];
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <RadarChart data={radarData}>
+                      <PolarGrid stroke="var(--border)" />
+                      <PolarAngleAxis dataKey="axis" tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+                      <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                      <Radar dataKey="value" stroke={AGENT_RESOLVED.color} fill={AGENT_RESOLVED.color} fillOpacity={0.25} strokeWidth={2} />
+                      <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: any) => [`${v}`, "Score"]} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                );
+              })()}
             </Card>
 
-            {/* Efficiency trend */}
-            <Card className="p-4">
-              <h3 className="mb-2 text-sm font-semibold text-foreground">
-                Efficiency Trend (Tasks/Day)
-              </h3>
-              <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
-                Not enough data for efficiency trend
+            {/* Efficiency trend + credit chart */}
+            <Card className="p-4 space-y-4">
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-foreground">Activity Trend (Last 14 Days)</h3>
+                {(() => {
+                  const allActivities = (apiAgent?.activities || []) as any[];
+                  const dayCounts: Record<string, number> = {};
+                  const now = Date.now();
+                  for (const a of allActivities) {
+                    const d = new Date(a.createdAt);
+                    if (now - d.getTime() > 14 * 86400000) continue;
+                    const key = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+                    dayCounts[key] = (dayCounts[key] || 0) + 1;
+                  }
+                  const chartData = Array.from({ length: 14 }, (_, i) => {
+                    const d = new Date(now - (13 - i) * 86400000);
+                    const key = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+                    return { day: key, count: dayCounts[key] || 0 };
+                  });
+                  if (allActivities.length === 0) return <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">No activity data yet</div>;
+                  return (
+                    <ResponsiveContainer width="100%" height={100}>
+                      <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="actGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={AGENT_RESOLVED.color} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={AGENT_RESOLVED.color} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.4} />
+                        <XAxis dataKey="day" tick={{ fontSize: 8 }} tickLine={false} axisLine={false} interval={3} />
+                        <YAxis tick={{ fontSize: 8 }} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: any) => [v, "Actions"]} />
+                        <Area type="monotone" dataKey="count" stroke={AGENT_RESOLVED.color} fill="url(#actGrad)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
               </div>
 
-              <h3 className="mb-2 mt-4 text-sm font-semibold text-foreground">
-                Credit Efficiency (Credits/Task)
-              </h3>
-              <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
-                Not enough data for credit efficiency chart
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-foreground">Credit Usage Summary</h3>
+                {agentMetrics ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Used this month</span>
+                      <span className="font-bold text-amber-500">{agentMetrics.creditsUsedThisMonth}</span>
+                    </div>
+                    {agentMetrics.monthlyBudget && (
+                      <>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, (agentMetrics.creditsUsedThisMonth / agentMetrics.monthlyBudget) * 100)}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                          <span>Monthly budget: {agentMetrics.monthlyBudget}</span>
+                          <span>{Math.round((agentMetrics.creditsUsedThisMonth / agentMetrics.monthlyBudget) * 100)}% used</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Efficiency</span>
+                      <span className="font-bold" style={{ color: AGENT_RESOLVED.color }}>{agentMetrics.creditEfficiency} actions/credit</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">Loading…</div>
+                )}
               </div>
             </Card>
           </div>

@@ -15,9 +15,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const agent = await db.agent.findUnique({
     where: { id },
     include: {
-      deployments: { include: { project: true } },
-      activities: { orderBy: { createdAt: "desc" }, take: 20 },
-      decisions: { orderBy: { createdAt: "desc" }, take: 20, include: { approval: true } },
+      deployments: {
+        include: {
+          project: {
+            include: {
+              phases: { orderBy: { order: "asc" }, select: { id: true, name: true, status: true, order: true } },
+            },
+          },
+        },
+      },
+      activities: { orderBy: { createdAt: "desc" }, take: 200 },
+      decisions: { orderBy: { createdAt: "desc" }, take: 50, include: { approval: true } },
       chatMessages: { orderBy: { createdAt: "desc" }, take: 5 },
       _count: { select: { activities: true, decisions: true, chatMessages: true } },
     },
