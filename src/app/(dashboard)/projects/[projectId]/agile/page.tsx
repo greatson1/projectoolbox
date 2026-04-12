@@ -4,7 +4,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { useProjectTasks, useUpdateTask } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -99,8 +98,7 @@ function getEpicColor(_name: string) {
 export default function AgileBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: apiTasks, isLoading, error } = useProjectTasks(projectId);
-  const { data: session } = useSession();
-  const currentUserName = (session as any)?.user?.name ?? "";
+  const currentUserName = "";
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading agile board...</div>;
   if (error) return <div className="p-8 text-center text-muted-foreground">Failed to load: {(error as any)?.message || "Unknown error"}. <button onClick={() => window.location.reload()} className="text-primary underline ml-1">Retry</button></div>;
