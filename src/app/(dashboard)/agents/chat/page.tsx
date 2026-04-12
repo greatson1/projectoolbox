@@ -74,15 +74,18 @@ const QUICK_ACTIONS = [
 
 // ── Rich message renderer ──
 function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGradient?: string; agentName?: string }) {
+  // Guard against null content (DB records can have null)
+  const content = msg.content ?? "";
+
   // Hide internal system kickoff prompts from the UI
-  const isKickoff = msg.role === "user" && (msg.content.startsWith("SYSTEM_KICKOFF:") || msg.content.startsWith("KICKOFF:"));
+  const isKickoff = msg.role === "user" && (content.startsWith("SYSTEM_KICKOFF:") || content.startsWith("KICKOFF:"));
   if (isKickoff) return null;
 
   if (msg.role === "user") {
     return (
       <div className="flex justify-end gap-2">
         <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-br-md bg-primary text-primary-foreground text-sm leading-relaxed whitespace-pre-line">
-          {msg.content}
+          {content}
         </div>
       </div>
     );
@@ -298,7 +301,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
   }
 
   // Strip sentinel values and <ASK> tags from content
-  const rawContent = (msg.content || "")
+  const rawContent = content
     .replace(/^__(?:AGENT_QUESTION|CLARIFICATION_SESSION|CLARIFICATION_COMPLETE|PROJECT_STATUS|CHANGE_PROPOSAL)__$/g, "");
   const askMatches = [...rawContent.matchAll(/<ASK\s+([^>]*)>([^<]*)<\/ASK>/gi)];
   const cleanContent = rawContent.replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
@@ -884,7 +887,7 @@ function AgentChatPage() {
                   </div>
                   <p className="text-[11px] text-muted-foreground truncate">
                     {lastMsg
-                      ? lastMsg.content.slice(0, 45) + (lastMsg.content.length > 45 ? "..." : "")
+                      ? (lastMsg.content ?? "").slice(0, 45) + ((lastMsg.content ?? "").length > 45 ? "..." : "")
                       : agent._count?.chatMessages > 0
                         ? "Tap to continue conversation"
                         : (project?.name || "No messages yet")}
