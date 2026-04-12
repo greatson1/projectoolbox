@@ -617,6 +617,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-sm font-semibold">{artefact.name}</span>
                                   <Badge variant="secondary" className={statusColor[artefact.status] || ""}>{artefact.status}</Badge>
+                                  {(artefact.metadata as any)?.stale && (
+                                    <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-500 text-[9px]">Needs Update</Badge>
+                                  )}
                                   <span className="text-[10px] text-muted-foreground">{artefact.format}</span>
                                 </div>
                                 <p className="text-xs text-muted-foreground">

@@ -81,6 +81,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }).catch(() => {}); // non-blocking
   }
 
+  // Reverse sync: update the WBS/Schedule artefact CSV to reflect this task edit
+  try {
+    const { syncTaskToArtefact } = await import("@/lib/agents/artefact-sync");
+    syncTaskToArtefact(projectId, taskId, data).catch(() => {}); // fire-and-forget
+  } catch {}
+
   return NextResponse.json({ data: task });
 }
 
