@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 
-const FILTERS = ["All", "High Priority", "Artefacts", "Phase Gates", "Communications"];
+const FILTERS = ["All", "High Priority", "Phase Gates", "Change Requests", "Artefacts", "Communications"];
 
 const RISK_TIER_COLORS: Record<string, { bg: string; text: string }> = {
   LOW: { bg: "bg-emerald-500/10", text: "text-emerald-500" },
@@ -69,8 +69,9 @@ export default function ApprovalsPage() {
     // Type filter
     if (filter === "All") return true;
     if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
-    if (filter === "Artefacts") return item.type === "RISK_RESPONSE" || item.type === "SCOPE_CHANGE";
+    if (filter === "Artefacts") return item.type === "SCOPE_CHANGE" || item.type === "RISK_RESPONSE";
     if (filter === "Phase Gates") return item.type === "PHASE_GATE";
+    if (filter === "Change Requests") return item.type === "CHANGE_REQUEST" || item.type === "BUDGET";
     if (filter === "Communications") return item.type === "COMMUNICATION";
     return true;
   });
@@ -131,15 +132,30 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {/* Filter tabs */}
+      {/* Filter tabs with counts */}
       <div className="flex gap-1 p-1 rounded-lg bg-muted/50">
-        {FILTERS.map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={cn("px-4 py-2 rounded-md text-xs font-semibold transition-all",
-              filter === f ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>
-            {f}
-          </button>
-        ))}
+        {FILTERS.map(f => {
+          const count = f === "All" ? items.length
+            : f === "High Priority" ? items.filter((i: any) => i.urgency === "HIGH" || i.urgency === "CRITICAL").length
+            : f === "Phase Gates" ? items.filter((i: any) => i.type === "PHASE_GATE").length
+            : f === "Change Requests" ? items.filter((i: any) => i.type === "CHANGE_REQUEST" || i.type === "BUDGET").length
+            : f === "Artefacts" ? items.filter((i: any) => i.type === "SCOPE_CHANGE" || i.type === "RISK_RESPONSE").length
+            : f === "Communications" ? items.filter((i: any) => i.type === "COMMUNICATION").length
+            : 0;
+          return (
+            <button key={f} onClick={() => setFilter(f)}
+              className={cn("px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5",
+                filter === f ? "bg-card text-foreground shadow-sm" : "text-muted-foreground")}>
+              {f}
+              {count > 0 && (
+                <span className={cn("text-[9px] min-w-[16px] h-4 rounded-full flex items-center justify-center",
+                  filter === f ? "bg-primary text-primary-foreground" : "bg-muted-foreground/20 text-muted-foreground")}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Agent filter */}
