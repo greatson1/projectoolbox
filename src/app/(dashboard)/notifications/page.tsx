@@ -73,7 +73,7 @@ export default function NotificationsPage() {
     if (apiNotifs === undefined) return; // still loading
     if (apiNotifs && apiNotifs.length > 0) {
       setNotifications(apiNotifs.map((n: any, i: number) => ({
-        id: n.id || i, type: ({ AGENT_ALERT: "system", APPROVAL_REQUEST: "approval", BILLING: "billing", SYSTEM: "system", MILESTONE: "system", RISK_ESCALATION: "risk" }[n.type] || "system") as NType,
+        id: n.id || i, type: (({ AGENT_ALERT: "system", APPROVAL_REQUEST: "approval", BILLING: "billing", SYSTEM: "system", MILESTONE: "system", RISK_ESCALATION: "risk" } as Record<string, string>)[n.type] || "system") as NType,
         agentId: "", agentName: "System", agentInitials: "S", agentColor: "#6366F1",
         project: n.project || "", title: n.title || "", description: n.body || n.message || "",
         detail: n.body || n.message || "", time: new Date(n.createdAt).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit" }),

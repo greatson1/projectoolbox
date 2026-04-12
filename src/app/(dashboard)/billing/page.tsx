@@ -470,11 +470,10 @@ export default function BillingPage() {
                           </Badge>
                         </td>
                         <td className="py-2.5 px-3">
-                          <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2" asChild>
-                            <a href={inv.stripeInvoiceUrl || inv.hostedUrl || "#"} target="_blank" rel="noopener noreferrer">
-                              <Download className="w-3 h-3 mr-1" /> PDF
-                            </a>
-                          </Button>
+                          <a href={inv.stripeInvoiceUrl || inv.hostedUrl || "#"} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 h-6 px-2 text-[10px] rounded-md hover:bg-accent hover:text-accent-foreground transition-colors">
+                            <Download className="w-3 h-3" /> PDF
+                          </a>
                         </td>
                       </tr>
                     ))}

@@ -88,8 +88,8 @@ const ISSUE_ICONS: Record<IssueType, string> = { story: "📖", bug: "🐛", tas
 function getLabelColor(name: string) {
   return LABELS.find(l => l.name === name)?.color || "#64748B";
 }
-function getEpicColor(name: string) {
-  return ([]).find(e => e.name === name)?.color || "#64748B";
+function getEpicColor(_name: string) {
+  return "#64748B";
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -744,7 +744,7 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, onStatusChange
           <div className="flex items-center gap-3">
             <span className="text-[16px]">{ISSUE_ICONS[issue.type]}</span>
             <span className="text-[13px] font-bold" style={{ color: "var(--primary)" }}>{issue.id}</span>
-            <Badge variant={issue.priority}>{issue.priority}</Badge>
+            <Badge variant={(issue.priority === "critical" || issue.priority === "high") ? "destructive" : "secondary"}>{issue.priority}</Badge>
             {issue.blocked && <Badge variant="destructive">Blocked</Badge>}
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-[8px] flex items-center justify-center text-[18px] hover:opacity-70 transition-opacity"
@@ -952,7 +952,7 @@ function HealthRow({ label, value, color}: { label: string; value: string; color
   );
 }
 
-function InsightBox({ children, color, mode }: { children: React.ReactNode; color: string }) {
+function InsightBox({ children, color }: { children: React.ReactNode; color: string }) {
   return (
     <div className="p-2 rounded-[6px] leading-relaxed" style={{ background: `${color}${true ? "12" : "08"}`, border: `1px solid ${color}22`, color: `${color}CC` }}>
       {children}

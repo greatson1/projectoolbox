@@ -157,7 +157,7 @@ export default function RiskRegisterPage() {
                       <p className="text-xs text-muted-foreground">{selectedRisk.mitigation}</p>
                     </div>
                   )}
-                  <div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => toast.success("Open risk details to edit")}>Edit</Button><Button variant="outline" size="sm" className="flex-1" onClick={() => { fetch(`/api/projects/${window.location.pathname.split("/")[2]}/risks`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ riskId: risk?.id, status: "ESCALATED" }) }).then(() => { toast.success("Risk escalated"); window.location.reload(); }).catch(() => toast.error("Failed")); }}>Escalate</Button></div>
+                  <div className="flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => toast.success("Open risk details to edit")}>Edit</Button><Button variant="outline" size="sm" className="flex-1" onClick={() => { fetch(`/api/projects/${window.location.pathname.split("/")[2]}/risks`, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ riskId: selectedRisk?.id, status: "ESCALATED" }) }).then(() => { toast.success("Risk escalated"); window.location.reload(); }).catch(() => toast.error("Failed")); }}>Escalate</Button></div>
                 </CardContent>
               </Card>
             ) : (

@@ -96,7 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // ── Resolve provider (recall | custom | auto) ────────────────────────────
   const [canRecall, canCustomBot] = await Promise.all([
     orgCanUseFeature(caller.orgId, "recallBot"),
-    orgCanUseFeature(caller.orgId, "customBot"),
+    orgCanUseFeature(caller.orgId, "whisperAudio"), // customBot maps to whisperAudio for plan gating
   ]);
 
   let provider: "recall" | "custom";

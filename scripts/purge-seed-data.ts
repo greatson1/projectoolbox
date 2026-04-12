@@ -99,7 +99,10 @@ async function main() {
     const p2 = await db.approval.deleteMany({ where: { projectId: { in: seedProjectIds } } });
     console.log(`  ✓ ${p2.count} approval(s)`);
 
-    const p3 = await db.agentActivity.deleteMany({ where: { projectId: { in: seedProjectIds } } }).catch(() => ({ count: 0 }));
+    // AgentActivity has no projectId — delete via agents deployed to these projects
+    const p3 = await db.agentActivity.deleteMany({
+      where: { agent: { deployments: { some: { projectId: { in: seedProjectIds } } } } },
+    }).catch(() => ({ count: 0 }));
     console.log(`  ✓ ${p3.count} project activity record(s)`);
 
     const p4 = await db.project.deleteMany({ where: { id: { in: seedProjectIds } } });

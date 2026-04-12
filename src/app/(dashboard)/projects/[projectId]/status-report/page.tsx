@@ -102,7 +102,7 @@ export default function StatusReportPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={selectedDate} onValueChange={setSelectedDate}>
+          <Select value={selectedDate} onValueChange={(v) => v && setSelectedDate(v)}>
             <SelectTrigger className="w-[180px] h-8 text-xs">
               <Calendar className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
               <SelectValue />

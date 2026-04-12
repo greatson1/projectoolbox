@@ -796,7 +796,7 @@ function StatusPipeline({ current}: { current: ItemStatus;  }) {
 }
 
 /** AI action card */
-function ActionCard({ icon, priority, title, description, mode }: {
+function ActionCard({ icon, priority, title, description }: {
   icon: string; priority: "high" | "medium" | "low"; title: string; description: string;
 }) {
   const colors = { high: "#EF4444", medium: "#F59E0B", low: "#6366F1" };

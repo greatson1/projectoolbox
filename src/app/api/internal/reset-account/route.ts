@@ -90,7 +90,8 @@ export async function POST(req: NextRequest) {
     // ── 3. Wipe activity / audit log ──
     if (wipActivity) {
       await db.auditLog.deleteMany({ where: { orgId } }).catch(() => {});
-      await db.notification.deleteMany({ where: { orgId } }).catch(() => {});
+      // Notification has no orgId — delete via users belonging to this org
+      await db.notification.deleteMany({ where: { user: { orgId } } }).catch(() => {});
     }
 
   } catch (err: any) {

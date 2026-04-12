@@ -274,7 +274,7 @@ export default function ArtefactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
+          <Button size="sm" variant="outline" onClick={() => handleGenerate()} disabled={generating}>
             <RefreshCw className={`h-4 w-4 mr-2 ${generating ? "animate-spin" : ""}`} />
             {generating ? "Generating…" : "Generate Artefacts"}
           </Button>

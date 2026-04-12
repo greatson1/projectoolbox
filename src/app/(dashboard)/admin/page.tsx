@@ -51,7 +51,8 @@ const PERMISSIONS = [
 ];
 
 // Reference data only — not tenant-specific
-const ALL_INTEGRATIONS = [
+type Integration = { name: string; icon: string; desc: string; configKey: string; oauth?: string; oauthQuery?: string; alwaysOn?: boolean };
+const ALL_INTEGRATIONS: Integration[] = [
   { name: "Slack", icon: "💬", desc: "Send notifications to project channels", configKey: "slackConnected", oauth: "slack" },
   { name: "Jira", icon: "🔗", desc: "Two-way task sync, issue tracking", configKey: "jiraConnected", oauth: "atlassian" },
   { name: "Confluence", icon: "📝", desc: "Wiki sync, knowledge base", configKey: "confluenceConnected", oauth: "atlassian" },
@@ -64,7 +65,7 @@ const ALL_INTEGRATIONS = [
   { name: "GitHub", icon: "🐙", desc: "PR tracking, code commits", configKey: "githubConnected" },
   { name: "Resend", icon: "📧", desc: "Agent email addresses, notifications", configKey: "resendConnected", alwaysOn: true },
   { name: "Perplexity", icon: "🔍", desc: "Web research, PESTLE scanning", configKey: "perplexityConnected", alwaysOn: true },
-] as const;
+];
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN

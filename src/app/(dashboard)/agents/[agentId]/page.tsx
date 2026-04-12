@@ -332,10 +332,17 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const projectId = apiAgent?.deployments?.[0]?.project?.id;
 
-  // Agent-specific pending approvals
+  // Agent-specific pending approvals — deduplicated by id in case same approval
+  // appears via both agentId and projectId paths
   const agentPendingApprovals = useMemo(() => {
     if (!pendingApprovals || !Array.isArray(pendingApprovals)) return [];
-    return pendingApprovals.filter((a: any) => a.agentId === agentId || a.projectId === projectId);
+    const seen = new Set<string>();
+    return pendingApprovals.filter((a: any) => {
+      if (!(a.agentId === agentId || a.projectId === projectId)) return false;
+      if (seen.has(a.id)) return false;
+      seen.add(a.id);
+      return true;
+    });
   }, [pendingApprovals, agentId, projectId]);
 
   const recentArtefactsReal = useMemo(() => {

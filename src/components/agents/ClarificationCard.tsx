@@ -356,12 +356,11 @@ export function ClarificationCompleteCard({
               </>
             )}
           </Button>
-          <Button variant="outline" size="sm" asChild className="h-8 text-xs gap-1">
-            <a href={`/agents/${agentId}?tab=artefacts`}>
-              Go to Artefacts
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </Button>
+          <a href={`/agents/${agentId}?tab=artefacts`}
+            className="inline-flex items-center gap-1 h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors">
+            Go to Artefacts
+            <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
       </div>
     </div>
