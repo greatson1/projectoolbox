@@ -22,6 +22,7 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Sprint Plans",
   "Iteration Plans",
   "Flow Metrics Reports",
+  "Change Request Register",
 ]);
 
 /** Column definitions per artefact type — used in the generation prompt and xlsx formatting */
@@ -41,6 +42,7 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Sprint Plans": ["Sprint", "Story ID", "User Story", "Points", "Owner", "Status", "Start", "End", "Actual Completion", "Notes"],
   "Iteration Plans": ["Iteration", "Item ID", "Work Item", "Owner", "Planned Points", "Completed Points", "Status", "Start", "End", "Notes"],
   "Flow Metrics Reports": ["Week", "Items Started", "Items Completed", "WIP Count", "Avg Cycle Time (days)", "Throughput", "Lead Time (days)", "Blockers", "RAG"],
+  "Change Request Register": ["CR ID", "Title", "Description", "Requested By", "Date Raised", "Category", "Priority", "Impact on Schedule", "Impact on Cost (£)", "Impact on Scope", "Status", "Decision", "Decision Date", "Implemented By", "Notes"],
 };
 
 /** Returns true if this artefact should be generated as CSV and shown in SpreadsheetViewer */

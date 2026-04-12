@@ -147,8 +147,8 @@ const PRINCE2: MethodologyDefinition = {
       artefacts: [
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Risk Reviews", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Exception Reports", required: false, aiGeneratable: true },
-        { name: "Change Requests", required: false, aiGeneratable: true },
         { name: "Quality Review Records", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -250,6 +250,7 @@ const WATERFALL: MethodologyDefinition = {
       description: "Implementation, coding, unit testing",
       color: "#22D3EE",
       artefacts: [
+        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Code", required: true, aiGeneratable: false },
         { name: "Unit Tests", required: true, aiGeneratable: false },
       ],
@@ -337,6 +338,7 @@ const SCRUM: MethodologyDefinition = {
         { name: "Sprint Reviews", required: true, aiGeneratable: true },
         { name: "Retrospectives", required: true, aiGeneratable: true },
         { name: "Burndown Chart", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Sprint Review",
@@ -404,6 +406,7 @@ const KANBAN: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Flow Metrics Reports", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Service Level Reports", required: false, aiGeneratable: true },
         { name: "Bottleneck Analysis", required: false, aiGeneratable: true },
       ],
@@ -468,6 +471,7 @@ const SAFE: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Iteration Plans", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "System Demos", required: true, aiGeneratable: false },
       ],
       gate: {
@@ -553,6 +557,7 @@ const HYBRID: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Sprint Plans", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Phase Progress Reports", required: false, aiGeneratable: true },
       ],

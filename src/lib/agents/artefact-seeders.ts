@@ -75,6 +75,15 @@ export async function seedArtefactData(
     return;
   }
 
+  if (
+    lname.includes("change request register") ||
+    lname.includes("change request log") ||
+    lname.includes("change log")
+  ) {
+    await seedChangeRequests(artefact, agentId);
+    return;
+  }
+
   // Schedule Baseline / WBS are handled by schedule-parser.ts — no duplicate seeding here
 }
 
@@ -389,6 +398,69 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
     }
   }
   console.log(`[artefact-seeders] Sprint Plans: ${created} sprint tasks seeded`);
+}
+
+// ─── Change Request Register → ChangeRequest table ──────────────────────────
+
+async function seedChangeRequests(artefact: ArtefactInput, agentId: string): Promise<void> {
+  const rows = parseCSV(artefact.content);
+  if (rows.length < 2) return; // header + at least 1 row
+
+  // Delete existing agent-seeded change requests
+  await db.changeRequest.deleteMany({
+    where: { projectId: artefact.projectId, requestedBy: `agent:${agentId}` },
+  });
+
+  let created = 0;
+  for (const row of rows.slice(1)) {
+    const title = col(row, ["Title", "Change Request", "CR Title", "Name"]);
+    if (!title) continue;
+
+    const description = col(row, ["Description", "Details", "Change Description"]);
+    const priority = col(row, ["Priority", "Urgency"]) || "MEDIUM";
+    const statusRaw = col(row, ["Status", "Decision", "State"]) || "SUBMITTED";
+    const category = col(row, ["Category", "Type", "Change Type"]);
+    const requestedByName = col(row, ["Requested By", "Requester", "Raised By"]);
+    const impactSchedule = col(row, ["Impact on Schedule", "Schedule Impact"]);
+    const impactCost = col(row, ["Impact on Cost (£)", "Cost Impact", "Cost (£)"]);
+    const impactScope = col(row, ["Impact on Scope", "Scope Impact"]);
+
+    // Normalise status
+    const s = statusRaw.toLowerCase();
+    const status = s.includes("approved") || s.includes("accepted") ? "APPROVED"
+      : s.includes("reject") ? "REJECTED"
+      : s.includes("implement") ? "IMPLEMENTED"
+      : s.includes("review") || s.includes("assess") ? "UNDER_REVIEW"
+      : "SUBMITTED";
+
+    try {
+      await db.changeRequest.create({
+        data: {
+          projectId: artefact.projectId,
+          title: title.slice(0, 255),
+          description: [
+            description,
+            category ? `Category: ${category}` : null,
+            impactSchedule ? `Schedule impact: ${impactSchedule}` : null,
+            impactCost ? `Cost impact: ${impactCost}` : null,
+            impactScope ? `Scope impact: ${impactScope}` : null,
+          ].filter(Boolean).join("\n") || null,
+          status,
+          impact: {
+            priority,
+            schedule: impactSchedule || null,
+            cost: impactCost || null,
+            scope: impactScope || null,
+          } as any,
+          requestedBy: `agent:${agentId}`,
+        },
+      });
+      created++;
+    } catch (e) {
+      console.error("[cr-seeder] Failed to create change request:", title, e);
+    }
+  }
+  console.log(`[artefact-seeders] Change Request Register: ${created} CRs seeded`);
 }
 
 function resolveSprintProgress(statusRaw: string, planned: string, completed: string): number {

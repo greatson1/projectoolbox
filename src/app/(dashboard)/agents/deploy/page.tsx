@@ -126,6 +126,8 @@ const ARTEFACT_APP_FEATURES: Record<string, string> = {
   "project brief": "Project overview, Agent context",
   "project charter": "Project overview, Governance",
   "communication plan": "Stakeholder notifications",
+  "change request register": "Change Control page, Change tracking",
+  "change control plan": "Change Control governance process",
 };
 
 // Short descriptions for each artefact type — shown as a tooltip in the wizard

@@ -109,6 +109,24 @@ export async function createChangeProposal(
     },
   });
 
+  // Create a ChangeRequest record so it appears on the Change Control page
+  await db.changeRequest.create({
+    data: {
+      projectId,
+      title: proposal.title,
+      description: proposal.reasoning,
+      status: "SUBMITTED",
+      requestedBy: `agent:${agentId}`,
+      impact: {
+        ...proposal.impact,
+        trigger: proposal.trigger,
+        source: proposal.source,
+        approvalId: approval.id,
+        changes: proposal.changes.map(c => ({ title: c.title, field: c.field, from: c.currentValue, to: c.proposedValue })),
+      } as any,
+    },
+  }).catch(() => {});
+
   // Link decision to approval
   await db.agentDecision.update({
     where: { id: decision.id },
