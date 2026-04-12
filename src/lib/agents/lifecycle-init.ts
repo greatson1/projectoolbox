@@ -282,7 +282,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       select: { id: true, name: true, order: true },
       orderBy: { order: "asc" },
     });
-    await scaffoldProjectTasks(agentId, project.id, phaseRows, project);
+    await scaffoldProjectTasks(agentId, project.id, phaseRows, { ...project, methodology: project.methodology });
   } catch (e) {
     console.error("[lifecycle-init] task scaffolding failed:", e);
   }

@@ -216,13 +216,20 @@ export async function scaffoldProjectTasks(
   agentId: string,
   projectId: string,
   phases: Array<{ id: string; name: string; order: number }>,
-  project: { startDate?: Date | string | null; endDate?: Date | string | null },
+  project: { startDate?: Date | string | null; endDate?: Date | string | null; methodology?: string },
 ): Promise<number> {
   // Idempotent: skip if agent already created tasks for this project
   const existingCount = await db.task.count({
     where: { projectId, createdBy: `agent:${agentId}`, description: { contains: "[scaffolded]" } },
   });
   if (existingCount > 0) return 0;
+
+  // Load methodology definition to get actual artefact lists
+  let methodologyDef: any = null;
+  try {
+    const { getMethodology } = await import("@/lib/methodology-definitions");
+    methodologyDef = getMethodology(project.methodology || "waterfall");
+  } catch {}
 
   // Calculate rough date distribution across phases
   const startDate = project.startDate ? new Date(project.startDate) : new Date();
@@ -234,8 +241,21 @@ export async function scaffoldProjectTasks(
 
   for (const phase of phases) {
     const phaseKey = phase.name.toLowerCase();
-    const phaseTasks = PHASE_TASKS[phaseKey] || [];
-    const allTasks = [...phaseTasks, ...UNIVERSAL_TASKS];
+
+    // Build artefact tasks dynamically from methodology definition
+    const methodPhase = methodologyDef?.phases?.find((p: any) => p.name.toLowerCase() === phaseKey);
+    const artefactTasks: TaskTemplate[] = (methodPhase?.artefacts || [])
+      .filter((a: any) => a.aiGeneratable !== false)
+      .map((a: any) => ({
+        title: `Generate ${a.name}`,
+        category: "artefact" as const,
+        linkedArtefact: a.name,
+        estimatedHours: a.required ? 1 : 0.5,
+      }));
+
+    // Add governance and monitoring tasks from the hardcoded templates (if they exist)
+    const staticTasks = (PHASE_TASKS[phaseKey] || []).filter(t => t.category !== "artefact");
+    const allTasks = [...artefactTasks, ...staticTasks, ...UNIVERSAL_TASKS];
 
     // Phase date range
     const phaseStart = new Date(startDate.getTime() + phase.order * daysPerPhase * 86_400_000);
