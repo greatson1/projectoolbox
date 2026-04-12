@@ -16,6 +16,9 @@ import {
   ChevronDown,
   ChevronRight,
   PoundSterling,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -178,6 +181,120 @@ function AddRowForm({ config, projectId, onAdded, onCancel }: AddRowFormProps) {
   );
 }
 
+// ── Inline edit-row form ───────────────────────────────────────────────────
+
+interface EditRowFormProps {
+  item: CostEntry;
+  config: CategoryConfig;
+  projectId: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}
+
+function EditRowForm({ item, config, projectId, onSaved, onCancel }: EditRowFormProps) {
+  const [description, setDescription] = useState(item.description ?? "");
+  const [qty, setQty] = useState(item.unitQty != null ? String(item.unitQty) : "");
+  const [rate, setRate] = useState(item.unitRate != null ? String(item.unitRate) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const parsedQty = parseFloat(qty);
+  const parsedRate = parseFloat(rate);
+  const total = parsedQty > 0 && parsedRate > 0 ? parsedQty * parsedRate : null;
+
+  async function handleSave() {
+    if (!description.trim()) { setError("Description is required"); return; }
+    const unitQty = parseFloat(qty);
+    const unitRate = parseFloat(rate);
+    if (isNaN(unitQty) || unitQty <= 0) { setError("Quantity must be a positive number"); return; }
+    if (isNaN(unitRate) || unitRate <= 0) { setError("Rate must be a positive number"); return; }
+
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/estimate?entryId=${item.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: description.trim(), unitQty, unitRate }),
+        },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({})) as { error?: string };
+        setError(json.error ?? "Failed to save");
+        return;
+      }
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <tr className="bg-indigo-500/5 border-b border-indigo-500/20">
+      <td className="py-2 px-3">
+        <Input
+          placeholder="Description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="h-7 text-xs"
+          autoFocus
+        />
+        {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
+      </td>
+      <td className="py-2 px-3">
+        <Input
+          type="number"
+          placeholder="0"
+          min="0"
+          step="any"
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          className="h-7 text-xs w-24"
+        />
+      </td>
+      <td className="py-2 px-3">
+        <Input
+          type="number"
+          placeholder="0.00"
+          min="0"
+          step="any"
+          value={rate}
+          onChange={(e) => setRate(e.target.value)}
+          className="h-7 text-xs w-28"
+        />
+      </td>
+      <td className="py-2 px-3 text-xs font-mono text-muted-foreground">
+        {total !== null ? fmt(total) : "—"}
+      </td>
+      <td className="py-2 px-3">
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0 text-emerald-500 hover:text-emerald-400"
+            onClick={handleSave}
+            disabled={saving}
+            title="Save"
+          >
+            <Check className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onCancel}
+            title="Cancel"
+          >
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ── Category section ───────────────────────────────────────────────────────
 
 interface CategorySectionProps {
@@ -190,6 +307,7 @@ interface CategorySectionProps {
 function CategorySection({ config, group, projectId, onRefresh }: CategorySectionProps) {
   const [expanded, setExpanded] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const items = group?.items ?? [];
@@ -257,35 +375,57 @@ function CategorySection({ config, group, projectId, onRefresh }: CategorySectio
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} className="border-b border-border/10 hover:bg-muted/10">
-                    <td className="py-2 px-3">
-                      <span>{item.description || "—"}</span>
-                      {item.vendorName && (
-                        <span className="text-muted-foreground ml-1">· {item.vendorName}</span>
-                      )}
-                    </td>
-                    <td className="py-2 px-3 font-mono">
-                      {item.unitQty !== null ? item.unitQty.toLocaleString("en-GB") : "—"}
-                    </td>
-                    <td className="py-2 px-3 font-mono">
-                      {item.unitRate !== null ? fmt(item.unitRate) : "—"}
-                    </td>
-                    <td className="py-2 px-3 font-mono font-medium">{fmt(item.amount)}</td>
-                    <td className="py-2 px-3">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-red-500"
-                        onClick={() => handleDelete(item.id)}
-                        disabled={deleting === item.id}
-                        title="Remove entry"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item) =>
+                  editingId === item.id ? (
+                    <EditRowForm
+                      key={item.id}
+                      item={item}
+                      config={config}
+                      projectId={projectId}
+                      onSaved={() => { setEditingId(null); onRefresh(); }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  ) : (
+                    <tr key={item.id} className="border-b border-border/10 hover:bg-muted/10 group">
+                      <td className="py-2 px-3">
+                        <span>{item.description || "—"}</span>
+                        {item.vendorName && (
+                          <span className="text-muted-foreground ml-1">· {item.vendorName}</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 font-mono">
+                        {item.unitQty !== null ? item.unitQty.toLocaleString("en-GB") : "—"}
+                      </td>
+                      <td className="py-2 px-3 font-mono">
+                        {item.unitRate !== null ? fmt(item.unitRate) : "—"}
+                      </td>
+                      <td className="py-2 px-3 font-mono font-medium">{fmt(item.amount)}</td>
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-indigo-400"
+                            onClick={() => { setShowAddForm(false); setEditingId(item.id); }}
+                            title="Edit entry"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-red-500"
+                            onClick={() => handleDelete(item.id)}
+                            disabled={deleting === item.id}
+                            title="Remove entry"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
                 {showAddForm && (
                   <AddRowForm
                     config={config}

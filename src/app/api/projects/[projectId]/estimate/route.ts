@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { syncCostEntriesToArtefact } from "@/lib/agents/artefact-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +86,61 @@ export async function POST(
     },
   });
 
+  // Fire-and-forget reverse sync — keep the Cost artefact CSV up to date
+  syncCostEntriesToArtefact(projectId).catch(() => {});
+
   return NextResponse.json({ data: entry }, { status: 201 });
+}
+
+// ── PUT /api/projects/[projectId]/estimate?entryId=xxx ─────────────────────
+// Updates an existing ESTIMATE entry (inline row edit)
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ projectId: string }> },
+) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+
+  const { projectId } = await params;
+  const { searchParams } = new URL(req.url);
+  const entryId = searchParams.get("entryId");
+
+  if (!entryId) return NextResponse.json({ error: "entryId query param required" }, { status: 400 });
+
+  const existing = await db.costEntry.findUnique({ where: { id: entryId } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (existing.projectId !== projectId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await req.json() as {
+    description?: string;
+    unitQty?: number;
+    unitRate?: number;
+    amount?: number;
+    vendorName?: string;
+  };
+
+  // Recalculate amount when qty/rate provided
+  let amount = existing.amount;
+  if (body.unitQty != null && body.unitRate != null) {
+    amount = body.unitQty * body.unitRate;
+  } else if (body.amount != null) {
+    amount = body.amount;
+  }
+
+  const updated = await db.costEntry.update({
+    where: { id: entryId },
+    data: {
+      description: body.description ?? existing.description,
+      unitQty: body.unitQty ?? existing.unitQty,
+      unitRate: body.unitRate ?? existing.unitRate,
+      vendorName: body.vendorName ?? existing.vendorName,
+      amount,
+    },
+  });
+
+  syncCostEntriesToArtefact(projectId).catch(() => {});
+
+  return NextResponse.json({ data: updated });
 }
 
 // ── DELETE /api/projects/[projectId]/estimate?entryId=xxx ──────────────────
@@ -109,6 +164,8 @@ export async function DELETE(
   if (entry.projectId !== projectId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await db.costEntry.delete({ where: { id: entryId } });
+
+  syncCostEntriesToArtefact(projectId).catch(() => {});
 
   return NextResponse.json({ success: true });
 }

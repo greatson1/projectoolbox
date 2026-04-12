@@ -30,7 +30,78 @@ const DEPENDENCY_MAP: Record<string, string[]> = {
   "Initial Risk Register": ["Risk Management Plan"],
   "Stakeholder Register": ["Communication Plan"],
   "Requirements Specification": ["Design Document", "Work Breakdown Structure"],
+  // Cost estimate artefacts affect EVM and the cost management plan downstream
+  "Cost Estimate": ["Cost Management Plan", "EVM Dashboard"],
+  "Budget Breakdown": ["Cost Management Plan", "EVM Dashboard"],
+  "Cost Management Plan": ["EVM Dashboard"],
 };
+
+// ─── 0. Reverse sync: cost entries → Cost Estimate artefact ──────────────────
+
+/**
+ * After a CostEntry ESTIMATE is created, updated, or deleted, finds the
+ * most recent approved Cost Estimate / Budget Breakdown artefact and
+ * regenerates its CSV content to match the current CostEntry records.
+ *
+ * Called from the /api/projects/[projectId]/estimate route after any mutation.
+ */
+export async function syncCostEntriesToArtefact(projectId: string): Promise<void> {
+  try {
+    // Find the most recent cost-related artefact (any approval status — keep it up to date)
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: { in: ["csv", "table"] },
+        name: {
+          contains: "cost",
+          mode: "insensitive",
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    if (!artefact) return; // no cost artefact yet — nothing to sync
+
+    // Fetch all current ESTIMATE entries
+    const entries = await db.costEntry.findMany({
+      where: { projectId, entryType: "ESTIMATE" },
+      orderBy: [{ category: "asc" }, { recordedAt: "asc" }],
+    });
+
+    if (entries.length === 0) return;
+
+    // Rebuild the CSV from live CostEntry data
+    const header = ["Category", "Sub-Category / Item", "Qty", "Unit Cost (£)", "Planned Cost (£)", "Notes"];
+    const rows: string[][] = [header];
+
+    for (const e of entries) {
+      rows.push([
+        e.category ?? "OTHER",
+        e.description ?? "",
+        e.unitQty != null ? String(e.unitQty) : "",
+        e.unitRate != null ? String(e.unitRate) : "",
+        String(e.amount),
+        e.vendorName ?? "",
+      ]);
+    }
+
+    const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: {
+        content: newCsv,
+        version: { increment: 1 },
+        updatedAt: new Date(),
+      },
+    });
+
+    // Flag downstream artefacts as stale
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncCostEntriesToArtefact failed:", e);
+  }
+}
 
 // ─── 1. Reverse sync: tasks → WBS/Schedule artefact ──────────────────────────
 

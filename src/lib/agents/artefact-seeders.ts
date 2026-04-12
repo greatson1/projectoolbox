@@ -60,7 +60,10 @@ export async function seedArtefactData(
     lname.includes("cost management plan") ||
     lname.includes("budget plan") ||
     lname.includes("cost baseline") ||
-    lname.includes("cost plan")
+    lname.includes("cost plan") ||
+    lname.includes("cost estimate") ||
+    lname.includes("project estimate") ||
+    lname.includes("cost breakdown")
   ) {
     await seedCosts(artefact, agentId);
     return;
