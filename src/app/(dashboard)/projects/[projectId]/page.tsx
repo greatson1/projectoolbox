@@ -13,7 +13,7 @@ import { useAppStore } from "@/stores/app";
 import {
   Calendar, Columns3, Timer, Target, DollarSign, Users, ShieldAlert,
   AlertTriangle, GitPullRequest, TestTube2, TrendingUp, FileText, Bot,
-  ArrowRight, Sheet, FileCheck2,
+  ArrowRight, Sheet, FileCheck2, Download,
 } from "lucide-react";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 
@@ -72,17 +72,29 @@ export default function ProjectOverviewPage() {
             </div>
             {project.description && <p className="text-sm text-muted-foreground mt-2 max-w-lg">{project.description}</p>}
           </div>
-          {agent && (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"
-                style={{ background: agent.gradient || "#6366F1" }}>{agent.name[0]}</div>
-              <div>
-                <p className="text-sm font-semibold">Agent {agent.name}</p>
-                <p className="text-xs text-muted-foreground">L{agent.autonomyLevel} · {agent.status}</p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                window.location.href = `/api/projects/${projectId}/export?format=xlsx`;
+              }}
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Export
+            </Button>
+            {agent && (
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"
+                  style={{ background: agent.gradient || "#6366F1" }}>{agent.name[0]}</div>
+                <div>
+                  <p className="text-sm font-semibold">Agent {agent.name}</p>
+                  <p className="text-xs text-muted-foreground">L{agent.autonomyLevel} · {agent.status}</p>
+                </div>
+                <span className={`w-2 h-2 rounded-full ${agent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
               </div>
-              <span className={`w-2 h-2 rounded-full ${agent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Stats */}

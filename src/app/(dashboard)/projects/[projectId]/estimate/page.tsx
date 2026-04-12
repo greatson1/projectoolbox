@@ -19,7 +19,9 @@ import {
   Pencil,
   Check,
   X,
+  Download,
 } from "lucide-react";
+import { downloadCSV } from "@/lib/export-csv";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -587,11 +589,40 @@ export default function EstimatePage() {
             Build your project budget from the ground up
           </p>
         </div>
-        {budget > 0 && (
-          <Badge variant="secondary" className="text-sm px-3 py-1 mt-1">
-            Budget: {fmt(budget)}
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {data && data.entries.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const nonContingency = data.entries.filter((e) => e.category !== "CONTINGENCY");
+                const contingencyEntry = data.entries.find((e) => e.category === "CONTINGENCY");
+                const rows: (string | number | null | undefined)[][] = [
+                  ["Category", "Description", "Qty", "Rate (£)", "Total (£)"],
+                  ...nonContingency.map((e) => [
+                    e.category,
+                    e.description,
+                    e.unitQty,
+                    e.unitRate,
+                    e.amount,
+                  ]),
+                  ...(contingencyEntry
+                    ? [["CONTINGENCY", contingencyEntry.description, null, null, contingencyEntry.amount]]
+                    : []),
+                ];
+                downloadCSV(rows, `cost-estimate-${projectId}.csv`);
+              }}
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Download CSV
+            </Button>
+          )}
+          {budget > 0 && (
+            <Badge variant="secondary" className="text-sm px-3 py-1 mt-1">
+              Budget: {fmt(budget)}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* ── Empty state ── */}

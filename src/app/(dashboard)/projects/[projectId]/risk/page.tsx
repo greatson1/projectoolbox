@@ -9,7 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectRisks } from "@/hooks/use-api";
 import { toast } from "sonner";
-import { Plus, AlertTriangle, Shield, TrendingDown } from "lucide-react";
+import { Plus, AlertTriangle, Shield, TrendingDown, Download } from "lucide-react";
+import { downloadCSV } from "@/lib/export-csv";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = { OPEN: "destructive", MITIGATING: "secondary", WATCHING: "outline", CLOSED: "default" };
 
@@ -42,6 +43,31 @@ export default function RiskRegisterPage() {
           <p className="text-sm text-muted-foreground mt-1">{items.length} risks · {highRisks} critical · {mitigating} mitigating</p>
         </div>
         <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const rows: (string | number | null | undefined)[][] = [
+                  ["Title", "Category", "Probability", "Impact", "Score", "Status", "Owner", "Mitigation"],
+                  ...items.map((r: any) => [
+                    r.title,
+                    r.category,
+                    r.probability,
+                    r.impact,
+                    r.score ?? r.probability * r.impact,
+                    r.status,
+                    r.owner,
+                    r.mitigation,
+                  ]),
+                ];
+                downloadCSV(rows, `risk-register-${projectId}.csv`);
+              }}
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Download CSV
+            </Button>
+          )}
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(["matrix", "table"] as const).map(v => (
               <button key={v} className={`px-3 py-1.5 text-xs font-semibold capitalize ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}

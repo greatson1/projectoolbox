@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PoundSterling, Plus, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { PoundSterling, Plus, ArrowUpRight, ArrowDownRight, Download } from "lucide-react";
+import { downloadCSV } from "@/lib/export-csv";
 
 function fmt(v: number | null | undefined): string {
   if (v === null || v === undefined || isNaN(v)) return "—";
@@ -131,7 +132,31 @@ export default function CostManagementPage() {
           <h1 className="text-2xl font-bold">Cost Management</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Budget tracking, cost entries, and performance indices</p>
         </div>
-        {budget > 0 && <Badge variant="secondary">Budget: {fmt(budget)}</Badge>}
+        <div className="flex items-center gap-2">
+          {costs.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const rows: (string | number | null | undefined)[][] = [
+                  ["Date", "Description", "Category", "Type", "Amount (£)"],
+                  ...costs.map((c) => [
+                    new Date(c.recordedAt).toLocaleDateString("en-GB"),
+                    c.description,
+                    c.category,
+                    c.entryType,
+                    c.amount,
+                  ]),
+                ];
+                downloadCSV(rows, `cost-log-${projectId}.csv`);
+              }}
+            >
+              <Download className="h-3.5 w-3.5 mr-1" />
+              Download CSV
+            </Button>
+          )}
+          {budget > 0 && <Badge variant="secondary">Budget: {fmt(budget)}</Badge>}
+        </div>
       </div>
 
       {/* EVM Summary Cards */}

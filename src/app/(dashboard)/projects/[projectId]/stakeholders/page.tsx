@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Plus, ShieldAlert, Heart, Eye } from "lucide-react";
+import { Users, Plus, ShieldAlert, Heart, Eye, Download } from "lucide-react";
+import { downloadCSV } from "@/lib/export-csv";
 import { toast } from "sonner";
 
 interface Stakeholder {
@@ -125,9 +126,34 @@ export default function StakeholdersPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Stakeholders</h1>
-        <Button size="sm" onClick={handleAdd} disabled={adding}>
-          <Plus className="w-4 h-4 mr-1" /> Add Stakeholder
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const rows: (string | number | null | undefined)[][] = [
+                ["Name", "Role", "Organisation", "Email", "Power", "Interest", "Sentiment", "Last Contact"],
+                ...stakeholders.map((s) => [
+                  s.name,
+                  s.role,
+                  s.org,
+                  s.email,
+                  s.power,
+                  s.interest,
+                  s.sentiment,
+                  s.lastContact,
+                ]),
+              ];
+              downloadCSV(rows, `stakeholders-${projectId}.csv`);
+            }}
+          >
+            <Download className="w-3.5 h-3.5 mr-1" />
+            Download CSV
+          </Button>
+          <Button size="sm" onClick={handleAdd} disabled={adding}>
+            <Plus className="w-4 h-4 mr-1" /> Add Stakeholder
+          </Button>
+        </div>
       </div>
 
       {/* Stat cards */}

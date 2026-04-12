@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, BarChart3, Clock, CheckCircle2, AlertTriangle, Mail } from "lucide-react";
+import { Users, BarChart3, Clock, CheckCircle2, AlertTriangle, Mail, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { downloadCSV } from "@/lib/export-csv";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend,
 } from "recharts";
@@ -84,6 +86,34 @@ export default function ResourcesPage() {
             Team workload and allocation across the project
           </p>
         </div>
+        {members.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const rows: (string | number | null | undefined)[][] = [
+                ["Name", "Role", "Email", "Tasks Total", "Tasks Done", "Tasks In Progress", "Tasks Blocked", "Estimated Hours", "Actual Hours", "Allocation %", "Engagement"],
+                ...members.map((m: any) => [
+                  m.name,
+                  m.role,
+                  m.email,
+                  m.tasks.total,
+                  m.tasks.done,
+                  m.tasks.inProgress,
+                  m.tasks.blocked,
+                  Math.round(m.hours.estimated),
+                  Math.round(m.hours.actual),
+                  m.allocation,
+                  m.sentiment,
+                ]),
+              ];
+              downloadCSV(rows, `resources-${projectId}.csv`);
+            }}
+          >
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Download CSV
+          </Button>
+        )}
       </div>
 
       {/* Summary Cards */}

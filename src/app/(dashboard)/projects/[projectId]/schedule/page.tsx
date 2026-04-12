@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Download } from "lucide-react";
+import { downloadCSV } from "@/lib/export-csv";
 
 /**
  * Schedule — Project Schedule / Gantt Chart page.
@@ -245,13 +247,34 @@ export default function SchedulePage() {
     return flat;
   }, [expandedPhases, tasksByPhase, phasesSummary]);
 
+  function handleDownloadScheduleCSV() {
+    const rows: (string | number | null | undefined)[][] = [
+      ["Title", "Phase", "Status", "Start Date", "End Date", "Assigned To", "Progress %", "Estimated Hours"],
+      ...TASKS_DATA.map((t: ScheduleTask) => {
+        const apiTask = (apiTasks || []).find((a: any) => a.id === t.id);
+        return [
+          t.name,
+          t.phase,
+          t.status,
+          t.start,
+          t.end,
+          t.assignee,
+          t.progress,
+          apiTask?.estimatedHours ?? null,
+        ];
+      }),
+    ];
+    downloadCSV(rows, `schedule-${projectId}.csv`);
+  }
+
   // ── List View ──
   if (view === "list") {
     return (
       <div className="space-y-6 max-w-[1400px]">
         <Header view={view} setView={setView} zoom={zoom} setZoom={setZoom}
           showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
-          stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} project={project} />
+          stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} project={project}
+          onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} />
 
         <Card>
           <div className="overflow-x-auto">
@@ -314,7 +337,8 @@ export default function SchedulePage() {
     <div className="space-y-6 max-w-[1600px]">
       <Header view={view} setView={setView} zoom={zoom} setZoom={setZoom}
         showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
-        stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} />
+        stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }}
+        onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} />
 
       <div className="flex gap-4">
         {/* Main Gantt */}
@@ -574,7 +598,7 @@ export default function SchedulePage() {
 }
 
 // ── Header with stats + controls ──
-function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, stats, project }: any) {
+function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, stats, project, onDownloadCSV }: any) {
   return (
     <div className="space-y-4">
       {/* Title row */}
@@ -584,6 +608,12 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
           {project && <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>{project.name}{project.methodology ? ` — ${project.methodology}` : ""}</p>}
         </div>
         <div className="flex items-center gap-2">
+          {onDownloadCSV && (
+            <Button variant="outline" size="sm" onClick={onDownloadCSV}>
+              <Download className="w-3.5 h-3.5 mr-1" />
+              Download CSV
+            </Button>
+          )}
           {/* View toggle */}
           <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid ${"var(--border)"}` }}>
             {(["gantt", "list"] as ViewMode[]).map(v => (
@@ -600,7 +630,6 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
           <Button variant="ghost" size="sm" onClick={() => setShowCriticalPath(!showCriticalPath)}>
             {showCriticalPath ? "Hide" : "Show"} Critical Path
           </Button>
-          <Button variant="default" size="sm" disabled title="Coming soon">Export</Button>
         </div>
       </div>
 
