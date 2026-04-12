@@ -313,6 +313,9 @@ const SCRUM: MethodologyDefinition = {
         { name: "Product Vision", required: true, aiGeneratable: true },
         { name: "Initial Backlog", required: true, aiGeneratable: true },
         { name: "Definition of Done", required: true, aiGeneratable: true },
+        { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Budget Breakdown", required: true, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -380,6 +383,9 @@ const KANBAN: MethodologyDefinition = {
       artefacts: [
         { name: "Board Configuration", required: true, aiGeneratable: true },
         { name: "WIP Policies", required: true, aiGeneratable: true },
+        { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Budget Breakdown", required: true, aiGeneratable: true },
         { name: "Service Level Agreement", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -443,6 +449,9 @@ const SAFE: MethodologyDefinition = {
       artefacts: [
         { name: "PI Objectives", required: true, aiGeneratable: true },
         { name: "Programme Board", required: true, aiGeneratable: true },
+        { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Budget Breakdown", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "PI Commitment",
@@ -505,6 +514,8 @@ const HYBRID: MethodologyDefinition = {
         { name: "Delivery Approach", required: true, aiGeneratable: true },
         { name: "Roadmap", required: true, aiGeneratable: true },
         { name: "Risk Register", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Budget Breakdown", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Foundation Approval",
