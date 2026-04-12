@@ -80,10 +80,10 @@ const PRINCE2: MethodologyDefinition = {
       description: "Validate the project idea, produce outline business case, appoint executive and project manager",
       color: "#6366F1",
       artefacts: [
-        { name: "Problem Statement", required: true, aiGeneratable: true },
-        { name: "Options Analysis", required: true, aiGeneratable: true },
-        { name: "Outline Business Case", required: true, aiGeneratable: true },
-        { name: "Project Brief", required: true, aiGeneratable: true },
+        { name: "Problem Statement", required: false, aiGeneratable: true },
+        { name: "Options Analysis", required: false, aiGeneratable: true },
+        { name: "Outline Business Case", required: false, aiGeneratable: true },
+        { name: "Project Brief", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Authorise Initiation",
@@ -100,8 +100,8 @@ const PRINCE2: MethodologyDefinition = {
       description: "Detailed planning: charter, business case, governance, stakeholders, risk register, schedule, budget",
       color: "#8B5CF6",
       artefacts: [
-        { name: "Project Charter", required: true, aiGeneratable: true },
-        { name: "Business Case", required: true, aiGeneratable: true },
+        { name: "Project Charter", required: false, aiGeneratable: true },
+        { name: "Business Case", required: false, aiGeneratable: true },
         { name: "Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
@@ -145,9 +145,9 @@ const PRINCE2: MethodologyDefinition = {
       description: "Deliver the project: monitor progress, manage risks, produce highlight reports, handle exceptions",
       color: "#10B981",
       artefacts: [
-        { name: "Status Reports", required: true, aiGeneratable: true },
-        { name: "Risk Reviews", required: true, aiGeneratable: true },
         { name: "Change Request Register", required: true, aiGeneratable: true },
+        { name: "Status Reports", required: false, aiGeneratable: true },
+        { name: "Risk Reviews", required: false, aiGeneratable: true },
         { name: "Exception Reports", required: false, aiGeneratable: true },
         { name: "Quality Review Records", required: false, aiGeneratable: true },
       ],
@@ -167,9 +167,9 @@ const PRINCE2: MethodologyDefinition = {
       description: "Formal acceptance, handover, lessons learned, archive",
       color: "#F59E0B",
       artefacts: [
-        { name: "Acceptance Certificate", required: true, aiGeneratable: true },
-        { name: "End Project Report", required: true, aiGeneratable: true },
-        { name: "Lessons Learned", required: true, aiGeneratable: true },
+        { name: "Acceptance Certificate", required: false, aiGeneratable: true },
+        { name: "End Project Report", required: false, aiGeneratable: true },
+        { name: "Lessons Learned", required: false, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
       ],
       gate: {
@@ -196,12 +196,12 @@ const WATERFALL: MethodologyDefinition = {
       description: "Establish feasibility: define scope, justify the project, identify stakeholders and risks, produce the Project Brief and Outline Business Case",
       color: "#6366F1",
       artefacts: [
-        { name: "Project Brief", required: true, aiGeneratable: true },
-        { name: "Outline Business Case", required: true, aiGeneratable: true },
-        { name: "Requirements Specification", required: true, aiGeneratable: true },
-        { name: "Feasibility Study", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Project Brief", required: false, aiGeneratable: true },
+        { name: "Outline Business Case", required: false, aiGeneratable: true },
+        { name: "Requirements Specification", required: false, aiGeneratable: true },
+        { name: "Feasibility Study", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Feasibility Gate",
@@ -219,19 +219,19 @@ const WATERFALL: MethodologyDefinition = {
       description: "Formally initiate and plan the project: authorise via Charter and Business Case, then produce all management plans required to govern the next phase",
       color: "#8B5CF6",
       artefacts: [
-        { name: "Project Charter", required: true, aiGeneratable: true },
-        { name: "Business Case", required: true, aiGeneratable: true },
         { name: "Stakeholder Register", required: true, aiGeneratable: true },
-        { name: "Communication Plan", required: true, aiGeneratable: true },
-        { name: "Design Document", required: true, aiGeneratable: true },
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
         { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
         { name: "Cost Management Plan", required: true, aiGeneratable: true },
-        { name: "Resource Management Plan", required: false, aiGeneratable: true },
         { name: "Risk Management Plan", required: true, aiGeneratable: true },
-        { name: "Quality Management Plan", required: false, aiGeneratable: true },
-        { name: "Change Control Plan", required: true, aiGeneratable: true },
+        { name: "Resource Management Plan", required: true, aiGeneratable: true },
         { name: "RACI Matrix", required: false, aiGeneratable: true },
+        { name: "Project Charter", required: false, aiGeneratable: true },
+        { name: "Business Case", required: false, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
+        { name: "Design Document", required: false, aiGeneratable: true },
+        { name: "Quality Management Plan", required: false, aiGeneratable: true },
+        { name: "Change Control Plan", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Project Baseline Approval",
@@ -312,12 +312,12 @@ const SCRUM: MethodologyDefinition = {
       description: "Set up the team, create product vision, build initial backlog, define DoD",
       color: "#6366F1",
       artefacts: [
-        { name: "Product Vision", required: true, aiGeneratable: true },
-        { name: "Initial Backlog", required: true, aiGeneratable: true },
-        { name: "Definition of Done", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Product Vision", required: false, aiGeneratable: true },
+        { name: "Initial Backlog", required: false, aiGeneratable: true },
+        { name: "Definition of Done", required: false, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -336,10 +336,10 @@ const SCRUM: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Sprint Plans", required: true, aiGeneratable: true },
-        { name: "Sprint Reviews", required: true, aiGeneratable: true },
-        { name: "Retrospectives", required: true, aiGeneratable: true },
-        { name: "Burndown Chart", required: true, aiGeneratable: true },
         { name: "Change Request Register", required: true, aiGeneratable: true },
+        { name: "Sprint Reviews", required: false, aiGeneratable: true },
+        { name: "Retrospectives", required: false, aiGeneratable: true },
+        { name: "Burndown Chart", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Sprint Review",
@@ -356,8 +356,8 @@ const SCRUM: MethodologyDefinition = {
       description: "Final release preparation, deployment, closure",
       color: "#F59E0B",
       artefacts: [
-        { name: "Release Plan", required: true, aiGeneratable: true },
-        { name: "Final Retrospective", required: true, aiGeneratable: true },
+        { name: "Release Plan", required: false, aiGeneratable: true },
+        { name: "Final Retrospective", required: false, aiGeneratable: true },
         { name: "Closure Report", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -384,11 +384,11 @@ const KANBAN: MethodologyDefinition = {
       description: "Configure board, define WIP limits, establish service level expectations",
       color: "#6366F1",
       artefacts: [
-        { name: "Board Configuration", required: true, aiGeneratable: true },
-        { name: "WIP Policies", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Board Configuration", required: false, aiGeneratable: true },
+        { name: "WIP Policies", required: false, aiGeneratable: true },
         { name: "Service Level Agreement", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -410,6 +410,7 @@ const KANBAN: MethodologyDefinition = {
         { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Service Level Reports", required: false, aiGeneratable: true },
         { name: "Bottleneck Analysis", required: false, aiGeneratable: true },
+        { name: "Status Reports", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Continuous Review",
@@ -424,9 +425,9 @@ const KANBAN: MethodologyDefinition = {
       description: "Periodic flow analysis, process improvement, stakeholder updates",
       color: "#F59E0B",
       artefacts: [
-        { name: "Cumulative Flow Diagram", required: true, aiGeneratable: true },
-        { name: "Process Improvement Report", required: true, aiGeneratable: true },
-        { name: "Retrospective", required: true, aiGeneratable: true },
+        { name: "Cumulative Flow Diagram", required: false, aiGeneratable: true },
+        { name: "Process Improvement Report", required: false, aiGeneratable: true },
+        { name: "Retrospective", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Review Complete",
@@ -451,11 +452,11 @@ const SAFE: MethodologyDefinition = {
       description: "Programme Increment planning: set objectives, build programme board",
       color: "#6366F1",
       artefacts: [
-        { name: "PI Objectives", required: true, aiGeneratable: true },
-        { name: "Programme Board", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "PI Objectives", required: false, aiGeneratable: true },
+        { name: "Programme Board", required: false, aiGeneratable: true },
         { name: "Solution Vision", required: false, aiGeneratable: true },
         { name: "Architectural Runway", required: false, aiGeneratable: true },
         { name: "Team Topologies", required: false, aiGeneratable: true },
@@ -476,7 +477,7 @@ const SAFE: MethodologyDefinition = {
       artefacts: [
         { name: "Iteration Plans", required: true, aiGeneratable: true },
         { name: "Change Request Register", required: true, aiGeneratable: true },
-        { name: "System Demos", required: true, aiGeneratable: false },
+        { name: "System Demos", required: false, aiGeneratable: false },
         { name: "Risk Reviews", required: false, aiGeneratable: true },
         { name: "Status Reports", required: false, aiGeneratable: true },
       ],
@@ -494,8 +495,8 @@ const SAFE: MethodologyDefinition = {
       description: "PI retrospective, quantitative analysis, improvement backlog",
       color: "#F59E0B",
       artefacts: [
-        { name: "PI Report", required: true, aiGeneratable: true },
-        { name: "Improvement Backlog", required: true, aiGeneratable: true },
+        { name: "PI Report", required: false, aiGeneratable: true },
+        { name: "Improvement Backlog", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "I&A Complete",
@@ -520,12 +521,12 @@ const HYBRID: MethodologyDefinition = {
       description: "Project charter, hybrid delivery approach, WBS for governance, backlog for delivery",
       color: "#6366F1",
       artefacts: [
-        { name: "Charter", required: true, aiGeneratable: true },
-        { name: "Delivery Approach", required: true, aiGeneratable: true },
-        { name: "Roadmap", required: true, aiGeneratable: true },
         { name: "Risk Register", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Charter", required: false, aiGeneratable: true },
+        { name: "Delivery Approach", required: false, aiGeneratable: true },
+        { name: "Roadmap", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
         { name: "Outline Business Case", required: false, aiGeneratable: true },
@@ -546,10 +547,10 @@ const HYBRID: MethodologyDefinition = {
       color: "#8B5CF6",
       artefacts: [
         { name: "WBS", required: true, aiGeneratable: true },
-        { name: "Backlog", required: true, aiGeneratable: true },
         { name: "Risk Plan", required: true, aiGeneratable: true },
-        { name: "Schedule Baseline", required: false, aiGeneratable: true },
-        { name: "Resource Plan", required: false, aiGeneratable: true },
+        { name: "Schedule Baseline", required: true, aiGeneratable: true },
+        { name: "Resource Plan", required: true, aiGeneratable: true },
+        { name: "Backlog", required: false, aiGeneratable: true },
         { name: "Quality Plan", required: false, aiGeneratable: true },
         { name: "Change Control Plan", required: false, aiGeneratable: true },
         { name: "Gate Criteria", required: false, aiGeneratable: true },
@@ -591,8 +592,8 @@ const HYBRID: MethodologyDefinition = {
       description: "Formal closure covering governance outcomes and iterative delivery metrics",
       color: "#F59E0B",
       artefacts: [
-        { name: "Acceptance", required: true, aiGeneratable: true },
-        { name: "Lessons Learned", required: true, aiGeneratable: true },
+        { name: "Acceptance", required: false, aiGeneratable: true },
+        { name: "Lessons Learned", required: false, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
       ],
       gate: {
@@ -625,10 +626,11 @@ export const METHODOLOGY_LIST: MethodologyDefinition[] = Object.values(METHODOLO
  * Falls back to PRINCE2 if not found.
  */
 export function getMethodology(id: string): MethodologyDefinition {
-  const key = id.toLowerCase().replace(/[^a-z0-9]/g, "") as MethodologyId;
-  // Handle aliases
-  if (key === "agile" || key === "agilescrum") return METHODOLOGIES.scrum;
-  if (key === "agilekanban") return METHODOLOGIES.kanban;
+  const raw = id.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Handle aliases before casting to MethodologyId
+  if (raw === "agile" || raw === "agilescrum") return METHODOLOGIES.scrum;
+  if (raw === "agilekanban") return METHODOLOGIES.kanban;
+  const key = raw as MethodologyId;
   return METHODOLOGIES[key] || METHODOLOGIES.prince2;
 }
 
