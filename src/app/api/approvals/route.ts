@@ -34,17 +34,29 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  // Resolve requestedById → agent (no FK relation defined on the model)
-  const requesterIds = [...new Set(approvals.map(a => a.requestedById).filter(Boolean))];
-  const requestingAgents = requesterIds.length > 0
-    ? await db.agent.findMany({ where: { id: { in: requesterIds } }, select: { id: true, name: true, gradient: true } })
+  // Resolve requestedById → agent (no FK relation — requestedById may be agentId or userId)
+  // Also check impact.agentId and decision.agentId as fallbacks
+  const candidateIds = [...new Set(approvals.flatMap(a => {
+    const ids = [a.requestedById];
+    const impact = a.impact as any;
+    if (impact?.agentId) ids.push(impact.agentId);
+    if (a.decision?.agentId) ids.push(a.decision.agentId);
+    return ids;
+  }).filter(Boolean))];
+
+  const requestingAgents = candidateIds.length > 0
+    ? await db.agent.findMany({ where: { id: { in: candidateIds } }, select: { id: true, name: true, gradient: true } })
     : [];
   const agentById = Object.fromEntries(requestingAgents.map(a => [a.id, a]));
 
-  const enriched = approvals.map(a => ({
-    ...a,
-    requestedByAgent: agentById[a.requestedById] ?? null,
-  }));
+  const enriched = approvals.map(a => {
+    const impact = a.impact as any;
+    const resolvedAgent = agentById[a.requestedById]
+      || (impact?.agentId ? agentById[impact.agentId] : null)
+      || a.decision?.agent
+      || null;
+    return { ...a, requestedByAgent: resolvedAgent };
+  });
 
   return NextResponse.json({ data: enriched });
 }
