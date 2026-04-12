@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest, useAgentMetrics } from "@/hooks/use-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import ReactMarkdown from "react-markdown";
@@ -132,6 +133,8 @@ function ChatBubble({ from, text, agentColor }: { from: "agent" | "user"; text: 
 
 export default function AgentProfilePage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = React.use(params);
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") || "overview";
   const { data: apiAgent, isLoading } = useAgent(agentId);
 
   const [chatOpen, setChatOpen] = useState(false);
@@ -523,7 +526,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       )}
 
       {/* ═══ 3. TABS ═══ */}
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs defaultValue={initialTab} className="space-y-4">
         <TabsList variant="line">
           <TabsTrigger value="overview" className="text-[13px] font-semibold">
             <Activity className="mr-1 size-3.5" /> Overview
