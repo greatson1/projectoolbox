@@ -38,6 +38,30 @@ export async function GET(req: NextRequest) {
       await generateDailyDigest();
     } catch {}
 
+    // 0b2. Fire any due report schedules (fire-and-forget, runs hourly effective)
+    try {
+      const dueSchedules = await db.reportSchedule.findMany({
+        where: { isActive: true, nextRunAt: { lte: new Date() }, projectId: { not: null } },
+        take: 5, // cap per tick to avoid overrunning timeout
+      });
+      if (dueSchedules.length > 0) {
+        const { calcNextRun } = await import("@/app/api/reports/schedule/route");
+        const { gatherProjectData, generateReportContent } = await import("@/lib/agents/report-generator");
+        for (const sched of dueSchedules) {
+          try {
+            const projectData = await gatherProjectData(sched.projectId!);
+            const content = await generateReportContent(sched.templateId.toUpperCase(), [], projectData);
+            const templateNames: Record<string, string> = { status: "Status Report", executive: "Executive Summary", risk: "Risk Report", evm: "EVM Report", sprint: "Sprint Review", stakeholder: "Stakeholder Update", budget: "Budget Report", phase_gate: "Phase Gate Report" };
+            const typeMap: Record<string, any> = { status: "STATUS", executive: "EXECUTIVE", risk: "RISK", evm: "EVM", sprint: "SPRINT", stakeholder: "STAKEHOLDER", budget: "BUDGET", phase_gate: "PHASE_GATE" };
+            await db.report.create({ data: { orgId: sched.orgId, projectId: sched.projectId!, title: `${templateNames[sched.templateId] || sched.name} — ${new Date().toLocaleDateString("en-GB")}`, type: typeMap[sched.templateId] || "STATUS", status: "PUBLISHED", format: "HTML", content, templateId: sched.templateId, creditsUsed: 10, publishedAt: new Date(), recipients: sched.recipients } });
+            const cronParts = sched.cronExpression.split(" ");
+            const nextRunAt = calcNextRun(sched.frequency, parseInt(cronParts[4]) || 1, parseInt(cronParts[2]) || 1, parseInt(cronParts[1]) || 9);
+            await db.reportSchedule.update({ where: { id: sched.id }, data: { lastRunAt: new Date(), nextRunAt } });
+          } catch (e) { console.error(`[cron] Report schedule ${sched.id} failed:`, e); }
+        }
+      }
+    } catch (e) { console.error("[cron] Report schedule runner failed:", e); }
+
     // 0c. Self-heal: if any active deployment has a currentPhase but zero artefacts,
     //     generate them now — directly on Vercel, regardless of VPS availability.
     //     This recovers from VPS stub lifecycle_init and any other init failures.

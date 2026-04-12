@@ -271,7 +271,10 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
     const creditsUsed = apiAgent?.creditsUsed || 0;
     const actionCount = apiAgent?.actionCount || 0;
     // artefactCount comes from the API (cross-scoped by agentId + projectId)
-    const docCount = apiAgent?.artefactCount ?? (agentArtefactsData ? (Array.isArray(agentArtefactsData) ? agentArtefactsData.length : 0) : 0);
+    // Use Math.max so that a 0 from the API doesn't mask a real count from the artefacts list
+    const apiCount = apiAgent?.artefactCount ?? 0;
+    const dataCount = Array.isArray(agentArtefactsData) ? agentArtefactsData.length : 0;
+    const docCount = Math.max(apiCount, dataCount);
     return [
       { label: "Tasks Completed", value: String(actionCount), icon: "✅", color: "#6366F1" },
       { label: "Documents Generated", value: String(docCount), icon: "📄", color: "#22D3EE" },

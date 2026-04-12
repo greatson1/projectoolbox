@@ -5,7 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useProjectTasks } from "@/hooks/use-api";
+import { useProjectTasks, useUpdateTask } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -483,7 +483,7 @@ export default function AgileBoardPage() {
 
       {/* ═══ TASK DETAIL MODAL ═══ */}
       {selectedIssue && (
-        <TaskDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} sprintName={sprint.name} />
+        <TaskDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} sprintName={sprint.name} projectId={projectId} onStatusChange={(newCol) => setSelectedIssue(prev => prev ? { ...prev, column: newCol } : null)} />
       )}
     </div>
   );
@@ -700,8 +700,32 @@ function IssueCard({ issue, compact, onClick }: {
 // TASK DETAIL MODAL
 // ═══════════════════════════════════════════════════════════════════
 
-function TaskDetailModal({ issue, onClose, sprintName }: { issue: Issue; onClose: () => void; sprintName?: string }) {
+const COLUMN_STATUS_MAP: Record<ColumnId, string> = {
+  backlog: "BACKLOG",
+  todo: "TODO",
+  in_progress: "IN_PROGRESS",
+  in_review: "IN_REVIEW",
+  done: "DONE",
+};
+
+function TaskDetailModal({ issue, onClose, sprintName, projectId, onStatusChange }: { issue: Issue; onClose: () => void; sprintName?: string; projectId: string; onStatusChange?: (col: ColumnId) => void }) {
   const [activeTab, setActiveTab] = useState<"details" | "comments" | "activity">("details");
+  const updateTask = useUpdateTask(projectId);
+
+  function handleMoveToColumn(colId: ColumnId) {
+    const status = COLUMN_STATUS_MAP[colId];
+    const toastId = toast.loading(`Moving to ${COLUMNS.find(c => c.id === colId)?.label}…`);
+    updateTask.mutate(
+      { taskId: issue.id, status },
+      {
+        onSuccess: () => {
+          toast.success("Status updated", { id: toastId });
+          onStatusChange?.(colId);
+        },
+        onError: () => toast.error("Failed to update status", { id: toastId }),
+      }
+    );
+  }
 
   const mockComments: { author: string; time: string; text: string }[] = [];
   const mockActivity: { time: string; text: string }[] = [];
@@ -730,6 +754,27 @@ function TaskDetailModal({ issue, onClose, sprintName }: { issue: Issue; onClose
         {/* Title */}
         <div className="px-6 py-3">
           <h2 className="text-[18px] font-bold leading-snug" style={{ color: "var(--foreground)" }}>{issue.title}</h2>
+        </div>
+
+        {/* Move to column */}
+        <div className="px-6 pb-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Move to Column</p>
+          <div className="flex flex-wrap gap-1.5">
+            {COLUMNS.map(col => (
+              <button key={col.id} disabled={issue.column === col.id || updateTask.isPending}
+                onClick={() => handleMoveToColumn(col.id)}
+                className="px-2.5 py-1 rounded-[6px] text-[11px] font-semibold transition-all"
+                style={{
+                  background: issue.column === col.id ? `${col.color}25` : `${col.color}10`,
+                  color: col.color,
+                  border: `1px solid ${issue.column === col.id ? col.color : `${col.color}44`}`,
+                  opacity: issue.column === col.id ? 1 : 0.75,
+                  cursor: issue.column === col.id ? "default" : "pointer",
+                }}>
+                {issue.column === col.id ? "✓ " : ""}{col.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Fields grid */}

@@ -275,7 +275,8 @@ function ProjectHealthCard({ projectId }: { projectId: string }) {
   if (!metrics) return null;
 
   const { evm, health, tasks } = metrics;
-  if (!evm?.budget || evm.budget === 0) return null;
+  // Always show the health card if we have metrics, but only show EVM gauges
+  // when there is real earned-value data (project started + tasks done)
 
   const ragColors: Record<string, { bg: string; text: string; label: string }> = {
     GREEN: { bg: "bg-emerald-500/10", text: "text-emerald-500", label: "On Track" },
@@ -283,8 +284,18 @@ function ProjectHealthCard({ projectId }: { projectId: string }) {
     RED: { bg: "bg-red-500/10", text: "text-red-500", label: "Critical" },
   };
 
-  // SPI/CPI gauge helper
-  const Gauge = ({ value, label, threshold }: { value: number; label: string; threshold?: number }) => {
+  // SPI/CPI gauge — only rendered when the value is a real number (not null)
+  const Gauge = ({ value, label }: { value: number | null; label: string }) => {
+    if (value === null) {
+      return (
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto flex items-center justify-center rounded-full border-2 border-dashed border-border/40">
+            <span className="text-xs text-muted-foreground font-medium">N/A</span>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1">{label}</p>
+        </div>
+      );
+    }
     const pct = Math.min(100, Math.max(0, value * 50)); // 1.0 = 50%, 2.0 = 100%
     const color = value >= 1.0 ? "#10B981" : value >= 0.9 ? "#F59E0B" : "#EF4444";
     return (
@@ -306,26 +317,40 @@ function ProjectHealthCard({ projectId }: { projectId: string }) {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* EVM Gauges */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Performance Indices</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Performance Indices</CardTitle>
+          {!evm?.hasRealEvm && (
+            <p className="text-[10px] text-muted-foreground">Available once the project is underway and costs are tracked</p>
+          )}
+        </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-around">
-            <Gauge value={evm.spi} label="SPI (Schedule)" />
-            <Gauge value={evm.cpi} label="CPI (Cost)" />
-          </div>
-          <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-            <div className="p-2 rounded-lg bg-muted/30">
-              <p className="text-xs font-bold">${(evm.budget / 1000).toFixed(0)}K</p>
-              <p className="text-[9px] text-muted-foreground">Budget</p>
+          {evm?.hasRealEvm ? (
+            <>
+              <div className="flex items-center justify-around">
+                <Gauge value={evm.spi} label="SPI (Schedule)" />
+                <Gauge value={evm.cpi} label="CPI (Cost)" />
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                <div className="p-2 rounded-lg bg-muted/30">
+                  <p className="text-xs font-bold">${(evm.budget / 1000).toFixed(0)}K</p>
+                  <p className="text-[9px] text-muted-foreground">Budget</p>
+                </div>
+                <div className="p-2 rounded-lg bg-muted/30">
+                  <p className="text-xs font-bold">${(evm.ev / 1000).toFixed(0)}K</p>
+                  <p className="text-[9px] text-muted-foreground">Earned</p>
+                </div>
+                <div className="p-2 rounded-lg bg-muted/30">
+                  <p className="text-xs font-bold">{evm.eac ? `$${(evm.eac / 1000).toFixed(0)}K` : "—"}</p>
+                  <p className="text-[9px] text-muted-foreground">Forecast</p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground">
+              <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              <p className="text-xs text-center">No EVM data yet.<br />Indices appear once work begins and actual costs are logged.</p>
             </div>
-            <div className="p-2 rounded-lg bg-muted/30">
-              <p className="text-xs font-bold">${(evm.ev / 1000).toFixed(0)}K</p>
-              <p className="text-[9px] text-muted-foreground">Earned</p>
-            </div>
-            <div className="p-2 rounded-lg bg-muted/30">
-              <p className="text-xs font-bold">${((evm.eac || evm.budget) / 1000).toFixed(0)}K</p>
-              <p className="text-[9px] text-muted-foreground">Forecast</p>
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 

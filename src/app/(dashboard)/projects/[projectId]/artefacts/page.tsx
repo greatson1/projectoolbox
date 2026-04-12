@@ -18,7 +18,7 @@ import { marked } from "marked";
 import { Progress } from "@/components/ui/progress";
 import {
   FileText, FolderOpen, Upload, Clock, Download, Eye, CheckCircle2,
-  XCircle, ChevronDown, Edit3, RefreshCw, Bot, ArrowRight, Sparkles, AlertCircle,
+  XCircle, ChevronDown, Edit3, RefreshCw, Bot, ArrowRight, Sparkles, AlertCircle, CalendarDays,
 } from "lucide-react";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -188,6 +188,21 @@ export default function ArtefactsPage() {
       toast.error(e?.message || "Generation failed");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleSyncSchedule = async (art: any) => {
+    toast.loading("Syncing data…", { id: `sync-${art.id}` });
+    try {
+      const res = await fetch(`/api/agents/artefacts/${art.id}/sync-schedule`, { method: "POST" });
+      const json = await res.json();
+      if (res.ok) {
+        toast.success(json.data?.message || "Data synced ✓", { id: `sync-${art.id}` });
+      } else {
+        toast.error(json.error || "Sync failed", { id: `sync-${art.id}` });
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Sync failed", { id: `sync-${art.id}` });
     }
   };
 
@@ -425,6 +440,21 @@ export default function ArtefactsPage() {
                             <XCircle className="w-4 h-4" />
                           </Button>
                         </>
+                      )}
+                      {/* Sync to module — shown for approved seedable artefacts */}
+                      {art.status === "APPROVED" && (() => {
+                        const ln = (art.name || "").toLowerCase();
+                        return (
+                          ln.includes("schedule") || ln.includes("wbs") || ln.includes("work breakdown") ||
+                          ln.includes("stakeholder") || ln.includes("risk register") || ln.includes("initial risk") ||
+                          ln.includes("budget") || ln.includes("cost management") || ln.includes("cost plan") ||
+                          ln.includes("sprint plan") || ln.includes("iteration plan")
+                        );
+                      })() && (
+                        <Button variant="ghost" size="sm" className="text-sky-500" onClick={() => handleSyncSchedule(art)}
+                          title="Sync data to project module">
+                          <CalendarDays className="w-4 h-4" />
+                        </Button>
                       )}
                     </div>
                   </div>

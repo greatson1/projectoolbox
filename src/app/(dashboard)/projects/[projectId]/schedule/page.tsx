@@ -4,7 +4,8 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
-import { useProjectTasks, useProject } from "@/hooks/use-api";
+import { useProjectTasks, useProject, useUpdateTask } from "@/hooks/use-api";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -95,8 +96,43 @@ export default function SchedulePage() {
   const [showCriticalPath, setShowCriticalPath] = useState(true);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set<string>());
   const [selectedTask, setSelectedTask] = useState<ScheduleTask | null>(null);
+  const [editProgress, setEditProgress] = useState<number | null>(null);
+  const [editStatus, setEditStatus] = useState<TaskStatus | null>(null);
+  const updateTask = useUpdateTask(projectId);
   const timelineRef = useRef<HTMLDivElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
+
+  function handleSelectTask(t: ScheduleTask | null) {
+    setSelectedTask(t);
+    setEditProgress(t ? t.progress : null);
+    setEditStatus(t ? t.status : null);
+  }
+
+  function handleSaveTask() {
+    if (!selectedTask) return;
+    const STATUS_MAP: Record<TaskStatus, string> = {
+      done: "DONE",
+      active: "IN_PROGRESS",
+      "at-risk": "AT_RISK",
+      pending: "TODO",
+      milestone: "TODO",
+    };
+    const toastId = toast.loading("Saving…");
+    updateTask.mutate(
+      {
+        taskId: selectedTask.id,
+        ...(editProgress !== null && editProgress !== selectedTask.progress ? { progress: editProgress } : {}),
+        ...(editStatus !== null && editStatus !== selectedTask.status ? { status: STATUS_MAP[editStatus] } : {}),
+      },
+      {
+        onSuccess: () => {
+          toast.success("Task updated", { id: toastId });
+          setSelectedTask(prev => prev ? { ...prev, progress: editProgress ?? prev.progress, status: editStatus ?? prev.status } : null);
+        },
+        onError: () => toast.error("Failed to save", { id: toastId }),
+      }
+    );
+  }
 
   // Compute timeline range (guard against empty data)
   const { timelineStart, timelineEnd, totalDays, dayWidth } = useMemo(() => {
@@ -212,7 +248,7 @@ export default function SchedulePage() {
                   const wbs = `${phaseIdx}.${taskIdx}`;
                   return (
                     <tr key={t.id} className="hover:opacity-80 transition-opacity cursor-pointer" style={{ borderBottom: `1px solid ${"var(--border)"}22` }}
-                      onClick={() => setSelectedTask(selectedTask?.id === t.id ? null : t)}>
+                      onClick={() => handleSelectTask(selectedTask?.id === t.id ? null : t)}>
                       <td className="py-2 px-3 text-[11px] font-mono" style={{ color: "var(--muted-foreground)" }}>{wbs}</td>
                       <td className="py-2 px-3 font-medium flex items-center gap-2">
                         {t.isMilestone && <span className="text-[#F59E0B]">◆</span>}
@@ -291,7 +327,7 @@ export default function SchedulePage() {
                   return (
                     <div key={t.id} className="flex items-center gap-2 px-3 text-[12px] truncate cursor-pointer"
                       style={{ height: ROW_HEIGHT, color: "var(--foreground)", borderBottom: `1px solid ${"var(--border)"}11`, background: selectedTask?.id === t.id ? "rgba(99,102,241,0.08)" : undefined }}
-                      onClick={() => setSelectedTask(selectedTask?.id === t.id ? null : t)}>
+                      onClick={() => handleSelectTask(selectedTask?.id === t.id ? null : t)}>
                       {t.isCriticalPath && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#EF4444" }} />}
                       {t.isMilestone ? <span className="text-[#F59E0B] flex-shrink-0">◆</span> : <span className="w-3" />}
                       <span className="truncate">{t.name}</span>
@@ -377,7 +413,7 @@ export default function SchedulePage() {
 
                   return (
                     <div key={t.id} className="absolute flex items-center group" style={{ top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, left }}
-                      onClick={() => setSelectedTask(selectedTask?.id === t.id ? null : t)}>
+                      onClick={() => handleSelectTask(selectedTask?.id === t.id ? null : t)}>
                       <div className="relative rounded-[4px] overflow-hidden cursor-pointer transition-all"
                         style={{
                           width,
@@ -428,7 +464,7 @@ export default function SchedulePage() {
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Task Detail</p>
               <h2 className="text-[15px] font-bold mt-1" style={{ color: "var(--foreground)", lineHeight: 1.3 }}>{selectedTask.name}</h2>
             </div>
-            <button onClick={() => setSelectedTask(null)} className="w-7 h-7 rounded-full flex items-center justify-center hover:opacity-70 flex-shrink-0" style={{ background: "var(--muted)", color: "var(--muted-foreground)", border: "none", cursor: "pointer", fontSize: 16 }}>×</button>
+            <button onClick={() => handleSelectTask(null)} className="w-7 h-7 rounded-full flex items-center justify-center hover:opacity-70 flex-shrink-0" style={{ background: "var(--muted)", color: "var(--muted-foreground)", border: "none", cursor: "pointer", fontSize: 16 }}>×</button>
           </div>
 
           {/* WBS + Phase */}
@@ -448,16 +484,47 @@ export default function SchedulePage() {
             ))}
           </div>
 
+          {/* Status selector */}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Status</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(["pending", "active", "at-risk", "done"] as TaskStatus[]).map(s => (
+                <button key={s} onClick={() => setEditStatus(s)}
+                  className="px-2.5 py-1 rounded-[6px] text-[11px] font-semibold capitalize transition-all"
+                  style={{
+                    background: (editStatus ?? selectedTask.status) === s ? `${STATUS_COLORS[s]}25` : `${STATUS_COLORS[s]}10`,
+                    color: STATUS_COLORS[s],
+                    border: `1px solid ${(editStatus ?? selectedTask.status) === s ? STATUS_COLORS[s] : `${STATUS_COLORS[s]}44`}`,
+                  }}>
+                  {s === "pending" ? "To Do" : s === "active" ? "In Progress" : s === "at-risk" ? "At Risk" : "Done"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Progress */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Progress</p>
-              <span className="text-[13px] font-bold" style={{ color: STATUS_COLORS[selectedTask.status] }}>{selectedTask.progress}%</span>
+              <span className="text-[13px] font-bold" style={{ color: STATUS_COLORS[editStatus ?? selectedTask.status] }}>{editProgress ?? selectedTask.progress}%</span>
             </div>
-            <div style={{ height: 8, borderRadius: 4, background: "var(--border)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${selectedTask.progress}%`, background: STATUS_COLORS[selectedTask.status], borderRadius: 4, transition: "width 0.4s" }} />
+            <input type="range" min={0} max={100} step={5}
+              value={editProgress ?? selectedTask.progress}
+              onChange={e => setEditProgress(Number(e.target.value))}
+              style={{ width: "100%", accentColor: STATUS_COLORS[editStatus ?? selectedTask.status] }} />
+            <div className="flex justify-between text-[9px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+              <span>0%</span><span>50%</span><span>100%</span>
             </div>
           </div>
+
+          {/* Save button */}
+          {(editProgress !== selectedTask.progress || editStatus !== selectedTask.status) && (
+            <button onClick={handleSaveTask} disabled={updateTask.isPending}
+              className="w-full py-2 rounded-[8px] text-[12px] font-semibold transition-all"
+              style={{ background: "var(--primary)", color: "#fff", opacity: updateTask.isPending ? 0.6 : 1, cursor: updateTask.isPending ? "default" : "pointer" }}>
+              {updateTask.isPending ? "Saving…" : "Save Changes"}
+            </button>
+          )}
 
           {/* Flags */}
           <div className="flex flex-wrap gap-2">
