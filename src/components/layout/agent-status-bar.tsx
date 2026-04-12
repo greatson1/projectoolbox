@@ -313,7 +313,7 @@ export function AgentStatusBar() {
   useEffect(() => {
     setLoading(true);
     fetchAll();
-    const iv = setInterval(fetchAll, 20_000);
+    const iv = setInterval(fetchAll, 60_000);
     return () => clearInterval(iv);
   }, [fetchAll]);
 
