@@ -32,7 +32,7 @@ type Category = "construction" | "software" | "marketing" | "operations" | "rese
 interface TeamMember { name: string; email: string; role: string; }
 interface Stakeholder { name: string; role: string; org: string; power: number; interest: number; }
 interface PhaseGate {
-  name: string; artefacts: { name: string; required: boolean }[];
+  name: string; artefacts: { name: string; required: boolean; aiGeneratable?: boolean }[];
   approvalRequired: boolean; criteria: string;
 }
 
@@ -101,12 +101,77 @@ const PHASE_TEMPLATES: Record<string, PhaseGate[]> = Object.fromEntries(
     key,
     def.phases.map(p => ({
       name: p.name,
-      artefacts: p.artefacts.map(a => ({ name: a.name, required: a.required })),
+      artefacts: p.artefacts.map(a => ({ name: a.name, required: a.required, aiGeneratable: a.aiGeneratable })),
       approvalRequired: p.gate.preRequisites.some(pr => pr.requiresHumanApproval),
       criteria: p.gate.criteria,
     })),
   ])
 );
+
+// Short descriptions for each artefact type — shown as a tooltip in the wizard
+const ARTEFACT_DESCRIPTIONS: Record<string, string> = {
+  // PRINCE2 / Traditional
+  "Problem Statement": "Define the business problem or opportunity this project addresses",
+  "Options Analysis": "Compare the available options for solving the problem with costs and benefits",
+  "Outline Business Case": "High-level justification: why this project, what value it delivers",
+  "Project Brief": "Defines scope, objectives, approach, and initial risk assessment",
+  "Project Charter": "Formal authorisation document — establishes the project and the PM's authority",
+  "Business Case": "Full cost-benefit analysis with expected ROI and success criteria",
+  "Stakeholder Register": "List of all stakeholders with influence, interest, and engagement strategy",
+  "Initial Risk Register": "Early-stage risk log with likelihood, impact, and initial mitigations",
+  "Communication Plan": "Who gets what information, when, and through which channel",
+  "WBS": "Work Breakdown Structure — hierarchical decomposition of all deliverables",
+  "Schedule Baseline": "Approved project timeline with milestones and critical path",
+  "Budget Breakdown": "Phase-by-phase cost plan against the approved budget",
+  "Risk Management Plan": "Strategy for identifying, assessing, and responding to risks",
+  "Quality Plan": "Standards, reviews, and acceptance criteria for deliverables",
+  "Resource Plan": "Who is doing what, when — team capacity and allocation",
+  "Status Reports": "Regular progress updates against plan, covering time, cost, scope, risk",
+  "Risk Reviews": "Periodic reassessment of the risk register as the project progresses",
+  "Exception Reports": "Triggered when a stage is forecast to exceed tolerances",
+  "Change Requests": "Formal log of proposed changes to scope, schedule, or budget",
+  "Quality Review Records": "Documentation of quality checks and sign-offs",
+  "Acceptance Certificate": "Formal sign-off that deliverables meet agreed criteria",
+  "End Project Report": "Final performance summary against original Business Case",
+  "Lessons Learned": "What went well, what didn't, and recommendations for future projects",
+  "Closure Report": "Confirms all work is complete and the project is formally closed",
+  // Waterfall
+  "Requirements Specification": "Detailed, prioritised list of functional and non-functional requirements",
+  "Feasibility Study": "Technical, financial, and operational feasibility assessment",
+  "Design Document": "System or solution architecture and design decisions",
+  "Work Breakdown Structure": "Full hierarchical breakdown of all work packages",
+  "Schedule with Dependencies": "Gantt-style schedule with all task dependencies mapped",
+  "Cost Management Plan": "How budget will be tracked, controlled, and reported",
+  "Resource Management Plan": "How team members and other resources will be managed",
+  "Quality Management Plan": "Quality standards, testing approach, and review processes",
+  "Change Control Plan": "Formal process for requesting, evaluating, and approving changes",
+  "Test Plan": "Scope, approach, resources, and schedule for testing activities",
+  "Release Plan": "Steps and criteria for deploying the solution to production",
+  "Handover Documentation": "Operational guides, support procedures, and knowledge transfer",
+  // Agile / Scrum / SAFe
+  "Product Vision": "One-page statement of what the product is, who it's for, and why it matters",
+  "Product Roadmap": "High-level feature timeline across quarters or PI cycles",
+  "Product Backlog": "Prioritised list of user stories, epics, and features",
+  "Sprint Charter": "Goals, capacity, and acceptance criteria for the current sprint",
+  "Definition of Done": "Agreed checklist that must be met before any item is considered complete",
+  "Team Agreement": "Working norms, ceremonies, and collaboration ground rules",
+  "Sprint Backlog": "Stories committed to the current sprint with task-level breakdown",
+  "Sprint Review Notes": "Demo outcomes, stakeholder feedback, and backlog refinements",
+  "Sprint Retrospective": "What went well, what to improve, and actions for the next sprint",
+  "Velocity Report": "Story points completed per sprint — trend used for forecasting",
+  "Release Notes": "User-facing summary of features, fixes, and changes in each release",
+  "PI Planning Board": "SAFe PI objectives, team iterations, and dependency map",
+  "ART Sync Report": "Cross-team alignment summary from Agile Release Train syncs",
+  // Kanban
+  "Kanban Board Definition": "Column structure, WIP limits, and flow policies",
+  "Service Level Agreement": "Expected lead times by work type and priority",
+  "Flow Metrics Report": "Cycle time, throughput, and cumulative flow diagram",
+  "Blocker Log": "Active impediments with owner and resolution status",
+  // Hybrid
+  "Project Initiation Document": "PID — combines charter, business case, and management plans",
+  "Agile Delivery Plan": "Sprint/iteration plan within the overall governance framework",
+  "Integrated Change Log": "Unified log of scope, schedule, and budget changes",
+};
 
 const GRADIENT_PRESETS = [
   { gradient: "linear-gradient(135deg, #6366F1, #8B5CF6)", color: "#6366F1" },
@@ -547,43 +612,149 @@ export default function ProjectWizardPage() {
         {/* ─── STEP 3: PHASE GATES & GOVERNANCE ─── */}
         {step === 2 && (
           <div className="space-y-5">
-            <StepHeader title="Phase Gates & Governance" subtitle="Configure lifecycle stages and human-in-the-loop controls" />
+            <StepHeader title="Phase Gates & Governance" subtitle="Choose which documents to generate per phase, then set approval and governance controls" />
 
-            {/* Phases */}
+            {/* ── Document Selection ── */}
             <Card className="px-5">
-              <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Lifecycle Phases</h3>
-              <div className="space-y-3">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Documents to Generate</h3>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+                    Select which documents your agent should create for each phase.
+                    Deselect anything you don't need — the agent will only generate what's checked.
+                  </p>
+                </div>
+                <span className="text-[10px] px-2 py-1 rounded-full shrink-0" style={{ background: `${g.color}15`, color: g.color }}>
+                  {data.phases.reduce((n, p) => n + p.artefacts.filter(a => a.required && a.aiGeneratable !== false).length, 0)} selected
+                </span>
+              </div>
+
+              <div className="space-y-5">
+                {data.phases.map((phase, pi) => {
+                  const aiArtefacts = phase.artefacts.filter(a => a.aiGeneratable !== false);
+                  const manualArtefacts = phase.artefacts.filter(a => a.aiGeneratable === false);
+                  const allSelected = aiArtefacts.every(a => a.required);
+                  const noneSelected = aiArtefacts.every(a => !a.required);
+
+                  const toggleAll = (select: boolean) => {
+                    const phases = [...data.phases];
+                    phases[pi].artefacts = phases[pi].artefacts.map(a =>
+                      a.aiGeneratable === false ? a : { ...a, required: select }
+                    );
+                    upd({ phases });
+                  };
+
+                  return (
+                    <div key={pi}>
+                      {/* Phase header */}
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                            style={{ background: `${g.color}22`, color: g.color }}>{pi + 1}</span>
+                          <span className="text-[13px] font-semibold" style={{ color: "var(--foreground)" }}>{phase.name}</span>
+                          <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>
+                            · {aiArtefacts.filter(a => a.required).length}/{aiArtefacts.length} selected
+                          </span>
+                        </div>
+                        {/* Quick-select buttons */}
+                        {aiArtefacts.length > 1 && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              className="text-[10px] px-2 py-0.5 rounded transition-all"
+                              style={{ color: allSelected ? g.color : "var(--muted-foreground)", background: allSelected ? `${g.color}15` : "transparent" }}
+                              onClick={() => toggleAll(true)}
+                            >All</button>
+                            <button
+                              className="text-[10px] px-2 py-0.5 rounded transition-all"
+                              style={{ color: noneSelected ? "var(--foreground)" : "var(--muted-foreground)", background: noneSelected ? "var(--muted)" : "transparent" }}
+                              onClick={() => toggleAll(false)}
+                            >None</button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* AI-generatable artefacts — selectable */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-2">
+                        {aiArtefacts.map((a, ai) => {
+                          const realIdx = phase.artefacts.indexOf(a);
+                          const desc = ARTEFACT_DESCRIPTIONS[a.name];
+                          return (
+                            <label
+                              key={ai}
+                              className="flex items-start gap-2.5 p-2.5 rounded-[8px] cursor-pointer transition-all select-none"
+                              style={{
+                                background: a.required ? `${g.color}10` : "hsl(var(--muted)/0.3)",
+                                border: `1px solid ${a.required ? g.color + "30" : "hsl(var(--border)/0.5)"}`,
+                              }}
+                            >
+                              {/* Custom checkbox */}
+                              <div className="mt-0.5 shrink-0 w-4 h-4 rounded-[4px] flex items-center justify-center transition-all"
+                                style={{ background: a.required ? g.color : "transparent", border: `1.5px solid ${a.required ? g.color : "hsl(var(--border))"}` }}>
+                                {a.required && (
+                                  <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                                    <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </div>
+                              <input type="checkbox" className="hidden" checked={a.required}
+                                onChange={() => {
+                                  const phases = [...data.phases];
+                                  phases[pi].artefacts[realIdx] = { ...a, required: !a.required };
+                                  upd({ phases });
+                                }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-semibold leading-tight" style={{ color: a.required ? "var(--foreground)" : "var(--muted-foreground)" }}>
+                                  {a.name}
+                                </p>
+                                {desc && (
+                                  <p className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--muted-foreground)" }}>
+                                    {desc}
+                                  </p>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {/* Non-AI artefacts — informational only */}
+                      {manualArtefacts.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {manualArtefacts.map((a, ai) => (
+                            <span key={ai} className="text-[10px] px-2 py-0.5 rounded-full"
+                              style={{ background: "hsl(var(--muted)/0.4)", color: "var(--muted-foreground)", border: "1px dashed hsl(var(--border))" }}
+                              title="Created manually — cannot be AI-generated">
+                              {a.name} · manual
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {pi < data.phases.length - 1 && (
+                        <div className="mt-4 border-t" style={{ borderColor: "hsl(var(--border)/0.4)" }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            {/* ── Phase Gates ── */}
+            <Card className="px-5">
+              <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Phase Gates</h3>
+              <div className="space-y-2">
                 {data.phases.map((phase, pi) => (
-                  <div key={pi} className="p-3 rounded-[10px]" style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)", border: `1px solid ${"var(--border)"}33` }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center" style={{ background: `${g.color}22`, color: g.color }}>{pi + 1}</span>
-                        <input className="text-[13px] font-semibold bg-transparent border-none outline-none" value={phase.name}
-                          onChange={e => { const phases = [...data.phases]; phases[pi] = { ...phases[pi], name: e.target.value }; upd({ phases }); }}
-                          style={{ color: "var(--foreground)" }} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Approval Required</span>
-                          <ToggleSwitch checked={phase.approvalRequired} onChange={v => { const phases = [...data.phases]; phases[pi] = { ...phases[pi], approvalRequired: v }; upd({ phases }); }} color={g.color} />
-                        </label>
-                      </div>
-                    </div>
-                    {/* Artefacts */}
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {phase.artefacts.map((a, ai) => (
-                        <label key={ai} className="flex items-center gap-1 px-2 py-1 rounded-[6px] cursor-pointer text-[10px] font-medium transition-all"
-                          style={{ background: a.required ? `${g.color}15` : `${"var(--border)"}22`, color: a.required ? g.color : "var(--muted-foreground)", border: `1px solid ${a.required ? g.color + "33" : "transparent"}` }}>
-                          <input type="checkbox" className="hidden" checked={a.required}
-                            onChange={() => { const phases = [...data.phases]; phases[pi].artefacts[ai] = { ...a, required: !a.required }; upd({ phases }); }} />
-                          <span>{a.required ? "☑" : "☐"}</span> {a.name}
-                        </label>
-                      ))}
-                    </div>
-                    <input className="w-full text-[11px] px-2 py-1 rounded-[6px]" placeholder="Gate criteria..."
+                  <div key={pi} className="p-3 rounded-[10px] flex items-center gap-3" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${"var(--border)"}33` }}>
+                    <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: `${g.color}22`, color: g.color }}>{pi + 1}</span>
+                    <span className="text-[12px] font-medium w-28 shrink-0" style={{ color: "var(--foreground)" }}>{phase.name}</span>
+                    <input className="flex-1 text-[11px] px-2 py-1 rounded-[6px]" placeholder="Gate criteria..."
                       value={phase.criteria}
                       onChange={e => { const phases = [...data.phases]; phases[pi] = { ...phases[pi], criteria: e.target.value }; upd({ phases }); }}
                       style={{ background: "var(--card)", color: "var(--muted-foreground)", border: `1px solid ${"var(--border)"}44`, outline: "none" }} />
+                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                      <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Approval</span>
+                      <ToggleSwitch checked={phase.approvalRequired} onChange={v => { const phases = [...data.phases]; phases[pi] = { ...phases[pi], approvalRequired: v }; upd({ phases }); }} color={g.color} />
+                    </label>
                   </div>
                 ))}
               </div>

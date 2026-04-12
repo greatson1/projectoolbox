@@ -11,6 +11,8 @@ import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
 import { toast } from "sonner";
 import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink } from "lucide-react";
+import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
+import { AgentQuestionCard, ProjectStatusCard } from "@/components/agents/AgentResponseCards";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -50,7 +52,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
 };
 
 // ── Rich message types matching Vite original ──
-type MessageType = "text" | "status" | "artefact" | "risk" | "actions";
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status";
 
 interface Message {
   id: string;
@@ -62,10 +64,10 @@ interface Message {
 }
 
 const QUICK_ACTIONS = [
+  { label: "What's next?", icon: ChevronRight, prompt: "What do I need to do next? Give me the current project status and the most important action required from me right now.", color: "#F97316" },
   { label: "Status Update", icon: BarChart3, prompt: "Give me a full status update on the current project including progress, risks, and blockers.", color: "#6366F1" },
   { label: "Generate Artefact", icon: FileText, prompt: "Generate a status report for the current project phase.", color: "#22D3EE" },
   { label: "Check Risks", icon: AlertTriangle, prompt: "Analyse current project risks. Flag any new risks and update existing risk scores.", color: "#EF4444" },
-  { label: "Schedule", icon: Calendar, prompt: "What meetings and deadlines are coming up this week?", color: "#10B981" },
   { label: "Research", icon: Search, prompt: "Research best practices for our current project methodology.", color: "#8B5CF6" },
 ];
 
@@ -177,6 +179,82 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
+  // Clarification question card — interactive widget, zero credits
+  if (msg.type === "clarification" && msg.data?.question) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[85%]">
+          <ClarificationCard
+            agentId={msg.data.agentId}
+            question={msg.data.question}
+            progress={msg.data.progress}
+            questionIndex={msg.data.questionIndex}
+            intro={msg.data.intro}
+            onAnswered={msg.data.onAnswered}
+            isSubmitting={msg.data.isSubmitting}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Clarification complete card — shows CTA to generate documents
+  if (msg.type === "clarification_complete" && msg.data) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[85%]">
+          <ClarificationCompleteCard
+            agentId={msg.data.agentId}
+            artefactNames={msg.data.artefactNames || []}
+            answeredCount={msg.data.answeredCount || 0}
+            totalCount={msg.data.totalCount || 0}
+            onGenerate={msg.data.onGenerate}
+            isGenerating={msg.data.isGenerating}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Agent question card — interactive question asked mid-conversation
+  if (msg.type === "agent_question" && msg.data?.question) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[85%]">
+          <AgentQuestionCard
+            question={msg.data.question}
+            onAnswered={msg.data.onAnswered || (() => {})}
+            isSubmitting={msg.data.isSubmitting || false}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Project status card — visual snapshot of project state
+  if (msg.type === "project_status" && msg.data) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[90%]">
+          <ProjectStatusCard
+            projectName={msg.data.projectName || "Project"}
+            phase={msg.data.phase}
+            phases={msg.data.phases || []}
+            nextPhase={msg.data.nextPhase}
+            pendingApprovals={msg.data.pendingApprovals || 0}
+            pendingArtefacts={msg.data.pendingArtefacts || 0}
+            pendingQuestions={msg.data.pendingQuestions || 0}
+            risks={msg.data.risks || 0}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Default text — render with proper markdown (tables, headings, lists, bold, etc.)
   return (
     <div className="flex gap-2">
@@ -244,6 +322,9 @@ function AgentChatPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [clarificationSubmitting, setClarificationSubmitting] = useState(false);
+  const [generatingDocs, setGeneratingDocs] = useState(false);
+  const [agentQuestionSubmitting, setAgentQuestionSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -251,7 +332,19 @@ function AgentChatPage() {
   }, [agents, activeAgentId]);
 
   const activeAgent = agents.find((a: any) => a.id === activeAgentId);
-  const messages = activeAgentId ? (messagesByAgent[activeAgentId] || []) : [];
+  // Inject live handlers into clarification cards (handlers can't be serialised to state)
+  const messages: Message[] = (activeAgentId ? (messagesByAgent[activeAgentId] || []) : []).map(m => {
+    if (m.type === "clarification" && m.data && !m.data.onAnswered) {
+      return { ...m, data: { ...m.data, onAnswered: (ans: string) => handleClarificationAnswer(m.data.question.id, ans), isSubmitting: clarificationSubmitting } };
+    }
+    if (m.type === "clarification_complete" && m.data && !m.data.onGenerate) {
+      return { ...m, data: { ...m.data, onGenerate: handleGenerateDocuments, isGenerating: generatingDocs } };
+    }
+    if (m.type === "agent_question" && m.data && !m.data.onAnswered) {
+      return { ...m, data: { ...m.data, onAnswered: (ans: string) => handleAgentQuestionAnswer(m.id, ans), isSubmitting: agentQuestionSubmitting } };
+    }
+    return m;
+  });
 
   // ── Load persistent chat history from DB when switching agents ──
   useEffect(() => {
@@ -262,17 +355,104 @@ function AgentChatPage() {
       .then(r => r.json())
       .then(({ data }) => {
         if (!Array.isArray(data)) return;
-        // Filter out system kickoff messages stored in DB
+        // Filter out system kickoff messages and raw clarification sentinels
         const filtered = data.filter((m: any) =>
           !(m.role === "user" && (m.content?.startsWith("SYSTEM_KICKOFF:") || m.content?.startsWith("KICKOFF:")))
         );
-        const loaded: Message[] = filtered.map((m: any) => ({
-          id: m.id,
-          role: m.role === "user" ? "user" : "agent",
-          type: "text" as const,
-          content: m.content,
-          timestamp: new Date(m.createdAt),
-        }));
+
+        // Map clarification metadata into interactive card messages
+        const loaded: Message[] = filtered.map((m: any) => {
+          const meta = m.metadata as any;
+
+          if (meta?.type === "clarification_question" && meta.question) {
+            // Answered if a later message in the session has a higher questionIndex
+            const isCurrentQ = meta.questionIndex === (meta.totalQuestions - 1 - filtered.filter((x: any) => x.metadata?.type === "clarification_question").reverse().findIndex((x: any) => x.id === m.id) - 1);
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "clarification" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: {
+                agentId: activeAgentId,
+                question: meta.question,
+                questionIndex: meta.questionIndex,
+                progress: {
+                  current: meta.questionIndex,
+                  total: meta.totalQuestions,
+                  artefactNames: meta.artefactNames || [],
+                },
+                intro: meta.intro || false,
+                // onAnswered injected below after state is set
+                onAnswered: null,
+                isSubmitting: false,
+              },
+            };
+          }
+
+          if (meta?.type === "clarification_complete") {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "clarification_complete" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: {
+                agentId: activeAgentId,
+                artefactNames: meta.artefactNames || [],
+                answeredCount: meta.answeredCount || 0,
+                totalCount: meta.totalCount || 0,
+                onGenerate: null,  // injected below
+                isGenerating: false,
+              },
+            };
+          }
+
+          if (meta?.type === "agent_question" && meta.question) {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "agent_question" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: {
+                question: meta.question,
+                questionIndex: meta.questionIndex ?? 0,
+                totalQuestions: meta.totalQuestions ?? 1,
+                onAnswered: null,   // injected below
+                isSubmitting: false,
+              },
+            };
+          }
+
+          if (meta?.type === "project_status") {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "project_status" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: meta,
+            };
+          }
+
+          return {
+            id: m.id,
+            role: m.role === "user" ? "user" as const : "agent" as const,
+            type: "text" as const,
+            content: m.content,
+            timestamp: new Date(m.createdAt),
+          };
+        }).filter((m: any) => {
+          // Hide raw sentinel content messages (they rendered as interactive cards above)
+          return !(m.type === "text" && (
+            m.content === "__CLARIFICATION_SESSION__" ||
+            m.content === "__CLARIFICATION_COMPLETE__" ||
+            m.content === "__AGENT_QUESTION__" ||
+            m.content === "__PROJECT_STATUS__"
+          ));
+        });
+
         setMessagesByAgent(prev => ({ ...prev, [activeAgentId]: loaded }));
         setHistoryLoaded(prev => new Set([...prev, activeAgentId]));
         // Scroll to bottom after history loads
@@ -291,6 +471,105 @@ function AgentChatPage() {
 
   const scrollToBottom = () => {
     setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }), 100);
+  };
+
+  // ── Clarification answer handler (zero-cost, dedicated endpoint) ──
+  const handleClarificationAnswer = async (questionId: string, answer: string) => {
+    if (!activeAgentId || clarificationSubmitting) return;
+    setClarificationSubmitting(true);
+    try {
+      const res = await fetch(`/api/agents/${activeAgentId}/clarification/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId, answer }),
+      });
+      const json = await res.json();
+      const result = json?.data;
+      if (!result) return;
+
+      if (result.status === "complete") {
+        // Replace the current active question card with the completion card
+        const completionMsg: Message = {
+          id: `clarification-complete-${Date.now()}`,
+          role: "agent",
+          type: "clarification_complete",
+          content: "",
+          timestamp: new Date(),
+          data: {
+            agentId: activeAgentId,
+            artefactNames: result.progress.artefactNames,
+            answeredCount: result.progress.current,
+            totalCount: result.progress.total,
+            onGenerate: () => handleGenerateDocuments(),
+            isGenerating: false,
+          },
+        };
+        setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), completionMsg] }));
+      } else if (result.nextQuestion) {
+        // Add the next question card
+        const nextMsg: Message = {
+          id: `clarification-q-${Date.now()}`,
+          role: "agent",
+          type: "clarification",
+          content: "",
+          timestamp: new Date(),
+          data: {
+            agentId: activeAgentId,
+            question: result.nextQuestion,
+            questionIndex: result.progress.current,
+            progress: result.progress,
+            intro: false,
+            onAnswered: (ans: string) => handleClarificationAnswer(result.nextQuestion.id, ans),
+            isSubmitting: false,
+          },
+        };
+        setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), nextMsg] }));
+      }
+      scrollToBottom();
+    } catch {}
+    finally { setClarificationSubmitting(false); }
+  };
+
+  // ── Generate documents (user-initiated, costs 10 credits) ──
+  const handleGenerateDocuments = async () => {
+    if (!activeAgentId || generatingDocs) return;
+    setGeneratingDocs(true);
+    try {
+      await fetch(`/api/agents/${activeAgentId}/clarification/generate`, { method: "POST" });
+      // Update the complete card to show generating state
+      setMessagesByAgent(prev => ({
+        ...prev,
+        [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
+          m.type === "clarification_complete" ? { ...m, data: { ...m.data, isGenerating: true } } : m
+        ),
+      }));
+      // Notify user
+      setTimeout(() => {
+        const doneMsg: Message = { id: `done-${Date.now()}`, role: "agent", type: "text", content: "Your documents are being generated. Head to the **Artefacts** tab to review them once ready.", timestamp: new Date() };
+        setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), doneMsg] }));
+        scrollToBottom();
+      }, 1500);
+    } catch {}
+    finally { setGeneratingDocs(false); }
+  };
+
+  // ── Agent question answer handler — sends as a real chat message so Claude responds naturally ──
+  const handleAgentQuestionAnswer = async (messageId: string, answer: string) => {
+    if (!activeAgentId || agentQuestionSubmitting) return;
+    setAgentQuestionSubmitting(true);
+    try {
+      // Mark the card as answered in local state immediately
+      setMessagesByAgent(prev => ({
+        ...prev,
+        [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
+          m.id === messageId ? { ...m, data: { ...m.data, onAnswered: null, isSubmitting: false } } : m
+        ),
+      }));
+      // Send the answer as a normal user message — this triggers a full Claude response
+      await sendMessage(answer);
+    } finally {
+      setAgentQuestionSubmitting(false);
+    }
   };
 
   const sendMessage = async (text?: string) => {
@@ -347,6 +626,53 @@ function AgentChatPage() {
 
         // If streaming produced no content, parse the final message
         if (!fullContent) throw new Error("Empty stream");
+
+        // Re-fetch chat history to pick up agent_question / project_status cards
+        // that the stream route saved to DB after streaming finished
+        const agentIdSnapshot = activeAgentId;
+        setTimeout(async () => {
+          try {
+            const r = await fetch(`/api/agents/${agentIdSnapshot}/chat`);
+            const { data: freshData } = await r.json();
+            if (!Array.isArray(freshData)) return;
+
+            // Collect IDs we already have so we only append genuinely new messages
+            setMessagesByAgent(prev => {
+              const existing = prev[agentIdSnapshot] || [];
+              const existingIds = new Set(existing.map(m => m.id));
+              const newCards: Message[] = [];
+
+              for (const m of freshData) {
+                if (existingIds.has(m.id)) continue;
+                const meta = m.metadata as any;
+                if (meta?.type === "agent_question" && meta.question) {
+                  newCards.push({
+                    id: m.id,
+                    role: "agent",
+                    type: "agent_question",
+                    content: "",
+                    timestamp: new Date(m.createdAt),
+                    data: { question: meta.question, onAnswered: null, isSubmitting: false },
+                  });
+                } else if (meta?.type === "project_status") {
+                  newCards.push({
+                    id: m.id,
+                    role: "agent",
+                    type: "project_status",
+                    content: "",
+                    timestamp: new Date(m.createdAt),
+                    data: meta,
+                  });
+                }
+              }
+
+              if (newCards.length === 0) return prev;
+              return { ...prev, [agentIdSnapshot]: [...existing, ...newCards] };
+            });
+
+            scrollToBottom();
+          } catch {}
+        }, 800); // short delay — route saves cards just after stream ends
       } else {
         // Fallback to regular API
         const data = await res.json();

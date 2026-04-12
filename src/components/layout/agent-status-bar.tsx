@@ -18,12 +18,12 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app";
 import {
   CheckCircle2, AlertCircle, Sparkles, ChevronUp, ChevronDown,
-  ArrowRight, RefreshCw, X, Clock, Activity, FileText, Zap, Shield, Bot,
+  ArrowRight, RefreshCw, X, Clock, Activity, FileText, Zap, Shield, Bot, MessageSquare,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AgentState = "generating" | "review" | "phase_complete" | "monitoring" | "idle";
+type AgentState = "questions_waiting" | "generating" | "review" | "phase_complete" | "monitoring" | "idle";
 
 interface RawActivity {
   id?: string;
@@ -47,6 +47,7 @@ interface AgentSlot {
   projectName:   string;
   // computed state
   state:         AgentState;
+  hasActiveSession: boolean;
   // phase
   currentPhase:  string | null;
   nextPhase:     string | null;
@@ -61,6 +62,7 @@ interface AgentSlot {
 // ─── State colours ────────────────────────────────────────────────────────────
 
 const COLOURS: Record<AgentState, { border: string; glow: string; badge: string; badgeBg: string; ring: string; pulse: string }> = {
+  questions_waiting: { border: "#F97316", glow: "rgba(249,115,22,0.25)", badge: "#F97316", badgeBg: "rgba(249,115,22,0.13)", ring: "#F97316", pulse: "rgba(249,115,22,0.4)" },
   review:         { border: "#F59E0B", glow: "rgba(245,158,11,0.22)", badge: "#F59E0B", badgeBg: "rgba(245,158,11,0.13)", ring: "#F59E0B", pulse: "rgba(245,158,11,0.35)" },
   generating:     { border: "#6366F1", glow: "rgba(99,102,241,0.22)",  badge: "#6366F1", badgeBg: "rgba(99,102,241,0.13)",  ring: "#6366F1", pulse: "rgba(99,102,241,0.35)"  },
   phase_complete: { border: "#10B981", glow: "rgba(16,185,129,0.22)",  badge: "#10B981", badgeBg: "rgba(16,185,129,0.13)",  ring: "#10B981", pulse: "rgba(16,185,129,0.35)"  },
@@ -98,8 +100,10 @@ function deriveState(
   pendingCount: number,
   totalArtefacts: number,
   activities: RawActivity[],
+  hasActiveSession: boolean,
 ): AgentState {
   if (!agentDeployed) return "idle";
+  if (hasActiveSession)        return "questions_waiting";
   const fourMinAgo = Date.now() - 4 * 60 * 1000;
   const isGenerating = activities.some(
     a => (a.type === "document" || a.type === "lifecycle_init") &&
@@ -113,7 +117,7 @@ function deriveState(
 
 /** Priority for auto-focus: lower = more urgent */
 function statePriority(s: AgentState): number {
-  return { review: 0, generating: 1, phase_complete: 2, monitoring: 3, idle: 4 }[s] ?? 5;
+  return { questions_waiting: 0, review: 1, generating: 2, phase_complete: 3, monitoring: 4, idle: 5 }[s] ?? 6;
 }
 
 function gradientColour(gradient: string | null | undefined): string {
@@ -129,6 +133,9 @@ function buildCommentary(slot: AgentSlot, activityIdx: number): string {
   const next  = nextPhase ?? "next";
 
   switch (state) {
+    case "questions_waiting":
+      return `${slot.agentName} has questions that need your answers before documents can be generated — open Chat to respond`;
+
     case "generating":
       return actText
         ? `Writing ${phase} documents — "${actText}"`
@@ -157,6 +164,7 @@ function buildCommentary(slot: AgentSlot, activityIdx: number): string {
 /** Label shown in the coloured badge */
 function badgeLabel(slot: AgentSlot): string {
   switch (slot.state) {
+    case "questions_waiting": return "Questions waiting";
     case "review":         return `${slot.pendingCount} doc${slot.pendingCount === 1 ? "" : "s"} to review`;
     case "generating":     return "Writing…";
     case "phase_complete": return slot.nextPhase ? `Start ${slot.nextPhase}` : "All done";
@@ -196,16 +204,25 @@ export function AgentStatusBar() {
       );
       if (deployed.length === 0) { setSlots([]); return; }
 
-      // 2. For each deployed agent, fetch project metrics in parallel (max 4)
+      // 2. For each deployed agent, fetch project metrics + clarification session in parallel (max 4)
       const capped = deployed.slice(0, 4);
-      const metricsResults = await Promise.allSettled(
-        capped.map(a => {
-          const pid = a.deployments[0]?.project?.id;
-          return pid
-            ? fetch(`/api/projects/${pid}/metrics`).then(r => r.ok ? r.json() : null)
-            : Promise.resolve(null);
-        })
-      );
+      const [metricsResults, sessionResults] = await Promise.all([
+        Promise.allSettled(
+          capped.map(a => {
+            const pid = a.deployments[0]?.project?.id;
+            return pid
+              ? fetch(`/api/projects/${pid}/metrics`).then(r => r.ok ? r.json() : null)
+              : Promise.resolve(null);
+          })
+        ),
+        Promise.allSettled(
+          capped.map(a =>
+            fetch(`/api/agents/${a.id}/clarification/session`)
+              .then(r => r.ok ? r.json() : null)
+              .catch(() => null)
+          )
+        ),
+      ]);
 
       const built: AgentSlot[] = capped.map((agent, i) => {
         const dep     = agent.deployments[0];
@@ -213,6 +230,8 @@ export function AgentStatusBar() {
         const pname   = dep?.project?.name ?? "Project";
         const mraw    = metricsResults[i].status === "fulfilled" ? metricsResults[i].value : null;
         const m       = mraw?.data ?? mraw;
+        const sraw    = sessionResults[i].status === "fulfilled" ? sessionResults[i].value : null;
+        const hasActiveSession = !!(sraw?.data?.session);
 
         // Phases
         const phaseList: any[] = m?.phases?.list ?? [];
@@ -245,7 +264,7 @@ export function AgentStatusBar() {
           .map((a: any) => ({ id: a.id, type: a.type, summary: a.summary, createdAt: a.createdAt }));
         const activities = metricActivities.length > 0 ? metricActivities : fleetActivities;
 
-        const state = deriveState(true, pendingCount, totalArtefacts, activities);
+        const state = deriveState(true, pendingCount, totalArtefacts, activities, hasActiveSession);
 
         return {
           agentId:       agent.id,
@@ -254,6 +273,7 @@ export function AgentStatusBar() {
           projectId:     pid ?? "",
           projectName:   pname,
           state,
+          hasActiveSession,
           currentPhase,
           nextPhase,
           phases,
@@ -324,7 +344,9 @@ export function AgentStatusBar() {
   const commentary = buildCommentary(slot, activityIdx);
   const label      = badgeLabel(slot);
   const sidebarW   = sidebarCollapsed ? 60 : 240;
-  const ctaHref    = slot.projectId ? `/projects/${slot.projectId}/artefacts` : "/agents";
+  const ctaHref    = slot.state === "questions_waiting"
+    ? `/agents/chat?agentId=${slot.agentId}`
+    : slot.projectId ? `/projects/${slot.projectId}/artefacts` : "/agents";
 
   // Other agents for switcher
   const otherSlots = slots.filter((_, i) => i !== focusedIdx);
@@ -447,18 +469,20 @@ export function AgentStatusBar() {
           </div>
 
           {/* CTA strip */}
-          {(slot.state === "review" || slot.state === "phase_complete") && (
+          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete") && (
             <div className="border-t px-5 py-2.5 flex items-center justify-between"
               style={{ borderColor: `${c.border}22`, background: `${c.badgeBg}` }}>
               <p className="text-[12px] font-medium" style={{ color: c.badge }}>
-                {slot.state === "review"
+                {slot.state === "questions_waiting"
+                  ? `${slot.agentName} needs your answers before it can generate documents — open Chat to respond`
+                  : slot.state === "review"
                   ? `${slot.pendingCount} document${slot.pendingCount === 1 ? "" : "s"} need your approval before ${slot.agentName} can continue`
                   : `${slot.currentPhase} complete — ${slot.agentName} is ready to write ${slot.nextPhase ?? "next"} phase documents`}
               </p>
               <Link href={ctaHref} onClick={() => setExpanded(false)}
                 className="flex items-center gap-1.5 text-[12px] font-bold px-4 py-1.5 rounded-lg border transition-colors"
                 style={{ color: c.badge, borderColor: `${c.badge}44`, background: `${c.badge}11` }}>
-                {slot.state === "review" ? "Review Documents" : `Generate ${slot.nextPhase ?? "Next Phase"}`}
+                {slot.state === "questions_waiting" ? "Open Chat" : slot.state === "review" ? "Review Documents" : `Generate ${slot.nextPhase ?? "Next Phase"}`}
                 <ArrowRight size={12} />
               </Link>
             </div>
@@ -540,7 +564,7 @@ export function AgentStatusBar() {
                   >
                     <span className="text-[9px] font-bold text-white">{s.agentName[0]}</span>
                     {/* Urgency dot */}
-                    {(s.state === "review") && (
+                    {(s.state === "questions_waiting" || s.state === "review") && (
                       <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-background"
                         style={{ background: sc.badge }} />
                     )}
@@ -551,14 +575,17 @@ export function AgentStatusBar() {
           )}
 
           {/* CTA button */}
-          {(slot.state === "review" || slot.state === "phase_complete" || slot.state === "generating") && (
+          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete" || slot.state === "generating") && (
             <Link href={ctaHref}
               className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap hover:opacity-90"
               style={{ color: c.badge, borderColor: `${c.badge}55`, background: c.badgeBg }}>
-              {slot.state === "review"         && <AlertCircle size={11} />}
-              {slot.state === "phase_complete"  && <Sparkles size={11} />}
-              {slot.state === "generating"      && <ArrowRight size={11} />}
-              {slot.state === "review"
+              {slot.state === "questions_waiting" && <MessageSquare size={11} />}
+              {slot.state === "review"            && <AlertCircle size={11} />}
+              {slot.state === "phase_complete"    && <Sparkles size={11} />}
+              {slot.state === "generating"        && <ArrowRight size={11} />}
+              {slot.state === "questions_waiting"
+                ? "Answer Questions"
+                : slot.state === "review"
                 ? `Review ${slot.pendingCount}`
                 : slot.state === "phase_complete"
                 ? `Generate ${slot.nextPhase ?? "Next"}`
@@ -610,6 +637,7 @@ function StateBadge({ label, colour, bg, state }: {
   label: string; colour: string; bg: string; state: AgentState;
 }) {
   const ico: Record<AgentState, React.ReactNode> = {
+    questions_waiting: <MessageSquare size={10} />,
     review:         <AlertCircle size={10} />,
     generating:     <RefreshCw size={10} className="animate-spin" />,
     phase_complete: <CheckCircle2 size={10} />,

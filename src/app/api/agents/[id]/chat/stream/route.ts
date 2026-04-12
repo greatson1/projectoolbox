@@ -33,6 +33,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { agentId, conversationId, role: "user", content: message },
   });
 
+  // ── Clarification session guard ───────────────────────────────────────────────
+  // If an active clarification session exists, messages in the chat stream are
+  // treated as free typed answers — route through the answer endpoint instead of
+  // burning AI credits here.  The dedicated widget in the UI already calls
+  // /clarification/answer directly; this is a fallback for users who type manually.
+  let isClarificationAnswer = false;
+  try {
+    const deployment0 = await db.agentDeployment.findFirst({
+      where: { agentId, isActive: true },
+      select: { projectId: true },
+    });
+    if (deployment0?.projectId) {
+      const { getActiveSession } = await import("@/lib/agents/clarification-session");
+      const activeSession = await getActiveSession(agentId, deployment0.projectId);
+      if (activeSession) {
+        isClarificationAnswer = true;
+        // Route to dedicated zero-cost clarification answer handler
+        const currentQuestion = activeSession.questions[activeSession.currentQuestionIndex];
+        if (currentQuestion) {
+          const { answerQuestionInSession } = await import("@/lib/agents/clarification-session");
+          answerQuestionInSession(agentId, deployment0.projectId, orgId, currentQuestion.id, message).catch(() => {});
+        }
+      }
+    }
+  } catch {}
+
+  // If this is a clarification answer, return a lightweight acknowledgement
+  // stream rather than a full AI response — no credits consumed.
+  if (isClarificationAnswer) {
+    const ack = "Got it — answer recorded. ✓";
+    const stream = new ReadableStream({
+      start(controller) {
+        const enc = new TextEncoder();
+        controller.enqueue(enc.encode(`data: ${JSON.stringify({ token: ack })}\n\n`));
+        controller.enqueue(enc.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    // Save the ack as agent message (no credit deduction)
+    await db.chatMessage.create({ data: { agentId, role: "agent", content: ack } }).catch(() => {});
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+  }
+
   // Get agent config + full project context
   const agent = await db.agent.findUnique({
     where: { id: agentId },
@@ -232,6 +275,25 @@ Gate: Sponsor sign-off, all artefacts archived
 - After presenting artefacts, explicitly ask: "Do you approve these to proceed to [next phase]?"
 - Format documents clearly with ## headings, bullet points, and tables where appropriate
 - Be specific — use the actual project name, budget figures, dates, and locations in all documents
+
+## INTERACTIVE QUESTIONS
+When you need information from the user during a conversation, NEVER use a markdown bullet list of questions.
+Instead, ask each question as an interactive card using this exact XML format:
+
+<ASK type="text" id="field_name">Your question here?</ASK>
+<ASK type="choice" options="Option A|Option B|Option C" id="field_name">Which of these?</ASK>
+<ASK type="yesno" id="field_name">Is this correct?</ASK>
+<ASK type="number" id="field_name">How many / how much?</ASK>
+<ASK type="date" id="field_name">When is / what date?</ASK>
+<ASK type="multi" options="A|B|C|D" id="field_name">Select all that apply…</ASK>
+
+Rules for interactive questions:
+- Use ONLY <ASK> blocks — never markdown bullet lists like "• What is X?" or "1. Tell me Y"
+- Ask ONE question at a time as a general rule; group 2–3 only if they are tightly related
+- Put any explanatory text BEFORE the <ASK> block, not inside it
+- The id should be a short snake_case descriptor (e.g. departure_city, num_travellers, go_live_date)
+- For questions with clear options (methodology, priority, yes/no), always use choice or yesno types
+- For open-ended text, use type="text"
 
 ## KNOWLEDGE BASE
 ${knowledgeItems.length > 0
@@ -758,10 +820,84 @@ You have access to the full conversation history from all previous sessions with
           }
         }
 
+        // ── Post-process: extract <ASK> interactive question blocks ──────
+        // Each <ASK> becomes a separate chat message rendered as an interactive card.
+        // The main response text has the <ASK> blocks stripped out.
+        const askRegex = /<ASK\s+([^>]+)>([\s\S]*?)<\/ASK>/gi;
+        const extractedQuestions: Array<{ id: string; type: string; options?: string[]; question: string }> = [];
+        let askMatch: RegExpExecArray | null;
+
+        while ((askMatch = askRegex.exec(fullContent)) !== null) {
+          const attrs = askMatch[1];
+          const questionText = askMatch[2].trim();
+          const getAttr = (name: string) => attrs.match(new RegExp(`${name}="([^"]+)"`))?.[1];
+          extractedQuestions.push({
+            id: getAttr("id") || `aq_${Date.now()}_${extractedQuestions.length}`,
+            type: getAttr("type") || "text",
+            options: getAttr("options")?.split("|").map(o => o.trim()),
+            question: questionText,
+          });
+        }
+
+        // Clean <ASK> blocks from the persisted text
+        const cleanedContent = fullContent
+          .replace(/<ASK[\s\S]*?<\/ASK>/gi, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+
         // ── Persist + finalise ────────────────────────────────────────────
         await db.chatMessage.create({
-          data: { agentId, conversationId, role: "agent", content: fullContent },
+          data: { agentId, conversationId, role: "agent", content: cleanedContent || fullContent },
         });
+
+        // Save each extracted question as its own interactive message
+        for (let qi = 0; qi < extractedQuestions.length; qi++) {
+          const q = extractedQuestions[qi];
+          await db.chatMessage.create({
+            data: {
+              agentId,
+              conversationId,
+              role: "agent",
+              content: "__AGENT_QUESTION__",
+              metadata: {
+                type: "agent_question",
+                question: { id: q.id, question: q.question, type: q.type, options: q.options },
+                questionIndex: qi,
+                totalQuestions: extractedQuestions.length,
+              } as any,
+            },
+          }).catch(() => {});
+        }
+
+        // ── Status card: append DB-derived project status for status queries ──
+        const isStatusQuery = /\b(what.{0,25}(need|next|do|action|pending|outstanding|status|overview|update)|where (are|am) (we|i)|status update|next step|what.*outstanding|what.*blocking|what.*waiting)\b/i.test(message);
+        if (isStatusQuery && deployment?.projectId) {
+          try {
+            const [pendingArts, artSession] = await Promise.all([
+              db.agentArtefact.count({ where: { projectId: deployment.projectId, agentId, status: { in: ["DRAFT", "PENDING_REVIEW"] } } }),
+              db.knowledgeBaseItem.findFirst({ where: { agentId, projectId: deployment.projectId, title: "__clarification_session__", tags: { has: "active" } } }),
+            ]);
+            await db.chatMessage.create({
+              data: {
+                agentId,
+                conversationId,
+                role: "agent",
+                content: "__PROJECT_STATUS__",
+                metadata: {
+                  type: "project_status",
+                  projectName: project?.name ?? "Project",
+                  phase: currentPhase?.name ?? null,
+                  phases: phases.map(p => ({ name: p.name, status: p.status })),
+                  nextPhase: nextPhase?.name ?? null,
+                  pendingApprovals: pendingApprovals.length,
+                  pendingArtefacts: pendingArts,
+                  pendingQuestions: artSession ? 1 : 0,
+                  risks: openRisks.length,
+                } as any,
+              },
+            }).catch(() => {});
+          } catch {}
+        }
 
         await db.agentActivity.create({
           data: { agentId, type: "chat", summary: `Chat response: ${message.slice(0, 80)}${message.length > 80 ? "…" : ""}` },

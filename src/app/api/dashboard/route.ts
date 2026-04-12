@@ -78,7 +78,12 @@ export async function GET() {
     },
   });
   } catch (err: any) {
-    console.error("[dashboard] GET error:", err?.message || err);
-    return NextResponse.json({ error: err?.message || "Internal server error" }, { status: 500 });
+    const msg: string = err?.message || "Internal server error";
+    console.error("[dashboard] GET error:", msg);
+    // Surface DB connectivity issues as a cleaner message rather than raw Prisma/pgbouncer text
+    if (msg.includes("authentication") || msg.includes("Circuit breaker") || msg.includes("ECONNREFUSED") || msg.includes("P1001")) {
+      return NextResponse.json({ error: "Database connection error — please try again in a moment" }, { status: 503 });
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

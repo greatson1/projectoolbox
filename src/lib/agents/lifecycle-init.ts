@@ -44,7 +44,21 @@ export async function generatePhaseArtefacts(
 
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
 
-  const artefactNames = phaseDef.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
+  // Resolve Phase row early — it stores the user's artefact selections AND we need phaseId
+  const phaseRow = await db.phase.findFirst({
+    where: { projectId, name: targetPhaseName },
+    select: { id: true, artefacts: true },
+  });
+  const phaseId = phaseRow?.id ?? null;
+
+  // AI-generatable capability filter from methodology definition
+  const aiGeneratableSet = new Set(phaseDef.artefacts.filter(a => a.aiGeneratable).map(a => a.name.toLowerCase()));
+
+  // Phase.artefacts stores the user's selections (set during lifecycle init from deployment config).
+  // Fall back to methodology defaults if the Phase row has no stored selections.
+  const artefactNames: string[] = (phaseRow?.artefacts && (phaseRow.artefacts as string[]).length > 0)
+    ? (phaseRow.artefacts as string[]).filter(n => aiGeneratableSet.has(n.toLowerCase()))
+    : phaseDef.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
   // Find which artefacts already exist for this project
   const existing = await db.agentArtefact.findMany({
@@ -58,12 +72,32 @@ export async function generatePhaseArtefacts(
 
   if (toGenerate.length === 0) return { generated: 0, skipped, phase: targetPhaseName };
 
-  // Resolve the Phase row ID so artefacts can be linked to their phase
-  const phaseRow = await db.phase.findFirst({
-    where: { projectId, name: targetPhaseName },
-    select: { id: true },
-  });
-  const phaseId = phaseRow?.id ?? null;
+  // ── Clarification session check ──────────────────────────────────────────
+  // Before generating, check if the agent should ask the user for missing info.
+  // Skip if KB already has 10+ confirmed facts (rich enough to proceed).
+  try {
+    const { startClarificationSession, getActiveSession } = await import("@/lib/agents/clarification-session");
+    const activeSession = await getActiveSession(agentId, projectId);
+    if (!activeSession) {
+      // No active session — check if we should start one
+      const confirmedFacts = await db.knowledgeBaseItem.count({
+        where: { agentId, projectId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
+      });
+      if (confirmedFacts < 10) {
+        const sessionStarted = await startClarificationSession(agentId, projectId, agent.orgId, toGenerate);
+        if (sessionStarted) {
+          // Defer generation — session will trigger it once user has answered
+          return { generated: 0, skipped, phase: targetPhaseName };
+        }
+      }
+    } else {
+      // Session is still active — don't generate yet
+      return { generated: 0, skipped, phase: targetPhaseName };
+    }
+  } catch (e) {
+    console.error("[generatePhaseArtefacts] clarification session check failed:", e);
+    // Fall through and generate anyway rather than blocking indefinitely
+  }
 
   await db.agentActivity.create({
     data: { agentId, type: "document", summary: `Generating ${toGenerate.length} artefact(s) for ${targetPhaseName} (${skipped} already exist)` },
@@ -154,6 +188,20 @@ export async function generatePhaseArtefacts(
     await db.agentActivity.create({
       data: { agentId, type: "document", summary: `${targetPhaseName}: ${totalGenerated} artefact(s) generated — ready for review` },
     });
+
+    // Collect TBC items across all newly-generated artefacts and ask the user to confirm them
+    try {
+      const newArtefacts = await db.agentArtefact.findMany({
+        where: { projectId, agentId },
+        select: { name: true, content: true },
+        orderBy: { createdAt: "desc" },
+        take: totalGenerated,
+      });
+      const tbcItems = extractTBCItems(newArtefacts);
+      await createClarificationMessage(agentId, projectId, agent.orgId, tbcItems);
+    } catch (e) {
+      console.error("[generatePhaseArtefacts] TBC extraction failed:", e);
+    }
   }
 
   return { generated: totalGenerated, skipped, phase: targetPhaseName };
@@ -181,10 +229,20 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     data: { agentId, type: "deployment", summary: `Initialising ${methodology.name} lifecycle for "${project.name}"` },
   });
 
+  // Read user's artefact selections from deployment config (set during Deploy Wizard Step 3)
+  const deploymentConfig = deployment.config as Record<string, any> | null;
+  const configPhases: Array<{ name: string; artefacts: Array<{ name: string; required: boolean }> }> =
+    Array.isArray(deploymentConfig?.phases) ? deploymentConfig.phases : [];
+
   const existingPhases = await db.phase.findMany({ where: { projectId: project.id } });
   if (existingPhases.length === 0) {
     for (let i = 0; i < methodology.phases.length; i++) {
       const phase = methodology.phases[i];
+      // Use user's wizard selections if present; fall back to methodology defaults
+      const phaseConfig = configPhases.find(p => p.name === phase.name);
+      const selectedArtefacts = phaseConfig
+        ? phaseConfig.artefacts.filter(a => a.required).map(a => a.name)
+        : phase.artefacts.map(a => a.name);
       await db.phase.create({
         data: {
           projectId: project.id,
@@ -192,7 +250,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
           order: i,
           status: i === 0 ? "ACTIVE" : "PENDING",
           criteria: phase.gate.criteria,
-          artefacts: phase.artefacts.map(a => a.name),
+          artefacts: selectedArtefacts,
           approvalReq: phase.gate.preRequisites.some(p => p.requiresHumanApproval),
         },
       });
@@ -211,15 +269,38 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     },
   });
 
-  // ── Step 3: Generate initial artefacts via Claude ──
-  // Load KB context (may be empty on first deploy — that's fine)
+  // ── Step 3: Start clarification session OR generate initial artefacts ──
+  // On first deploy the KB is empty — always ask the user for key details first.
   const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
   const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
 
   if (process.env.ANTHROPIC_API_KEY) {
-    const artefactNames = firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
+    // Build the AI-generatable set from the methodology definition (capability filter)
+    const aiGeneratableSet = new Set(firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name.toLowerCase()));
+
+    // Use user's selections for the first phase (already written to Phase row above)
+    const firstPhaseConfig = configPhases.find(p => p.name === firstPhase.name);
+    const artefactNames = firstPhaseConfig
+      ? firstPhaseConfig.artefacts.filter(a => a.required && aiGeneratableSet.has(a.name.toLowerCase())).map(a => a.name)
+      : firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
     if (artefactNames.length > 0) {
+      // Check for clarification session — on first deploy KB is always empty so we always ask first
+      let skipGeneration = false;
+      try {
+        const { startClarificationSession } = await import("@/lib/agents/clarification-session");
+        const sessionStarted = await startClarificationSession(agentId, project.id, agent.orgId, artefactNames);
+        if (sessionStarted) {
+          skipGeneration = true;
+          await db.agentActivity.create({
+            data: { agentId, type: "chat", summary: `Waiting for user input before generating ${artefactNames.length} artefact(s) — clarification questions posted to chat` },
+          });
+        }
+      } catch (e) {
+        console.error("[runLifecycleInit] clarification session failed, proceeding with generation:", e);
+      }
+
+      if (!skipGeneration) {
       await db.agentActivity.create({
         data: { agentId, type: "document", summary: `Generating ${artefactNames.length} artefact(s) for ${firstPhase.name} phase` },
       });
@@ -334,12 +415,27 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         await db.agentActivity.create({
           data: { agentId, type: "document", summary: `${firstPhase.name}: ${totalGenerated} artefact(s) generated — ready for review` },
         });
+
+        // Collect TBC items and proactively ask the user to confirm them
+        try {
+          const newArtefacts = await db.agentArtefact.findMany({
+            where: { projectId: project.id, agentId },
+            select: { name: true, content: true },
+            orderBy: { createdAt: "desc" },
+            take: totalGenerated,
+          });
+          const tbcItems = extractTBCItems(newArtefacts);
+          await createClarificationMessage(agentId, project.id, agent.orgId, tbcItems);
+        } catch (e) {
+          console.error("[runLifecycleInit] TBC extraction failed:", e);
+        }
       } else {
         console.error("[lifecycle-init] No artefacts were saved — check API key and model access");
         await db.agentActivity.create({
           data: { agentId, type: "chat", summary: `Artefact generation failed — will retry on next cycle` },
         });
       }
+      } // end if (!skipGeneration)
     }
   }
 
@@ -428,12 +524,18 @@ MANDATORY TRAVEL TASKS TO INCLUDE (with realistic dates):
       dataInstructions = `Generate 15-25 specific task rows.
 Task categories: ${taskCategories}
 ${nigeriaTaskDetails}
-Use REAL dates between ${startDate} and ${endDate}.
+⚠️ DATE RULES — CRITICAL:
+- The project START date is ${startDate}. The FIRST task must begin on exactly ${startDate}.
+- All subsequent tasks must cascade forward from ${startDate} — no task may have a Planned Start before ${startDate}.
+- Spread tasks across the full project timeline up to ${endDate}.
+- Tasks are a PLAN — they have no actual start/end yet. Leave Actual Start and Actual End columns blank.
 Assign each task to a ROLE TITLE only (e.g. "Project Manager", "Travel Booker") — NEVER invent personal names; use "TBD" if the person is unknown.
-Set Status for each task: tasks with planned start before ${today} and no completion should be "In Progress" or "At Risk".
-RAG column: Green = on track, Amber = at risk, Red = delayed.
-Critical Path: Yes/No — identify which tasks must not slip.
-% Complete: 0-100 based on realistic progress as at ${today}.
+⚠️ STATUS RULES — CRITICAL:
+- Set ALL tasks to Status "Not Started" and % Complete = 0.
+- Do NOT infer completion from dates. You have NO knowledge of what has actually been done.
+- Do NOT mark any task "Complete" or set % Complete > 0 — the user updates actuals as work happens.
+- RAG column: set ALL tasks to "Green" as the baseline plan.
+- Critical Path: Yes/No — identify which tasks must not slip.
 Quote any fields containing commas.`;
     } else if (lname.includes("risk")) {
       const riskRows = isTravel ? (isNigeria ? `"R001","Logistics","Flight cancellation or severe delay","Return flight LHR-LOS cancelled or delayed >6hrs disrupting entire itinerary","2","4","8","HIGH","Traveller","Book flexible/refundable fares. Comprehensive travel insurance with cancellation cover","Rebook next available flight. Claim insurance","4","Open","${today}"
@@ -492,13 +594,13 @@ Quote fields containing commas.`;
         const activities = Math.round(budget * 0.08);
         const health = Math.round(budget * 0.04);
         const contingency = budget - flights - accomm - transfers - meals - activities - health;
-        budgetRows = `"Flights","Return flights to Lagos (LHR→LOS or LHR→ABV)","${flights}","0","${-flights}","0","${Math.round(flights/budget*100)}","Not Booked","Book 8+ weeks in advance for best fares"
-"Accommodation","Hotel in Lagos — Victoria Island or Ikoyi (min 3-star with generator)","${accomm}","0","${-accomm}","0","${Math.round(accomm/budget*100)}","Not Booked","Confirm generator backup and location"
-"Transfers","Airport transfer and local transport (Bolt/Uber in city)","${transfers}","0","${-transfers}","0","${Math.round(transfers/budget*100)}","Not Arranged","Pre-arrange MMIA airport pickup"
-"Meals & Dining","All meals and drinks for trip duration","${meals}","0","${-meals}","0","${Math.round(meals/budget*100)}","Not Started","Mix of hotel restaurant and local dining"
-"Activities","Excursions and activities (Lagos Island, Nike Art Gallery, Lekki Conservation)","${activities}","0","${-activities}","0","${Math.round(activities/budget*100)}","Not Booked","Book popular venues in advance"
-"Health & Vaccinations","Yellow fever, malaria prophylaxis, travel health kit and GP appointments","${health}","0","${-health}","0","${Math.round(health/budget*100)}","Not Started","PRIORITY — book GP appointment this week"
-"Documentation & Insurance","Travel insurance, visa fees, FCDO registration","0","0","0","0","0","Pending","Research visa requirements for UK passport"
+        budgetRows = `"Flights","Return flights — TBC — confirm route and airports","${flights}","0","${-flights}","0","${Math.round(flights/budget*100)}","Not Booked","TBC — confirm departure/arrival airports and preferred airline"
+"Accommodation","Hotel in Lagos — TBC — confirm area and star rating","${accomm}","0","${-accomm}","0","${Math.round(accomm/budget*100)}","Not Booked","TBC — confirm hotel name, generator backup and location"
+"Transfers","Airport transfer and local transport — TBC — confirm provider","${transfers}","0","${-transfers}","0","${Math.round(transfers/budget*100)}","Not Arranged","TBC — confirm airport transfer provider and pickup arrangements"
+"Meals & Dining","All meals and drinks for trip duration — estimate","${meals}","0","${-meals}","0","${Math.round(meals/budget*100)}","Estimated","TBC — confirm meal allowance per day"
+"Activities","Excursions and activities — TBC — confirm planned activities","${activities}","0","${-activities}","0","${Math.round(activities/budget*100)}","TBC","TBC — confirm which activities are planned"
+"Health & Vaccinations","Yellow fever, malaria prophylaxis, travel health kit and GP appointments","${health}","0","${-health}","0","${Math.round(health/budget*100)}","Not Started","PRIORITY — book GP appointment. TBC — confirm vaccinations needed"
+"Documentation & Insurance","Travel insurance, visa fees, FCDO registration","0","0","0","0","0","TBC","TBC — confirm visa requirements and insurance provider"
 "Contingency Reserve","Emergency reserve — requires PM approval to release","${contingency}","0","${-contingency}","0","${Math.round(contingency/budget*100)}","Reserved","Not to be used without explicit approval"`;
       } else {
         budgetRows = `"Labour","Project team time and effort","[per resource plan]","0","0","0","0","On Budget","See Resource Management Plan"
@@ -512,7 +614,8 @@ Quote fields containing commas.`;
       dataInstructions = `Generate 8-15 relevant data rows specific to this project (${project.name}).
 Use real dates between ${startDate} and ${endDate}.
 Assign each row to a ROLE TITLE (e.g. "Project Manager", "Finance Lead") — NEVER invent personal names.
-Set Status fields realistically based on today's date ${today}.
+⚠️ TBC RULE: For any cell where the specific value is not known from the project description, write: TBC — [plain description of what is needed]. Do NOT invent venue names, supplier names, contact details, prices, or specific action items.
+Set ALL Status fields to "Not Started" or "TBC" — never infer completion from dates.
 Quote fields containing commas.`;
     }
 
@@ -605,13 +708,21 @@ DO NOT USE: # ## ### * ** __ - for bullets (use bullet char or <li>) | (pipe) fo
 Any asterisk, hash, or pipe character in prose output = FAILURE.
 
 --- DOCUMENT STANDARDS ---
-1. SPECIFIC — use "${project.name}", actual dates, actual budget £${budget}
-2. OWNED — every action, risk, and deliverable must have an owner; use ROLE TITLES (e.g. "Project Manager", "Executive Sponsor") — NEVER invent personal names; write "TBD" if the person is unknown
-3. CURRENT — as at ${today}; pre-start items = "Not Started", with realistic % complete
-4. COMPLETE — no placeholders, no "[insert here]", no truncation
+1. SPECIFIC — use "${project.name}", actual dates from the project, actual budget £${budget}
+2. OWNED — every action, risk, and deliverable must have an owner; use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor") — NEVER invent personal names
+3. CURRENT — as at ${today}; all items default to "Not Started" unless the project description explicitly states otherwise
+4. HONEST — THIS IS THE MOST IMPORTANT RULE: use [TBC — <plain English description of what is needed>] for ANY specific fact not explicitly provided in the project description above. It is BETTER to leave a field as [TBC] than to invent a plausible-sounding detail. Examples of facts that MUST be [TBC] if not in the description:
+   • Venue names, addresses, room numbers, building names (e.g. "DIFC Gate District", "Marriott Al Jaddaf" — DO NOT invent these)
+   • Specific meeting times, confirmation deadlines, action-by dates beyond the project end date
+   • Supplier/vendor names, partner company names, contact persons, phone numbers
+   • Confirmed prices, quotes, or costs beyond the overall budget figure
+   • Policy reference numbers, booking references, confirmation numbers
+   • Any "the host will confirm…" or "traveller to confirm by…" type statements — these are fabrications
 5. PROFESSIONAL — British English (colour, organisation, prioritise, authorise)
 6. Each document ends with an <h3>Agent Monitoring Protocol</h3> section
-⚠️ ANTI-HALLUCINATION: Do NOT invent names like "James Hartley" or "Sarah Mitchell". Use role titles or "TBD — [Role]" for unknown individuals. Only use names explicitly provided in the project description.
+7. Each document ends with a second section: <h3>Items Awaiting Confirmation</h3> — a table listing every [TBC] item in the document, what information is needed, and who should confirm it. If there are no [TBC] items, write "None — all information confirmed."
+
+⚠️ ANTI-HALLUCINATION RULE — NON-NEGOTIABLE: Every specific detail you write must come directly from the project description above. If it is not in the description, write [TBC — <what is needed>]. Do NOT invent plausible details to make a document look complete. An incomplete document with honest [TBC] markers is FAR more valuable than a complete-looking document full of invented facts.
 
 ━━━ DOCUMENT CONTROL HEADER (use this exact structure for every document) ━━━
 <table>
@@ -1554,4 +1665,110 @@ function getSeedRisks(projectName: string, category: string, budget: number) {
   }
 
   return risks;
+}
+
+// ─── TBC Extraction + Clarification Message ──────────────────────────────────
+
+/**
+ * Extracts every [TBC — ...] item from generated artefact content.
+ * Works on both HTML and CSV content.
+ * Returns deduplicated list of { artefactName, item } pairs.
+ */
+export function extractTBCItems(artefacts: { name: string; content: string }[]): { artefactName: string; item: string }[] {
+  const results: { artefactName: string; item: string }[] = [];
+  const seen = new Set<string>();
+
+  // Match [TBC — ...] or [TBC - ...] or TBC — ... in a table cell
+  const tbcPattern = /\[?TBC\s*[—–-]\s*([^\]<\n,]{5,120})\]?/gi;
+
+  for (const { name, content } of artefacts) {
+    let match: RegExpExecArray | null;
+    tbcPattern.lastIndex = 0;
+    while ((match = tbcPattern.exec(content)) !== null) {
+      const item = match[1].trim().replace(/\s+/g, " ");
+      const key = `${name}::${item.toLowerCase()}`;
+      if (!seen.has(key) && item.length > 4) {
+        seen.add(key);
+        results.push({ artefactName: name, item });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Creates a proactive chat message from the agent listing all [TBC] items
+ * found across the just-generated artefacts. Users see this in Chat with Agent.
+ */
+export async function createClarificationMessage(
+  agentId: string,
+  projectId: string,
+  orgId: string,
+  tbcItems: { artefactName: string; item: string }[],
+): Promise<void> {
+  if (tbcItems.length === 0) return;
+
+  // Group by artefact name
+  const grouped = new Map<string, string[]>();
+  for (const { artefactName, item } of tbcItems) {
+    if (!grouped.has(artefactName)) grouped.set(artefactName, []);
+    grouped.get(artefactName)!.push(item);
+  }
+
+  const lines: string[] = [
+    `I've generated your project artefacts and they're ready for review. However, I need your input on **${tbcItems.length} item${tbcItems.length !== 1 ? "s" : ""}** that I couldn't populate from the project description — I've marked these as [TBC] rather than guessing.`,
+    "",
+    "Please confirm the following so I can update the documents:",
+    "",
+  ];
+
+  let qNum = 1;
+  for (const [artName, items] of grouped.entries()) {
+    lines.push(`**${artName}**`);
+    for (const item of items) {
+      lines.push(`${qNum}. ${item}`);
+      qNum++;
+    }
+    lines.push("");
+  }
+
+  lines.push("You can reply here with the answers (numbered to match), or go to the Artefacts tab to edit the documents directly. Once you've confirmed the details I'll update all affected documents automatically.");
+
+  const content = lines.join("\n");
+
+  // Save as an agent chat message (shows in Chat with Agent)
+  await db.chatMessage.create({
+    data: { agentId, role: "agent", content },
+  }).catch(() => {}); // non-blocking
+
+  // Also create an activity log entry so it appears in Activity Log
+  await db.agentActivity.create({
+    data: {
+      agentId,
+      type: "chat",
+      summary: `${tbcItems.length} item${tbcItems.length !== 1 ? "s" : ""} need your confirmation before artefacts are finalised`,
+      metadata: { tbcCount: tbcItems.length, artefacts: Array.from(grouped.keys()) } as any,
+    },
+  }).catch(() => {});
+
+  // Push a notification to all org admins/owners
+  try {
+    const admins = await db.user.findMany({
+      where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await db.notification.create({
+        data: {
+          userId: admin.id,
+          type: "AGENT_ALERT",
+          title: `Agent needs your input — ${tbcItems.length} item${tbcItems.length !== 1 ? "s" : ""} to confirm`,
+          body: `${tbcItems.length} field${tbcItems.length !== 1 ? "s" : ""} in your project artefacts need confirmation. Open Chat with Agent to review.`,
+          actionUrl: `/agents/${agentId}/chat`,
+          metadata: { agentId, alertType: "clarification_needed", tbcCount: tbcItems.length } as any,
+        },
+      }).catch(() => {});
+    }
+  } catch {}
 }
