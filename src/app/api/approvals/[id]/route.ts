@@ -176,6 +176,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         } catch (e) {
           console.error("Inline execution after approval failed:", e);
         }
+
+        // Apply change proposal updates (task progress, dates, status)
+        if (approval.type === "CHANGE_REQUEST" && approval.affectedItems) {
+          try {
+            const { applyApprovedChanges } = await import("@/lib/agents/change-proposals");
+            const result = await applyApprovedChanges(id);
+            console.log(`[approval] Applied ${result.applied} change(s) from proposal ${id}`);
+          } catch (e) {
+            console.error("[approval] Change proposal application failed:", e);
+          }
+        }
       }
     }
 

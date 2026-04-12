@@ -196,6 +196,14 @@ export async function GET(req: NextRequest) {
               console.error(`Proactive alerts failed for agent ${dep.agentId}:`, e);
             }
 
+            // 4c2. Scan knowledge for schedule change proposals
+            try {
+              const { scanKnowledgeForChanges } = await import("@/lib/agents/change-proposals");
+              await scanKnowledgeForChanges(dep.agentId, dep.projectId, orgId);
+            } catch (e) {
+              console.error(`Knowledge scan failed for agent ${dep.agentId}:`, e);
+            }
+
             // 4d. Run calibration loop (weekly — checks if enough decisions have accumulated)
             try {
               const { runCalibrationLoop } = await import("@/lib/agents/learning-loop");

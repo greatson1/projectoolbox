@@ -52,7 +52,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
 };
 
 // ── Rich message types matching Vite original ──
-type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status";
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal";
 
 interface Message {
   id: string;
@@ -255,9 +255,50 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
+  // Change proposal card — interactive approval widget
+  if (msg.type === "change_proposal" && msg.data) {
+    const d = msg.data as any;
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-500 text-lg">📋</span>
+            <h4 className="text-sm font-bold">{d.title}</h4>
+          </div>
+          <p className="text-xs text-muted-foreground">Trigger: {(d.trigger || "").replace(/_/g, " ")} — {d.source}</p>
+          <div className="space-y-1.5">
+            {(d.changes || []).map((c: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-background/50 border border-border/30">
+                <span className="font-medium flex-1 min-w-0 truncate">{c.title}</span>
+                <span className="text-muted-foreground">{c.field}:</span>
+                <span className="text-red-400 line-through">{c.from}</span>
+                <span className="text-muted-foreground">→</span>
+                <span className="text-emerald-400 font-semibold">{c.to}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span>Impact: S:{d.impact?.schedule}/4 C:{d.impact?.cost}/4</span>
+            <span>·</span>
+            <span>Confidence: {Math.round((d.confidence || 0) * 100)}%</span>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Link href="/approvals">
+              <Button size="sm" className="h-7 text-xs">Review & Approve</Button>
+            </Link>
+            <Link href="/approvals">
+              <Button variant="outline" size="sm" className="h-7 text-xs">View Details</Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Strip sentinel values and <ASK> tags from content
   const rawContent = (msg.content || "")
-    .replace(/^__(?:AGENT_QUESTION|CLARIFICATION_SESSION|CLARIFICATION_COMPLETE|PROJECT_STATUS)__$/g, "");
+    .replace(/^__(?:AGENT_QUESTION|CLARIFICATION_SESSION|CLARIFICATION_COMPLETE|PROJECT_STATUS|CHANGE_PROPOSAL)__$/g, "");
   const askMatches = [...rawContent.matchAll(/<ASK\s+([^>]*)>([^<]*)<\/ASK>/gi)];
   const cleanContent = rawContent.replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
 
@@ -472,6 +513,17 @@ function AgentChatPage() {
               id: m.id,
               role: "agent" as const,
               type: "project_status" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: meta,
+            };
+          }
+
+          if (meta?.type === "change_proposal") {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "change_proposal" as const,
               content: "",
               timestamp: new Date(m.createdAt),
               data: meta,
@@ -716,6 +768,15 @@ function AgentChatPage() {
                     id: m.id,
                     role: "agent",
                     type: "project_status",
+                    content: "",
+                    timestamp: new Date(m.createdAt),
+                    data: meta,
+                  });
+                } else if (meta?.type === "change_proposal") {
+                  newCards.push({
+                    id: m.id,
+                    role: "agent",
+                    type: "change_proposal",
                     content: "",
                     timestamp: new Date(m.createdAt),
                     data: meta,
