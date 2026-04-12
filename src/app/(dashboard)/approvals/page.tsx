@@ -284,34 +284,59 @@ export default function ApprovalsPage() {
                 {/* Expanded content */}
                 <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0")}>
                   <div className="px-5 pb-5 space-y-4 border-t border-border">
-                    {/* AI Confidence + Change Summary */}
+                    {/* Risk level + What's being requested */}
                     <div className="pt-4 flex items-start gap-4 flex-wrap">
-                      {/* Confidence badge */}
+                      {/* Risk level badge */}
                       {(() => {
                         const score = (scores.schedule || 1) + (scores.cost || 1) + (scores.scope || 1) + (scores.stakeholder || 1);
-                        const confidence = Math.max(50, Math.round(100 - (score - 4) * 6));
-                        const confColor = confidence >= 85 ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/30" : confidence >= 70 ? "text-amber-500 bg-amber-500/10 border-amber-500/30" : "text-red-500 bg-red-500/10 border-red-500/30";
+                        const level = score <= 6 ? "Low Risk" : score <= 10 ? "Medium Risk" : score <= 14 ? "High Risk" : "Critical Risk";
+                        const color = score <= 6 ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/30"
+                          : score <= 10 ? "text-amber-500 bg-amber-500/10 border-amber-500/30"
+                          : "text-red-500 bg-red-500/10 border-red-500/30";
                         return (
-                          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${confColor}`}>
-                            <span>AI Confidence</span>
-                            <span className="text-base font-bold">{confidence}%</span>
+                          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${color}`}>
+                            <span>{level}</span>
+                            <span className="text-base font-bold">{score}/16</span>
                           </div>
                         );
                       })()}
-                      {/* Proposed change summary */}
-                      {item.description && (
-                        <div className="flex-1 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-xs text-foreground min-w-[200px]">
-                          <span className="font-semibold text-primary block mb-0.5">Proposed Change</span>
-                          {item.description}
-                        </div>
-                      )}
+                      {/* What's being requested */}
+                      <div className="flex-1 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-xs text-foreground min-w-[200px]">
+                        <span className="font-semibold text-primary block mb-0.5">What&apos;s Requested</span>
+                        {item.description}
+                      </div>
                     </div>
 
-                    {/* Description / Reasoning */}
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Agent Reasoning</p>
-                      <p className="text-sm text-foreground leading-relaxed">{item.reasoningChain || item.description}</p>
-                    </div>
+                    {/* Affected items — show specific line items if available */}
+                    {Array.isArray(item.affectedItems) && (item.affectedItems as any[]).length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Affected Items</p>
+                        <div className="space-y-1">
+                          {(item.affectedItems as any[]).map((ai: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/30 border border-border/30">
+                              <Badge variant="outline" className="text-[8px]">{ai.type}</Badge>
+                              <span className="font-medium flex-1 truncate">{ai.title}</span>
+                              {ai.from && ai.to && (
+                                <>
+                                  <span className="text-muted-foreground">{ai.field}:</span>
+                                  <span className="text-red-400 line-through text-[10px]">{ai.from}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="text-emerald-400 font-semibold text-[10px]">{ai.to}</span>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Agent reasoning — only show if different from description */}
+                    {item.reasoningChain && item.reasoningChain !== item.description && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Agent Reasoning</p>
+                        <p className="text-sm text-foreground leading-relaxed">{item.reasoningChain}</p>
+                      </div>
+                    )}
 
                     {/* Impact Scores — 4 mini-cards */}
                     {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && (
