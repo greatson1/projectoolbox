@@ -204,12 +204,37 @@ const GRADIENT_PRESETS = [
   { gradient: "linear-gradient(135deg, #8B5CF6, #A78BFA)", color: "#8B5CF6" },
 ];
 
-const AUTONOMY_CARDS = [
-  { level: 1, name: "Assistant", tagline: "I suggest, you decide", desc: "Agent only responds when asked. No proactive actions. All outputs require manual execution.", rec: false },
-  { level: 2, name: "Advisor", tagline: "I draft, you approve everything", desc: "Agent monitors project health and drafts artefacts, but every action requires your approval before execution.", rec: false },
-  { level: 3, name: "Co-pilot", tagline: "I handle routine, escalate important", desc: "Agent executes routine tasks autonomously (status reports, risk scans, meeting notes). Escalates decisions above configurable thresholds.", rec: true },
-  { level: 4, name: "Autonomous", tagline: "I run the project, you review outcomes", desc: "Agent handles most decisions independently within governance bounds. You review weekly summaries and exception reports.", rec: false },
-  { level: 5, name: "Strategic", tagline: "End-to-end, minimal oversight", desc: "Full autonomy within enterprise governance rules. Self-correcting, self-optimising. Human intervention only for gate approvals.", rec: false },
+const AUTONOMY_CARDS: Array<{ level: number; name: string; tagline: string; desc: string; rec: boolean; does: string[]; doesnt: string[] }> = [
+  {
+    level: 1, name: "Assistant", tagline: "I suggest, you decide", rec: false,
+    desc: "Agent generates all project documents, identifies risks, and scaffolds tasks — but won't act on any findings. Every recommendation goes to your Approvals queue.",
+    does: ["Generate artefacts (briefs, registers, plans)", "Identify risks and flag issues", "Create project task list", "Answer questions in chat"],
+    doesnt: ["Execute any changes autonomously", "Update task progress without approval", "Send stakeholder communications", "Change schedule or budget"],
+  },
+  {
+    level: 2, name: "Advisor", tagline: "I draft, you approve everything", rec: false,
+    desc: "Agent proactively monitors your project and drafts change proposals — but every action needs your sign-off before execution.",
+    does: ["Everything in L1", "Proactively scan for issues", "Draft change proposals with impact assessment", "Recommend schedule/budget adjustments"],
+    doesnt: ["Execute any changes without approval", "Auto-respond to risks", "Send any communications", "Modify tasks or artefacts directly"],
+  },
+  {
+    level: 3, name: "Co-pilot", tagline: "I handle routine, escalate important", rec: true,
+    desc: "Agent handles low-risk actions autonomously (task updates, risk responses, document updates). Escalates schedule changes, budget decisions, and stakeholder comms.",
+    does: ["Everything in L2", "Auto-execute LOW risk actions", "Update task progress and status", "Respond to routine risks", "Generate and update artefacts"],
+    doesnt: ["Change project schedule without approval", "Modify budget without approval", "Send stakeholder communications", "Change project scope"],
+  },
+  {
+    level: 4, name: "Autonomous", tagline: "I run the project, you review outcomes", rec: false,
+    desc: "Agent runs the project day-to-day — adjusts schedule, manages budget within thresholds, communicates with stakeholders. You review weekly reports and HIGH risk items.",
+    does: ["Everything in L3", "Auto-execute LOW + MEDIUM risk actions", "Adjust schedule and dates", "Manage budget within threshold", "Send routine stakeholder updates"],
+    doesnt: ["Change project scope without approval", "Exceed budget threshold", "Handle HIGH risk decisions alone", "Override phase gate approvals"],
+  },
+  {
+    level: 5, name: "Strategic", tagline: "End-to-end, minimal oversight", rec: false,
+    desc: "Full autonomy within governance bounds. Agent self-manages everything including scope adjustments. You're only involved at phase gates and CRITICAL items.",
+    does: ["Everything in L4", "Auto-execute up to HIGH risk actions", "Manage scope changes", "Self-escalate and self-correct", "Full stakeholder management"],
+    doesnt: ["Override phase gate approvals (if ON)", "Handle CRITICAL risk items (score 15-16)", "Exceed org-level governance policy"],
+  },
 ];
 
 const AGENT_NAMES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Falcon", "Griffin", "Hawk", "Iris", "Jade"];
@@ -358,7 +383,7 @@ export default function ProjectWizardPage() {
 
       // Stage 1: Create project
       await advanceStage(1);
-      const project = await createProject.mutateAsync({
+      const project: any = await createProject.mutateAsync({
         name: data.projectName,
         description: data.description,
         methodology: data.methodology?.toUpperCase() || "WATERFALL",
@@ -368,11 +393,11 @@ export default function ProjectWizardPage() {
         priority: data.priority,
         category: data.category,
       });
-      createdProjectId = project.id;
+      createdProjectId = (project as any).id;
 
       // Stage 2: Create agent
       await advanceStage(2);
-      const agent = await createAgent.mutateAsync({
+      const agent: any = await createAgent.mutateAsync({
         name: data.agentName || "Agent",
         title: data.agentTitle || undefined,
         autonomyLevel: data.autonomyLevel || 3,
@@ -1106,7 +1131,27 @@ export default function ProjectWizardPage() {
                         {al.rec && <Badge variant="outline">Recommended</Badge>}
                       </div>
                       <p className="text-[11px] font-semibold italic mb-1" style={{ color: selected ? g.color : "var(--muted-foreground)" }}>"{al.tagline}"</p>
-                      <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>{al.desc}</p>
+                      <p className="text-[10px] leading-relaxed mb-2" style={{ color: "var(--muted-foreground)" }}>{al.desc}</p>
+                      {selected && (
+                        <div className="grid grid-cols-2 gap-2 mt-2 pt-2" style={{ borderTop: `1px solid ${g.color}20` }}>
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: "#10B981" }}>Agent will</p>
+                            {al.does.map((d, i) => (
+                              <p key={i} className="text-[9px] leading-relaxed flex items-start gap-1" style={{ color: "var(--muted-foreground)" }}>
+                                <span style={{ color: "#10B981" }}>✓</span> {d}
+                              </p>
+                            ))}
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: "#EF4444" }}>Requires your approval</p>
+                            {al.doesnt.map((d, i) => (
+                              <p key={i} className="text-[9px] leading-relaxed flex items-start gap-1" style={{ color: "var(--muted-foreground)" }}>
+                                <span style={{ color: "#EF4444" }}>✕</span> {d}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
