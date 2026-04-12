@@ -67,7 +67,7 @@ const INIT_STATE: WizardState = {
   hitleCommsApproval: true, hitleRiskThreshold: "high", escalationTimeout: "24",
   team: [],
   stakeholders: [],
-  agentName: "Alpha", agentTitle: "", agentGradient: 0, domainTags: "", defaultGreeting: "", monthlyBudget: "",
+  agentName: "", agentTitle: "", agentGradient: 0, domainTags: "", defaultGreeting: "", monthlyBudget: "",
   personalityFormal: 35, personalityConcise: 50,
   autonomyLevel: 3, reportSchedule: "weekly",
   notifSlack: true, notifEmail: true, notifTelegram: false,
@@ -240,14 +240,16 @@ const AUTONOMY_CARDS: Array<{ level: number; name: string; tagline: string; desc
 const AGENT_NAMES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Falcon", "Griffin", "Hawk", "Iris", "Jade"];
 const ROLES = ["PM", "Sponsor", "Lead", "Organiser", "Participant", "Dev", "QA", "BA", "Architect", "Designer", "Tech Lead", "Analyst", "Consultant", "Traveller", "Client", "Other"];
 
-const CREDIT_BREAKDOWN = [
-  { name: "Document generation", value: 420, color: "#6366F1" },
-  { name: "Risk analysis", value: 240, color: "#22D3EE" },
-  { name: "Meeting processing", value: 180, color: "#10B981" },
-  { name: "Status reports", value: 160, color: "#F59E0B" },
-  { name: "Communications", value: 120, color: "#EC4899" },
-  { name: "Other", value: 80, color: "#64748B" },
-];
+// Credit costs per action (matches actual system charges)
+const CREDIT_COSTS = {
+  artefactGeneration: 2,    // per artefact generated
+  autonomousCycle: 5,       // average per cycle (2-20 depending on actions)
+  chatMessage: 3,           // per LLM chat response
+  taskMaterialisation: 10,  // extracting tasks from WBS
+  riskScan: 2,              // risk analysis per cycle
+  statusReport: 5,          // generating a status report
+  changeProposal: 3,        // knowledge scan + proposal
+};
 
 const DEPLOY_STAGES = [
   "Initialising agent runtime...",
@@ -469,7 +471,50 @@ export default function ProjectWizardPage() {
     }
   };
 
-  const totalCredits = CREDIT_BREAKDOWN.reduce((s, c) => s + c.value, 0);
+  // Dynamic credit estimate based on project config
+  const creditEstimate = useMemo(() => {
+    const selectedArtefacts = data.phases.reduce((n, p) => n + p.artefacts.filter(a => a.required && a.aiGeneratable !== false).length, 0);
+    const phaseCount = data.phases.length;
+    const level = data.autonomyLevel;
+
+    // Document generation: each selected artefact × cost, generated once
+    const docGen = selectedArtefacts * CREDIT_COSTS.artefactGeneration;
+
+    // Autonomous cycles: depends on autonomy level and project duration
+    // Higher autonomy = more actions per cycle = more credits
+    const cyclesPerMonth = level <= 2 ? 10 : level === 3 ? 30 : level === 4 ? 60 : 90;
+    const cycleCost = cyclesPerMonth * (level <= 2 ? 2 : CREDIT_COSTS.autonomousCycle);
+
+    // Risk analysis: runs every cycle at L3+
+    const riskCost = level >= 3 ? cyclesPerMonth * CREDIT_COSTS.riskScan : 0;
+
+    // Status reports: based on report schedule
+    const reportsPerMonth = data.reportSchedule === "daily" ? 22 : data.reportSchedule === "weekly" ? 4 : data.reportSchedule === "biweekly" ? 2 : 1;
+    const reportCost = reportsPerMonth * CREDIT_COSTS.statusReport;
+
+    // Chat: estimate ~20 messages/month
+    const chatCost = 20 * CREDIT_COSTS.chatMessage;
+
+    // Change proposals: ~2-4/month at higher levels
+    const proposalCost = level >= 3 ? 3 * CREDIT_COSTS.changeProposal : 0;
+
+    // Task materialisation: once per WBS approval
+    const taskCost = CREDIT_COSTS.taskMaterialisation;
+
+    const breakdown = [
+      { name: "Document generation", value: docGen, color: "#6366F1" },
+      { name: "Monitoring cycles", value: cycleCost, color: "#22D3EE" },
+      { name: "Risk analysis", value: riskCost, color: "#10B981" },
+      { name: "Status reports", value: reportCost, color: "#F59E0B" },
+      { name: "Chat responses", value: chatCost, color: "#EC4899" },
+      { name: "Other", value: proposalCost + taskCost, color: "#64748B" },
+    ].filter(c => c.value > 0);
+
+    const total = breakdown.reduce((s, c) => s + c.value, 0);
+    return { breakdown, total };
+  }, [data.phases, data.autonomyLevel, data.reportSchedule]);
+
+  const totalCredits = creditEstimate.total;
 
   return (
     <div className="max-w-[960px] mx-auto pb-12">
@@ -1017,13 +1062,20 @@ export default function ProjectWizardPage() {
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-14 h-14 rounded-full flex items-center justify-center text-[22px] font-bold text-white"
                       style={{ background: g.gradient, boxShadow: `0 0 20px ${g.color}33` }}>
-                      {data.agentName.charAt(0)}
+                      {data.agentName.charAt(0) || "?"}
                     </div>
                     <div className="flex-1">
                       <FieldGroup label="Agent Name">
-                        <div className="flex gap-2">
-                          <StyledInput value={data.agentName} onChange={v => upd({ agentName: v })} />
-                          <Button variant="ghost" size="sm" onClick={() => upd({ agentName: AGENT_NAMES[Math.floor(Math.random() * AGENT_NAMES.length)] })}>🎲</Button>
+                        <div className="flex gap-2 items-center">
+                          <StyledInput value={data.agentName} onChange={v => upd({ agentName: v })} placeholder="e.g. Alpha, Phoenix, Nova…" />
+                          <button
+                            type="button"
+                            title="Suggest a random name (will replace what you've typed)"
+                            onClick={() => upd({ agentName: AGENT_NAMES[Math.floor(Math.random() * AGENT_NAMES.length)] })}
+                            className="shrink-0 px-2 py-1.5 rounded-[8px] text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors border border-border/30"
+                          >
+                            🎲 Suggest
+                          </button>
                         </div>
                       </FieldGroup>
                     </div>
@@ -1233,8 +1285,8 @@ export default function ProjectWizardPage() {
                 <div style={{ width: 120, height: 120 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={CREDIT_BREAKDOWN} dataKey="value" cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={2}>
-                        {CREDIT_BREAKDOWN.map(c => <Cell key={c.name} fill={c.color} />)}
+                      <Pie data={creditEstimate.breakdown} dataKey="value" cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={2}>
+                        {creditEstimate.breakdown.map(c => <Cell key={c.name} fill={c.color} />)}
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
@@ -1249,7 +1301,7 @@ export default function ProjectWizardPage() {
                     <span className="text-[11px] font-semibold" style={{ color: "var(--muted-foreground)" }}>{Math.round((totalCredits / 2000) * 100)}% of 2,000</span>
                   </div>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {CREDIT_BREAKDOWN.map(c => (
+                    {creditEstimate.breakdown.map(c => (
                       <span key={c.name} className="flex items-center gap-1 text-[9px]" style={{ color: "var(--muted-foreground)" }}>
                         <span className="w-2 h-2 rounded-sm" style={{ background: c.color }} />{c.name} ({c.value})
                       </span>
