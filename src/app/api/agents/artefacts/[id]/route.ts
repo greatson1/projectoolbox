@@ -63,5 +63,56 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // ── Artefact → DB seeding ─────────────────────────────────────────────────
+  // When any artefact is APPROVED, parse its CSV/content and seed the relevant
+  // DB table so every project module (Schedule, Risks, Stakeholders, Cost…)
+  // shows live data.
+  if (status === "APPROVED") {
+    try {
+      const seedDeployment = await db.agentDeployment.findFirst({
+        where: { projectId: artefact.projectId, isActive: true },
+        select: { agentId: true },
+      });
+      const seedAgentId = seedDeployment?.agentId || artefact.agentId;
+      const artefactForSeed = {
+        id: artefact.id,
+        name: artefact.name,
+        format: artefact.format,
+        content: content || artefact.content,
+        projectId: artefact.projectId,
+      };
+
+      const lname = artefact.name.toLowerCase();
+
+      // Schedule Baseline / WBS → Task records (Gantt, Agile Board, Scope, Sprint Tracker)
+      if (lname.includes("schedule") || lname.includes("wbs") || lname.includes("work breakdown")) {
+        const { parseScheduleArtefactIntoTasks } = await import("@/lib/agents/schedule-parser");
+        parseScheduleArtefactIntoTasks(artefactForSeed, seedAgentId)
+          .catch(e => console.error("[artefact PATCH] schedule seeding failed:", e));
+      }
+
+      // Stakeholder Register / Risk Register / Budget / Sprint Plans → their own tables
+      const { seedArtefactData } = await import("@/lib/agents/artefact-seeders");
+      seedArtefactData(artefactForSeed, seedAgentId)
+        .catch(e => console.error("[artefact PATCH] artefact seeding failed:", e));
+
+    } catch (e) {
+      console.error("[artefact PATCH] seeding dispatch failed:", e);
+    }
+
+    // Update scaffolded task progress for this artefact approval
+    try {
+      const dep = await db.agentDeployment.findFirst({
+        where: { projectId: artefact.projectId, isActive: true },
+        select: { agentId: true },
+      });
+      if (dep?.agentId) {
+        const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+        // Artefact approval doesn't need a separate task update — generation already marked it done.
+        // But if all artefacts in a phase are approved, fire the gate_request event.
+      }
+    } catch {}
+  }
+
   return NextResponse.json({ data: artefact });
 }

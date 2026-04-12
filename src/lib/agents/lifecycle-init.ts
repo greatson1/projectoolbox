@@ -173,6 +173,11 @@ export async function generatePhaseArtefacts(
           });
           existingNames.add(artName.toLowerCase());
           totalGenerated++;
+          // Update scaffolded task progress
+          try {
+            const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
+            await onArtefactGenerated(agentId, projectId, artName);
+          } catch {}
         }
       }
     } catch (e) {
@@ -268,6 +273,19 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       nextCycleAt: new Date(Date.now() + 10 * 60_000),
     },
   });
+
+  // ── Step 2b: Scaffold comprehensive PM task list across all phases ──
+  try {
+    const { scaffoldProjectTasks } = await import("@/lib/agents/task-scaffolding");
+    const phaseRows = await db.phase.findMany({
+      where: { projectId: project.id },
+      select: { id: true, name: true, order: true },
+      orderBy: { order: "asc" },
+    });
+    await scaffoldProjectTasks(agentId, project.id, phaseRows, project);
+  } catch (e) {
+    console.error("[lifecycle-init] task scaffolding failed:", e);
+  }
 
   // ── Step 3: Start clarification session OR generate initial artefacts ──
   // On first deploy the KB is empty — always ask the user for key details first.
@@ -394,6 +412,11 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
                 },
               });
               totalGenerated++;
+              // Update scaffolded task progress
+              try {
+                const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
+                await onArtefactGenerated(agentId, project.id, artName);
+              } catch {}
             }
           }
         } catch (e) {
