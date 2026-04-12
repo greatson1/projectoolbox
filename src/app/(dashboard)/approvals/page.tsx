@@ -205,29 +205,29 @@ export default function ApprovalsPage() {
                 style={{ borderLeft: isAgentRaised ? `3px solid ${accentColor}` : "3px solid hsl(var(--border))" }}>
                 {/* Collapsed row */}
                 <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : item.id)}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 bg-muted/50">{icon}</div>
+                  {/* Agent avatar — prominent */}
+                  {isAgentRaised ? (
+                    <div className="relative flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-md"
+                        style={{ background: agentGradient }}>
+                        {agentInitial}
+                      </div>
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-amber-400 border-2 border-card flex items-center justify-center text-[6px]">!</span>
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 bg-muted/50">{icon}</div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      {isAgentRaised && (
+                        <span className="text-xs font-bold" style={{ color: accentColor }}>{agentName}</span>
+                      )}
                       <span className="text-sm font-semibold truncate">{item.title}</span>
                       <Badge variant="secondary" className={cn("text-[9px]", tierColors.bg, tierColors.text)}>{riskTier}</Badge>
                       {riskScore > 0 && <span className="text-[10px] text-muted-foreground">Score {riskScore}/16</span>}
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
                       <span>{item.project?.name || "—"}</span>
-                      <span>·</span>
-                      {isAgentRaised ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white flex-shrink-0"
-                            style={{ background: agentGradient }}>{agentInitial}</span>
-                          <span style={{ color: accentColor }} className="font-semibold">{agentName}</span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold"
-                            style={{ background: `${accentColor}18`, color: accentColor }}>Agent</span>
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1">
-                          <span className="text-muted-foreground">Manual</span>
-                        </span>
-                      )}
                       <span>·</span>
                       <span>{timeAgo(item.createdAt)}</span>
                       {item.iteration > 1 && <Badge variant="outline" className="text-[9px]">Iteration {item.iteration}</Badge>}
