@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 
-const FILTERS = ["All", "High Priority", "Phase Gates", "Change Requests", "Artefacts", "Communications"];
+const FILTERS = ["All", "High Priority", "Phase Gates", "Change Requests", "Scope & Risk", "Communications"];
 
 const RISK_TIER_COLORS: Record<string, { bg: string; text: string }> = {
   LOW: { bg: "bg-emerald-500/10", text: "text-emerald-500" },
@@ -69,7 +69,7 @@ export default function ApprovalsPage() {
     // Type filter
     if (filter === "All") return true;
     if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
-    if (filter === "Artefacts") return item.type === "SCOPE_CHANGE" || item.type === "RISK_RESPONSE";
+    if (filter === "Scope & Risk") return item.type === "SCOPE_CHANGE" || item.type === "RISK_RESPONSE" || item.type === "RESOURCE";
     if (filter === "Phase Gates") return item.type === "PHASE_GATE";
     if (filter === "Change Requests") return item.type === "CHANGE_REQUEST" || item.type === "BUDGET";
     if (filter === "Communications") return item.type === "COMMUNICATION";
@@ -139,7 +139,7 @@ export default function ApprovalsPage() {
             : f === "High Priority" ? items.filter((i: any) => i.urgency === "HIGH" || i.urgency === "CRITICAL").length
             : f === "Phase Gates" ? items.filter((i: any) => i.type === "PHASE_GATE").length
             : f === "Change Requests" ? items.filter((i: any) => i.type === "CHANGE_REQUEST" || i.type === "BUDGET").length
-            : f === "Artefacts" ? items.filter((i: any) => i.type === "SCOPE_CHANGE" || i.type === "RISK_RESPONSE").length
+            : f === "Scope & Risk" ? items.filter((i: any) => i.type === "SCOPE_CHANGE" || i.type === "RISK_RESPONSE" || i.type === "RESOURCE").length
             : f === "Communications" ? items.filter((i: any) => i.type === "COMMUNICATION").length
             : 0;
           return (
