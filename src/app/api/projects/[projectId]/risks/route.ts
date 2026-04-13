@@ -129,7 +129,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     // ── Generate email with Claude ────────────────────────────────────────
     const apiKey = process.env.ANTHROPIC_API_KEY;
     let emailSubject = `ESCALATION: ${existing.title} — ${project?.name ?? "Project"}`;
-    let emailBody = customMessage || "";
+    // Default fallback email body (used when Claude API fails)
+    let emailBody = `**Risk Escalation: ${existing.title}**
+
+This risk has been escalated for your immediate attention on project "${project?.name ?? "Project"}".
+
+**Risk Source:** ${existing.description || "No description provided"}
+
+**Risk Event & Impact:** With a probability of ${existing.probability}/5 and impact of ${existing.impact}/5 (score: ${existing.score ?? existing.probability * existing.impact}/25), this risk requires a decision on the appropriate response strategy.
+
+**Current Mitigation:** ${existing.mitigation || "No mitigation actions documented yet."}
+
+${customMessage ? `**Additional Context from Project Manager:**\n${customMessage}\n` : ""}
+
+**Decision Required:** Please review this risk and select a response strategy (Accept, Mitigate, Transfer, or Avoid). Click the button below to respond — no account required.
+
+${agentName}
+${project?.name ?? "Project"} — AI Project Manager`;
 
     if (apiKey) {
       try {
@@ -296,12 +312,12 @@ ${project?.name ?? "Project"} — AI Project Manager`;
                 ${actionEntries.length > 0 ? `<tr><td style="padding:2px 0;color:#6b7280;vertical-align:top;">Response Actions</td><td>${actionEntries.map((a: any) => `<span style="display:block;">${a.action} <span style="color:#6b7280;">[${a.status}]</span></span>`).join("")}</td></tr>` : ""}
               </table>
             </div>
-            <a href="${baseUrl}/projects/${projectId}/risk?review=REVIEW_TOKEN_PLACEHOLDER"
+            <a href="${baseUrl}/review/REVIEW_TOKEN_PLACEHOLDER"
               style="display:inline-block;margin-top:20px;background:#dc2626;color:white;padding:10px 22px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
-              View Risk Register →
+              Review & Respond →
             </a>
             <p style="font-size:11px;color:#9ca3af;margin:16px 0 0;border-top:1px solid #f3f4f6;padding-top:12px;">
-              Sent by ${agentName} via Projectoolbox · This link expires in 7 days. No account required to view.
+              Sent by ${agentName} via Projectoolbox · <a href="${baseUrl}/review/REVIEW_TOKEN_PLACEHOLDER" style="color:#4f46e5;">View risk details</a> · No account required · Expires in 7 days
             </p>
           </div>
         </div>`;
