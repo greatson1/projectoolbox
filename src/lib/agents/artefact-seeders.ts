@@ -436,7 +436,7 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
   // ── Step 2: Create tasks and assign to sprints ──
   let created = 0;
   for (const row of rows) {
-    const title = col(row, ["User Story", "Work Item", "Task", "Story", "Feature", "Item"]);
+    const title = col(row, ["User Story", "Work Item", "Task", "Story", "Feature", "Item", "Title"]);
     if (!title) continue;
 
     const sprintName  = col(row, ["Sprint", "Iteration", "Sprint Number"]);

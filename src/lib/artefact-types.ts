@@ -16,6 +16,7 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Initial Risk Register",
   "Initial Stakeholder Register",
   "Stakeholder Register",
+  "Risk Register",
   "Risk Management Plan",
   "Resource Plan",
   "Schedule Baseline",
@@ -23,6 +24,7 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Iteration Plans",
   "Flow Metrics Reports",
   "Change Request Register",
+  "Backlog",
 ]);
 
 /** Column definitions per artefact type — used in the generation prompt and xlsx formatting */
@@ -43,6 +45,8 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Iteration Plans": ["Iteration", "Item ID", "Work Item", "Owner", "Planned Points", "Completed Points", "Status", "Start", "End", "Notes"],
   "Flow Metrics Reports": ["Week", "Items Started", "Items Completed", "WIP Count", "Avg Cycle Time (days)", "Throughput", "Lead Time (days)", "Blockers", "RAG"],
   "Change Request Register": ["CR ID", "Title", "Description", "Requested By", "Date Raised", "Category", "Priority", "Impact on Schedule", "Impact on Cost (£)", "Impact on Scope", "Status", "Decision", "Decision Date", "Implemented By", "Notes"],
+  "Risk Register": ["Risk ID", "Category", "Title", "Description", "Likelihood (1-5)", "Impact (1-5)", "Score", "Risk Rating", "Owner", "Mitigation Actions", "Contingency Plan", "Residual Score", "Status", "Last Reviewed"],
+  "Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
 };
 
 /** Returns true if this artefact should be generated as CSV and shown in SpreadsheetViewer */
