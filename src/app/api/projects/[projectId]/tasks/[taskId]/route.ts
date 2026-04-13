@@ -57,12 +57,44 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   data.lastEditedBy = (session.user as any).id || "user";
 
-  if (Object.keys(data).length === 1) {
-    // Only lastEditedBy — nothing real changed
+  // Auto-sync status ↔ progress: DONE always means 100%, and setting 100% means DONE
+  if (data.status && data.status.toUpperCase() === "DONE") {
+    data.progress = 100;
+  } else if (data.progress === 100 && !data.status) {
+    data.status = "DONE";
+  } else if (data.status && data.status !== "DONE" && data.progress === undefined) {
+    // Moving away from DONE — don't reset progress (user may set manually)
+  }
+
+  // If moving to IN_PROGRESS and progress is 0, give it a starting value
+  if (data.status === "IN_PROGRESS" && !data.progress) {
+    const currentTask = await db.task.findUnique({ where: { id: taskId }, select: { progress: true } });
+    if (currentTask && (currentTask.progress || 0) === 0) {
+      data.progress = 10; // indicate work has started
+    }
+  }
+
+  if (Object.keys(data).length === 1 && data.lastEditedBy) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
   const task = await db.task.update({ where: { id: taskId }, data });
+
+  // If task has a parent, update parent progress aggregate
+  if (task.parentId) {
+    try {
+      const siblings = await db.task.findMany({
+        where: { parentId: task.parentId },
+        select: { progress: true },
+      });
+      const avgProgress = Math.round(siblings.reduce((s, t) => s + (t.progress || 0), 0) / siblings.length);
+      const allDone = siblings.every(t => (t.progress || 0) >= 100);
+      await db.task.update({
+        where: { id: task.parentId },
+        data: { progress: avgProgress, status: allDone ? "DONE" : avgProgress > 0 ? "IN_PROGRESS" : "TODO" },
+      });
+    } catch {}
+  }
 
   // Audit log
   const orgId = (session.user as any).orgId;
@@ -87,11 +119,25 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     syncTaskToArtefact(projectId, taskId, data).catch(() => {});
   } catch {}
 
-  // If sprintId changed, also reverse sync Sprint Plans artefact
-  if ("sprintId" in data) {
+  // Reverse sync Sprint Plans artefact when sprint assignment OR status/progress changes
+  if ("sprintId" in data || "status" in data || "progress" in data || "storyPoints" in data) {
     try {
       const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
       syncSprintsToArtefact(projectId).catch(() => {});
+    } catch {}
+  }
+
+  // Update scaffolded task progress if this is an agent task
+  if (("status" in data || "progress" in data) && task.createdBy?.startsWith("agent:")) {
+    try {
+      const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
+      // If task links to an artefact, mark it done
+      if (task.description?.includes("[artefact:") && data.status === "DONE") {
+        const match = task.description.match(/\[artefact:([^\]]+)\]/);
+        if (match) {
+          onArtefactGenerated(task.createdBy.replace("agent:", ""), projectId, match[1]).catch(() => {});
+        }
+      }
     } catch {}
   }
 
