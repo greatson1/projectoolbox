@@ -102,8 +102,8 @@ const PRINCE2: MethodologyDefinition = {
       artefacts: [
         { name: "Project Charter", required: false, aiGeneratable: true },
         { name: "Business Case", required: false, aiGeneratable: true },
-        { name: "Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -123,8 +123,8 @@ const PRINCE2: MethodologyDefinition = {
       color: "#22D3EE",
       artefacts: [
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
-        { name: "Schedule Baseline", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Schedule Baseline", required: false, aiGeneratable: true },
         { name: "Risk Management Plan", required: false, aiGeneratable: true },
         { name: "Quality Plan", required: false, aiGeneratable: true },
         { name: "Resource Plan", required: false, aiGeneratable: true },
@@ -197,7 +197,7 @@ const WATERFALL: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Project Brief", required: false, aiGeneratable: true },
         { name: "Outline Business Case", required: false, aiGeneratable: true },
         { name: "Requirements Specification", required: false, aiGeneratable: true },
@@ -219,12 +219,12 @@ const WATERFALL: MethodologyDefinition = {
       description: "Formally initiate and plan the project: authorise via Charter and Business Case, then produce all management plans required to govern the next phase",
       color: "#8B5CF6",
       artefacts: [
-        { name: "Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
-        { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
         { name: "Cost Management Plan", required: true, aiGeneratable: true },
-        { name: "Risk Management Plan", required: true, aiGeneratable: true },
-        { name: "Resource Management Plan", required: true, aiGeneratable: true },
+        { name: "Stakeholder Register", required: false, aiGeneratable: true },
+        { name: "Schedule with Dependencies", required: false, aiGeneratable: true },
+        { name: "Risk Management Plan", required: false, aiGeneratable: true },
+        { name: "Resource Management Plan", required: false, aiGeneratable: true },
         { name: "RACI Matrix", required: false, aiGeneratable: true },
         { name: "Project Charter", required: false, aiGeneratable: true },
         { name: "Business Case", required: false, aiGeneratable: true },
@@ -268,8 +268,9 @@ const WATERFALL: MethodologyDefinition = {
       description: "Integration testing, system testing, UAT",
       color: "#10B981",
       artefacts: [
-        { name: "Test Plan", required: true, aiGeneratable: true },
-        { name: "Test Results", required: true, aiGeneratable: false },
+        { name: "Status Reports", required: true, aiGeneratable: true },
+        { name: "Test Plan", required: false, aiGeneratable: true },
+        { name: "Test Results", required: false, aiGeneratable: false },
       ],
       gate: {
         name: "Testing Approval",
@@ -285,8 +286,9 @@ const WATERFALL: MethodologyDefinition = {
       description: "Release to production, handover to operations",
       color: "#F59E0B",
       artefacts: [
-        { name: "Release Plan", required: true, aiGeneratable: true },
-        { name: "Handover Documentation", required: true, aiGeneratable: true },
+        { name: "Closure Report", required: true, aiGeneratable: true },
+        { name: "Release Plan", required: false, aiGeneratable: true },
+        { name: "Handover Documentation", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Go-Live Approval",
@@ -523,8 +525,8 @@ const HYBRID: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Risk Register", required: true, aiGeneratable: true },
-        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Charter", required: false, aiGeneratable: true },
         { name: "Delivery Approach", required: false, aiGeneratable: true },
         { name: "Roadmap", required: false, aiGeneratable: true },
@@ -548,9 +550,9 @@ const HYBRID: MethodologyDefinition = {
       color: "#8B5CF6",
       artefacts: [
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
-        { name: "Risk Management Plan", required: true, aiGeneratable: true },
-        { name: "Schedule Baseline", required: true, aiGeneratable: true },
-        { name: "Resource Plan", required: true, aiGeneratable: true },
+        { name: "Risk Management Plan", required: false, aiGeneratable: true },
+        { name: "Schedule Baseline", required: false, aiGeneratable: true },
+        { name: "Resource Plan", required: false, aiGeneratable: true },
         { name: "Backlog", required: false, aiGeneratable: true },
         { name: "Quality Plan", required: false, aiGeneratable: true },
         { name: "Change Control Plan", required: false, aiGeneratable: true },
