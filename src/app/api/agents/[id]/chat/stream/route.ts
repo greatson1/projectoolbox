@@ -138,12 +138,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     : "thorough and detailed — comprehensive coverage";
 
   const autonomyDesc = [
-    "Assistant — suggest only, no autonomous actions",
-    "Advisor — draft everything, flag all for approval",
-    "Co-pilot — handle routine autonomously, escalate key decisions above thresholds",
-    "Autonomous — run the project, report weekly, HITL only for gates and budget",
+    "Advisor — everything goes to approval queue, no autonomous actions",
+    "Co-pilot — handle routine tasks and risks autonomously, documents and schedule need approval",
+    "Autonomous — run the project day-to-day including documents, HITL only for scope and high-risk items",
     "Strategic — full autonomy within governance bounds, minimal check-ins",
-  ][Math.min((agent.autonomyLevel ?? 3) - 1, 4)];
+  ][Math.min((agent.autonomyLevel ?? 2) - 1, 3)];
 
   const hitlConfig = (deployment as any)?.config ?? {};
   const budgetThreshold = hitlConfig.hitleBudgetThreshold || hitlConfig.budgetThreshold || "500";
@@ -168,7 +167,7 @@ ${domainTags.length > 0 ? `Your domain specialisations: ${domainTags.join(", ")}
 - You always use British English (colour, organisation, prioritise, etc.)
 - Communication tone: ${toneDesc}
 - Response style: ${detailDesc}
-- Autonomy level: L${agent.autonomyLevel ?? 3} — ${autonomyDesc}
+- Autonomy level: L${agent.autonomyLevel ?? 2} — ${autonomyDesc}
 ${domainTags.length > 0 ? `- Domain expertise: ${domainTags.join(", ")} — use this to provide specialist advice and industry-specific terminology` : ""}
 ${teamMembers.length > 0 ? `- Team members: ${teamMembers.map((m: any) => `${m.user?.name || "Member"} (${m.role || "Team"})`).join(", ")}` : ""}
 
@@ -205,6 +204,30 @@ ${recentArtefacts.length > 0
 ${openRisks.length > 0
   ? openRisks.map(r => `- **${r.title}** — Score: ${r.score}/25 — ${r.description}`).join("\n")
   : "No risks logged yet."}
+
+## YOUR IMMEDIATE PRIORITY RIGHT NOW
+${(() => {
+  const draftArts = recentArtefacts.filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW");
+  const approvedArts = recentArtefacts.filter(a => a.status === "APPROVED");
+  const hasPendingGate = pendingApprovals.some(a => a.type === "PHASE_GATE");
+
+  if (recentArtefacts.length === 0 && phases.length > 0) {
+    return `🎯 ARTEFACTS NOT YET GENERATED. You are in the ${currentPhase?.name || "first"} phase. Your job is to generate the phase artefacts. If the user hasn't answered your clarification questions yet, ask them ONE question at a time. Once you have enough context, generate the artefacts. Tell the user exactly what you need from them to proceed.`;
+  }
+  if (draftArts.length > 0) {
+    return `🎯 ${draftArts.length} ARTEFACT(S) AWAITING REVIEW: ${draftArts.map(a => a.name).join(", ")}. Direct the user to [Review Artefacts](/agents/${agentId}?tab=artefacts) to approve them. Summarise what each document contains and why it matters. Once all are approved, you can advance to the next phase.`;
+  }
+  if (hasPendingGate) {
+    return `🎯 PHASE GATE AWAITING APPROVAL. The ${currentPhase?.name} phase is complete. Direct the user to [Pending Approvals](/approvals) to approve the phase gate and advance to ${nextPhase?.name || "the next phase"}.`;
+  }
+  if (approvedArts.length > 0 && !nextPhase) {
+    return `🎯 ALL PHASES COMPLETE. All artefacts approved, all phases done. Help the user with any remaining questions, generate reports, or close out the project.`;
+  }
+  if (openRisks.length > 0) {
+    return `🎯 ${openRisks.length} OPEN RISK(S) need attention. Proactively discuss the highest-scored risks and recommend mitigation strategies. Link to [Risk Register](/projects/${project?.id || ""}/risk).`;
+  }
+  return `🎯 Monitor the project. Check if tasks are progressing, risks are mitigated, and stakeholders are informed. Be proactive — don't wait to be asked.`;
+})()}
 
 ## GOVERNANCE RULES (HITL)
 You must PAUSE and request human approval when:
