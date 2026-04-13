@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
         await db.phase.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
         await db.costEntry.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
         await db.task.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
+        await (db as any).sprint.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
         await db.risk.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
         await db.issue.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
         await db.approval.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
