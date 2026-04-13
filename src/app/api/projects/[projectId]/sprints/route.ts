@@ -33,6 +33,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     return NextResponse.json({ error: "name, startDate and endDate are required" }, { status: 400 });
   }
 
+  // Prevent duplicate sprint names within the same project
+  const existing = await db.sprint.findFirst({
+    where: { projectId, name: body.name },
+  });
+  if (existing) {
+    return NextResponse.json({ error: `A sprint named "${body.name}" already exists` }, { status: 409 });
+  }
+
   const sprint = await db.sprint.create({
     data: {
       projectId,
