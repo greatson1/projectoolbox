@@ -479,9 +479,19 @@ function AgentStatusBanner({
 }) {
   if (!project) return null;
 
-  const approved  = items.filter((a: any) => a.status === "APPROVED").length;
-  const pending   = items.filter((a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
-  const total     = items.length;
+  // Filter to current phase artefacts for banner state (avoid mixing phases)
+  const activePhaseForFilter = project.phases?.find((p: any) => p.status === "ACTIVE");
+  const currentPhaseItems = activePhaseForFilter
+    ? items.filter((a: any) => {
+        const artPhase = a.phaseId || a.phaseName || "";
+        // Match by phase name or phase ID
+        return artPhase === activePhaseForFilter.name || artPhase === activePhaseForFilter.id;
+      })
+    : items;
+  // Use current phase items for banner state, all items for total count
+  const approved  = currentPhaseItems.filter((a: any) => a.status === "APPROVED").length;
+  const pending   = currentPhaseItems.filter((a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
+  const total     = currentPhaseItems.length;
   const pct       = total > 0 ? Math.round((approved / total) * 100) : 0;
   const allDone   = total > 0 && pending === 0 && !generating;
   const noneYet   = total === 0 && !generating;
