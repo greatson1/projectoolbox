@@ -187,6 +187,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             console.error("[approval] Change proposal application failed:", e);
           }
         }
+
+        // Execute phase reversion if this is a PHASE_REVERSION approval
+        const impactData = approval.impact as any;
+        if (impactData?.type === "PHASE_REVERSION") {
+          try {
+            const { executePhaseReversion } = await import("@/app/api/projects/[projectId]/phases/revert/route");
+            await executePhaseReversion(id);
+            console.log(`[approval] Phase reversion executed for ${id}`);
+          } catch (e) {
+            console.error("[approval] Phase reversion failed:", e);
+          }
+        }
       }
     }
 
