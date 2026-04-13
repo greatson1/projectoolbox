@@ -110,11 +110,16 @@ export default function ArtefactsPage() {
     const rollback = optimisticPatch(artId, { status: "APPROVED" });
     setEditorArt(null); // close editor, show list (already has updated cache)
 
-    // Check if this is the last non-approved artefact BEFORE the API call
-    const pendingAfter = items.filter((a: any) =>
+    // Check if this is the last non-approved artefact in the CURRENT ACTIVE PHASE only
+    // (not across all phases — that was the bug causing premature phase advancement)
+    const activePhaseName = project?.phases?.find((p: any) => p.status === "ACTIVE")?.name;
+    const currentPhaseItems = activePhaseName
+      ? items.filter((a: any) => a.phaseName === activePhaseName)
+      : items;
+    const pendingAfter = currentPhaseItems.filter((a: any) =>
       a.id !== artId && (a.status === "DRAFT" || a.status === "PENDING_REVIEW")
     );
-    const wasLastPending = pendingAfter.length === 0 && items.length > 0;
+    const wasLastPending = pendingAfter.length === 0 && currentPhaseItems.length > 0;
 
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",

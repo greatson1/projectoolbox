@@ -245,6 +245,7 @@ export default function ApprovalsPage() {
             const agentInitial = agentName ? agentName.charAt(0).toUpperCase() : null;
             // Extract first colour from gradient for left border accent
             const accentColor = (agentGradient.match(/#[0-9A-Fa-f]{6}/) || ["#6366F1"])[0];
+            const parsed = parseDescription(item.description || "");
 
             return (
               <div key={item.id} className="rounded-xl bg-card border border-border overflow-hidden transition-all"
@@ -310,9 +311,6 @@ export default function ApprovalsPage() {
                 )}
 
                 {/* Expanded content */}
-                {(() => {
-                  const parsed = parseDescription(item.description || "");
-                  return (
                 <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0")}>
                   <div className="px-5 pb-5 space-y-4 border-t border-border">
 
@@ -431,8 +429,6 @@ export default function ApprovalsPage() {
                     )}
                   </div>
                 </div>
-                  );
-                })()}
               </div>
             );
           })}
