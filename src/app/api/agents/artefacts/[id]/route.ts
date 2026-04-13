@@ -88,12 +88,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (lname.includes("schedule") || lname.includes("wbs") || lname.includes("work breakdown")) {
         const { parseScheduleArtefactIntoTasks } = await import("@/lib/agents/schedule-parser");
         parseScheduleArtefactIntoTasks(artefactForSeed, seedAgentId)
+          .then(async () => {
+            // After WBS tasks are seeded, auto-plan sprints
+            try {
+              const { planSprints } = await import("@/lib/agents/sprint-planner");
+              const result = await planSprints(seedAgentId, artefact.projectId);
+              if (result.sprints > 0) {
+                console.log(`[artefact PATCH] Auto-planned ${result.sprints} sprint(s), ${result.tasksAssigned} tasks, ${result.pointsPlanned} points`);
+              }
+            } catch (e) {
+              console.error("[artefact PATCH] Sprint auto-planning failed:", e);
+            }
+          })
           .catch(e => console.error("[artefact PATCH] schedule seeding failed:", e));
       }
 
       // Stakeholder Register / Risk Register / Budget / Sprint Plans → their own tables
       const { seedArtefactData } = await import("@/lib/agents/artefact-seeders");
       seedArtefactData(artefactForSeed, seedAgentId)
+        .then(async () => {
+          // After Sprint Plans are seeded, also auto-plan if tasks exist but no sprints
+          if (lname.includes("sprint") || lname.includes("iteration") || lname.includes("backlog")) {
+            try {
+              const { planSprints } = await import("@/lib/agents/sprint-planner");
+              await planSprints(seedAgentId, artefact.projectId);
+            } catch {}
+          }
+        })
         .catch(e => console.error("[artefact PATCH] artefact seeding failed:", e));
 
     } catch (e) {
