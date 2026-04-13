@@ -266,6 +266,45 @@ export function useDeleteTask(projectId: string) {
   });
 }
 
+// ── Sprints ──
+
+export function useProjectSprints(projectId: string | null) {
+  return useQuery({
+    queryKey: ["sprints", projectId],
+    queryFn: () => api<{ data: any[] }>(`/api/projects/${projectId}/sprints`).then(r => r.data),
+    enabled: !!projectId,
+  });
+}
+
+export function useCreateSprint(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/sprints`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sprints", projectId] }),
+  });
+}
+
+export function useUpdateSprint(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sprintId, ...data }: { sprintId: string; [key: string]: any }) =>
+      api(`/api/projects/${projectId}/sprints/${sprintId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sprints", projectId] }),
+  });
+}
+
+export function useDeleteSprint(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sprintId: string) =>
+      api(`/api/projects/${projectId}/sprints/${sprintId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sprints", projectId] });
+      qc.invalidateQueries({ queryKey: ["tasks", projectId] });
+    },
+  });
+}
+
 export function useCreateRisk(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

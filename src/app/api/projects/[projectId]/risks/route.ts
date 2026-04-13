@@ -133,34 +133,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
 
     if (apiKey) {
       try {
-        const prompt = `You are ${agentName}, an AI project manager for ${project?.name ?? "this project"}.
+        const prompt = `You are ${agentName}, an AI project manager for "${project?.name ?? "this project"}".
 
-Write a professional risk escalation email. Be concise, factual, and action-oriented.
+Write a professional, comprehensive risk escalation email for a senior stakeholder. British English.
 
 RISK DETAILS:
 - Title: ${existing.title}
-- Description: ${existing.description || "No description"}
+- Description: ${existing.description || "No description provided"}
 - Probability: ${existing.probability}/5 | Impact: ${existing.impact}/5 | Score: ${existing.score ?? existing.probability * existing.impact}/25
 - Category: ${existing.category || "Not categorised"}
 - Current Status: ${existing.status}
 - Risk Owner: ${existing.owner || "Unassigned"}
-- Mitigation Summary: ${existing.mitigation || "None documented"}
+- Existing Mitigation: ${existing.mitigation || "None documented"}
+- Project Budget: £${(project?.budget || 0).toLocaleString()}
+- Project Phase: ${deployment?.currentPhase || "Unknown"}
 
-RESPONSE ACTIONS IN PROGRESS (${actionEntries.length}):
+RESPONSE ACTIONS (${actionEntries.length}):
 ${actionEntries.length > 0
   ? actionEntries.map((a: any) => `- [${a.status}] ${a.action}${a.owner ? ` (Owner: ${a.owner})` : ""}`).join("\n")
   : "No response actions recorded yet."}
 
-${customMessage ? `ADDITIONAL CONTEXT FROM PROJECT MANAGER:\n${customMessage}` : ""}
+${customMessage ? `ADDITIONAL CONTEXT FROM PROJECT MANAGER:\n${customMessage}\n` : ""}
 
-Write:
-1. A subject line (one sentence, starts with "ESCALATION:")
-2. The email body (3-4 short paragraphs: situation summary, current response status, what decision/action is required, deadline if applicable)
+Write the email with these EXACT sections:
 
-Format your response as:
-SUBJECT: [subject line here]
+1. **Subject line** — starts with "ESCALATION:" and names the risk and project
+2. **Opening** — 1 sentence: what risk, what project, why escalated now
+3. **Risk Source** — what is causing this risk (root cause analysis)
+4. **Risk Event & Impact** — what will happen if this risk materialises, quantified impact on schedule/cost/scope
+5. **Current Response** — what mitigations are in place, their status
+6. **Recommended Approaches** — 2-3 specific, actionable options the stakeholder can choose from (e.g., Accept, Mitigate with specific action, Transfer/insure, Avoid by changing scope). Include estimated cost/time for each.
+7. **Decision Required** — what exactly do you need the recipient to decide, by when
+8. **Sign-off** — agent name, project name
+
+Format:
+SUBJECT: [subject]
 BODY:
-[email body here]`;
+[full email body with the sections above, using **bold** for section headers]`;
 
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -186,18 +195,36 @@ BODY:
         }
       } catch (e) {
         console.error("[risks/escalate] Claude generation failed:", e);
-        // Fall back to template email
-        emailBody = `Dear ${existing.owner || "Risk Owner"},
+        // Fall back to structured template email
+        const score = existing.score ?? existing.probability * existing.impact;
+        const severity = score >= 20 ? "Critical" : score >= 15 ? "High" : score >= 10 ? "Medium" : "Low";
+        emailBody = `Dear ${existing.owner || "Stakeholder"},
 
-I am writing to formally escalate risk "${existing.title}" on project ${project?.name ?? ""}. With a current risk score of ${existing.score ?? existing.probability * existing.impact}/25 (Probability: ${existing.probability}/5, Impact: ${existing.impact}/5), this risk requires immediate attention and decision-making at a senior level.
+I am writing to formally escalate the following risk on project "${project?.name ?? ""}":
 
+**Risk:** ${existing.title}
+**Score:** ${score}/25 (Probability: ${existing.probability}/5, Impact: ${existing.impact}/5) — ${severity} severity
+**Category:** ${existing.category || "General"}
+**Description:** ${existing.description || "No detailed description available."}
+
+**Risk Source:**
+This risk has been identified through ongoing project monitoring. ${customMessage ? `Additional context: ${customMessage}` : ""}
+
+**Impact if Materialised:**
+With a ${severity.toLowerCase()} severity rating, this risk could significantly affect project ${existing.impact >= 4 ? "timeline, budget, and deliverables" : existing.impact >= 3 ? "timeline and deliverables" : "progress"}.
+
+**Current Response:**
 ${actionEntries.length > 0
-  ? `The following response actions are currently in place:\n${actionEntries.map((a: any) => `• ${a.action} [${a.status}]`).join("\n")}`
-  : "No response actions have been recorded against this risk."}
+  ? actionEntries.map((a: any) => `- ${a.action} [${a.status}]${a.owner ? ` — Owner: ${a.owner}` : ""}`).join("\n")
+  : "No response actions have been recorded yet. This requires immediate attention."}
 
-Please review the risk register and advise on the required course of action as soon as possible. A decision is needed to prevent further project impact.
+**Recommended Approaches:**
+1. **Mitigate** — ${existing.mitigation || "Define and implement specific mitigation actions to reduce probability or impact"}
+2. **Accept** — Acknowledge the risk and monitor, setting clear trigger points for escalation
+3. **Transfer** — Consider insurance, contractual protections, or transferring the risk to a third party
 
-This escalation has been logged in the project risk register.
+**Decision Required:**
+Please review the risk register and confirm which response strategy to adopt. A decision is needed within 48 hours to prevent further project impact.
 
 ${agentName}
 ${project?.name ?? "Project"} — AI Project Manager`;
@@ -210,6 +237,32 @@ ${project?.name ?? "Project"} — AI Project Manager`;
     const emailsFailed: string[] = [];
 
     if (resendKey && recipients?.length > 0) {
+      // Generate magic review tokens for each recipient (no account needed)
+      const { randomBytes } = await import("crypto");
+      const reviewTokens: Record<string, string> = {};
+      for (const email of recipients) {
+        const token = randomBytes(32).toString("hex");
+        reviewTokens[email] = token;
+        // Store token for verification (reuse ReviewLink model — link to any approval for this project)
+        try {
+          const approval = await db.approval.findFirst({
+            where: { projectId, status: "PENDING" },
+            select: { id: true },
+          });
+          if (approval) {
+            await db.reviewLink.create({
+              data: {
+                token,
+                approvalId: approval.id,
+                email,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+              },
+            }).catch(() => {});
+          }
+        } catch {}
+      }
+      const baseUrl = process.env.NEXTAUTH_URL || "https://projectoolbox.com";
+
       const html = `
         <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:620px;margin:0 auto;">
           <div style="background:linear-gradient(135deg,#7f1d1d,#991b1b);padding:20px 28px;border-radius:10px 10px 0 0;">
@@ -224,7 +277,14 @@ ${project?.name ?? "Project"} — AI Project Manager`;
             <p style="font-size:15px;font-weight:700;color:#1a1a1a;margin:8px 0 0;">${existing.title}</p>
           </div>
           <div style="background:#fff;padding:24px 28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;">
-            <div style="white-space:pre-line;font-size:14px;color:#374151;line-height:1.7;">${emailBody.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+            <div style="font-size:14px;color:#374151;line-height:1.7;">${emailBody
+              .replace(/</g, "&lt;").replace(/>/g, "&gt;")
+              .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+              .replace(/^- (.+)/gm, "<li style='margin:2px 0;'>$1</li>")
+              .replace(/^(\d+)\. (.+)/gm, "<li style='margin:2px 0;'>$2</li>")
+              .replace(/\n{2,}/g, "</p><p style='margin:12px 0;'>")
+              .replace(/\n/g, "<br>")
+            }</div>
             <div style="margin-top:24px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
               <p style="font-size:11px;font-weight:600;text-transform:uppercase;color:#6b7280;margin:0 0 8px;">Risk Details</p>
               <table style="width:100%;font-size:12px;color:#374151;border-collapse:collapse;">
@@ -236,18 +296,20 @@ ${project?.name ?? "Project"} — AI Project Manager`;
                 ${actionEntries.length > 0 ? `<tr><td style="padding:2px 0;color:#6b7280;vertical-align:top;">Response Actions</td><td>${actionEntries.map((a: any) => `<span style="display:block;">${a.action} <span style="color:#6b7280;">[${a.status}]</span></span>`).join("")}</td></tr>` : ""}
               </table>
             </div>
-            <a href="${process.env.NEXTAUTH_URL || "https://projectoolbox.com"}/projects/${projectId}/risk"
+            <a href="${baseUrl}/projects/${projectId}/risk?review=REVIEW_TOKEN_PLACEHOLDER"
               style="display:inline-block;margin-top:20px;background:#dc2626;color:white;padding:10px 22px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
               View Risk Register →
             </a>
             <p style="font-size:11px;color:#9ca3af;margin:16px 0 0;border-top:1px solid #f3f4f6;padding-top:12px;">
-              Sent by ${agentName} via Projectoolbox · <a href="${process.env.NEXTAUTH_URL || "https://projectoolbox.com"}/projects/${projectId}/risk" style="color:#4f46e5;">View register</a>
+              Sent by ${agentName} via Projectoolbox · This link expires in 7 days. No account required to view.
             </p>
           </div>
         </div>`;
 
       for (const email of recipients) {
         try {
+          // Replace token placeholder with this recipient's magic link token
+          const recipientHtml = html.replace("REVIEW_TOKEN_PLACEHOLDER", reviewTokens[email] || "");
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -258,7 +320,7 @@ ${project?.name ?? "Project"} — AI Project Manager`;
               from: "Projectoolbox <notifications@projectoolbox.com>",
               to: [email],
               subject: emailSubject,
-              html,
+              html: recipientHtml,
             }),
           });
           if (emailRes.ok) emailsSent.push(email);

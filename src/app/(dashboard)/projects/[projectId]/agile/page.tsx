@@ -1,22 +1,18 @@
 "use client";
 // @ts-nocheck
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-
+import { useState, useMemo, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { useProjectTasks, useUpdateTask } from "@/hooks/use-api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  useProjectTasks, useUpdateTask, useCreateTask,
+  useProjectSprints, useCreateSprint, useUpdateSprint, useDeleteSprint,
+} from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-
-/**
- * Agile Board — Scrum / Kanban board with sprint analytics.
- * Custom drag-style columns, task cards, swimlanes, filters, detail modal.
- */
-
-
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, LineChart, Line,
@@ -40,206 +36,366 @@ interface Issue {
   priority: Priority;
   storyPoints: number;
   assignee: string;
+  assigneeName?: string;
   labels: string[];
   epic: string;
   dueDate?: string;
   blocked?: boolean;
   subtasks?: { total: number; done: number };
   description?: string;
+  sprintId?: string | null;
 }
 
-interface TeamMember {
+interface SprintData {
+  id: string;
   name: string;
-  initials: string;
-  avatar?: string;
-  capacity: number;   // SP this sprint
-  assigned: number;
+  goal?: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  _count?: { tasks: number };
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// DATA DEFAULTS — populated from API via useProjectTasks
+// CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
-
-const TEAM: TeamMember[] = [];
-
-const EPICS: { name: string; color: string }[] = [];
-
-const LABELS: { name: string; color: string }[] = [];
 
 const COLUMNS: { id: ColumnId; label: string; color: string; wipLimit?: number }[] = [
-  { id: "backlog", label: "Backlog", color: "#64748B" },
-  { id: "todo", label: "To Do", color: "#6366F1" },
+  { id: "backlog",     label: "Backlog",     color: "#64748B" },
+  { id: "todo",        label: "To Do",       color: "#6366F1" },
   { id: "in_progress", label: "In Progress", color: "#22D3EE", wipLimit: 6 },
-  { id: "in_review", label: "In Review", color: "#F59E0B" },
-  { id: "done", label: "Done", color: "#10B981" },
+  { id: "in_review",   label: "In Review",   color: "#F59E0B" },
+  { id: "done",        label: "Done",        color: "#10B981" },
 ];
 
-const SPRINTS: { id: number; name: string; goal: string; start: string; end: string; daysPassed: number }[] = [];
+const COLUMN_STATUS_MAP: Record<ColumnId, string> = {
+  backlog: "BACKLOG", todo: "TODO", in_progress: "IN_PROGRESS",
+  in_review: "IN_REVIEW", done: "DONE",
+};
+
+const STATUS_COLUMN_MAP: Record<string, ColumnId> = {
+  BACKLOG: "backlog", TODO: "todo", IN_PROGRESS: "in_progress",
+  IN_REVIEW: "in_review", DONE: "done", COMPLETED: "done",
+  in_progress: "in_progress", active: "in_progress", done: "done",
+  completed: "done", in_review: "in_review", todo: "todo", backlog: "backlog",
+};
+
+const PRIORITY_COLORS: Record<Priority, string> = {
+  critical: "#EF4444", high: "#F97316", medium: "#6366F1", low: "#64748B",
+};
+const PRIORITY_ICONS: Record<Priority, string> = {
+  critical: "🔴", high: "🟠", medium: "🔵", low: "⚪",
+};
+const ISSUE_ICONS: Record<IssueType, string> = {
+  story: "📖", bug: "🐛", task: "✅", spike: "🔬",
+};
+
+const LABEL_COLORS = ["#6366F1", "#10B981", "#22D3EE", "#EC4899", "#64748B", "#EF4444", "#F59E0B", "#8B5CF6"];
 
 // ═══════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════
-
-const PRIORITY_COLORS: Record<Priority, string> = { critical: "#EF4444", high: "#F97316", medium: "#6366F1", low: "#64748B" };
-const PRIORITY_ICONS: Record<Priority, string> = { critical: "🔴", high: "🟠", medium: "🔵", low: "⚪" };
-const ISSUE_ICONS: Record<IssueType, string> = { story: "📖", bug: "🐛", task: "✅", spike: "🔬" };
-
-function getLabelColor(name: string) {
-  return LABELS.find(l => l.name === name)?.color || "#64748B";
-}
-function getEpicColor(_name: string) {
-  return "#64748B";
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
+// MAIN COMPONENT — all hooks called unconditionally before any return
 // ═══════════════════════════════════════════════════════════════════
 
 export default function AgileBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: apiTasks, isLoading, error } = useProjectTasks(projectId);
-  const currentUserName = "";
+  const qc = useQueryClient();
 
-  if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading agile board...</div>;
-  if (error) return <div className="p-8 text-center text-muted-foreground">Failed to load: {(error as any)?.message || "Unknown error"}. <button onClick={() => window.location.reload()} className="text-primary underline ml-1">Retry</button></div>;
+  // ── Data hooks (unconditional) ────────────────────────────────────
+  const { data: apiTasks, isLoading: tasksLoading, error: tasksError } = useProjectTasks(projectId);
+  const { data: apiSprints, isLoading: sprintsLoading } = useProjectSprints(projectId);
+  const updateTask  = useUpdateTask(projectId);
+  const createTask  = useCreateTask(projectId);
+  const createSprint = useCreateSprint(projectId);
+  const updateSprint = useUpdateSprint(projectId);
+  const deleteSprint = useDeleteSprint(projectId);
 
-  const ISSUES_DATA: Issue[] = (apiTasks && apiTasks.length > 0) ? apiTasks.map((t: any, idx: number) => ({
-    id: t.id || `PTX-${100 + idx}`,
-    title: t.title || t.name || "",
-    type: (t.type === "bug" ? "bug" : t.type === "spike" ? "spike" : t.type === "task" ? "task" : "story") as IssueType,
-    column: (t.status === "done" || t.status === "completed" ? "done" : t.status === "in_review" ? "in_review" : t.status === "in_progress" || t.status === "active" ? "in_progress" : t.status === "todo" ? "todo" : "backlog") as ColumnId,
-    priority: (t.priority === "critical" ? "critical" : t.priority === "high" ? "high" : t.priority === "low" ? "low" : "medium") as Priority,
-    storyPoints: t.storyPoints ?? t.points ?? 0,
-    assignee: t.assignee || t.assigneeName || "",
-    labels: t.labels || [],
-    epic: t.epic || "",
-    dueDate: t.dueDate || t.endDate,
-    blocked: t.blocked || false,
-    subtasks: t.subtasks,
-    description: t.description,
-  })) : [];
+  // ── Board state (unconditional) ───────────────────────────────────
+  const [boardType, setBoardType]           = useState<BoardType>("scrum");
+  const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null);
+  const [swimlane, setSwimlane]             = useState<SwimlaneSetting>("none");
+  const [selectedIssue, setSelectedIssue]   = useState<Issue | null>(null);
+  const [showAnalytics, setShowAnalytics]   = useState(true);
 
-  // Derive chart data from apiTasks
-  const agileBurndown = useMemo(() => {
-    const tasks = apiTasks || [];
-    if (tasks.length === 0) return [];
-    const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
-    const remaining = total - done;
-    const days = 14;
-    return Array.from({ length: days }, (_, i) => ({
-      day: `Day ${i + 1}`,
-      ideal: Math.round(total * (1 - (i + 1) / days)),
-      actual: i < 6 ? Math.max(0, Math.round(total - done * ((i + 1) / 6))) : null,
+  // Filters
+  const [filterBlocked, setFilterBlocked]     = useState(false);
+  const [filterBugs, setFilterBugs]           = useState(false);
+  const [filterUnassigned, setFilterUnassigned] = useState(false);
+  const [filterAssignee, setFilterAssignee]   = useState<string | null>(null);
+  const [filterLabel, setFilterLabel]         = useState<string | null>(null);
+  const [searchQuery, setSearchQuery]         = useState("");
+
+  // Create issue modal state
+  const [showCreateIssue, setShowCreateIssue] = useState(false);
+  const [issueForm, setIssueForm] = useState({
+    title: "", type: "task", priority: "MEDIUM",
+    storyPoints: "", assigneeName: "", epic: "",
+    description: "", sprintId: "",
+  });
+
+  // Create sprint modal state
+  const [showCreateSprint, setShowCreateSprint] = useState(false);
+  const [editingSprint, setEditingSprint]       = useState<SprintData | null>(null);
+  const [sprintForm, setSprintForm] = useState({
+    name: "", goal: "", startDate: "", endDate: "", status: "PLANNING",
+  });
+
+  // ── Derived data ──────────────────────────────────────────────────
+
+  const sprints: SprintData[] = useMemo(() => apiSprints || [], [apiSprints]);
+
+  // Auto-select active sprint on first load
+  const activeSprint = useMemo(
+    () => sprints.find(s => s.status === "ACTIVE") || sprints[0] || null,
+    [sprints]
+  );
+  const currentSprintId = selectedSprintId ?? activeSprint?.id ?? null;
+  const currentSprint   = sprints.find(s => s.id === currentSprintId) || null;
+
+  const allIssues: Issue[] = useMemo(() => {
+    if (!apiTasks) return [];
+    return apiTasks.map((t: any, idx: number) => ({
+      id: t.id || `PTX-${100 + idx}`,
+      title: t.title || t.name || "",
+      type: (["bug","spike","task","story"].includes(t.type) ? t.type : "task") as IssueType,
+      column: (STATUS_COLUMN_MAP[t.status] || "backlog") as ColumnId,
+      priority: (["critical","high","medium","low"].includes(t.priority?.toLowerCase()) ? t.priority.toLowerCase() : "medium") as Priority,
+      storyPoints: t.storyPoints ?? 0,
+      assignee: t.assigneeName || t.assignee || "",
+      labels: Array.isArray(t.labels) ? t.labels : [],
+      epic: t.epic || "",
+      dueDate: t.dueDate || t.endDate,
+      blocked: t.blocked || false,
+      subtasks: t.subtasks,
+      description: t.description,
+      sprintId: t.sprintId || null,
     }));
   }, [apiTasks]);
 
-  const agileVelocity = useMemo(() => {
-    const tasks = apiTasks || [];
-    if (tasks.length === 0) return [];
-    const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
-    return [
-      { sprint: "S4", committed: Math.round(total * 0.8), completed: Math.round(done * 0.8) },
-      { sprint: "S5", committed: Math.round(total * 0.85), completed: Math.round(done * 0.85) },
-      { sprint: "S6", committed: Math.round(total * 0.9), completed: Math.round(done * 0.9) },
-      { sprint: "S7", committed: total, completed: done },
-    ];
-  }, [apiTasks]);
+  // For scrum mode, only show issues in the selected sprint
+  const boardIssues = useMemo(() => {
+    if (boardType === "kanban") return allIssues;
+    if (!currentSprintId) return allIssues;
+    return allIssues.filter(i => i.sprintId === currentSprintId);
+  }, [allIssues, boardType, currentSprintId]);
 
-  const mode = "dark";
-
-  // State
-  const [boardType, setBoardType] = useState<BoardType>("scrum");
-  const [selectedSprint, setSelectedSprint] = useState(0);
-  const [swimlane, setSwimlane] = useState<SwimlaneSetting>("none");
-  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
-  const [showAnalytics, setShowAnalytics] = useState(true);
-
-  // Filters
-  const [filterMyItems, setFilterMyItems] = useState(false);
-  const [filterBlocked, setFilterBlocked] = useState(false);
-  const [filterBugs, setFilterBugs] = useState(false);
-  const [filterUnassigned, setFilterUnassigned] = useState(false);
-  const [filterAssignee, setFilterAssignee] = useState<string | null>(null);
-  const [filterLabel, setFilterLabel] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Filtered issues
   const filteredIssues = useMemo(() => {
-    let result = [...ISSUES_DATA];
-    if (filterMyItems && currentUserName) result = result.filter(i => i.assignee === currentUserName);
-    if (filterBlocked) result = result.filter(i => i.blocked);
-    if (filterBugs) result = result.filter(i => i.type === "bug");
+    let result = [...boardIssues];
+    if (filterBlocked)    result = result.filter(i => i.blocked);
+    if (filterBugs)       result = result.filter(i => i.type === "bug");
     if (filterUnassigned) result = result.filter(i => !i.assignee);
-    if (filterAssignee) result = result.filter(i => i.assignee === filterAssignee);
-    if (filterLabel) result = result.filter(i => i.labels.includes(filterLabel));
+    if (filterAssignee)   result = result.filter(i => i.assignee === filterAssignee);
+    if (filterLabel)      result = result.filter(i => i.labels.includes(filterLabel));
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(i => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q));
     }
     return result;
-  }, [ISSUES_DATA, filterMyItems, filterBlocked, filterBugs, filterUnassigned, filterAssignee, filterLabel, searchQuery]);
+  }, [boardIssues, filterBlocked, filterBugs, filterUnassigned, filterAssignee, filterLabel, searchQuery]);
 
-  const hasActiveFilters = filterMyItems || filterBlocked || filterBugs || filterUnassigned || filterAssignee || filterLabel || searchQuery;
-
-  const sprint = SPRINTS.find(s => s.id === selectedSprint) || { id: 0, name: "No Sprint", goal: "", start: "", end: "", daysPassed: 0 };
-  const daysRemaining = 14 - sprint.daysPassed;
-  const completedSP = ISSUES_DATA.filter(i => i.column === "done").reduce((s, i) => s + i.storyPoints, 0);
-  const committedSP = ISSUES_DATA.reduce((s, i) => s + i.storyPoints, 0);
-  const lastSprintVelocity = 0;
-
-  // Derive team members from current issues
   const derivedTeam = useMemo(() => {
-    if (ISSUES_DATA.length === 0) return TEAM;
     const map = new Map<string, number>();
-    for (const issue of ISSUES_DATA) {
-      if (issue.assignee) {
-        map.set(issue.assignee, (map.get(issue.assignee) || 0) + issue.storyPoints);
-      }
+    for (const issue of boardIssues) {
+      if (issue.assignee) map.set(issue.assignee, (map.get(issue.assignee) || 0) + issue.storyPoints);
     }
     return Array.from(map.entries()).map(([name, assigned]) => ({
       name,
-      initials: name.split(" ").map(w => w[0] || "").join("").toUpperCase().slice(0, 2),
+      initials: name.split(" ").map((w: string) => w[0] || "").join("").toUpperCase().slice(0, 2),
       capacity: assigned,
       assigned,
     }));
-  }, [ISSUES_DATA]);
+  }, [boardIssues]);
 
-  // Derive labels from current issues
   const derivedLabels = useMemo(() => {
-    if (ISSUES_DATA.length === 0) return LABELS;
-    const LABEL_COLORS = ["#6366F1", "#10B981", "#22D3EE", "#EC4899", "#64748B", "#EF4444", "#F59E0B", "#8B5CF6"];
     const set = new Set<string>();
-    for (const issue of ISSUES_DATA) {
-      for (const l of issue.labels) set.add(l);
-    }
+    for (const issue of allIssues) for (const l of issue.labels) set.add(l);
     return Array.from(set).map((name, i) => ({ name, color: LABEL_COLORS[i % LABEL_COLORS.length] }));
-  }, [ISSUES_DATA]);
+  }, [allIssues]);
+
+  function getLabelColor(name: string) {
+    return derivedLabels.find(l => l.name === name)?.color || "#64748B";
+  }
+
+  const completedSP = boardIssues.filter(i => i.column === "done").reduce((s, i) => s + i.storyPoints, 0);
+  const committedSP = boardIssues.reduce((s, i) => s + i.storyPoints, 0);
+
+  const daysRemaining = useMemo(() => {
+    if (!currentSprint) return 0;
+    const end = new Date(currentSprint.endDate);
+    const now = new Date();
+    return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / 86400000));
+  }, [currentSprint]);
+
+  const agileBurndown = useMemo(() => {
+    if (boardIssues.length === 0) return [];
+    const total = boardIssues.length;
+    const done  = boardIssues.filter(i => i.column === "done").length;
+    return Array.from({ length: 14 }, (_, i) => ({
+      day: `D${i + 1}`,
+      ideal: Math.round(total * (1 - (i + 1) / 14)),
+      actual: i < 6 ? Math.max(0, Math.round(total - done * ((i + 1) / 6))) : null,
+    }));
+  }, [boardIssues]);
+
+  const agileVelocity = useMemo(() => {
+    const completed = sprints
+      .filter(s => s.status === "COMPLETED")
+      .slice(-4)
+      .map((s, i) => ({
+        sprint: s.name,
+        committed: 0,
+        completed: 0,
+      }));
+    // Fill with current sprint data as last entry
+    return [...completed, { sprint: currentSprint?.name || "Current", committed: committedSP, completed: completedSP }];
+  }, [sprints, currentSprint, committedSP, completedSP]);
+
+  const hasActiveFilters = filterBlocked || filterBugs || filterUnassigned || filterAssignee || filterLabel || searchQuery;
+
+  // ── Handlers ─────────────────────────────────────────────────────
+
+  const handleStatusChange = useCallback((newCol: ColumnId) => {
+    setSelectedIssue(prev => prev ? { ...prev, column: newCol } : null);
+  }, []);
+
+  function openCreateSprint(existing?: SprintData) {
+    if (existing) {
+      setEditingSprint(existing);
+      setSprintForm({
+        name: existing.name,
+        goal: existing.goal || "",
+        startDate: existing.startDate.slice(0, 10),
+        endDate: existing.endDate.slice(0, 10),
+        status: existing.status,
+      });
+    } else {
+      setEditingSprint(null);
+      setSprintForm({ name: `Sprint ${sprints.length + 1}`, goal: "", startDate: "", endDate: "", status: "PLANNING" });
+    }
+    setShowCreateSprint(true);
+  }
+
+  async function saveSprint() {
+    if (!sprintForm.name || !sprintForm.startDate || !sprintForm.endDate) {
+      toast.error("Name, start date and end date are required");
+      return;
+    }
+    try {
+      if (editingSprint) {
+        await updateSprint.mutateAsync({ sprintId: editingSprint.id, ...sprintForm });
+        toast.success("Sprint updated");
+      } else {
+        const result = await createSprint.mutateAsync(sprintForm) as any;
+        setSelectedSprintId(result?.data?.id || null);
+        toast.success("Sprint created");
+      }
+      setShowCreateSprint(false);
+    } catch {
+      toast.error("Failed to save sprint");
+    }
+  }
+
+  async function handleDeleteSprint(sprintId: string) {
+    if (!confirm("Delete this sprint? Tasks will be moved back to backlog.")) return;
+    try {
+      await deleteSprint.mutateAsync(sprintId);
+      if (currentSprintId === sprintId) setSelectedSprintId(null);
+      toast.success("Sprint deleted");
+    } catch {
+      toast.error("Failed to delete sprint");
+    }
+  }
+
+  async function handleStartSprint(sprintId: string) {
+    // Set any ACTIVE sprint to COMPLETED first
+    const active = sprints.find(s => s.status === "ACTIVE");
+    if (active && active.id !== sprintId) {
+      await updateSprint.mutateAsync({ sprintId: active.id, status: "COMPLETED" });
+    }
+    await updateSprint.mutateAsync({ sprintId, status: "ACTIVE" });
+    setSelectedSprintId(sprintId);
+    toast.success("Sprint started");
+  }
+
+  async function handleCompleteSprint(sprintId: string) {
+    await updateSprint.mutateAsync({ sprintId, status: "COMPLETED" });
+    toast.success("Sprint completed");
+  }
+
+  async function saveIssue() {
+    if (!issueForm.title.trim()) { toast.error("Title required"); return; }
+    try {
+      await createTask.mutateAsync({
+        title: issueForm.title.trim(),
+        type: issueForm.type,
+        priority: issueForm.priority,
+        storyPoints: issueForm.storyPoints ? Number(issueForm.storyPoints) : null,
+        assigneeName: issueForm.assigneeName.trim() || null,
+        epic: issueForm.epic.trim() || null,
+        description: issueForm.description.trim() || null,
+        sprintId: issueForm.sprintId || currentSprintId || null,
+        status: issueForm.sprintId || currentSprintId ? "TODO" : "BACKLOG",
+      });
+      toast.success("Issue created");
+      setShowCreateIssue(false);
+      setIssueForm({ title: "", type: "task", priority: "MEDIUM", storyPoints: "", assigneeName: "", epic: "", description: "", sprintId: "" });
+    } catch {
+      toast.error("Failed to create issue");
+    }
+  }
+
+  // ── Loading / error guards (AFTER all hooks) ──────────────────────
+
+  const isLoading = tasksLoading || sprintsLoading;
+  if (isLoading) {
+    return (
+      <div className="space-y-4 max-w-[1800px]">
+        <div className="h-10 w-48 rounded-lg bg-muted animate-pulse" />
+        <div className="h-24 rounded-xl bg-muted animate-pulse" />
+        <div className="flex gap-3">
+          {[1,2,3,4,5].map(i => <div key={i} className="flex-1 h-64 rounded-xl bg-muted animate-pulse" />)}
+        </div>
+      </div>
+    );
+  }
+  if (tasksError) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Failed to load board: {(tasksError as any)?.message || "Unknown error"}.{" "}
+        <button onClick={() => qc.invalidateQueries({ queryKey: ["tasks", projectId] })} className="text-primary underline ml-1">Retry</button>
+      </div>
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4 max-w-[1800px]">
-      {/* ═══ HEADER ═══ */}
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-4">
-          <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Agile Board</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Agile Board</h1>
           {/* Board type toggle */}
-          <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid ${"var(--border)"}` }}>
+          <div className="flex rounded-lg overflow-hidden border border-border">
             {(["scrum", "kanban"] as BoardType[]).map(bt => (
-              <button key={bt} className="px-3 py-1.5 text-[12px] font-semibold capitalize transition-colors"
-                onClick={() => setBoardType(bt)}
-                style={{ background: boardType === bt ? "var(--primary)" : "transparent", color: boardType === bt ? "#FFF" : "var(--muted-foreground)" }}>
+              <button key={bt}
+                className={`px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${boardType === bt ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                onClick={() => setBoardType(bt)}>
                 {bt === "scrum" ? "🏃 Scrum" : "📋 Kanban"}
               </button>
             ))}
           </div>
-          {/* Sprint selector (scrum only) */}
+          {/* Sprint selector */}
           {boardType === "scrum" && (
-            <select className="px-3 py-1.5 rounded-[8px] text-[12px] font-semibold"
-              value={selectedSprint} onChange={e => setSelectedSprint(Number(e.target.value))}
-              style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
-              {SPRINTS.map(s => (
-                <option key={s.id} value={s.id}>{s.name} — {s.start.slice(5)} to {s.end.slice(5)}</option>
+            <select
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card text-foreground"
+              value={currentSprintId || ""}
+              onChange={e => setSelectedSprintId(e.target.value || null)}>
+              <option value="">All issues (no sprint filter)</option>
+              {sprints.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name} · {new Date(s.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – {new Date(s.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} [{s.status}]
+                </option>
               ))}
             </select>
           )}
@@ -248,116 +404,142 @@ export default function AgileBoardPage() {
           <Button variant="ghost" size="sm" onClick={() => setShowAnalytics(!showAnalytics)}>
             {showAnalytics ? "Hide" : "Show"} Analytics
           </Button>
-          <Button variant="default" size="sm" onClick={() => { const t = prompt("Issue title:"); if (!t) return; fetch(`/api/projects/${window.location.pathname.split("/")[2]}/tasks`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ title: t, status: "TODO", priority: "MEDIUM" }) }).then(() => { toast.success("Issue created"); window.location.reload(); }).catch(() => toast.error("Failed")); }}>+ Create Issue</Button>
+          {boardType === "scrum" && (
+            <Button variant="outline" size="sm" onClick={() => openCreateSprint()}>
+              + New Sprint
+            </Button>
+          )}
+          {boardType === "scrum" && currentSprint && currentSprint.status === "PLANNING" && (
+            <Button variant="outline" size="sm" className="text-green-600 border-green-500/40 hover:bg-green-500/10"
+              onClick={() => handleStartSprint(currentSprint.id)}>
+              ▶ Start Sprint
+            </Button>
+          )}
+          {boardType === "scrum" && currentSprint && currentSprint.status === "ACTIVE" && (
+            <Button variant="outline" size="sm" className="text-amber-600 border-amber-500/40 hover:bg-amber-500/10"
+              onClick={() => handleCompleteSprint(currentSprint.id)}>
+              ✓ Complete Sprint
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setShowCreateIssue(true)}>+ Create Issue</Button>
         </div>
       </div>
 
-      {/* ═══ SPRINT INFO BAR ═══ */}
-      {boardType === "scrum" && (
-        <Card>
-          <div className="flex items-center gap-6 flex-wrap">
-            {/* Sprint info */}
-            <div className="flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>{sprint.name}</span>
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              </div>
-              <p className="text-[11px] mt-0.5 max-w-[200px] truncate" style={{ color: "var(--muted-foreground)" }}>{sprint.goal}</p>
-            </div>
-
-            {/* Days remaining */}
-            <div className="text-center px-3" style={{ borderLeft: `1px solid ${"var(--border)"}`, borderRight: `1px solid ${"var(--border)"}` }}>
-              <span className="text-[20px] font-bold" style={{ color: daysRemaining <= 3 ? "#EF4444" : "var(--primary)" }}>{daysRemaining}</span>
-              <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>days left</p>
-            </div>
-
-            {/* Story points */}
-            <div className="flex-1 min-w-[160px] max-w-[240px]">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-medium" style={{ color: "var(--muted-foreground)" }}>Story Points</span>
-                <span className="text-[12px] font-bold" style={{ color: "var(--primary)" }}>{completedSP}/{committedSP} SP</span>
-              </div>
-              <Progress value={committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0} className="h-1.5" />
-            </div>
-
-            {/* Velocity vs last sprint */}
-            <div className="text-center">
-              <div className="flex items-center gap-1">
-                <span className="text-[14px] font-bold" style={{ color: completedSP >= lastSprintVelocity * 0.8 ? "#10B981" : "#F59E0B" }}>
-                  {completedSP > lastSprintVelocity ? "↑" : completedSP < lastSprintVelocity * 0.8 ? "↓" : "→"}
-                </span>
-                <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>Last: {lastSprintVelocity} SP</span>
-              </div>
-              <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>Velocity</p>
-            </div>
-
-            {/* Team capacity */}
-            <div className="min-w-[120px]">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Capacity</span>
-                <span className="text-[11px] font-semibold" style={{ color: "var(--foreground)" }}>
-                  {derivedTeam.reduce((s, t) => s + t.assigned, 0)}/{derivedTeam.reduce((s, t) => s + t.capacity, 0)} SP
-                </span>
-              </div>
-              <Progress value={derivedTeam.reduce((s, t) => s + t.capacity, 0) > 0 ? Math.round((derivedTeam.reduce((s, t) => s + t.assigned, 0) / derivedTeam.reduce((s, t) => s + t.capacity, 0)) * 100) : 0} className="h-1.5" />
-            </div>
-
-            {/* Mini burndown sparkline */}
-            <div className="w-[100px] h-[36px] flex-shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={agileBurndown.filter(d => d.actual != null).map((d, i) => ({ d: i, v: d.actual }))}>
-                  <Line type="monotone" dataKey="v" stroke={"var(--primary)"} strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+      {/* ── Sprints List (when no sprint selected, scrum mode) ── */}
+      {boardType === "scrum" && sprints.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="py-10 text-center">
+            <p className="text-2xl mb-2">🏃</p>
+            <p className="text-sm font-semibold mb-1">No sprints yet</p>
+            <p className="text-xs text-muted-foreground mb-4">Create your first sprint to plan and track work in time-boxed iterations.</p>
+            <Button size="sm" onClick={() => openCreateSprint()}>+ Create First Sprint</Button>
+          </CardContent>
         </Card>
       )}
 
-      {/* ═══ FILTER BAR ═══ */}
+      {/* ── Sprint Info Bar ── */}
+      {boardType === "scrum" && currentSprint && (
+        <div className="rounded-xl border border-border bg-card px-4 py-3 flex items-center gap-6 flex-wrap">
+          <div className="flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">{currentSprint.name}</span>
+              {currentSprint.status === "ACTIVE" && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
+              <Badge variant={currentSprint.status === "ACTIVE" ? "default" : currentSprint.status === "COMPLETED" ? "secondary" : "outline"} className="text-[9px]">
+                {currentSprint.status}
+              </Badge>
+            </div>
+            {currentSprint.goal && (
+              <p className="text-[11px] mt-0.5 max-w-[220px] truncate text-muted-foreground">{currentSprint.goal}</p>
+            )}
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {new Date(currentSprint.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} –{" "}
+              {new Date(currentSprint.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            </p>
+          </div>
+
+          <div className="text-center px-4 border-x border-border">
+            <span className={`text-xl font-bold ${daysRemaining <= 3 ? "text-destructive" : "text-primary"}`}>{daysRemaining}</span>
+            <p className="text-[10px] text-muted-foreground">days left</p>
+          </div>
+
+          <div className="flex-1 min-w-[160px] max-w-[220px]">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] text-muted-foreground">Story Points</span>
+              <span className="text-xs font-bold text-primary">{completedSP}/{committedSP} SP</span>
+            </div>
+            <Progress value={committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0} className="h-1.5" />
+          </div>
+
+          <div className="text-center">
+            <span className="text-sm font-bold">{committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0}%</span>
+            <p className="text-[10px] text-muted-foreground">Complete</p>
+          </div>
+
+          <div className="min-w-[120px]">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] text-muted-foreground">Team</span>
+              <span className="text-[11px] font-semibold">{derivedTeam.length} members</span>
+            </div>
+            <Progress value={100} className="h-1.5" />
+          </div>
+
+          {/* Mini burndown sparkline */}
+          <div className="w-[90px] h-[36px] flex-shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={agileBurndown.filter(d => d.actual != null).map((d, i) => ({ d: i, v: d.actual }))}>
+                <Line type="monotone" dataKey="v" stroke="var(--primary)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Sprint actions */}
+          <div className="flex gap-1 ml-auto">
+            <button onClick={() => openCreateSprint(currentSprint)}
+              className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors">
+              ✏️ Edit
+            </button>
+            <button onClick={() => handleDeleteSprint(currentSprint.id)}
+              className="text-[10px] text-muted-foreground hover:text-destructive px-2 py-1 rounded hover:bg-destructive/10 transition-colors">
+              🗑 Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Filter Bar ── */}
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Quick filters */}
-        <FilterChip label="My Items" active={filterMyItems} onClick={() => setFilterMyItems(!filterMyItems)} />
         <FilterChip label="Blocked" active={filterBlocked} onClick={() => setFilterBlocked(!filterBlocked)} icon="🚫" />
         <FilterChip label="Bugs" active={filterBugs} onClick={() => setFilterBugs(!filterBugs)} icon="🐛" />
         <FilterChip label="Unassigned" active={filterUnassigned} onClick={() => setFilterUnassigned(!filterUnassigned)} />
 
-        <div className="w-px h-5" style={{ background: "var(--border)" }} />
+        <div className="w-px h-5 bg-border" />
 
         {/* Assignee pills */}
         {derivedTeam.map(m => (
-          <button key={m.name} className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-all"
-            onClick={() => setFilterAssignee(filterAssignee === m.name ? null : m.name)}
-            style={{
-              background: filterAssignee === m.name ? `${"var(--primary)"}22` : "transparent",
-              border: `1px solid ${filterAssignee === m.name ? "var(--primary)" : "var(--border)"}44`,
-              color: filterAssignee === m.name ? "var(--primary)" : "var(--muted-foreground)",
-            }}>
-            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
+          <button key={m.name}
+            className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-all border ${filterAssignee === m.name ? "bg-primary/10 border-primary text-primary" : "border-border/40 text-muted-foreground"}`}
+            onClick={() => setFilterAssignee(filterAssignee === m.name ? null : m.name)}>
+            <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-[8px] font-bold text-white">
+              {m.initials}
+            </div>
             <span className="hidden sm:inline">{m.name.split(" ")[0]}</span>
           </button>
         ))}
 
-        <div className="w-px h-5" style={{ background: "var(--border)" }} />
+        <div className="w-px h-5 bg-border" />
 
-        {/* Label dropdown */}
-        <select className="px-2 py-1 rounded-[6px] text-[11px]"
-          value={filterLabel || ""} onChange={e => setFilterLabel(e.target.value || null)}
-          style={{ background: "var(--card)", color: "var(--muted-foreground)", border: `1px solid ${"var(--border)"}` }}>
+        <select className="px-2 py-1 rounded-md text-[11px] border border-border bg-card text-muted-foreground"
+          value={filterLabel || ""} onChange={e => setFilterLabel(e.target.value || null)}>
           <option value="">All Labels</option>
           {derivedLabels.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
         </select>
 
-        {/* Search */}
-        <input className="px-3 py-1 rounded-[8px] text-[12px] w-[160px]"
-          placeholder="Search issues..."
-          value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-          style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
+        <input className="px-3 py-1 rounded-lg text-xs w-40 border border-border bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+          placeholder="Search issues…"
+          value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
 
-        {/* Swimlane toggle */}
-        <select className="px-2 py-1 rounded-[6px] text-[11px] ml-auto"
-          value={swimlane} onChange={e => setSwimlane(e.target.value as SwimlaneSetting)}
-          style={{ background: "var(--card)", color: "var(--muted-foreground)", border: `1px solid ${"var(--border)"}` }}>
+        <select className="px-2 py-1 rounded-md text-[11px] ml-auto border border-border bg-card text-muted-foreground"
+          value={swimlane} onChange={e => setSwimlane(e.target.value as SwimlaneSetting)}>
           <option value="none">No Swimlanes</option>
           <option value="epic">By Epic</option>
           <option value="assignee">By Assignee</option>
@@ -366,114 +548,107 @@ export default function AgileBoardPage() {
         </select>
 
         {hasActiveFilters && (
-          <button className="text-[11px] font-semibold px-2 py-1 rounded-[6px]"
-            style={{ color: "#EF4444", background: `${"#EF4444"}11` }}
-            onClick={() => { setFilterMyItems(false); setFilterBlocked(false); setFilterBugs(false); setFilterUnassigned(false); setFilterAssignee(null); setFilterLabel(null); setSearchQuery(""); }}>
+          <button className="text-[11px] font-semibold px-2 py-1 rounded text-destructive bg-destructive/10"
+            onClick={() => { setFilterBlocked(false); setFilterBugs(false); setFilterUnassigned(false); setFilterAssignee(null); setFilterLabel(null); setSearchQuery(""); }}>
             Clear Filters
           </button>
         )}
       </div>
 
-      {/* ═══ MAIN CONTENT: Board + Analytics Sidebar ═══ */}
+      {/* ── Board + Analytics ── */}
       <div className="flex gap-4">
-        {/* Board */}
         <div className="flex-1 overflow-x-auto">
-          {swimlane === "none" ? (
-            <BoardColumns columns={COLUMNS} issues={filteredIssues} onCardClick={setSelectedIssue} />
-          ) : (
-            <SwimlanedBoard swimlane={swimlane} columns={COLUMNS} issues={filteredIssues} onCardClick={setSelectedIssue} />
-          )}
+          {swimlane === "none"
+            ? <BoardColumns columns={COLUMNS} issues={filteredIssues} onCardClick={setSelectedIssue} getLabelColor={getLabelColor} />
+            : <SwimlanedBoard swimlane={swimlane} columns={COLUMNS} issues={filteredIssues} onCardClick={setSelectedIssue} getLabelColor={getLabelColor} />
+          }
         </div>
 
         {/* Analytics sidebar */}
         {showAnalytics && boardType === "scrum" && (
-          <div className="w-[260px] flex-shrink-0 space-y-3">
-            {/* Burndown */}
-            <Card>
-              <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Sprint Burndown</h3>
-              <div style={{ height: 130 }}>
+          <div className="w-[250px] flex-shrink-0 space-y-3">
+            <Card className="p-3">
+              <h3 className="text-xs font-semibold mb-2">Sprint Burndown</h3>
+              <div style={{ height: 120 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={agileBurndown}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}44`} />
-                    <XAxis dataKey="day" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
-                    <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
-                    <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+                    <XAxis dataKey="day" tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
+                    <YAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
+                    <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }} />
                     <Area type="monotone" dataKey="ideal" stroke="#64748B" strokeDasharray="4 4" fill="none" />
-                    <Area type="monotone" dataKey="actual" stroke={"var(--primary)"} fill={`${"var(--primary)"}22`} connectNulls={false} />
+                    <Area type="monotone" dataKey="actual" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} connectNulls={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </Card>
 
-            {/* Velocity */}
-            <Card>
-              <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Velocity (Last 5)</h3>
-              <div style={{ height: 110 }}>
+            <Card className="p-3">
+              <h3 className="text-xs font-semibold mb-2">Velocity</h3>
+              <div style={{ height: 100 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={agileVelocity} barGap={2}>
-                    <XAxis dataKey="sprint" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
-                    <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} />
-                    <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
-                    <Bar dataKey="committed" fill={`${"var(--primary)"}44`} radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="completed" fill={"var(--primary)"} radius={[3, 3, 0, 0]} />
+                    <XAxis dataKey="sprint" tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
+                    <YAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
+                    <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }} />
+                    <Bar dataKey="committed" fill="var(--primary)" fillOpacity={0.3} radius={[3,3,0,0]} />
+                    <Bar dataKey="completed" fill="var(--primary)" radius={[3,3,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </Card>
 
-            {/* Sprint Health */}
-            <Card>
-              <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Sprint Health</h3>
-              <div className="space-y-2">
-                <HealthRow label="Blocked Items" value={`${ISSUES_DATA.filter(i => i.blocked).length} blocked`} color={ISSUES_DATA.some(i => i.blocked) ? "#EF4444" : "#10B981"} />
-                <HealthRow label="Review Bottleneck" value={`${ISSUES_DATA.filter(i => i.column === "in_review").length} items queued`} color={ISSUES_DATA.filter(i => i.column === "in_review").length > 3 ? "#F97316" : "#10B981"} />
-                <HealthRow label="Bug Ratio" value={ISSUES_DATA.length > 0 ? `${ISSUES_DATA.filter(i => i.type === "bug").length}/${ISSUES_DATA.length} (${((ISSUES_DATA.filter(i => i.type === "bug").length / ISSUES_DATA.length) * 100).toFixed(1)}%)` : "0/0"} color="#10B981" />
-              </div>
+            <Card className="p-3 space-y-2">
+              <h3 className="text-xs font-semibold">Sprint Health</h3>
+              <HealthRow label="Blocked" value={`${filteredIssues.filter(i => i.blocked).length}`} color={filteredIssues.some(i => i.blocked) ? "#EF4444" : "#10B981"} />
+              <HealthRow label="In Review" value={`${filteredIssues.filter(i => i.column === "in_review").length}`} color={filteredIssues.filter(i => i.column === "in_review").length > 3 ? "#F97316" : "#10B981"} />
+              <HealthRow label="Bugs" value={`${filteredIssues.filter(i => i.type === "bug").length}/${filteredIssues.length}`} color="#10B981" />
+              <HealthRow label="Done" value={`${Math.round(committedSP > 0 ? (completedSP / committedSP) * 100 : 0)}%`} color="#6366F1" />
             </Card>
 
-            {/* Team Workload */}
-            <Card>
-              <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Team Workload</h3>
-              <div className="space-y-2">
-                {derivedTeam.map(m => {
-                  const pct = m.capacity > 0 ? Math.round((m.assigned / m.capacity) * 100) : 0;
-                  const overloaded = pct > 90;
+            <Card className="p-3 space-y-2">
+              <h3 className="text-xs font-semibold">Team Workload</h3>
+              {derivedTeam.length === 0
+                ? <p className="text-[11px] text-muted-foreground">No assignees yet</p>
+                : derivedTeam.map(m => {
+                  const pct = m.capacity > 0 ? Math.round((m.assigned / m.capacity) * 100) : 100;
                   return (
                     <div key={m.name}>
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[11px] font-medium" style={{ color: "var(--muted-foreground)" }}>{m.name.split(" ")[0]}</span>
-                        <span className="text-[10px] font-semibold" style={{ color: overloaded ? "#EF4444" : "var(--muted-foreground)" }}>{m.assigned}/{m.capacity} SP</span>
+                        <span className="text-[11px] font-medium text-muted-foreground">{m.name.split(" ")[0]}</span>
+                        <span className="text-[10px] font-semibold" style={{ color: pct > 90 ? "#EF4444" : "var(--muted-foreground)" }}>{m.assigned} SP</span>
                       </div>
-                      <div className="w-full h-[6px] rounded-full overflow-hidden" style={{ background: `${"var(--border)"}33` }}>
-                        <div className="h-full rounded-full transition-all" style={{
-                          width: `${Math.min(pct, 100)}%`,
-                          background: overloaded ? "#EF4444" : pct > 75 ? "#F59E0B" : "var(--primary)",
-                        }} />
+                      <div className="w-full h-1.5 rounded-full bg-border/30 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: pct > 90 ? "#EF4444" : pct > 75 ? "#F59E0B" : "var(--primary)" }} />
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                })
+              }
             </Card>
 
-            {/* AI Insights */}
-            <Card>
-              <h3 className="text-[13px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>AI Insights</h3>
+            <Card className="p-3 space-y-2">
+              <h3 className="text-xs font-semibold">AI Insights</h3>
               <div className="space-y-2 text-[11px]">
-                {ISSUES_DATA.length > 0 ? (
+                {boardIssues.length > 0 ? (
                   <>
-                    <InsightBox color="#F59E0B">
-                      <strong>Progress:</strong> {completedSP}/{committedSP} SP completed ({committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0}%). {committedSP - completedSP} SP remaining.
+                    <InsightBox color="#6366F1">
+                      <strong>Progress:</strong> {completedSP}/{committedSP} SP ({committedSP > 0 ? Math.round((completedSP / committedSP) * 100) : 0}%). {committedSP - completedSP} SP remaining.
                     </InsightBox>
-                    {ISSUES_DATA.some(i => i.blocked) && (
+                    {boardIssues.some(i => i.blocked) && (
                       <InsightBox color="#EF4444">
-                        <strong>Blocked:</strong> {ISSUES_DATA.filter(i => i.blocked).length} item(s) blocked. Review and resolve blockers to maintain velocity.
+                        <strong>Blocked:</strong> {boardIssues.filter(i => i.blocked).length} item(s) need attention.
+                      </InsightBox>
+                    )}
+                    {daysRemaining <= 3 && daysRemaining > 0 && (
+                      <InsightBox color="#F97316">
+                        <strong>Sprint ending:</strong> {daysRemaining} day(s) left. {committedSP - completedSP} SP incomplete.
                       </InsightBox>
                     )}
                   </>
                 ) : (
                   <InsightBox color="#64748B">
-                    <strong>No data yet.</strong> Create issues to see AI-powered sprint insights here.
+                    <strong>No issues in this sprint.</strong> Create issues or assign backlog items to this sprint.
                   </InsightBox>
                 )}
               </div>
@@ -482,61 +657,203 @@ export default function AgileBoardPage() {
         )}
       </div>
 
-      {/* ═══ TASK DETAIL MODAL ═══ */}
+      {/* ── Task Detail Modal ── */}
       {selectedIssue && (
-        <TaskDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} sprintName={sprint.name} projectId={projectId} onStatusChange={(newCol) => setSelectedIssue(prev => prev ? { ...prev, column: newCol } : null)} />
+        <TaskDetailModal
+          issue={selectedIssue}
+          onClose={() => setSelectedIssue(null)}
+          sprintName={currentSprint?.name}
+          projectId={projectId}
+          sprints={sprints}
+          currentSprintId={currentSprintId}
+          onStatusChange={handleStatusChange}
+          updateTask={updateTask}
+          getLabelColor={getLabelColor}
+        />
+      )}
+
+      {/* ── Create/Edit Sprint Modal ── */}
+      {showCreateSprint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateSprint(false)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-md rounded-xl bg-card border border-border shadow-2xl p-6 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-bold">{editingSprint ? "Edit Sprint" : "New Sprint"}</h2>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Sprint Name *</label>
+                <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={sprintForm.name} onChange={e => setSprintForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Sprint 1" />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Sprint Goal</label>
+                <textarea rows={2} className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                  value={sprintForm.goal} onChange={e => setSprintForm(f => ({ ...f, goal: e.target.value }))} placeholder="What do you want to achieve this sprint?" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Start Date *</label>
+                  <input type="date" className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    value={sprintForm.startDate} onChange={e => setSprintForm(f => ({ ...f, startDate: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">End Date *</label>
+                  <input type="date" className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    value={sprintForm.endDate} onChange={e => setSprintForm(f => ({ ...f, endDate: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Status</label>
+                <select className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={sprintForm.status} onChange={e => setSprintForm(f => ({ ...f, status: e.target.value }))}>
+                  <option value="PLANNING">Planning</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button className="flex-1" onClick={saveSprint} disabled={createSprint.isPending || updateSprint.isPending}>
+                {(createSprint.isPending || updateSprint.isPending) ? "Saving…" : editingSprint ? "Update Sprint" : "Create Sprint"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreateSprint(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create Issue Modal ── */}
+      {showCreateIssue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateIssue(false)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-lg rounded-xl bg-card border border-border shadow-2xl p-6 space-y-4"
+            onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-bold">Create Issue</h2>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Title *</label>
+                <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={issueForm.title} onChange={e => setIssueForm(f => ({ ...f, title: e.target.value }))} placeholder="What needs to be done?" autoFocus />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Type</label>
+                  <select className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.type} onChange={e => setIssueForm(f => ({ ...f, type: e.target.value }))}>
+                    <option value="task">✅ Task</option>
+                    <option value="story">📖 Story</option>
+                    <option value="bug">🐛 Bug</option>
+                    <option value="spike">🔬 Spike</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Priority</label>
+                  <select className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.priority} onChange={e => setIssueForm(f => ({ ...f, priority: e.target.value }))}>
+                    <option value="CRITICAL">🔴 Critical</option>
+                    <option value="HIGH">🟠 High</option>
+                    <option value="MEDIUM">🔵 Medium</option>
+                    <option value="LOW">⚪ Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Story Points</label>
+                  <input type="number" min={0} max={100}
+                    className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.storyPoints} onChange={e => setIssueForm(f => ({ ...f, storyPoints: e.target.value }))} placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Assignee</label>
+                  <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.assigneeName} onChange={e => setIssueForm(f => ({ ...f, assigneeName: e.target.value }))} placeholder="Name" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Epic</label>
+                  <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.epic} onChange={e => setIssueForm(f => ({ ...f, epic: e.target.value }))} placeholder="Epic name" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Sprint</label>
+                  <select className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.sprintId || currentSprintId || ""}
+                    onChange={e => setIssueForm(f => ({ ...f, sprintId: e.target.value }))}>
+                    <option value="">Backlog (no sprint)</option>
+                    {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Description</label>
+                <textarea rows={3} className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={issueForm.description} onChange={e => setIssueForm(f => ({ ...f, description: e.target.value }))} placeholder="Acceptance criteria, context, technical notes…" />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button className="flex-1" onClick={saveIssue} disabled={createTask.isPending}>
+                {createTask.isPending ? "Creating…" : "Create Issue"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowCreateIssue(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// BOARD COLUMNS (no swimlanes)
+// BOARD COLUMNS
 // ═══════════════════════════════════════════════════════════════════
 
-function BoardColumns({ columns, issues, onCardClick }: {
-  columns: typeof COLUMNS; issues: Issue[]; onCardClick: (i: Issue) => void;
+function BoardColumns({ columns, issues, onCardClick, getLabelColor }: {
+  columns: typeof COLUMNS; issues: Issue[]; onCardClick: (i: Issue) => void; getLabelColor: (l: string) => string;
 }) {
   return (
     <div className="flex gap-3" style={{ minHeight: 500 }}>
       {columns.map(col => {
         const colIssues = issues.filter(i => i.column === col.id);
-        const totalSP = colIssues.reduce((s, i) => s + i.storyPoints, 0);
-        const atLimit = col.wipLimit && colIssues.length >= col.wipLimit;
+        const totalSP   = colIssues.reduce((s, i) => s + i.storyPoints, 0);
         const overLimit = col.wipLimit && colIssues.length > col.wipLimit;
-
+        const atLimit   = col.wipLimit && colIssues.length >= col.wipLimit;
         return (
-          <div key={col.id} className="flex-1 min-w-[220px] max-w-[300px] flex flex-col rounded-[12px]"
-            style={{ background: true ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
-            {/* Column header */}
+          <div key={col.id} className="flex-1 min-w-[200px] max-w-[280px] flex flex-col rounded-xl bg-muted/20">
             <div className="flex items-center justify-between px-3 py-2">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
-                <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{col.label}</span>
-                <span className="text-[11px] px-1.5 py-0.5 rounded-[4px] font-semibold"
+                <span className="text-xs font-semibold">{col.label}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                   style={{ background: `${col.color}22`, color: col.color }}>{colIssues.length}</span>
                 {col.wipLimit && (
-                  <span className="text-[9px] px-1 py-0.5 rounded-[3px] font-bold"
-                    style={{
-                      background: overLimit ? "rgba(239,68,68,0.15)" : atLimit ? "rgba(245,158,11,0.15)" : "transparent",
-                      color: overLimit ? "#EF4444" : atLimit ? "#F59E0B" : "var(--muted-foreground)",
-                      border: `1px solid ${overLimit ? "#EF444433" : atLimit ? "#F59E0B33" : "transparent"}`,
-                    }}>
+                  <span className="text-[9px] px-1 py-0.5 rounded font-bold"
+                    style={{ background: overLimit ? "rgba(239,68,68,0.15)" : atLimit ? "rgba(245,158,11,0.15)" : "transparent", color: overLimit ? "#EF4444" : atLimit ? "#F59E0B" : "var(--muted-foreground)" }}>
                     WIP {col.wipLimit}
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-medium" style={{ color: "var(--muted-foreground)" }}>{totalSP} SP</span>
-                <button className="w-5 h-5 rounded-[4px] flex items-center justify-center text-[14px] hover:opacity-80 transition-opacity"
-                  style={{ color: "var(--muted-foreground)", background: `${"var(--border)"}33` }}>+</button>
-              </div>
+              <span className="text-[10px] text-muted-foreground">{totalSP} SP</span>
             </div>
-            {/* Cards */}
-            <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 400px)" }}>
+            <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 420px)" }}>
               {colIssues.map(issue => (
-                <IssueCard key={issue.id} issue={issue} onClick={() => onCardClick(issue)} />
+                <IssueCard key={issue.id} issue={issue} onClick={() => onCardClick(issue)} getLabelColor={getLabelColor} />
               ))}
+              {colIssues.length === 0 && (
+                <div className="flex items-center justify-center h-16 rounded-lg border border-dashed border-border/40">
+                  <span className="text-[10px] text-muted-foreground">No issues</span>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -549,67 +866,62 @@ function BoardColumns({ columns, issues, onCardClick }: {
 // SWIMLANED BOARD
 // ═══════════════════════════════════════════════════════════════════
 
-function SwimlanedBoard({ swimlane, columns, issues, onCardClick }: {
-  swimlane: SwimlaneSetting; columns: typeof COLUMNS; issues: Issue[]; onCardClick: (i: Issue) => void;
+function SwimlanedBoard({ swimlane, columns, issues, onCardClick, getLabelColor }: {
+  swimlane: SwimlaneSetting; columns: typeof COLUMNS; issues: Issue[];
+  onCardClick: (i: Issue) => void; getLabelColor: (l: string) => string;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => {
     const map = new Map<string, Issue[]>();
     for (const issue of issues) {
-      let key: string;
-      if (swimlane === "epic") key = issue.epic;
-      else if (swimlane === "assignee") key = issue.assignee || "Unassigned";
-      else if (swimlane === "priority") key = issue.priority;
-      else key = issue.labels[0] || "No Label";
+      const key = swimlane === "epic" ? (issue.epic || "No Epic")
+        : swimlane === "assignee" ? (issue.assignee || "Unassigned")
+        : swimlane === "priority" ? issue.priority
+        : (issue.labels[0] || "No Label");
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(issue);
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [issues, swimlane]);
 
-  const toggle = (key: string) => {
-    setCollapsed(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
+  const toggle = (key: string) => setCollapsed(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   return (
     <div className="space-y-3">
       {groups.map(([group, groupIssues]) => {
-        const isCollapsed = collapsed.has(group);
-        const groupColor = swimlane === "epic" ? getEpicColor(group) : swimlane === "priority" ? PRIORITY_COLORS[group as Priority] || "#64748B" : "var(--primary)";
+        const isCollapsed  = collapsed.has(group);
+        const groupColor   = swimlane === "priority" ? PRIORITY_COLORS[group as Priority] || "#64748B" : "var(--primary)";
         return (
-          <div key={group} className="rounded-[10px]" style={{ border: `1px solid ${"var(--border)"}33` }}>
-            {/* Swimlane header */}
-            <div className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
-              onClick={() => toggle(group)}
-              style={{ background: `${groupColor}08`, borderBottom: isCollapsed ? "none" : `1px solid ${"var(--border)"}22` }}>
-              <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{isCollapsed ? "▶" : "▼"}</span>
+          <div key={group} className="rounded-xl border border-border/30">
+            <div className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none rounded-xl"
+              onClick={() => toggle(group)}>
+              <span className="text-[10px] text-muted-foreground">{isCollapsed ? "▶" : "▼"}</span>
               <div className="w-2 h-2 rounded-full" style={{ background: groupColor }} />
-              <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{group}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-[4px]" style={{ background: `${groupColor}22`, color: groupColor }}>
+              <span className="text-xs font-semibold">{group}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: `${groupColor}22`, color: groupColor }}>
                 {groupIssues.length}
               </span>
-              <span className="text-[10px] ml-auto" style={{ color: "var(--muted-foreground)" }}>
+              <span className="text-[10px] ml-auto text-muted-foreground">
                 {groupIssues.reduce((s, i) => s + i.storyPoints, 0)} SP
               </span>
             </div>
-            {/* Columns within swimlane */}
             {!isCollapsed && (
-              <div className="flex gap-2 p-2">
+              <div className="flex gap-2 p-2 border-t border-border/20">
                 {columns.map(col => {
                   const colIssues = groupIssues.filter(i => i.column === col.id);
                   return (
-                    <div key={col.id} className="flex-1 min-w-[180px]">
+                    <div key={col.id} className="flex-1 min-w-[160px]">
                       <div className="text-[10px] font-semibold mb-1 px-1" style={{ color: col.color }}>
                         {col.label} ({colIssues.length})
                       </div>
                       <div className="space-y-1.5">
                         {colIssues.map(issue => (
-                          <IssueCard key={issue.id} issue={issue} compact onClick={() => onCardClick(issue)} />
+                          <IssueCard key={issue.id} issue={issue} compact onClick={() => onCardClick(issue)} getLabelColor={getLabelColor} />
                         ))}
                       </div>
                     </div>
@@ -628,69 +940,54 @@ function SwimlanedBoard({ swimlane, columns, issues, onCardClick }: {
 // ISSUE CARD
 // ═══════════════════════════════════════════════════════════════════
 
-function IssueCard({ issue, compact, onClick }: {
-  issue: Issue; compact?: boolean; onClick: () => void;
+function IssueCard({ issue, compact, onClick, getLabelColor }: {
+  issue: Issue; compact?: boolean; onClick: () => void; getLabelColor: (l: string) => string;
 }) {
-  const borderColor = PRIORITY_COLORS[issue.priority];
   const isDue = issue.dueDate && new Date(issue.dueDate) <= new Date(Date.now() + 2 * 86400000);
-
   return (
-    <div className="rounded-[10px] p-2.5 cursor-pointer transition-all duration-150 hover:translate-y-[-2px]"
+    <div className="rounded-xl p-2.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
       onClick={onClick}
       style={{
         background: "var(--card)",
-        border: `1px solid ${"var(--border)"}`,
-        borderLeft: `3px solid ${borderColor}`,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+        border: "1px solid var(--border)",
+        borderLeft: `3px solid ${PRIORITY_COLORS[issue.priority]}`,
       }}>
-      {/* Top row: type icon + ID */}
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5">
-          <span className="text-[12px]">{ISSUE_ICONS[issue.type]}</span>
-          <span className="text-[10px] font-semibold" style={{ color: "var(--muted-foreground)" }}>{issue.id}</span>
-          {issue.blocked && (
-            <span className="text-[9px] px-1 py-0.5 rounded-[3px] font-bold" style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}>BLOCKED</span>
-          )}
+          <span className="text-xs">{ISSUE_ICONS[issue.type]}</span>
+          <span className="text-[10px] font-semibold text-muted-foreground truncate max-w-[80px]">{issue.id.slice(-6)}</span>
+          {issue.blocked && <span className="text-[9px] px-1 py-0.5 rounded font-bold bg-destructive/15 text-destructive">BLOCKED</span>}
         </div>
         <span className="text-[11px]">{PRIORITY_ICONS[issue.priority]}</span>
       </div>
-
-      {/* Title */}
-      <p className={`text-[12px] font-medium leading-[16px] ${compact ? "line-clamp-1" : "line-clamp-2"}`} style={{ color: "var(--foreground)" }}>
-        {issue.title}
-      </p>
-
-      {/* Labels */}
+      <p className={`text-xs font-medium leading-snug ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{issue.title}</p>
       {!compact && issue.labels.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1.5">
-          {issue.labels.map(l => (
-            <span key={l} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-[3px]"
-              style={{ background: `${getLabelColor(l)}18`, color: getLabelColor(l) }}>
-              {l}
-            </span>
+          {issue.labels.slice(0, 3).map(l => (
+            <span key={l} className="text-[9px] font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: `${getLabelColor(l)}18`, color: getLabelColor(l) }}>{l}</span>
           ))}
         </div>
       )}
-
-      {/* Subtasks progress */}
       {!compact && issue.subtasks && (
         <div className="mt-1.5 flex items-center gap-1.5">
-          <div className="flex-1 h-[3px] rounded-full overflow-hidden" style={{ background: `${"var(--border)"}33` }}>
-            <div className="h-full rounded-full" style={{ width: `${(issue.subtasks.done / issue.subtasks.total) * 100}%`, background: "#10B981" }} />
+          <div className="flex-1 h-[3px] rounded-full overflow-hidden bg-border/30">
+            <div className="h-full rounded-full bg-green-500" style={{ width: `${(issue.subtasks.done / issue.subtasks.total) * 100}%` }} />
           </div>
-          <span className="text-[9px]" style={{ color: "var(--muted-foreground)" }}>{issue.subtasks.done}/{issue.subtasks.total}</span>
+          <span className="text-[9px] text-muted-foreground">{issue.subtasks.done}/{issue.subtasks.total}</span>
         </div>
       )}
-
-      {/* Bottom row: assignee + SP + due date */}
       <div className="flex items-center justify-between mt-2">
-        <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
+        <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-[8px] font-bold text-white">
+          {issue.assignee ? issue.assignee.split(" ").map((w: string) => w[0] || "").join("").toUpperCase().slice(0, 2) : "?"}
+        </div>
         <div className="flex items-center gap-2">
-          {isDue && <span className="text-[9px] font-semibold" style={{ color: "#EF4444" }}>⚠ {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}</span>}
-          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-            style={{ background: `${"var(--primary)"}22`, color: "var(--primary)" }}>
-            {issue.storyPoints}
-          </span>
+          {isDue && <span className="text-[9px] font-semibold text-destructive">⚠ {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}</span>}
+          {issue.storyPoints > 0 && (
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-primary/10 text-primary">
+              {issue.storyPoints}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -698,20 +995,19 @@ function IssueCard({ issue, compact, onClick }: {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// TASK DETAIL MODAL
+// TASK DETAIL MODAL — onStatusChange deferred to avoid setState-during-render
 // ═══════════════════════════════════════════════════════════════════
 
-const COLUMN_STATUS_MAP: Record<ColumnId, string> = {
-  backlog: "BACKLOG",
-  todo: "TODO",
-  in_progress: "IN_PROGRESS",
-  in_review: "IN_REVIEW",
-  done: "DONE",
-};
-
-function TaskDetailModal({ issue, onClose, sprintName, projectId, onStatusChange }: { issue: Issue; onClose: () => void; sprintName?: string; projectId: string; onStatusChange?: (col: ColumnId) => void }) {
-  const [activeTab, setActiveTab] = useState<"details" | "comments" | "activity">("details");
-  const updateTask = useUpdateTask(projectId);
+function TaskDetailModal({ issue, onClose, sprintName, projectId, sprints, currentSprintId, onStatusChange, updateTask, getLabelColor }: {
+  issue: Issue; onClose: () => void; sprintName?: string; projectId: string;
+  sprints: SprintData[]; currentSprintId: string | null;
+  onStatusChange: (col: ColumnId) => void;
+  updateTask: ReturnType<typeof useUpdateTask>;
+  getLabelColor: (l: string) => string;
+}) {
+  const [activeTab, setActiveTab] = useState<"details" | "activity">("details");
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [fieldValue, setFieldValue] = useState("");
 
   function handleMoveToColumn(colId: ColumnId) {
     const status = COLUMN_STATUS_MAP[colId];
@@ -721,58 +1017,103 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, onStatusChange
       {
         onSuccess: () => {
           toast.success("Status updated", { id: toastId });
-          onStatusChange?.(colId);
+          // Defer setState call to avoid "update during render" error
+          setTimeout(() => onStatusChange(colId), 0);
         },
         onError: () => toast.error("Failed to update status", { id: toastId }),
       }
     );
   }
 
-  const mockComments: { author: string; time: string; text: string }[] = [];
-  const mockActivity: { time: string; text: string }[] = [];
+  function handleAssignToSprint(sprintId: string | null) {
+    const toastId = toast.loading(sprintId ? "Assigning to sprint…" : "Moving to backlog…");
+    updateTask.mutate(
+      { taskId: issue.id, sprintId, status: sprintId ? "TODO" : "BACKLOG" },
+      {
+        onSuccess: () => toast.success(sprintId ? "Assigned to sprint" : "Moved to backlog", { id: toastId }),
+        onError: () => toast.error("Failed", { id: toastId }),
+      }
+    );
+  }
+
+  function startEditField(field: string, value: string) {
+    setEditingField(field);
+    setFieldValue(value);
+  }
+
+  function saveField(field: string) {
+    if (!fieldValue.trim()) { setEditingField(null); return; }
+    updateTask.mutate(
+      { taskId: issue.id, [field]: field === "storyPoints" ? Number(fieldValue) : fieldValue },
+      {
+        onSuccess: () => toast.success("Updated"),
+        onError:   () => toast.error("Failed to update"),
+      }
+    );
+    setEditingField(null);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.6)" }} />
-      {/* Modal */}
-      <div className="relative w-full max-w-[720px] max-h-[85vh] overflow-y-auto rounded-[16px]"
-        onClick={e => e.stopPropagation()}
-        style={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, boxShadow: "0 24px 48px rgba(0,0,0,0.3)" }}>
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl bg-card border border-border shadow-2xl"
+        onClick={e => e.stopPropagation()}>
+
         {/* Header */}
-        <div className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between"
-          style={{ background: "var(--card)", borderBottom: `1px solid ${"var(--border)"}` }}>
+        <div className="sticky top-0 z-10 px-6 py-4 flex items-center justify-between bg-card border-b border-border">
           <div className="flex items-center gap-3">
-            <span className="text-[16px]">{ISSUE_ICONS[issue.type]}</span>
-            <span className="text-[13px] font-bold" style={{ color: "var(--primary)" }}>{issue.id}</span>
-            <Badge variant={(issue.priority === "critical" || issue.priority === "high") ? "destructive" : "secondary"}>{issue.priority}</Badge>
-            {issue.blocked && <Badge variant="destructive">Blocked</Badge>}
+            <span className="text-base">{ISSUE_ICONS[issue.type]}</span>
+            <span className="text-xs font-bold text-primary font-mono">{issue.id.slice(-8)}</span>
+            <Badge variant={(issue.priority === "critical" || issue.priority === "high") ? "destructive" : "secondary"} className="text-[9px]">
+              {issue.priority}
+            </Badge>
+            {issue.blocked && <Badge variant="destructive" className="text-[9px]">Blocked</Badge>}
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-[8px] flex items-center justify-center text-[18px] hover:opacity-70 transition-opacity"
-            style={{ color: "var(--muted-foreground)", background: `${"var(--border)"}22` }}>×</button>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-lg text-muted-foreground hover:bg-muted transition-colors">×</button>
         </div>
 
         {/* Title */}
         <div className="px-6 py-3">
-          <h2 className="text-[18px] font-bold leading-snug" style={{ color: "var(--foreground)" }}>{issue.title}</h2>
+          <h2 className="text-lg font-bold leading-snug">{issue.title}</h2>
         </div>
 
         {/* Move to column */}
         <div className="px-6 pb-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Move to Column</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Move to Column</p>
           <div className="flex flex-wrap gap-1.5">
             {COLUMNS.map(col => (
-              <button key={col.id} disabled={issue.column === col.id || updateTask.isPending}
+              <button key={col.id}
+                disabled={issue.column === col.id || updateTask.isPending}
                 onClick={() => handleMoveToColumn(col.id)}
-                className="px-2.5 py-1 rounded-[6px] text-[11px] font-semibold transition-all"
+                className="px-2.5 py-1 rounded text-[11px] font-semibold transition-all"
                 style={{
                   background: issue.column === col.id ? `${col.color}25` : `${col.color}10`,
                   color: col.color,
                   border: `1px solid ${issue.column === col.id ? col.color : `${col.color}44`}`,
-                  opacity: issue.column === col.id ? 1 : 0.75,
-                  cursor: issue.column === col.id ? "default" : "pointer",
+                  opacity: issue.column === col.id ? 1 : 0.8,
                 }}>
                 {issue.column === col.id ? "✓ " : ""}{col.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sprint assignment */}
+        <div className="px-6 pb-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Sprint Assignment</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => handleAssignToSprint(null)}
+              disabled={!issue.sprintId}
+              className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-all ${!issue.sprintId ? "bg-muted text-foreground border-border" : "border-border/40 text-muted-foreground hover:bg-muted"}`}>
+              📦 Backlog
+            </button>
+            {sprints.filter(s => s.status !== "COMPLETED").map(s => (
+              <button key={s.id}
+                onClick={() => handleAssignToSprint(s.id)}
+                disabled={issue.sprintId === s.id}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-all ${issue.sprintId === s.id ? "bg-primary/20 text-primary border-primary/40" : "border-border/40 text-muted-foreground hover:bg-muted"}`}>
+                {issue.sprintId === s.id ? "✓ " : ""}{s.name}
               </button>
             ))}
           </div>
@@ -781,140 +1122,95 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, onStatusChange
         {/* Fields grid */}
         <div className="px-6 pb-4 grid grid-cols-2 gap-x-6 gap-y-3">
           <FieldRow label="Status">
-            <Badge variant={issue.column === "done" ? "default" : issue.column === "in_progress" ? "outline" : issue.column === "in_review" ? "secondary" : "outline"}>
+            <Badge variant="outline" className="text-[10px]">
               {COLUMNS.find(c => c.id === issue.column)?.label || issue.column}
             </Badge>
           </FieldRow>
           <FieldRow label="Assignee">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
-              <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{issue.assignee}</span>
-            </div>
+            {editingField === "assigneeName"
+              ? <input autoFocus className="px-2 py-0.5 rounded border border-border bg-background text-xs w-32 focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={fieldValue} onChange={e => setFieldValue(e.target.value)}
+                  onBlur={() => saveField("assigneeName")} onKeyDown={e => e.key === "Enter" && saveField("assigneeName")} />
+              : <button onClick={() => startEditField("assigneeName", issue.assignee)} className="text-xs hover:text-primary transition-colors">
+                  {issue.assignee || <span className="text-muted-foreground">Unassigned ✏</span>}
+                </button>
+            }
           </FieldRow>
           <FieldRow label="Priority">
-            <span className="text-[12px]" style={{ color: PRIORITY_COLORS[issue.priority] }}>{PRIORITY_ICONS[issue.priority]} {issue.priority}</span>
-          </FieldRow>
-          <FieldRow label="Story Points">
-            <span className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold" style={{ background: `${"var(--primary)"}22`, color: "var(--primary)" }}>
-              {issue.storyPoints}
+            <span className="text-xs" style={{ color: PRIORITY_COLORS[issue.priority] }}>
+              {PRIORITY_ICONS[issue.priority]} {issue.priority}
             </span>
           </FieldRow>
+          <FieldRow label="Story Points">
+            {editingField === "storyPoints"
+              ? <input autoFocus type="number" min={0} max={100} className="px-2 py-0.5 rounded border border-border bg-background text-xs w-16 focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={fieldValue} onChange={e => setFieldValue(e.target.value)}
+                  onBlur={() => saveField("storyPoints")} onKeyDown={e => e.key === "Enter" && saveField("storyPoints")} />
+              : <button onClick={() => startEditField("storyPoints", String(issue.storyPoints))}
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                  {issue.storyPoints || "?"}
+                </button>
+            }
+          </FieldRow>
           <FieldRow label="Epic">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ background: getEpicColor(issue.epic) }} />
-              <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{issue.epic}</span>
-            </div>
+            {editingField === "epic"
+              ? <input autoFocus className="px-2 py-0.5 rounded border border-border bg-background text-xs w-32 focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={fieldValue} onChange={e => setFieldValue(e.target.value)}
+                  onBlur={() => saveField("epic")} onKeyDown={e => e.key === "Enter" && saveField("epic")} />
+              : <button onClick={() => startEditField("epic", issue.epic || "")} className="text-xs hover:text-primary transition-colors">
+                  {issue.epic || <span className="text-muted-foreground">None ✏</span>}
+                </button>
+            }
           </FieldRow>
           <FieldRow label="Sprint">
-            <span className="text-[12px]" style={{ color: "var(--foreground)" }}>{sprintName || "—"}</span>
+            <span className="text-xs">{issue.sprintId ? (sprints.find(s => s.id === issue.sprintId)?.name || "Unknown") : "Backlog"}</span>
           </FieldRow>
           <FieldRow label="Labels">
             <div className="flex flex-wrap gap-1">
               {issue.labels.map(l => (
-                <span key={l} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px]"
+                <span key={l} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
                   style={{ background: `${getLabelColor(l)}18`, color: getLabelColor(l) }}>{l}</span>
               ))}
+              {issue.labels.length === 0 && <span className="text-[10px] text-muted-foreground">None</span>}
             </div>
           </FieldRow>
           {issue.dueDate && (
             <FieldRow label="Due Date">
-              <span className="text-[12px]" style={{ color: new Date(issue.dueDate) <= new Date() ? "#EF4444" : "var(--foreground)" }}>{new Date(issue.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+              <span className="text-xs" style={{ color: new Date(issue.dueDate) <= new Date() ? "#EF4444" : "var(--foreground)" }}>
+                {new Date(issue.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+              </span>
             </FieldRow>
           )}
         </div>
 
         {/* Description */}
-        <div className="px-6 pb-3">
-          <p className="text-[12px] font-semibold mb-1" style={{ color: "var(--muted-foreground)" }}>Description</p>
-          <div className="p-3 rounded-[8px] text-[13px] leading-relaxed" style={{ background: true ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", color: "var(--foreground)" }}>
-            {issue.description || `Implement ${issue.title.toLowerCase()}. Acceptance criteria and technical approach to be defined during sprint planning refinement. Follow existing design system patterns and ensure full test coverage.`}
+        <div className="px-6 pb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Description</p>
+          <div className="p-3 rounded-lg text-sm leading-relaxed bg-muted/30">
+            {issue.description || <span className="text-muted-foreground italic">No description provided.</span>}
           </div>
         </div>
 
-        {/* Subtasks */}
-        {issue.subtasks && (
-          <div className="px-6 pb-3">
-            <p className="text-[12px] font-semibold mb-2" style={{ color: "var(--muted-foreground)" }}>Subtasks ({issue.subtasks.done}/{issue.subtasks.total})</p>
-            <div className="space-y-1.5">
-              {Array.from({ length: issue.subtasks.total }, (_, i) => (
-                <div key={i} className="flex items-center gap-2 text-[12px]" style={{ color: "var(--foreground)" }}>
-                  <span className={`w-4 h-4 rounded-[4px] flex items-center justify-center text-[10px] ${i < issue.subtasks!.done ? "bg-green-500/20 text-green-400" : ""}`}
-                    style={{ border: `1px solid ${i < issue.subtasks!.done ? "#10B98144" : "var(--border)"}` }}>
-                    {i < issue.subtasks!.done ? "✓" : ""}
-                  </span>
-                  <span style={{ textDecoration: i < issue.subtasks!.done ? "line-through" : "none", opacity: i < issue.subtasks!.done ? 0.6 : 1 }}>
-                    {`Subtask ${i + 1}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tabs: Comments / Activity */}
-        <div className="px-6 border-t" style={{ borderColor: "var(--border)" }}>
+        {/* Tabs */}
+        <div className="px-6 border-t border-border">
           <div className="flex gap-4 pt-3">
-            {(["details", "comments", "activity"] as const).map(tab => (
-              <button key={tab} className="pb-2 text-[12px] font-semibold capitalize transition-colors"
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  color: activeTab === tab ? "var(--primary)" : "var(--muted-foreground)",
-                  borderBottom: activeTab === tab ? `2px solid ${"var(--primary)"}` : "2px solid transparent",
-                }}>
-                {tab} {tab === "comments" ? `(${mockComments.length})` : ""}
+            {(["details", "activity"] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`pb-2 text-xs font-semibold capitalize transition-colors border-b-2 ${activeTab === tab ? "text-primary border-primary" : "text-muted-foreground border-transparent"}`}>
+                {tab}
               </button>
             ))}
-            <button className="ml-auto mb-2 px-2.5 py-1 rounded-[6px] text-[11px] font-semibold flex items-center gap-1"
-              style={{ background: `${"var(--primary)"}15`, color: "var(--primary)", border: `1px solid ${"var(--primary)"}33` }}>
-              ✨ AI Summary
-            </button>
           </div>
         </div>
-
-        {/* Tab content */}
-        <div className="px-6 py-3 pb-6">
-          {activeTab === "comments" && (
-            <div className="space-y-3">
-              {mockComments.map((c, i) => (
-                <div key={i} className="flex gap-2.5">
-                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{c.author}</span>
-                      <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{c.time}</span>
-                    </div>
-                    <p className="text-[12px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>{c.text}</p>
-                  </div>
-                </div>
-              ))}
-              {/* Reply input */}
-              <div className="flex gap-2 mt-3 pt-3" style={{ borderTop: `1px solid ${"var(--border)"}33` }}>
-                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">SC</div>
-                <input className="flex-1 px-3 py-2 rounded-[8px] text-[12px]"
-                  placeholder="Add a comment..."
-                  style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}`, outline: "none" }} />
-                <Button variant="default" size="sm" onClick={() => toast.success("Comment posted")}>Post</Button>
-              </div>
-            </div>
-          )}
-
+        <div className="px-6 py-4">
           {activeTab === "activity" && (
-            <div className="space-y-2">
-              {mockActivity.map((a, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: "var(--primary)" }} />
-                  <div>
-                    <p className="text-[12px]" style={{ color: "var(--foreground)" }}>{a.text}</p>
-                    <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{a.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs text-muted-foreground">Activity log will appear here as changes are made to this issue.</p>
           )}
-
           {activeTab === "details" && (
-            <div className="text-[12px] space-y-2" style={{ color: "var(--muted-foreground)" }}>
-              <p>Issue details and history will appear here once activity is tracked.</p>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Click any field above (Assignee, Story Points, Epic) to edit inline.</p>
+              <p>Use the column buttons to move this issue between workflow stages.</p>
+              <p>Use the sprint buttons to assign or reassign this issue to a sprint.</p>
             </div>
           )}
         </div>
@@ -924,47 +1220,39 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, onStatusChange
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SMALL HELPER COMPONENTS
+// SMALL HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
-function FilterChip({ label, active, onClick, icon }: {
-  label: string; active: boolean; onClick: () => void; icon?: string;
-}) {
+function FilterChip({ label, active, onClick, icon }: { label: string; active: boolean; onClick: () => void; icon?: string }) {
   return (
-    <button className="flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[11px] font-semibold transition-all"
-      onClick={onClick}
-      style={{
-        background: active ? `${"var(--primary)"}22` : "transparent",
-        color: active ? "var(--primary)" : "var(--muted-foreground)",
-        border: `1px solid ${active ? "var(--primary)" + "44" : "var(--border)" + "44"}`,
-      }}>
-      {icon && <span className="text-[10px]">{icon}</span>}
-      {label}
+    <button onClick={onClick}
+      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all ${active ? "bg-primary/10 border-primary text-primary" : "border-border/40 text-muted-foreground hover:border-border"}`}>
+      {icon && <span>{icon}</span>}{label}
     </button>
   );
 }
 
-function HealthRow({ label, value, color}: { label: string; value: string; color: string;  }) {
+function HealthRow({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{label}</span>
-      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px]" style={{ background: `${color}15`, color }}>{value}</span>
+    <div className="flex items-center justify-between">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[11px] font-semibold" style={{ color }}>{value}</span>
     </div>
   );
 }
 
-function InsightBox({ children, color }: { children: React.ReactNode; color: string }) {
+function InsightBox({ color, children }: { color: string; children: React.ReactNode }) {
   return (
-    <div className="p-2 rounded-[6px] leading-relaxed" style={{ background: `${color}${true ? "12" : "08"}`, border: `1px solid ${color}22`, color: `${color}CC` }}>
+    <div className="p-2 rounded-lg text-[11px] leading-relaxed" style={{ background: `${color}10`, borderLeft: `2px solid ${color}` }}>
       {children}
     </div>
   );
 }
 
-function FieldRow({ label, children}: { label: string; children: React.ReactNode;  }) {
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
       {children}
     </div>
   );

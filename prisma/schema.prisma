@@ -180,6 +180,7 @@ model Project {
   meetings       Meeting[]
   calendarEvents CalendarEvent[]
   decisions      Decision[]
+  sprints        Sprint[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 }
@@ -332,15 +333,36 @@ model Phase {
   endDate     DateTime?
 }
 
+model Sprint {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id])
+  name        String
+  goal        String?   @db.Text
+  startDate   DateTime
+  endDate     DateTime
+  status      String    @default("PLANNING") // PLANNING | ACTIVE | COMPLETED | CANCELLED
+  tasks       Task[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model Task {
   id           String    @id @default(cuid())
   projectId    String
   project      Project   @relation(fields: [projectId], references: [id])
+  sprintId     String?
+  sprint       Sprint?   @relation(fields: [sprintId], references: [id])
   title        String
   description  String?   @db.Text
   status       String    @default("TODO")
   priority     String?
+  type         String    @default("task")  // task | story | bug | spike
+  epic         String?
+  labels       Json?                        // string[]
+  blocked      Boolean   @default(false)
   assigneeId   String?
+  assigneeName String?
   phaseId      String?
   parentId     String?
   startDate    DateTime?
