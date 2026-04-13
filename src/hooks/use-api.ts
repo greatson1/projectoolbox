@@ -271,7 +271,7 @@ export function useDeleteTask(projectId: string) {
 export function useProjectSprints(projectId: string | null) {
   return useQuery({
     queryKey: ["sprints", projectId],
-    queryFn: () => api<{ data: any[] }>(`/api/projects/${projectId}/sprints`).then(r => r.data),
+    queryFn: () => api<any[]>(`/api/projects/${projectId}/sprints`),
     enabled: !!projectId,
   });
 }
