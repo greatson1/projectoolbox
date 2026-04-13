@@ -170,6 +170,42 @@ function engagementToSentiment(engagement: string): string {
   return "neutral";
 }
 
+/**
+ * Sanitise owner/assignee names from Claude-generated CSV.
+ * Claude often hallucinate personal names like "Tom Rodriguez", "Sarah Mitchell".
+ * If the name looks like a fabricated personal name (first + last), replace with
+ * a role title like "Project Manager" or just "TBD".
+ * Keep role titles, "TBD", and single-word roles as-is.
+ */
+function sanitiseOwnerName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "—" || trimmed === "-") return null;
+
+  // Known role titles — keep these as-is
+  const roleTitles = [
+    "project manager", "pm", "sponsor", "team lead", "lead", "owner",
+    "finance", "hr", "admin", "coordinator", "director", "analyst",
+    "developer", "designer", "architect", "consultant", "manager",
+    "scrum master", "product owner", "delivery lead", "risk owner",
+    "primary traveller", "traveller", "organiser", "host",
+    "tbd", "tbc", "unassigned", "agent", "ai agent",
+  ];
+  const lower = trimmed.toLowerCase();
+  if (roleTitles.some(r => lower.includes(r))) return trimmed;
+
+  // If it looks like "FirstName LastName" (two capitalised words) — it's likely fabricated
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 2 && /^[A-Z][a-z]+$/.test(parts[0]) && /^[A-Z][a-z]+$/.test(parts[1])) {
+    return "Project Manager"; // Replace fabricated name with role
+  }
+  if (parts.length >= 3 && parts.every(p => /^[A-Z]/.test(p))) {
+    return "Project Manager";
+  }
+
+  return trimmed;
+}
+
 // ─── Risk seeder ─────────────────────────────────────────────────────────────
 // Artefact columns:
 //   Risk ID | Category | Title | Description | Likelihood (1-5) | Impact (1-5) | Score
@@ -214,7 +250,7 @@ async function seedRisks(artefact: ArtefactInput, agentId: string): Promise<void
           impact,
           score,
           status,
-          owner: owner || null,
+          owner: sanitiseOwnerName(owner) || null,
           mitigation: mitigation || null,
         },
       });
