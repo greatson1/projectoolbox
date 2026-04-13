@@ -53,6 +53,8 @@ interface SprintData {
   startDate: string;
   endDate: string;
   status: string;
+  committedPoints?: number;
+  completedPoints?: number;
   _count?: { tasks: number };
 }
 
@@ -240,13 +242,16 @@ export default function AgileBoardPage() {
     const completed = sprints
       .filter(s => s.status === "COMPLETED")
       .slice(-4)
-      .map((s, i) => ({
+      .map(s => ({
         sprint: s.name,
-        committed: 0,
-        completed: 0,
+        committed: s.committedPoints ?? 0,
+        completed: s.completedPoints ?? 0,
       }));
-    // Fill with current sprint data as last entry
-    return [...completed, { sprint: currentSprint?.name || "Current", committed: committedSP, completed: completedSP }];
+    // Append current sprint as live last entry
+    if (currentSprint) {
+      return [...completed, { sprint: currentSprint.name, committed: committedSP, completed: completedSP }];
+    }
+    return completed;
   }, [sprints, currentSprint, committedSP, completedSP]);
 
   const hasActiveFilters = filterBlocked || filterBugs || filterUnassigned || filterAssignee || filterLabel || searchQuery;

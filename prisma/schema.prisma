@@ -334,17 +334,19 @@ model Phase {
 }
 
 model Sprint {
-  id          String    @id @default(cuid())
-  projectId   String
-  project     Project   @relation(fields: [projectId], references: [id])
-  name        String
-  goal        String?   @db.Text
-  startDate   DateTime
-  endDate     DateTime
-  status      String    @default("PLANNING") // PLANNING | ACTIVE | COMPLETED | CANCELLED
-  tasks       Task[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  projectId        String
+  project          Project   @relation(fields: [projectId], references: [id])
+  name             String
+  goal             String?   @db.Text
+  startDate        DateTime
+  endDate          DateTime
+  status           String    @default("PLANNING") // PLANNING | ACTIVE | COMPLETED | CANCELLED
+  committedPoints  Int       @default(0) // SP committed at sprint start (populated on COMPLETED)
+  completedPoints  Int       @default(0) // SP delivered by end (populated on COMPLETED)
+  tasks            Task[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Task {

@@ -21,6 +21,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     }
   }
 
+  // ── Sprint completion side-effects ────────────────────────────────────────
+  // When marking a sprint COMPLETED:
+  //   1. Capture committed/completed story points for velocity tracking
+  //   2. Move any non-DONE tasks back to the backlog
+  if (body.status === "COMPLETED") {
+    const sprintTasks = await db.task.findMany({
+      where: { sprintId, projectId },
+      select: { id: true, status: true, storyPoints: true },
+    });
+
+    const committedPoints = sprintTasks.reduce((s, t) => s + (t.storyPoints ?? 0), 0);
+    const completedPoints = sprintTasks
+      .filter(t => t.status === "DONE" || t.status === "COMPLETED")
+      .reduce((s, t) => s + (t.storyPoints ?? 0), 0);
+
+    data.committedPoints = committedPoints;
+    data.completedPoints = completedPoints;
+
+    // Move non-DONE tasks to backlog
+    const incomplete = sprintTasks.filter(t => t.status !== "DONE" && t.status !== "COMPLETED");
+    if (incomplete.length > 0) {
+      await db.task.updateMany({
+        where: { id: { in: incomplete.map(t => t.id) }, projectId },
+        data: { sprintId: null, status: "BACKLOG" },
+      });
+    }
+  }
+
   const sprint = await db.sprint.update({
     where: { id: sprintId, projectId },
     data,
