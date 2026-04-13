@@ -72,7 +72,8 @@ export async function seedArtefactData(
   if (
     lname.includes("sprint plan") ||
     lname.includes("iteration plan") ||
-    lname.includes("sprint backlog")
+    lname.includes("sprint backlog") ||
+    (lname === "backlog")
   ) {
     await seedSprintTasks(artefact, agentId);
     return;
@@ -354,12 +355,91 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
     },
   });
 
+  // ── Step 1: Extract unique sprints from CSV and create Sprint records ──
+  const sprintMap = new Map<string, { name: string; startDate: Date | null; endDate: Date | null; tasks: any[] }>();
+
+  for (const row of rows) {
+    const sprintName = col(row, ["Sprint", "Iteration", "Sprint Number"]);
+    if (!sprintName) continue;
+    if (!sprintMap.has(sprintName)) {
+      sprintMap.set(sprintName, { name: sprintName, startDate: null, endDate: null, tasks: [] });
+    }
+    const entry = sprintMap.get(sprintName)!;
+    const startRaw = col(row, ["Start", "Start Date"]);
+    const endRaw = col(row, ["End", "End Date", "Actual Completion"]);
+    const sd = parseDate(startRaw);
+    const ed = parseDate(endRaw);
+    if (sd && (!entry.startDate || sd < entry.startDate)) entry.startDate = sd;
+    if (ed && (!entry.endDate || ed > entry.endDate)) entry.endDate = ed;
+    entry.tasks.push(row);
+  }
+
+  // Delete existing agent-seeded sprints (avoid duplicates on re-approval)
+  await db.sprint.deleteMany({
+    where: { projectId: artefact.projectId, goal: { contains: "[source:artefact]" } },
+  }).catch(() => {});
+
+  // Create Sprint records and build sprintId lookup
+  const sprintIdMap = new Map<string, string>();
+  const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true, startDate: true, endDate: true } });
+
+  for (const [name, info] of sprintMap) {
+    // Default dates: distribute evenly across project timeline if not in CSV
+    const defaultStart = info.startDate || project?.startDate || new Date();
+    const defaultEnd = info.endDate || new Date(defaultStart.getTime() + 14 * 86_400_000); // 2 weeks
+
+    // Check if a user-created sprint with this name exists — don't overwrite
+    const existing = await db.sprint.findFirst({ where: { projectId: artefact.projectId, name } });
+    if (existing) {
+      sprintIdMap.set(name, existing.id);
+    } else {
+      const sprint = await db.sprint.create({
+        data: {
+          projectId: artefact.projectId,
+          name,
+          goal: `[source:artefact] Auto-created from Sprint Plans artefact`,
+          startDate: defaultStart,
+          endDate: defaultEnd,
+          status: "PLANNING",
+        },
+      });
+      sprintIdMap.set(name, sprint.id);
+
+      // Create calendar events for this sprint (planning, review, retro)
+      if (project?.orgId) {
+        const sprintDays = Math.ceil((defaultEnd.getTime() - defaultStart.getTime()) / 86_400_000);
+        const events = [
+          { title: `${name}: Sprint Planning`, startTime: defaultStart, desc: `Planning session for ${name}. Review backlog, commit to sprint goal, assign stories.` },
+          { title: `${name}: Sprint Review`, startTime: new Date(defaultEnd.getTime() - 86_400_000), desc: `Demo completed work from ${name}. Gather stakeholder feedback.` },
+          { title: `${name}: Retrospective`, startTime: defaultEnd, desc: `${name} retrospective. What went well, what to improve, action items.` },
+        ];
+        for (const evt of events) {
+          await db.calendarEvent.create({
+            data: {
+              orgId: project.orgId,
+              projectId: artefact.projectId,
+              agentId,
+              title: evt.title,
+              description: evt.desc,
+              startTime: evt.startTime,
+              endTime: new Date(evt.startTime.getTime() + 60 * 60 * 1000), // 1 hour
+              source: "AGENT",
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+  }
+
+  console.log(`[artefact-seeders] Created ${sprintMap.size} sprint(s) with calendar events`);
+
+  // ── Step 2: Create tasks and assign to sprints ──
   let created = 0;
   for (const row of rows) {
     const title = col(row, ["User Story", "Work Item", "Task", "Story", "Feature", "Item"]);
     if (!title) continue;
 
-    const sprint      = col(row, ["Sprint", "Iteration", "Sprint Number"]);
+    const sprintName  = col(row, ["Sprint", "Iteration", "Sprint Number"]);
     const storyPointsRaw = col(row, ["Points", "Planned Points", "Story Points", "Pts"]);
     const owner       = col(row, ["Owner", "Assigned To", "Assignee"]);
     const statusRaw   = col(row, ["Status"]);
@@ -371,10 +451,11 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
     const storyPoints = parseInt(storyPointsRaw, 10) || null;
     const progress    = resolveSprintProgress(statusRaw, storyPointsRaw, completedRaw);
     const status      = resolveTaskStatus(statusRaw, progress);
+    const sprintId    = sprintName ? sprintIdMap.get(sprintName) || null : null;
 
     const desc = [
       "[source:sprint]",
-      sprint ? `Sprint: ${sprint}` : null,
+      sprintName ? `Sprint: ${sprintName}` : null,
       owner && owner !== "TBD" ? `Owner: ${owner}` : null,
       notes || null,
     ].filter(Boolean).join(" | ");
@@ -390,6 +471,8 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
           endDate: parseDate(endRaw) ?? null,
           progress,
           storyPoints,
+          sprintId,
+          assigneeName: owner && owner !== "TBD" ? owner : null,
           isCriticalPath: false,
           createdBy: `agent:${agentId}`,
           lastEditedBy: `agent:${agentId}`,
