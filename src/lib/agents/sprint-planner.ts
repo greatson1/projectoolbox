@@ -27,8 +27,8 @@ export async function planSprints(
   agentId: string,
   projectId: string,
 ): Promise<{ sprints: number; tasksAssigned: number; pointsPlanned: number }> {
-  // Load project, tasks, existing sprints, stakeholders
-  const [project, tasks, existingSprints, stakeholders] = await Promise.all([
+  // Load project, tasks, existing sprints, stakeholders, and project members
+  const [project, tasks, existingSprints, stakeholders, projectMembers] = await Promise.all([
     db.project.findUnique({ where: { id: projectId } }),
     db.task.findMany({
       where: { projectId, sprintId: null },
@@ -36,6 +36,10 @@ export async function planSprints(
     }),
     db.sprint.findMany({ where: { projectId }, orderBy: { startDate: "asc" } }),
     db.stakeholder.findMany({ where: { projectId } }),
+    db.projectMember.findMany({
+      where: { projectId },
+      include: { user: { select: { name: true } } },
+    }),
   ]);
 
   if (!project) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0 };
@@ -59,8 +63,18 @@ export async function planSprints(
     orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
   });
 
-  // ── Step 2: Extract team members from stakeholders ──
-  const teamMembers = extractTeamMembers(stakeholders);
+  // ── Step 2: Extract team members from stakeholders + project members ──
+  const stakeholderTeam = extractTeamMembers(stakeholders);
+  const memberTeam: TeamMember[] = (projectMembers || [])
+    .filter((m: any) => m.user?.name)
+    .map((m: any) => ({ name: m.user.name, role: m.role || "Team" }));
+  // Merge: project members first (explicitly added), then stakeholders (auto-extracted)
+  const seen = new Set<string>();
+  const teamMembers: TeamMember[] = [];
+  for (const m of [...memberTeam, ...stakeholderTeam]) {
+    const key = m.name.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); teamMembers.push(m); }
+  }
 
   // ── Step 3: Calculate sprint parameters ──
   const startDate = project.startDate || new Date();

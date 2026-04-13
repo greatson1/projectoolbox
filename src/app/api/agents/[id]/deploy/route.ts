@@ -112,6 +112,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
+  // Create ReportSchedule from deploy config
+  try {
+    const reportFreq = (config as any)?.reportSchedule || "weekly";
+    const cronMap: Record<string, string> = {
+      daily: "0 8 * * 1-5",     // 8am weekdays
+      weekly: "0 9 * * 1",      // 9am Monday
+      biweekly: "0 9 * * 1/2",  // every other Monday
+      monthly: "0 9 1 * *",     // 1st of month
+    };
+    const callerUser = caller.userId ? await db.user.findUnique({ where: { id: caller.userId }, select: { email: true } }) : null;
+    const agentRecord = await db.agent.findUnique({ where: { id: agentId }, select: { name: true } });
+    await db.reportSchedule.create({
+      data: {
+        name: `${agentRecord?.name || "Agent"} — Status Report`,
+        templateId: "status_report",
+        projectId,
+        orgId: caller.orgId,
+        frequency: reportFreq.toUpperCase(),
+        cronExpression: cronMap[reportFreq] || cronMap.weekly,
+        nextRunAt: new Date(Date.now() + 7 * 86_400_000), // first run in ~1 week
+        recipients: callerUser?.email ? [callerUser.email] : [],
+        isActive: true,
+      },
+    });
+  } catch (e) {
+    console.error("[deploy] ReportSchedule creation failed:", e);
+  }
+
   // Run lifecycle init directly inline — do not rely on VPS stub.
   // Fire-and-forget so the deploy response is instant. The function is idempotent.
   (async () => {

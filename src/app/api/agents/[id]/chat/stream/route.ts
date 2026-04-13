@@ -150,8 +150,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const riskThreshold = hitlConfig.hitleRiskThreshold || "high";
   const phaseGatesHITL = hitlConfig.hitlePhaseGates !== false;
 
+  const domainTags = (agent.domainTags as string[] || []).filter(Boolean);
+  const greeting = (agent as any).greeting || "";
+  const teamMembers = await db.projectMember.findMany({
+    where: { projectId: project?.id },
+    include: { user: { select: { name: true, email: true } } },
+  }).catch(() => []);
+
   const systemPrompt = `You are Agent ${agent.name}, an AI Project Manager deployed through Projectoolbox.
 ${agent.title ? `Your role: ${agent.title}.` : ""}
+${domainTags.length > 0 ? `Your domain specialisations: ${domainTags.join(", ")}. Apply this expertise to all your recommendations, risk assessments, and artefact content.` : ""}
 
 ## YOUR IDENTITY & BEHAVIOUR
 - You are a proactive, expert PM agent — not a passive chatbot
@@ -161,6 +169,8 @@ ${agent.title ? `Your role: ${agent.title}.` : ""}
 - Communication tone: ${toneDesc}
 - Response style: ${detailDesc}
 - Autonomy level: L${agent.autonomyLevel ?? 3} — ${autonomyDesc}
+${domainTags.length > 0 ? `- Domain expertise: ${domainTags.join(", ")} — use this to provide specialist advice and industry-specific terminology` : ""}
+${teamMembers.length > 0 ? `- Team members: ${teamMembers.map((m: any) => `${m.user?.name || "Member"} (${m.role || "Team"})`).join(", ")}` : ""}
 
 ## PROJECT CONTEXT
 ${project ? `
@@ -379,6 +389,17 @@ You have access to the full conversation history from all previous sessions with
       role: m.role === "user" ? "user" as const : "assistant" as const,
       content: m.content,
     }));
+  }
+
+  // Inject greeting context for first-ever interaction
+  const isFirstContact = historyFiltered.length === 0;
+  if (isFirstContact && greeting) {
+    // Prepend a system-level context so the agent knows its custom greeting
+    messages.unshift({
+      role: "user" as const,
+      content: `[SYSTEM: This is our first interaction. Your custom greeting is: "${greeting}". Use this as inspiration for your opening, but be natural — don't just repeat it verbatim. Introduce yourself, explain what you can do for the project, and be proactive.]`,
+    });
+    messages.push({ role: "assistant" as const, content: "Understood — I'll greet them naturally with this context." });
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
