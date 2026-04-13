@@ -376,10 +376,108 @@ function applyChangesToRow(
     }
   }
 
+  // Also map assigneeName
+  const ownerIdx = findColIndex(header, ["Owner", "Assigned To", "Assignee"]);
+  if (ownerIdx >= 0 && "assigneeName" in changedFields) {
+    row[ownerIdx] = String(task.assigneeName ?? "");
+  }
+
+  // Also map storyPoints
+  const ptsIdx = findColIndex(header, ["Points", "Story Points", "Pts", "Planned Points"]);
+  if (ptsIdx >= 0 && "storyPoints" in changedFields) {
+    row[ptsIdx] = String(task.storyPoints ?? "");
+  }
+
   // Also map RAG status
   const ragIdx = findColIndex(header, ["RAG"]);
   if (ragIdx >= 0 && "status" in changedFields) {
     const s = (task.status || "").toUpperCase();
     row[ragIdx] = s === "DONE" ? "🟢" : s === "IN_PROGRESS" ? "🟡" : s === "BLOCKED" ? "🔴" : "🟡";
+  }
+}
+
+// ─── 4. Sprint reverse sync: rebuild Sprint Plans artefact from Sprint + Task data ──
+
+/**
+ * Rebuilds the Sprint Plans artefact CSV from current Sprint and Task records.
+ * Called after sprint CRUD or task sprint assignment changes.
+ */
+export async function syncSprintsToArtefact(projectId: string): Promise<void> {
+  try {
+    // Find the Sprint Plans artefact
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: "csv",
+        name: { contains: "Sprint", mode: "insensitive" as any },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact) return;
+
+    // Fetch all sprints and their tasks
+    const sprints = await db.sprint.findMany({
+      where: { projectId },
+      orderBy: { startDate: "asc" },
+    });
+
+    const tasks = await db.task.findMany({
+      where: { projectId, sprintId: { not: null } },
+      orderBy: [{ sprintId: "asc" }, { createdAt: "asc" }],
+    });
+
+    // Build sprint name lookup
+    const sprintNames = new Map(sprints.map(s => [s.id, s.name]));
+
+    // Rebuild CSV: Sprint, Story ID, User Story, Points, Owner, Status, Start, End, Notes
+    const header = ["Sprint", "Story ID", "User Story", "Points", "Owner", "Status", "Start", "End", "Actual Completion", "Notes"];
+    const rows: string[][] = [header];
+
+    for (const task of tasks) {
+      const sprintName = sprintNames.get(task.sprintId!) || "Backlog";
+      rows.push([
+        sprintName,
+        task.id.slice(-6).toUpperCase(),
+        task.title,
+        String(task.storyPoints || ""),
+        task.assigneeName || "",
+        task.status || "TODO",
+        task.startDate ? formatDate(task.startDate) : "",
+        task.endDate ? formatDate(task.endDate) : "",
+        task.status === "DONE" ? formatDate(task.updatedAt) : "",
+        (task.description || "").replace(/\[source:sprint\]\s*\|?\s*/g, "").slice(0, 100),
+      ]);
+    }
+
+    // Also add backlog tasks (no sprint) that have story points
+    const backlogTasks = await db.task.findMany({
+      where: { projectId, sprintId: null, storyPoints: { gt: 0 } },
+      take: 20,
+    });
+    for (const task of backlogTasks) {
+      rows.push([
+        "Backlog",
+        task.id.slice(-6).toUpperCase(),
+        task.title,
+        String(task.storyPoints || ""),
+        task.assigneeName || "",
+        task.status || "TODO",
+        task.startDate ? formatDate(task.startDate) : "",
+        task.endDate ? formatDate(task.endDate) : "",
+        "",
+        "",
+      ]);
+    }
+
+    const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncSprintsToArtefact failed:", e);
   }
 }

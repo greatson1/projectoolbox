@@ -26,6 +26,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     data,
   });
 
+  // Reverse sync: update Sprint Plans artefact CSV
+  try {
+    const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
+    syncSprintsToArtefact(projectId).catch(() => {});
+  } catch {}
+
   return NextResponse.json({ data: sprint });
 }
 
@@ -44,6 +50,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   });
 
   await db.sprint.delete({ where: { id: sprintId, projectId } });
+
+  // Reverse sync: update Sprint Plans artefact CSV
+  try {
+    const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
+    syncSprintsToArtefact(projectId).catch(() => {});
+  } catch {}
 
   return NextResponse.json({ success: true });
 }

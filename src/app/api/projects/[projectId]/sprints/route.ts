@@ -52,5 +52,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     },
   });
 
+  // Reverse sync: update Sprint Plans artefact CSV
+  try {
+    const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
+    syncSprintsToArtefact(projectId).catch(() => {});
+  } catch {}
+
   return NextResponse.json({ data: sprint }, { status: 201 });
 }
