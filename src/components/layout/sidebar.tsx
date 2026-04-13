@@ -84,9 +84,10 @@ const NAV: NavGroup[] = [
     title: "EXECUTE",
     projectScoped: true,
     items: [
-      { label: "Agile Board",    href: "/agile",    icon: Columns3,    projectScoped: true },
-      { label: "Sprint Tracker", href: "/sprint",   icon: Timer,       projectScoped: true },
-      { label: "Actions",        href: "/actions",  icon: ClipboardList, projectScoped: true },
+      { label: "Agile Board",       href: "/agile",            icon: Columns3,      projectScoped: true },
+      { label: "Sprint Planning",   href: "/sprint-planning",  icon: Target,        projectScoped: true },
+      { label: "Sprint Tracker",    href: "/sprint",           icon: Timer,         projectScoped: true },
+      { label: "Actions",           href: "/actions",          icon: ClipboardList, projectScoped: true },
     ],
   },
 
