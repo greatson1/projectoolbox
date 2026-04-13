@@ -225,7 +225,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
   // Agent question card — interactive question asked mid-conversation
   if (msg.type === "agent_question" && msg.data?.question) {
     return (
-      <div className="flex gap-2">
+      <div data-agent-questions className="flex gap-2">
         {avatar}
         <div className="flex-1 max-w-[85%]">
           <AgentQuestionCard
@@ -922,7 +922,7 @@ function AgentChatPage() {
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div ref={scrollRef} data-chat-scroll className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Loading history indicator */}
           {historyLoading && activeAgent && (
             <div className="flex items-center gap-2 justify-center py-4 text-xs text-muted-foreground">

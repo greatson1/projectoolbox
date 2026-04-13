@@ -324,13 +324,29 @@ export function ProjectStatusCard({
           <p className="text-[11px] font-medium" style={{ color: urgentAction.color }}>
             Next action required
           </p>
-          <Link href={urgentAction.href}
-            className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-lg border transition-all"
-            style={{ color: urgentAction.color, borderColor: `${urgentAction.color}44`, background: `${urgentAction.color}10` }}>
-            {urgentAction.icon}
-            {urgentAction.label}
-            <ArrowRight size={10} />
-          </Link>
+          {urgentAction.href === "#" ? (
+            <button
+              onClick={() => {
+                const el = document.querySelector<HTMLElement>("[data-agent-questions]");
+                if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+                const container = document.querySelector("[data-chat-scroll]");
+                container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+              }}
+              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-lg border transition-all cursor-pointer"
+              style={{ color: urgentAction.color, borderColor: `${urgentAction.color}44`, background: `${urgentAction.color}10` }}>
+              {urgentAction.icon}
+              {urgentAction.label}
+              <ArrowRight size={10} />
+            </button>
+          ) : (
+            <Link href={urgentAction.href}
+              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-lg border transition-all"
+              style={{ color: urgentAction.color, borderColor: `${urgentAction.color}44`, background: `${urgentAction.color}10` }}>
+              {urgentAction.icon}
+              {urgentAction.label}
+              <ArrowRight size={10} />
+            </Link>
+          )}
         </div>
       )}
 
