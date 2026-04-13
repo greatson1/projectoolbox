@@ -183,8 +183,10 @@ export default function ArtefactsPage() {
         if (generated > 0) {
           toast.success(`Generated ${generated} artefact(s) for ${phase} phase`);
           refreshArtefacts();
-        } else {
+        } else if (skipped > 0) {
           toast.info(`All ${phase} artefacts already exist (${skipped} found)`);
+        } else {
+          toast.info(`Generation deferred — your agent has questions to answer first. Open Chat to respond.`);
         }
       } else {
         toast.error(json?.error || `Error ${res.status}: ${text.slice(0, 80)}`);
