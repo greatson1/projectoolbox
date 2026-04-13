@@ -110,13 +110,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       db.agentArtefact.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "desc" }, take: 8 }),
       db.risk.findMany({ where: { projectId: project.id, status: "OPEN" }, orderBy: { score: "desc" }, take: 5 }),
       db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 5 }),
-      // Knowledge base: HIGH_TRUST items first, then most recent — cap at 12 to stay within context budget
+      // Knowledge base: user-confirmed answers + artefact knowledge + workspace items
+      // Exclude internal session metadata; prioritise HIGH_TRUST (user answers)
       db.knowledgeBaseItem.findMany({
         where: {
           OR: [{ agentId }, { projectId: project.id }, { layer: "WORKSPACE", orgId: caller.orgId }],
+          NOT: { title: { startsWith: "__" } }, // exclude internal session metadata
         },
         orderBy: [{ trustLevel: "desc" }, { createdAt: "desc" }],
-        take: 12,
+        take: 25,
         select: { title: true, content: true, type: true, trustLevel: true, tags: true, createdAt: true },
       }),
     ]);
@@ -230,6 +232,12 @@ When you hit a gate or need user action:
 
 - NEVER ask the user to approve, review, or manage anything inside the chat — always link to the appropriate page
 - When mentioning artefacts, risks, tasks, approvals, or budget — ALWAYS include the relevant link so the user can click through directly
+
+## EVIDENCE-BASED OUTPUT — CRITICAL
+- NEVER claim you have done something unless it appears in the GENERATED ARTEFACTS or LIFECYCLE STATE above. If you haven't done it, say you WILL do it or PLAN to do it.
+- NEVER fabricate progress, bookings, requests, confirmations, contacts, or vendor names. You are a planner — describe what NEEDS to happen, not what supposedly already happened.
+- When producing documents or boards, ALL items start as "Not Started" or "Planned" unless the project description or artefact data explicitly confirms otherwise.
+- Use [TBC] for any specific fact not provided in the project context above. An honest [TBC] is better than a plausible-sounding invention.
 
 ## PM LIFECYCLE RESPONSIBILITIES
 You drive the project through every phase. You know exactly what must be produced at each stage — you do not wait to be asked.

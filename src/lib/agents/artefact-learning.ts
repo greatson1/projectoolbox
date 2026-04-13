@@ -107,11 +107,12 @@ export async function getProjectKnowledgeContext(
 ): Promise<string> {
   try {
     const [projectItems, workspaceItems] = await Promise.all([
-      // Project-level items (high-trust first — user-edited artefacts)
+      // Project-level items (high-trust first — user answers, then artefact knowledge)
+      // Exclude internal session metadata items
       db.knowledgeBaseItem.findMany({
-        where: { projectId, orgId, confidential: false },
+        where: { projectId, orgId, confidential: false, NOT: { title: { startsWith: "__" } } },
         orderBy: [{ trustLevel: "desc" }, { updatedAt: "desc" }],
-        take: 30,
+        take: 40,
         select: { title: true, content: true, trustLevel: true, tags: true, type: true },
       }),
       // Workspace-level items (templates, policies, org standards)
@@ -125,6 +126,10 @@ export async function getProjectKnowledgeContext(
 
     if (projectItems.length === 0 && workspaceItems.length === 0) return "";
 
+    // Separate user-confirmed answers from other KB items for emphasis
+    const userAnswers = projectItems.filter(i => i.tags.includes("user_confirmed") || i.tags.includes("user_answer"));
+    const otherItems = projectItems.filter(i => !userAnswers.includes(i));
+
     const lines: string[] = [
       "━━━ PROJECT KNOWLEDGE BASE (use this information — do NOT invent alternatives) ━━━",
       "The following facts, names, decisions, and policies have been established for this project.",
@@ -132,10 +137,19 @@ export async function getProjectKnowledgeContext(
       "",
     ];
 
-    // Group by tag category for readability
-    const stakeholderItems = projectItems.filter(i => i.tags.includes("stakeholders") || i.tags.includes("stakeholder-register"));
-    const policyItems = [...projectItems, ...workspaceItems].filter(i => i.tags.includes("policy") || i.tags.includes("template") || i.tags.includes("org-standard"));
-    const factItems = projectItems.filter(i => !stakeholderItems.includes(i) && !policyItems.includes(i));
+    // User-confirmed answers get top billing — these are direct answers the user gave
+    if (userAnswers.length > 0) {
+      lines.push("── USER-CONFIRMED FACTS (HIGHEST PRIORITY — the user explicitly told you these) ──");
+      for (const item of userAnswers) {
+        lines.push(`• ${item.title}: ${truncate(item.content, 500)}`);
+      }
+      lines.push("");
+    }
+
+    // Group remaining items by tag category for readability
+    const stakeholderItems = otherItems.filter(i => i.tags.includes("stakeholders") || i.tags.includes("stakeholder-register"));
+    const policyItems = [...otherItems, ...workspaceItems].filter(i => i.tags.includes("policy") || i.tags.includes("template") || i.tags.includes("org-standard"));
+    const factItems = otherItems.filter(i => !stakeholderItems.includes(i) && !policyItems.includes(i));
 
     if (stakeholderItems.length > 0) {
       lines.push("── KNOWN PEOPLE & STAKEHOLDERS (use these exact names) ──");

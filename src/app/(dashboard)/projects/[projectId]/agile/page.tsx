@@ -285,7 +285,7 @@ export default function AgileBoardPage() {
         toast.success("Sprint updated");
       } else {
         const result = await createSprint.mutateAsync(sprintForm) as any;
-        setSelectedSprintId(result?.data?.id || null);
+        setSelectedSprintId(result?.id || null);
         toast.success("Sprint created");
       }
       setShowCreateSprint(false);
@@ -487,7 +487,7 @@ export default function AgileBoardPage() {
           <div className="w-[90px] h-[36px] flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={agileBurndown.filter(d => d.actual != null).map((d, i) => ({ d: i, v: d.actual }))}>
-                <Line type="monotone" dataKey="v" stroke="var(--primary)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="v" stroke="var(--primary)" strokeWidth={2} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -569,18 +569,24 @@ export default function AgileBoardPage() {
           <div className="w-[250px] flex-shrink-0 space-y-3">
             <Card className="p-3">
               <h3 className="text-xs font-semibold mb-2">Sprint Burndown</h3>
-              <div style={{ height: 120 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={agileBurndown}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
-                    <XAxis dataKey="day" tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
-                    <YAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
-                    <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }} />
-                    <Area type="monotone" dataKey="ideal" stroke="#64748B" strokeDasharray="4 4" fill="none" />
-                    <Area type="monotone" dataKey="actual" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} connectNulls={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              {agileBurndown.length === 0 ? (
+                <div className="flex items-center justify-center h-[120px] text-center">
+                  <p className="text-[10px] text-muted-foreground">No tasks in this sprint yet.<br/>Approve the Sprint Plans artefact to populate.</p>
+                </div>
+              ) : (
+                <div style={{ height: 120 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={agileBurndown}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+                      <XAxis dataKey="day" tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
+                      <YAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
+                      <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }} />
+                      <Area type="monotone" dataKey="ideal" stroke="#64748B" strokeDasharray="4 4" fill="none" isAnimationActive={false} />
+                      <Area type="monotone" dataKey="actual" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} connectNulls={false} isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </Card>
 
             <Card className="p-3">
@@ -591,8 +597,8 @@ export default function AgileBoardPage() {
                     <XAxis dataKey="sprint" tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
                     <YAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} />
                     <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11 }} />
-                    <Bar dataKey="committed" fill="var(--primary)" fillOpacity={0.3} radius={[3,3,0,0]} />
-                    <Bar dataKey="completed" fill="var(--primary)" radius={[3,3,0,0]} />
+                    <Bar dataKey="committed" fill="var(--primary)" fillOpacity={0.3} radius={[3,3,0,0]} isAnimationActive={false} />
+                    <Bar dataKey="completed" fill="var(--primary)" radius={[3,3,0,0]} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -609,7 +615,7 @@ export default function AgileBoardPage() {
             <Card className="p-3 space-y-2">
               <h3 className="text-xs font-semibold">Team Workload</h3>
               {derivedTeam.length === 0
-                ? <p className="text-[11px] text-muted-foreground">No assignees yet</p>
+                ? <p className="text-[11px] text-muted-foreground">No assignees yet. Team members appear here when tasks are assigned via the Resource Plan artefact.</p>
                 : derivedTeam.map(m => {
                   const pct = m.capacity > 0 ? Math.round((m.assigned / m.capacity) * 100) : 100;
                   return (

@@ -394,19 +394,20 @@ export async function answerQuestionInSession(
   const question = session.questions.find(q => q.id === questionId);
   if (!question) return { status: "next", progress: { current: session.currentQuestionIndex, total: session.questions.length, artefactNames: session.artefactNames } };
 
-  // Store fact to KB
+  // Store fact to KB — include full question context so Claude can use it
   const isTBC = /^tbc$/i.test(answer.trim()) || /not (yet|sure|know)/i.test(answer);
+  const humanTitle = question.question.replace(/\?$/, "").trim();
   if (isTBC) {
     await storeFactToKB(agentId, projectId, orgId,
-      `TBC: ${question.field}`,
-      `User confirmed this is not yet known: ${question.question} — to be filled in later.`,
+      `TBC: ${humanTitle}`,
+      `User confirmed this is not yet known: "${question.question}" — to be filled in later.`,
       [question.artefact.toLowerCase().replace(/\s+/g, "_"), "tbc"],
     ).catch(() => {});
   } else {
     await storeFactToKB(agentId, projectId, orgId,
-      question.field,
-      answer,
-      [question.artefact.toLowerCase().replace(/\s+/g, "_"), "user_answer"],
+      humanTitle,
+      `Q: ${question.question}\nA: ${answer}\n(For artefact: ${question.artefact})`,
+      [question.artefact.toLowerCase().replace(/\s+/g, "_"), "user_answer", "user_confirmed"],
     ).catch(() => {});
   }
 

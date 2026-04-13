@@ -103,6 +103,8 @@ Rules:
 - Prefer LOW-risk routine actions over HIGH-risk changes.
 - If a task is BLOCKED, propose investigating or escalating.
 - If a risk has score ≥ 12, propose mitigation.
+- NEVER claim you have done something you haven't. You can only reference actions that appear in RECENT AGENT ACTIVITY above. If it's not listed, you haven't done it.
+- NEVER fabricate progress, bookings, requests, confirmations, or contacts. You are a planner — describe what NEEDS to happen, not what supposedly already happened.
 
 Output ONLY the JSON array, no markdown fences.`;
 
