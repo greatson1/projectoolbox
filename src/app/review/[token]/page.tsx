@@ -16,6 +16,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
   const [comment, setComment] = useState("");
   const [showComment, setShowComment] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [selectedRiskAction, setSelectedRiskAction] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/review/${token}`).then(r => r.json()).then(d => {
@@ -88,8 +89,6 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
     { id: "AVOID", label: "Avoid", desc: "Change project scope or approach to eliminate the risk.", color: "#F59E0B" },
     { id: "ESCALATE", label: "Escalate Further", desc: "Needs higher-level attention. Escalate to programme board.", color: "#EF4444" },
   ];
-
-  const [selectedRiskAction, setSelectedRiskAction] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen bg-background px-4 py-12">
