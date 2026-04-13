@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import {
   Plus, AlertTriangle, Shield, TrendingDown, Download,
   Pencil, X, Check, Loader2, ChevronDown, ChevronUp, Trash2,
+  Siren, Mail, Lock,
 } from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
 
@@ -50,13 +51,22 @@ const ACTION_STATUS_STYLE: Record<string, string> = {
 
 type ResponseAction = {
   id: string;
-  strategy: Strategy;
-  action: string;
+  type?: "ACTION" | "ESCALATION";
+  strategy?: Strategy;
+  action?: string;
   owner?: string | null;
+  ownerEmail?: string | null;
   dueDate?: string | null;
-  status: string;
+  status?: string;
   notes?: string | null;
   createdAt: string;
+  // Escalation-specific
+  escalatedAt?: string;
+  escalatedBy?: string;
+  recipients?: string[];
+  failedRecipients?: string[];
+  subject?: string;
+  emailPreview?: string;
 };
 
 type Risk = {
@@ -101,11 +111,21 @@ export default function RiskRegisterPage() {
     strategy: "REDUCE" as Strategy,
     actionText: "",
     owner: "",
+    ownerEmail: "",
     dueDate: "",
     notes: "",
   });
   const [actionSaving, setActionSaving] = useState(false);
   const [actionsExpanded, setActionsExpanded] = useState(true);
+
+  // Escalation state
+  const [escalating, setEscalating] = useState(false);
+  const [escalationSending, setEscalationSending] = useState(false);
+  const [escalationForm, setEscalationForm] = useState({
+    recipients: "",   // comma-separated emails
+    customMessage: "",
+  });
+  const [escalationResult, setEscalationResult] = useState<{ sent: string[]; failed: string[]; subject: string } | null>(null);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -159,11 +179,12 @@ export default function RiskRegisterPage() {
         strategy: actionForm.strategy,
         actionText: actionForm.actionText.trim(),
         owner: actionForm.owner.trim() || null,
+        ownerEmail: actionForm.ownerEmail.trim() || null,
         dueDate: actionForm.dueDate || null,
         notes: actionForm.notes.trim() || null,
       });
       setSelectedRisk(updated);
-      setActionForm({ strategy: "REDUCE", actionText: "", owner: "", dueDate: "", notes: "" });
+      setActionForm({ strategy: "REDUCE", actionText: "", owner: "", ownerEmail: "", dueDate: "", notes: "" });
       setAddingAction(false);
       qc.invalidateQueries({ queryKey: ["risks", projectId] });
       toast.success("Response action added");
@@ -205,6 +226,55 @@ export default function RiskRegisterPage() {
     } catch {
       toast.error("Failed to remove action");
     }
+  }
+
+  async function sendEscalation() {
+    if (!selectedRisk) return;
+    const emails = escalationForm.recipients
+      .split(/[\n,;]+/)
+      .map(e => e.trim())
+      .filter(e => e.includes("@"));
+
+    if (emails.length === 0) {
+      toast.error("Add at least one valid email address");
+      return;
+    }
+    setEscalationSending(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/risks`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          riskId: selectedRisk.id,
+          action: "escalate",
+          recipients: emails,
+          customMessage: escalationForm.customMessage.trim() || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setSelectedRisk(json.data);
+      setEscalationResult({ sent: json.emailsSent ?? [], failed: json.emailsFailed ?? [], subject: json.subject });
+      qc.invalidateQueries({ queryKey: ["risks", projectId] });
+      toast.success(`Escalation sent to ${(json.emailsSent ?? []).length} recipient(s)`);
+    } catch {
+      toast.error("Escalation failed — check Resend is configured");
+    } finally {
+      setEscalationSending(false);
+    }
+  }
+
+  function openEscalation(r: Risk) {
+    // Pre-populate with known email addresses from response log
+    const log = (r.responseLog as any[]) ?? [];
+    const knownEmails = [
+      ...(r.owner?.includes("@") ? [r.owner] : []),
+      ...log.filter((e: any) => e.ownerEmail).map((e: any) => e.ownerEmail),
+    ];
+    const unique = [...new Set(knownEmails)];
+    setEscalationForm({ recipients: unique.join("\n"), customMessage: "" });
+    setEscalationResult(null);
+    setEscalating(true);
   }
 
   async function quickAdd() {
@@ -375,9 +445,15 @@ export default function RiskRegisterPage() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-mono">{selectedRisk.id.slice(-6)}</CardTitle>
                       {!editing ? (
-                        <Button variant="ghost" size="sm" className="h-7 px-2 gap-1" onClick={() => startEdit(selectedRisk)}>
-                          <Pencil className="w-3.5 h-3.5" /> Edit
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="h-7 px-2 gap-1" onClick={() => startEdit(selectedRisk)}>
+                            <Pencil className="w-3.5 h-3.5" /> Edit
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => { openEscalation(selectedRisk); setEditing(false); }}>
+                            <Siren className="w-3.5 h-3.5" /> Escalate
+                          </Button>
+                        </div>
                       ) : (
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditing(false)} disabled={saving}>
@@ -472,6 +548,110 @@ export default function RiskRegisterPage() {
                   </CardContent>
                 </Card>
 
+                {/* ── Escalation panel ── */}
+                {escalating && (
+                  <Card className="border-destructive/40">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Siren className="w-4 h-4 text-destructive" />
+                          <CardTitle className="text-sm text-destructive">Escalate Risk</CardTitle>
+                        </div>
+                        {!escalationResult && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEscalating(false)}>
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        The agent will generate a professional escalation email using the risk details and response actions. Recipients will be notified immediately.
+                      </p>
+                    </CardHeader>
+
+                    <CardContent className="space-y-3">
+                      {escalationResult ? (
+                        /* ── Result view ── */
+                        <div className="space-y-3">
+                          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3 space-y-1.5">
+                            <p className="text-xs font-semibold text-green-700">Escalation sent</p>
+                            <p className="text-[10px] text-muted-foreground font-medium">Subject: {escalationResult.subject}</p>
+                            {escalationResult.sent.length > 0 && (
+                              <div>
+                                <p className="text-[10px] text-muted-foreground mb-1">✅ Delivered to:</p>
+                                {escalationResult.sent.map(e => (
+                                  <p key={e} className="text-[10px] font-medium">{e}</p>
+                                ))}
+                              </div>
+                            )}
+                            {escalationResult.failed.length > 0 && (
+                              <div>
+                                <p className="text-[10px] text-destructive mb-1">❌ Failed:</p>
+                                {escalationResult.failed.map(e => (
+                                  <p key={e} className="text-[10px] text-destructive">{e}</p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground">The escalation has been logged in the response history and the risk status has been updated to ESCALATED.</p>
+                          <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => { setEscalating(false); setEscalationResult(null); }}>
+                            Close
+                          </Button>
+                        </div>
+                      ) : (
+                        /* ── Input form ── */
+                        <>
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
+                              Recipients <span className="text-destructive">*</span>
+                            </label>
+                            <textarea
+                              rows={3}
+                              className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-destructive/40 resize-none"
+                              placeholder={"john.smith@company.com\njane.doe@company.com"}
+                              value={escalationForm.recipients}
+                              onChange={e => setEscalationForm(f => ({ ...f, recipients: e.target.value }))}
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-0.5">One email per line, or comma-separated</p>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
+                              Additional Context <span className="text-muted-foreground/50 font-normal">(optional)</span>
+                            </label>
+                            <textarea
+                              rows={3}
+                              className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-destructive/40 resize-none"
+                              placeholder="Any additional context or urgency the agent should include in the email…"
+                              value={escalationForm.customMessage}
+                              onChange={e => setEscalationForm(f => ({ ...f, customMessage: e.target.value }))}
+                            />
+                          </div>
+                          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-[10px] text-amber-700 space-y-0.5">
+                            <p className="font-semibold">The agent will include:</p>
+                            <p>• Risk title, score, probability &amp; impact</p>
+                            <p>• All documented response actions and their status</p>
+                            <p>• Your additional context (if provided)</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="flex-1 h-8 text-xs gap-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                              onClick={sendEscalation}
+                              disabled={escalationSending || !escalationForm.recipients.trim()}>
+                              {escalationSending
+                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating &amp; Sending…</>
+                                : <><Mail className="w-3.5 h-3.5" /> Generate &amp; Send Escalation</>
+                              }
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setEscalating(false)} disabled={escalationSending}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* ── Response Actions card ── */}
                 <Card>
                   <CardHeader className="pb-2">
@@ -546,6 +726,14 @@ export default function RiskRegisterPage() {
                                 onChange={e => setActionForm(f => ({ ...f, dueDate: e.target.value }))} />
                             </div>
                           </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-1">Owner Email <span className="text-muted-foreground/60">(for escalation notifications)</span></label>
+                            <input type="email"
+                              className="w-full px-2 py-1 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+                              placeholder="sarah.lee@company.com"
+                              value={actionForm.ownerEmail}
+                              onChange={e => setActionForm(f => ({ ...f, ownerEmail: e.target.value }))} />
+                          </div>
 
                           <div>
                             <label className="text-[10px] text-muted-foreground block mb-1">Notes</label>
@@ -573,7 +761,41 @@ export default function RiskRegisterPage() {
                       ) : (
                         <div className="space-y-2">
                           {responseLog.map((entry) => {
-                            const meta = STRATEGY_META[entry.strategy] ?? STRATEGY_META.REDUCE;
+                            // ── Escalation entry (read-only, locked) ──
+                            if (entry.type === "ESCALATION") {
+                              return (
+                                <div key={entry.id} className="rounded-lg border border-destructive/30 bg-destructive/5 p-2.5 space-y-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border bg-destructive/15 text-destructive border-destructive/30">
+                                        <Siren className="w-2.5 h-2.5" /> ESCALATED
+                                      </span>
+                                      <span className="text-[9px] text-muted-foreground">
+                                        {new Date(entry.escalatedAt!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                      </span>
+                                    </div>
+                                    <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" title="Escalation records cannot be deleted" />
+                                  </div>
+                                  <p className="text-[10px] font-semibold text-foreground truncate">{entry.subject}</p>
+                                  {entry.emailPreview && (
+                                    <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">{entry.emailPreview}</p>
+                                  )}
+                                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                    <span className="flex items-center gap-1"><Mail className="w-2.5 h-2.5" /> {entry.recipients?.length ?? 0} notified</span>
+                                    {(entry.failedRecipients?.length ?? 0) > 0 && (
+                                      <span className="text-destructive">{entry.failedRecipients!.length} failed</span>
+                                    )}
+                                    {entry.escalatedBy && <span>by {entry.escalatedBy}</span>}
+                                  </div>
+                                  {entry.recipients && entry.recipients.length > 0 && (
+                                    <p className="text-[9px] text-muted-foreground">{entry.recipients.join(", ")}</p>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            // ── Regular action entry ──
+                            const meta = STRATEGY_META[entry.strategy ?? "REDUCE"] ?? STRATEGY_META.REDUCE;
                             return (
                               <div key={entry.id} className="rounded-lg border border-border bg-background p-2.5 space-y-1.5">
                                 <div className="flex items-start justify-between gap-2">
@@ -583,9 +805,9 @@ export default function RiskRegisterPage() {
                                     </span>
                                     <button
                                       title="Click to cycle status"
-                                      onClick={() => cycleActionStatus(entry.id, entry.status)}
-                                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold transition-colors ${ACTION_STATUS_STYLE[entry.status] ?? ACTION_STATUS_STYLE.PLANNED}`}>
-                                      {entry.status.replace("_", " ")}
+                                      onClick={() => cycleActionStatus(entry.id, entry.status ?? "PLANNED")}
+                                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold transition-colors ${ACTION_STATUS_STYLE[entry.status ?? "PLANNED"] ?? ACTION_STATUS_STYLE.PLANNED}`}>
+                                      {(entry.status ?? "PLANNED").replace("_", " ")}
                                     </button>
                                   </div>
                                   <button onClick={() => deleteResponseAction(entry.id)}
@@ -595,7 +817,7 @@ export default function RiskRegisterPage() {
                                 </div>
                                 <p className="text-xs font-medium leading-relaxed">{entry.action}</p>
                                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                                  {entry.owner && <span>👤 {entry.owner}</span>}
+                                  {entry.owner && <span>👤 {entry.owner}{entry.ownerEmail ? ` · ${entry.ownerEmail}` : ""}</span>}
                                   {entry.dueDate && <span>📅 {new Date(entry.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>}
                                 </div>
                                 {entry.notes && <p className="text-[10px] text-muted-foreground italic">{entry.notes}</p>}
