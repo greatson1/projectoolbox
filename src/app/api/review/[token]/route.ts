@@ -74,7 +74,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const body = await req.json();
-  const { action, comment, riskId, strategy } = body;
+  const { action, comment, riskId, strategy, escalateToEmail } = body;
 
   const link = await db.reviewLink.findUnique({
     where: { token },
@@ -185,7 +185,104 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     }
   } catch {}
 
+  // ── Escalate Further: send new escalation email to the specified person ──
+  if (action === "ESCALATE" && escalateToEmail && escalateToEmail.includes("@")) {
+    try {
+      const { randomBytes } = await import("crypto");
+      const newToken = randomBytes(32).toString("hex");
+      const baseUrl = process.env.NEXTAUTH_URL || "https://projectoolbox.com";
+
+      // Create new ReviewLink for the escalation target
+      await db.reviewLink.create({
+        data: {
+          token: newToken,
+          approvalId: link.approvalId,
+          email: escalateToEmail,
+          name: escalateToEmail.split("@")[0],
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      // Send escalation email via Resend
+      const resendKey = process.env.RESEND_API_KEY || process.env.RESEND_API_KEY_PROJECTOOLBOX;
+      if (resendKey) {
+        const project = await db.project.findUnique({ where: { id: link.approval.projectId }, select: { name: true } });
+        const reviewUrl = `${baseUrl}/review/${newToken}`;
+        const escalatorName = link.email || link.name || "A stakeholder";
+
+        const html = `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:620px;margin:0 auto;">
+          <div style="background:linear-gradient(135deg,#7f1d1d,#991b1b);padding:20px 28px;border-radius:10px 10px 0 0;">
+            <p style="color:rgba(255,255,255,0.7);font-size:11px;text-transform:uppercase;letter-spacing:1px;">Escalated Risk — Needs Your Attention</p>
+            <h1 style="color:white;font-size:17px;margin:0;">${project?.name || "Project"}</h1>
+          </div>
+          <div style="background:#fff;padding:24px 28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 10px 10px;">
+            <p style="font-size:14px;color:#374151;line-height:1.7;">
+              <strong>${escalatorName}</strong> has escalated a risk to you for review because they were unable to resolve it at their level.
+            </p>
+            <p style="font-size:14px;color:#374151;line-height:1.7;">
+              <strong>Original escalation:</strong> ${link.approval.title}
+            </p>
+            ${comment ? `<p style="font-size:14px;color:#374151;line-height:1.7;"><strong>Their comment:</strong> "${comment}"</p>` : ""}
+            <p style="font-size:14px;color:#374151;line-height:1.7;">
+              Please review the risk details and decide on the appropriate response strategy. No account needed — just click the button below.
+            </p>
+            <a href="${reviewUrl}" style="display:inline-block;margin-top:16px;background:#dc2626;color:white;padding:10px 22px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
+              Review &amp; Respond
+            </a>
+            <p style="font-size:11px;color:#9ca3af;margin:16px 0 0;border-top:1px solid #f3f4f6;padding-top:12px;">
+              Escalation chain: Original → ${link.email || "stakeholder"} → you. No account required. Expires in 7 days.
+            </p>
+          </div>
+        </div>`;
+
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: `Projectoolbox <notifications@projectoolbox.com>`,
+            to: [escalateToEmail],
+            subject: `ESCALATED TO YOU: ${link.approval.title}`,
+            html,
+          }),
+        }).catch(() => {});
+      }
+
+      // Log the chain escalation
+      if (deployment?.agentId) {
+        await db.agentActivity.create({
+          data: {
+            agentId: deployment.agentId, type: "approval",
+            summary: `Risk further escalated: ${link.email || "stakeholder"} → ${escalateToEmail}. Reason: ${comment || "No comment"}`,
+          },
+        }).catch(() => {});
+      }
+
+      // Update risk responseLog with chain escalation
+      if (riskId) {
+        const risk = await db.risk.findUnique({ where: { id: riskId } });
+        if (risk) {
+          const log = ((risk as any).responseLog as any[]) || [];
+          log.push({
+            type: "CHAIN_ESCALATION",
+            from: link.email || link.name || "stakeholder",
+            to: escalateToEmail,
+            comment: comment || "",
+            escalatedAt: new Date().toISOString(),
+          });
+          await db.risk.update({ where: { id: riskId }, data: { responseLog: log } as any });
+        }
+      }
+    } catch (e) {
+      console.error("[review] Chain escalation failed:", e);
+    }
+  }
+
   return NextResponse.json({
-    data: { success: true, action, status: newStatus, message: "Your response has been recorded. The project team will be notified." },
+    data: {
+      success: true, action, status: newStatus,
+      message: action === "ESCALATE" && escalateToEmail
+        ? `Escalated to ${escalateToEmail}. They will receive a review link.`
+        : "Your response has been recorded. The project team will be notified.",
+    },
   });
 }

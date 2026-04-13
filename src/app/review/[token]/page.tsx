@@ -17,6 +17,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
   const [showComment, setShowComment] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [selectedRiskAction, setSelectedRiskAction] = useState<string | null>(null);
+  const [escalateEmail, setEscalateEmail] = useState("");
 
   useEffect(() => {
     fetch(`/api/review/${token}`).then(r => r.json()).then(d => {
@@ -38,6 +39,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
           action,
           comment: comment || undefined,
           ...(riskAction && topRiskId ? { riskId: topRiskId, strategy: action } : {}),
+          ...(action === "ESCALATE" && escalateEmail ? { escalateToEmail: escalateEmail } : {}),
         }),
       });
       const d = await r.json();
@@ -188,15 +190,30 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
                 </div>
 
                 {selectedRiskAction && (
-                  <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
-                    placeholder="Additional instructions or context for the project team..."
-                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y" />
+                  <>
+                    {/* Escalate Further: ask WHO to escalate to */}
+                    {selectedRiskAction === "ESCALATE" && (
+                      <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-2">
+                        <label className="text-xs font-bold text-foreground">Who should this be escalated to?</label>
+                        <input type="email" placeholder="Enter their email address"
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none"
+                          value={escalateEmail} onChange={e => setEscalateEmail(e.target.value)} />
+                        <p className="text-[10px] text-muted-foreground">They will receive an escalation email with a review link — no account needed.</p>
+                      </div>
+                    )}
+                    <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
+                      placeholder={selectedRiskAction === "ESCALATE" ? "Explain why this needs further escalation..." : "Additional instructions or context for the project team..."}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y" />
+                  </>
                 )}
 
                 {selectedRiskAction && (
-                  <Button className="w-full" onClick={() => handleAction(selectedRiskAction)} disabled={acting}>
+                  <Button className="w-full" onClick={() => handleAction(selectedRiskAction)}
+                    disabled={acting || (selectedRiskAction === "ESCALATE" && !escalateEmail.includes("@"))}>
                     {acting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
-                    Confirm: {RISK_ACTIONS.find(a => a.id === selectedRiskAction)?.label}
+                    {selectedRiskAction === "ESCALATE"
+                      ? (escalateEmail ? `Escalate to ${escalateEmail}` : "Enter email to escalate")
+                      : `Confirm: ${RISK_ACTIONS.find(a => a.id === selectedRiskAction)?.label}`}
                   </Button>
                 )}
               </div>
