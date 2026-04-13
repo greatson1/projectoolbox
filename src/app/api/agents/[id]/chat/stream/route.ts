@@ -59,22 +59,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   } catch {}
 
-  // If this is a clarification answer, return a lightweight acknowledgement
-  // stream rather than a full AI response — no credits consumed.
-  if (isClarificationAnswer) {
-    const ack = "Got it — answer recorded. ✓";
-    const stream = new ReadableStream({
-      start(controller) {
-        const enc = new TextEncoder();
-        controller.enqueue(enc.encode(`data: ${JSON.stringify({ token: ack })}\n\n`));
-        controller.enqueue(enc.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-    // Save the ack as agent message (no credit deduction)
-    await db.chatMessage.create({ data: { agentId, role: "agent", content: ack } }).catch(() => {});
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-  }
+  // If this is a clarification answer, record it but still send to Claude
+  // so the agent responds intelligently (not just "Got it")
+  // The clarification answer has already been processed above — now let the
+  // message flow through to the normal Claude stream so the agent can
+  // acknowledge, provide context, and ask the next question naturally.
 
   // Get agent config + full project context
   const agent = await db.agent.findUnique({
