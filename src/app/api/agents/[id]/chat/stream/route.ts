@@ -97,8 +97,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       db.phase.findMany({ where: { projectId: project.id }, orderBy: { order: "asc" } }),
       db.approval.findMany({ where: { projectId: project.id, status: "PENDING" }, take: 5 }),
       db.agentArtefact.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "desc" }, take: 8 }),
-      db.risk.findMany({ where: { projectId: project.id, status: "OPEN" }, orderBy: { score: "desc" }, take: 5 }),
-      db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 5 }),
+      db.risk.findMany({ where: { projectId: project.id }, orderBy: { score: "desc" }, take: 10, select: { title: true, description: true, probability: true, impact: true, score: true, status: true, category: true, owner: true, mitigation: true, responseLog: true } }),
+      db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 10 }),
       // Knowledge base: user-confirmed answers + artefact knowledge + workspace items
       // Exclude internal session metadata; prioritise HIGH_TRUST (user answers)
       db.knowledgeBaseItem.findMany({
@@ -200,10 +200,29 @@ ${recentArtefacts.length > 0
   ? recentArtefacts.map(a => `- ${a.name} [${a.status}]`).join("\n")
   : "No artefacts generated yet."}
 
-## OPEN RISKS (Top ${openRisks.length})
+## PROJECT RISKS (${openRisks.length} total)
 ${openRisks.length > 0
-  ? openRisks.map(r => `- **${r.title}** — Score: ${r.score}/25 — ${r.description}`).join("\n")
+  ? openRisks.map((r: any) => {
+      const log = (r.responseLog as any[]) || [];
+      const stakeholderResponses = log.filter((e: any) => e.type === "STAKEHOLDER_RESPONSE");
+      const escalations = log.filter((e: any) => e.type === "ESCALATION");
+      let detail = `- **${r.title}** [${r.status}] — Score: ${r.score}/25 (P${r.probability} x I${r.impact}) — ${r.description || ""}`;
+      if (r.mitigation) detail += `\n  Mitigation: ${r.mitigation}`;
+      if (r.owner) detail += ` | Owner: ${r.owner}`;
+      if (escalations.length > 0) detail += `\n  ⚠️ ESCALATED to: ${escalations.map((e: any) => e.recipients?.join(", ")).join("; ")}`;
+      if (stakeholderResponses.length > 0) {
+        for (const sr of stakeholderResponses) {
+          detail += `\n  📩 Stakeholder response from ${sr.respondedBy}: ${sr.action}${sr.comment ? ` — "${sr.comment}"` : ""} (${sr.respondedAt ? new Date(sr.respondedAt).toLocaleDateString("en-GB") : ""})`;
+        }
+      }
+      return detail;
+    }).join("\n")
   : "No risks logged yet."}
+
+## RECENT ACTIVITY LOG (what happened recently)
+${recentActivity.length > 0
+  ? recentActivity.map((a: any) => `- [${a.type}] ${a.summary} (${new Date(a.createdAt).toLocaleDateString("en-GB")})`).join("\n")
+  : "No recent activity."}
 
 ## YOUR IMMEDIATE PRIORITY RIGHT NOW
 ${(() => {
