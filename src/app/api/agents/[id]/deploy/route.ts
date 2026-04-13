@@ -106,7 +106,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       EmailService.sendDeployConfirmation(callerUser.email, {
         agentName: agent?.name || "Agent",
         projectName: project?.name || "Project",
-        autonomyLevel: agent?.autonomyLevel || 3,
+        autonomyLevel: agent?.autonomyLevel || 2,
         dashboardUrl: `${process.env.NEXTAUTH_URL}/agents/${agentId}`,
       }).catch(() => {}); // Fire and forget
     }

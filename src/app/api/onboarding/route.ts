@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
             name: agent.name,
             codename: agent.name.toUpperCase().replace(/\s+/g, "-"),
             gradient: agent.gradient || "#6366F1",
-            autonomyLevel: agent.autonomyLevel || 3,
+            autonomyLevel: agent.autonomyLevel || 2,
             status: "ACTIVE",
             orgId,
           },

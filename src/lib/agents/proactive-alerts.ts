@@ -28,8 +28,8 @@ export async function runProactiveAlerts(
   orgId: string,
   autonomyLevel: number,
 ): Promise<AlertResult> {
-  // Only L3+ agents send proactive alerts
-  if (autonomyLevel < 3) return { alertsGenerated: 0, types: [] };
+  // Only L2+ agents send proactive alerts
+  if (autonomyLevel < 2) return { alertsGenerated: 0, types: [] };
 
   const alerts: { type: string; summary: string; metadata?: any }[] = [];
 

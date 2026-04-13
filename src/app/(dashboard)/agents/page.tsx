@@ -45,7 +45,7 @@ interface Agent {
   methodology: Methodology;
   status: AgentStatus;
   currentTask: string;
-  autonomyLevel: number;  // 1-5
+  autonomyLevel: number;  // 1-4
   autonomyLabel: string;
   performanceScore: number;
   creditsToday: number;
@@ -106,7 +106,7 @@ const EVENT_ICONS: Record<string, string> = {
   "Document": "📄", "Approval": "✅", "Meeting": "🎙️", "Risk": "⚠️", "Phase Gate": "🚩",
 };
 
-const AUTONOMY_LABELS = ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"];
+const AUTONOMY_LABELS = ["", "Advisor", "Co-pilot", "Autonomous", "Strategic"];
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -158,7 +158,7 @@ export default function AgentFleetPage() {
         methodology: (project?.methodology || "Hybrid") as Methodology,
         status: (a.status?.toLowerCase() || "idle") as AgentStatus,
         currentTask: a.currentTask || "Awaiting instructions",
-        autonomyLevel: a.autonomyLevel || 2, autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][a.autonomyLevel || 2],
+        autonomyLevel: a.autonomyLevel || 2, autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous", "Strategic"][a.autonomyLevel || 2],
         performanceScore: a.performanceScore || 0, creditsToday: a.creditsUsed || 0,
         creditSparkline: [0, 0, 0, 0, 0, 0, 0, 0],
         phase: a.currentPhase || "—", health: "green" as RAG,
@@ -691,7 +691,7 @@ function MiniRing({ pct, size, color, bgColor }: { pct: number; size: number; co
 function AutonomyDots({ level, color}: { level: number; color: string;  }) {
   return (
     <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map(i => (
+      {[1, 2, 3, 4].map(i => (
         <div key={i} className="w-2 h-2 rounded-full transition-all" style={{
           background: i <= level ? color : `${"var(--border)"}44`,
           boxShadow: i <= level ? `0 0 4px ${color}44` : "none",

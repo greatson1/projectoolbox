@@ -45,11 +45,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 // Config tab
 const AUTONOMY_LEVELS = [
-  { level: 1, name: "Assistant", desc: "Suggests actions, human executes everything" },
-  { level: 2, name: "Advisor", desc: "Drafts artefacts, human reviews before any action" },
-  { level: 3, name: "Co-pilot", desc: "Executes routine tasks, escalates decisions above threshold" },
-  { level: 4, name: "Autonomous", desc: "Handles most decisions independently, human reviews exceptions" },
-  { level: 5, name: "Strategic", desc: "Full autonomy within governance bounds, self-correcting" },
+  { level: 1, name: "Advisor", desc: "Agent works, everything goes to your approval queue" },
+  { level: 2, name: "Co-pilot", desc: "Handles routine tasks, risks, and resources — documents need approval" },
+  { level: 3, name: "Autonomous", desc: "Runs the project day-to-day including documents and schedule" },
+  { level: 4, name: "Strategic", desc: "Full autonomy within governance bounds, self-correcting" },
 ];
 
 const NOTIFICATION_PREFS = [
@@ -234,7 +233,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
     project: "",
     methodology: "",
     status: "active" as const,
-    autonomyLevel: 3,
+    autonomyLevel: 2,
     autonomyLabel: "Co-pilot",
     performanceScore: 0,
     deployedDate: "",
@@ -258,7 +257,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       methodology: project?.methodology || "",
       status: (apiAgent.status?.toLowerCase() || AGENT_DEFAULTS.status) as "active" | "paused" | "idle" | "error",
       autonomyLevel: apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel,
-      autonomyLabel: ["", "Assistant", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
+      autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
       performanceScore: apiAgent.performanceScore || 0,
       currentTask: apiAgent.activities?.[0]?.summary || "",
       deployedDate: apiAgent.createdAt ? new Date(apiAgent.createdAt).toISOString().split("T")[0] : "",
@@ -1369,7 +1368,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex gap-1">
-                          {[1, 2, 3, 4, 5].map((d) => (
+                          {[1, 2, 3, 4].map((d) => (
                             <div
                               key={d}
                               className="size-2.5 rounded-full"

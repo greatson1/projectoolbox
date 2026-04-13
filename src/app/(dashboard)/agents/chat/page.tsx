@@ -1072,7 +1072,7 @@ function AgentChatPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= activeAgent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />)}
+                {[1, 2, 3, 4].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= activeAgent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />)}
                 <span className="text-[9px] ml-1 text-muted-foreground">Level {activeAgent.autonomyLevel}</span>
               </div>
             </CardContent>

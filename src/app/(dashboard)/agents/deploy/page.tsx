@@ -69,7 +69,7 @@ const INIT_STATE: WizardState = {
   stakeholders: [],
   agentName: "", agentTitle: "", agentGradient: 0, domainTags: "", defaultGreeting: "", monthlyBudget: "",
   personalityFormal: 35, personalityConcise: 50,
-  autonomyLevel: 3, reportSchedule: "weekly",
+  autonomyLevel: 2, reportSchedule: "weekly",
   notifSlack: true, notifEmail: true, notifTelegram: false,
   intJira: false, intGithub: false, intConfluence: false,
 };
@@ -206,33 +206,27 @@ const GRADIENT_PRESETS = [
 
 const AUTONOMY_CARDS: Array<{ level: number; name: string; tagline: string; desc: string; rec: boolean; does: string[]; doesnt: string[] }> = [
   {
-    level: 1, name: "Assistant", tagline: "I suggest, you decide", rec: false,
-    desc: "Agent generates all project documents, identifies risks, and scaffolds tasks — but won't act on any findings. Every recommendation goes to your Approvals queue.",
-    does: ["Generate artefacts (briefs, registers, plans)", "Identify risks and flag issues", "Create project task list", "Answer questions in chat"],
-    doesnt: ["Execute any changes autonomously", "Update task progress without approval", "Send stakeholder communications", "Change schedule or budget"],
+    level: 1, name: "Advisor", tagline: "I work, you approve everything", rec: false,
+    desc: "Agent generates documents, identifies risks, drafts proposals — but every action goes to your Approvals queue. Nothing happens without your sign-off.",
+    does: ["Generate artefacts for your review", "Identify risks and draft responses", "Draft change proposals with impact assessment", "Answer questions in chat"],
+    doesnt: ["Execute any actions autonomously", "Assign or update tasks without approval", "Send any communications", "Modify schedule or budget"],
   },
   {
-    level: 2, name: "Advisor", tagline: "I draft, you approve everything", rec: false,
-    desc: "Agent proactively monitors your project and drafts change proposals — but every action needs your sign-off before execution.",
-    does: ["Everything in L1", "Proactively scan for issues", "Draft change proposals with impact assessment", "Recommend schedule/budget adjustments"],
-    doesnt: ["Execute any changes without approval", "Auto-respond to risks", "Send any communications", "Modify tasks or artefacts directly"],
+    level: 2, name: "Co-pilot", tagline: "I handle routine, escalate important", rec: true,
+    desc: "Agent handles low-risk task assignments, risk responses, and resource allocation autonomously. Documents, schedule changes, budget, and comms all require your approval.",
+    does: ["Everything in L1", "Auto-execute LOW risk tasks, risks, and resources", "Assign tasks and allocate resources", "Respond to routine risks automatically"],
+    doesnt: ["Generate or approve documents without review", "Change project schedule without approval", "Modify budget without approval", "Send stakeholder communications"],
   },
   {
-    level: 3, name: "Co-pilot", tagline: "I handle routine, escalate important", rec: true,
-    desc: "Agent handles low-risk actions autonomously (task updates, risk responses, document updates). Escalates schedule changes, budget decisions, and stakeholder comms.",
-    does: ["Everything in L2", "Auto-execute LOW risk actions", "Update task progress and status", "Respond to routine risks", "Generate and update artefacts"],
-    doesnt: ["Change project schedule without approval", "Modify budget without approval", "Send stakeholder communications", "Change project scope"],
-  },
-  {
-    level: 4, name: "Autonomous", tagline: "I run the project, you review outcomes", rec: false,
-    desc: "Agent runs the project day-to-day — adjusts schedule, manages budget within thresholds, communicates with stakeholders. You review weekly reports and HIGH risk items.",
-    does: ["Everything in L3", "Auto-execute LOW + MEDIUM risk actions", "Adjust schedule and dates", "Manage budget within threshold", "Send routine stakeholder updates"],
+    level: 3, name: "Autonomous", tagline: "I run the project, you review outcomes", rec: false,
+    desc: "Agent runs the project day-to-day — generates documents, adjusts schedule, manages budget within thresholds, communicates with stakeholders. You review HIGH risk items.",
+    does: ["Everything in L2", "Auto-execute LOW + MEDIUM risk actions", "Generate and update documents autonomously", "Adjust schedule and manage budget", "Send routine stakeholder updates"],
     doesnt: ["Change project scope without approval", "Exceed budget threshold", "Handle HIGH risk decisions alone", "Override phase gate approvals"],
   },
   {
-    level: 5, name: "Strategic", tagline: "End-to-end, minimal oversight", rec: false,
+    level: 4, name: "Strategic", tagline: "End-to-end, minimal oversight", rec: false,
     desc: "Full autonomy within governance bounds. Agent self-manages everything including scope adjustments. You're only involved at phase gates and CRITICAL items.",
-    does: ["Everything in L4", "Auto-execute up to HIGH risk actions", "Manage scope changes", "Self-escalate and self-correct", "Full stakeholder management"],
+    does: ["Everything in L3", "Auto-execute up to HIGH risk actions", "Manage scope changes", "Self-escalate and self-correct", "Full stakeholder management"],
     doesnt: ["Override phase gate approvals (if ON)", "Handle CRITICAL risk items (score 15-16)", "Exceed org-level governance policy"],
   },
 ];
@@ -402,7 +396,7 @@ export default function ProjectWizardPage() {
       const agent: any = await createAgent.mutateAsync({
         name: data.agentName || "Agent",
         title: data.agentTitle || undefined,
-        autonomyLevel: data.autonomyLevel || 3,
+        autonomyLevel: data.autonomyLevel || 2,
         personality: {
           formalityLevel: data.personalityFormal,
           conciseness: data.personalityConcise,
@@ -482,11 +476,11 @@ export default function ProjectWizardPage() {
 
     // Autonomous cycles: depends on autonomy level and project duration
     // Higher autonomy = more actions per cycle = more credits
-    const cyclesPerMonth = level <= 2 ? 10 : level === 3 ? 30 : level === 4 ? 60 : 90;
-    const cycleCost = cyclesPerMonth * (level <= 2 ? 2 : CREDIT_COSTS.autonomousCycle);
+    const cyclesPerMonth = level === 1 ? 10 : level === 2 ? 30 : level === 3 ? 60 : 90;
+    const cycleCost = cyclesPerMonth * (level === 1 ? 2 : CREDIT_COSTS.autonomousCycle);
 
-    // Risk analysis: runs every cycle at L3+
-    const riskCost = level >= 3 ? cyclesPerMonth * CREDIT_COSTS.riskScan : 0;
+    // Risk analysis: runs every cycle at L2+
+    const riskCost = level >= 2 ? cyclesPerMonth * CREDIT_COSTS.riskScan : 0;
 
     // Status reports: based on report schedule
     const reportsPerMonth = data.reportSchedule === "daily" ? 22 : data.reportSchedule === "weekly" ? 4 : data.reportSchedule === "biweekly" ? 2 : 1;
@@ -496,7 +490,7 @@ export default function ProjectWizardPage() {
     const chatCost = 20 * CREDIT_COSTS.chatMessage;
 
     // Change proposals: ~2-4/month at higher levels
-    const proposalCost = level >= 3 ? 3 * CREDIT_COSTS.changeProposal : 0;
+    const proposalCost = level >= 2 ? 3 * CREDIT_COSTS.changeProposal : 0;
 
     // Task materialisation: once per WBS approval
     const taskCost = CREDIT_COSTS.taskMaterialisation;
@@ -1207,7 +1201,7 @@ export default function ProjectWizardPage() {
                       }}>
                       <div className="flex items-center gap-2 mb-1">
                         <div className="flex gap-0.5">
-                          {[1, 2, 3, 4, 5].map(d => (
+                          {[1, 2, 3, 4].map(d => (
                             <div key={d} className="w-2 h-2 rounded-full" style={{ background: d <= al.level ? g.color : `${"var(--border)"}44` }} />
                           ))}
                         </div>

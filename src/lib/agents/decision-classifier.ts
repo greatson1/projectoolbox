@@ -117,16 +117,15 @@ function getRiskTier(score: number): RiskTier {
 // Maps autonomy level → maximum risk tier that can be auto-executed
 
 const AUTO_EXECUTE_THRESHOLDS: Record<number, { maxTier: RiskTier; allowedTypes?: DecisionType[] }> = {
-  1: { maxTier: "LOW", allowedTypes: [] }, // L1: read-only, never auto-execute
-  2: { maxTier: "LOW", allowedTypes: [] }, // L2: advisor, all recommendations go to HITL
-  3: { maxTier: "LOW", allowedTypes: [   // L3: co-pilot, auto-execute LOW risk
-    "TASK_ASSIGNMENT", "RISK_RESPONSE", "RESOURCE_ALLOCATION", "DOCUMENT_GENERATION",
+  1: { maxTier: "LOW", allowedTypes: [] }, // L1: advisor, everything goes to approval
+  2: { maxTier: "LOW", allowedTypes: [    // L2: co-pilot, auto-execute LOW risk (no docs)
+    "TASK_ASSIGNMENT", "RISK_RESPONSE", "RESOURCE_ALLOCATION",
   ]},
-  4: { maxTier: "MEDIUM", allowedTypes: [ // L4: autonomous, auto-execute LOW + MEDIUM
+  3: { maxTier: "MEDIUM", allowedTypes: [ // L3: autonomous, auto-execute LOW + MEDIUM + docs
     "TASK_ASSIGNMENT", "RISK_RESPONSE", "SCHEDULE_CHANGE", "RESOURCE_ALLOCATION",
     "COMMUNICATION", "DOCUMENT_GENERATION", "BUDGET_CHANGE",
   ]},
-  5: { maxTier: "HIGH", allowedTypes: [   // L5: strategic, auto-execute LOW + MEDIUM + HIGH
+  4: { maxTier: "HIGH", allowedTypes: [   // L4: strategic, auto-execute LOW + MEDIUM + HIGH
     "TASK_ASSIGNMENT", "RISK_RESPONSE", "SCHEDULE_CHANGE", "RESOURCE_ALLOCATION",
     "COMMUNICATION", "DOCUMENT_GENERATION", "BUDGET_CHANGE", "SCOPE_CHANGE", "ESCALATION",
   ]},
@@ -262,9 +261,9 @@ export function getActionCreditCost(type: string): number {
 export const PLAN_AUTONOMY_LIMITS: Record<string, { maxLevel: number; maxAgents: number }> = {
   FREE: { maxLevel: 1, maxAgents: 1 },
   STARTER: { maxLevel: 2, maxAgents: 3 },
-  PROFESSIONAL: { maxLevel: 4, maxAgents: 10 },
-  BUSINESS: { maxLevel: 5, maxAgents: 25 },
-  ENTERPRISE: { maxLevel: 5, maxAgents: 999 },
+  PROFESSIONAL: { maxLevel: 3, maxAgents: 10 },
+  BUSINESS: { maxLevel: 4, maxAgents: 25 },
+  ENTERPRISE: { maxLevel: 4, maxAgents: 999 },
 };
 
 /**
