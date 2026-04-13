@@ -450,6 +450,59 @@ These are handled by the platform automatically. Just write normal text.
         required: ["platform", "title"],
       },
     },
+    {
+      name: "create_task",
+      description: "Create a new task in the project. Use when the user asks to add a task, action item, or work item.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string", description: "Task title" },
+          description: { type: "string", description: "Task description" },
+          priority: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"], description: "Task priority" },
+          storyPoints: { type: "number", description: "Story points estimate (1-13)" },
+          assigneeName: { type: "string", description: "Name of the person to assign to" },
+        },
+        required: ["title"],
+      },
+    },
+    {
+      name: "update_risk",
+      description: "Create or update a risk in the project risk register. Use when the user mentions a risk, concern, or issue.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string", description: "Risk title" },
+          description: { type: "string", description: "Risk description" },
+          probability: { type: "number", description: "Probability 1-5" },
+          impact: { type: "number", description: "Impact 1-5" },
+          category: { type: "string", description: "Risk category" },
+          mitigation: { type: "string", description: "Mitigation strategy" },
+        },
+        required: ["title"],
+      },
+    },
+    {
+      name: "search_knowledge",
+      description: "Search the project knowledge base for information. Use when you need to look up facts, decisions, or context from meetings, documents, or previous conversations.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "Search query" },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "generate_report",
+      description: "Generate a project status report. Use when the user asks for a report, update, or summary.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          type: { type: "string", enum: ["status", "risk", "budget", "stakeholder"], description: "Report type" },
+        },
+        required: ["type"],
+      },
+    },
   ];
 
   /**
@@ -818,6 +871,102 @@ These are handled by the platform automatically. Just write normal text.
                 tool_use_id: toolBlock.id,
                 content: JSON.stringify(toolResult),
               });
+            } else if (toolBlock.name === "create_task") {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: "\n\n*Creating task…*\n\n" })}\n\n`));
+              fullContent += "\n\n*Creating task…*\n\n";
+              try {
+                const depForTask = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true } });
+                const task = await db.task.create({
+                  data: {
+                    projectId: depForTask?.projectId || "",
+                    title: toolBlock.input.title,
+                    description: toolBlock.input.description || null,
+                    priority: toolBlock.input.priority || "MEDIUM",
+                    storyPoints: toolBlock.input.storyPoints || null,
+                    assigneeName: toolBlock.input.assigneeName || null,
+                    status: "TODO",
+                    createdBy: `agent:${agentId}`,
+                  },
+                });
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, taskId: task.id, title: task.title }) });
+              } catch (err: any) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else if (toolBlock.name === "update_risk") {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: "\n\n*Updating risk register…*\n\n" })}\n\n`));
+              fullContent += "\n\n*Updating risk register…*\n\n";
+              try {
+                const depForRisk = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true } });
+                const prob = Math.max(1, Math.min(5, toolBlock.input.probability || 3));
+                const imp = Math.max(1, Math.min(5, toolBlock.input.impact || 3));
+                const risk = await db.risk.create({
+                  data: {
+                    projectId: depForRisk?.projectId || "",
+                    title: toolBlock.input.title,
+                    description: toolBlock.input.description || null,
+                    probability: prob,
+                    impact: imp,
+                    score: prob * imp,
+                    category: toolBlock.input.category || null,
+                    status: "OPEN",
+                    mitigation: toolBlock.input.mitigation || null,
+                  },
+                });
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, riskId: risk.id, title: risk.title, score: risk.score }) });
+              } catch (err: any) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else if (toolBlock.name === "search_knowledge") {
+              try {
+                const depForKB = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true } });
+                const kbItems = await db.knowledgeBaseItem.findMany({
+                  where: {
+                    OR: [
+                      { agentId },
+                      { projectId: depForKB?.projectId },
+                    ],
+                    content: { contains: toolBlock.input.query, mode: "insensitive" as any },
+                  },
+                  select: { title: true, content: true, type: true, trustLevel: true },
+                  take: 5,
+                  orderBy: { updatedAt: "desc" },
+                });
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({
+                  results: kbItems.map(k => ({ title: k.title, content: k.content.slice(0, 500), type: k.type, trust: k.trustLevel })),
+                  count: kbItems.length,
+                }) });
+              } catch (err: any) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else if (toolBlock.name === "generate_report") {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: "\n\n*Generating report…*\n\n" })}\n\n`));
+              fullContent += "\n\n*Generating report…*\n\n";
+              try {
+                const depForReport = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true } });
+                const projId = depForReport?.projectId || "";
+                const [taskStats, riskStats] = await Promise.all([
+                  db.task.groupBy({ by: ["status"], where: { projectId: projId }, _count: true }),
+                  db.risk.groupBy({ by: ["status"], where: { projectId: projId }, _count: true }),
+                ]);
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({
+                  reportType: toolBlock.input.type,
+                  projectName: project?.name,
+                  tasks: taskStats,
+                  risks: riskStats,
+                  phase: deployment?.currentPhase,
+                  budget: project?.budget,
+                  generatedAt: new Date().toISOString(),
+                }) });
+              } catch (err: any) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else {
+              // Unknown tool — return error
+              toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: `Unknown tool: ${toolBlock.name}` }) });
             }
           }
 
