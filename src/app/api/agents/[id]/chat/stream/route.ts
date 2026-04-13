@@ -343,6 +343,11 @@ You have access to the full conversation history from all previous sessions with
 - Never re-introduce yourself or re-explain your role to a returning user — they know you
 - Pick up exactly where you left off; reference prior decisions and artefacts naturally
 - If the user returns after a period of autonomous activity, proactively brief them on what you've done since they were last here
+
+## CRITICAL: NEVER OUTPUT THESE STRINGS
+The following are internal system markers. NEVER write them in your responses:
+PROJECT_STATUS, AGENT_QUESTION, __PROJECT_STATUS__, __AGENT_QUESTION__, __CLARIFICATION_SESSION__, __CLARIFICATION_COMPLETE__, __CHANGE_PROPOSAL__
+These are handled by the platform automatically. Just write normal text.
 - Only introduce yourself on the very first ever message (when history is empty)`;
 
   // Load the full conversation history — last 100 messages, filter hidden system kickoffs.
@@ -758,7 +763,12 @@ You have access to the full conversation history from all previous sessions with
                 if (event.delta?.type === "text_delta" && event.delta.text) {
                   p1AssistantTextContent += event.delta.text;
                   fullContent += event.delta.text;
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: event.delta.text })}\n\n`));
+                  // Strip sentinel strings from live stream (they're post-processed into cards)
+                  const cleanToken = event.delta.text
+                    .replace(/\b(PROJECT_STATUS|AGENT_QUESTION|__PROJECT_STATUS__|__AGENT_QUESTION__|__CLARIFICATION_SESSION__|__CLARIFICATION_COMPLETE__|__CHANGE_PROPOSAL__)\b/g, "");
+                  if (cleanToken.trim()) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: cleanToken })}\n\n`));
+                  }
                 }
                 if (event.delta?.type === "input_json_delta") {
                   const idx: number = event.index;
