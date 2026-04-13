@@ -121,18 +121,62 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       console.error("[artefact PATCH] seeding dispatch failed:", e);
     }
 
-    // Update scaffolded task progress for this artefact approval
-    try {
-      const dep = await db.agentDeployment.findFirst({
-        where: { projectId: artefact.projectId, isActive: true },
-        select: { agentId: true },
-      });
-      if (dep?.agentId) {
-        const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
-        // Artefact approval doesn't need a separate task update — generation already marked it done.
-        // But if all artefacts in a phase are approved, fire the gate_request event.
+    // ── Phase advancement ────────────────────────────────────────────────────
+    // When the last artefact in the current phase is approved, advance the
+    // deployment's currentPhase and Phase records so the generate route's
+    // phase-mismatch guard passes for the next phase.
+    if (artefact.phaseId) {
+      try {
+        // Re-fetch all artefacts for this phase (including the one we just approved)
+        const phaseArtefacts = await db.agentArtefact.findMany({
+          where: { projectId: artefact.projectId, phaseId: artefact.phaseId },
+          select: { id: true, status: true },
+        });
+        // Treat the current artefact as APPROVED even if DB hasn't updated yet
+        const allApproved = phaseArtefacts.length > 0 && phaseArtefacts.every(
+          a => a.status === "APPROVED" || a.id === id,
+        );
+
+        if (allApproved) {
+          const dep = await db.agentDeployment.findFirst({
+            where: { projectId: artefact.projectId, isActive: true },
+            select: { id: true, currentPhase: true },
+          });
+
+          // Only advance if the deployment is still on this phase
+          if (dep && dep.currentPhase === artefact.phaseId) {
+            const project = await db.project.findUnique({
+              where: { id: artefact.projectId },
+              select: { methodology: true },
+            });
+            const { getMethodology } = await import("@/lib/methodology-definitions");
+            const methodologyId = (project?.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+            const methodology = getMethodology(methodologyId);
+            const phases = methodology.phases;
+            const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
+
+            if (currentIdx >= 0 && currentIdx < phases.length - 1) {
+              const nextPhaseName = phases[currentIdx + 1].name;
+              // Mark current phase COMPLETED, next ACTIVE, advance deployment
+              await db.phase.updateMany({
+                where: { projectId: artefact.projectId, name: artefact.phaseId },
+                data: { status: "COMPLETED" },
+              });
+              await db.phase.updateMany({
+                where: { projectId: artefact.projectId, name: nextPhaseName },
+                data: { status: "ACTIVE" },
+              });
+              await db.agentDeployment.update({
+                where: { id: dep.id },
+                data: { currentPhase: nextPhaseName, phaseStatus: "active", lastCycleAt: new Date() },
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[artefact PATCH] phase advancement failed:", e);
       }
-    } catch {}
+    }
   }
 
   return NextResponse.json({ data: artefact });
