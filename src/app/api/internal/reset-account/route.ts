@@ -62,28 +62,38 @@ export async function POST(req: NextRequest) {
         await db.reviewLink.deleteMany({ where: { approval: { projectId: { in: projectIds } } } }).catch(() => {});
         await db.meetingActionItem.deleteMany({ where: { meeting: { projectId: { in: projectIds } } } }).catch(() => {});
 
-        // Direct FK children
-        await db.agentDeployment.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.projectMember.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.phase.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.costEntry.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.task.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await (db as any).sprint.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.risk.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.issue.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.approval.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.changeRequest.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.stakeholder.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.agentArtefact.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.reportSchedule.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.report.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.metricsSnapshot.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.commsLog.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.knowledgeBaseItem.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.meeting.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.calendarEvent.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.decision.deleteMany({ where: { projectId: { in: projectIds } } }).catch(() => {});
-        await db.project.deleteMany({ where: { id: { in: projectIds } } });
+        // Helper: delete with logging on failure
+        const del = async (table: string, fn: () => Promise<any>) => {
+          try { await fn(); } catch (e: any) { console.error(`[reset] ${table}:`, e?.message?.slice(0, 80)); }
+        };
+
+        // FK ordering: unassign tasks from sprints BEFORE deleting sprints
+        await del("task.sprintId→null", () => db.task.updateMany({ where: { projectId: { in: projectIds }, sprintId: { not: null } }, data: { sprintId: null } }));
+        // Unlink task parent references to avoid self-referential FK issues
+        await del("task.parentId→null", () => db.task.updateMany({ where: { projectId: { in: projectIds }, parentId: { not: null } }, data: { parentId: null } }));
+
+        // Direct FK children — order: deepest dependencies first
+        await del("agentDeployment", () => db.agentDeployment.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("projectMember", () => db.projectMember.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("sprint", () => (db as any).sprint.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("task", () => db.task.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("phase", () => db.phase.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("costEntry", () => db.costEntry.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("risk", () => db.risk.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("issue", () => db.issue.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("approval", () => db.approval.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("changeRequest", () => db.changeRequest.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("stakeholder", () => db.stakeholder.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("agentArtefact", () => db.agentArtefact.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("reportSchedule", () => db.reportSchedule.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("report", () => db.report.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("metricsSnapshot", () => db.metricsSnapshot.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("commsLog", () => db.commsLog.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("knowledgeBaseItem", () => db.knowledgeBaseItem.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("meeting", () => db.meeting.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("calendarEvent", () => db.calendarEvent.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("decision", () => db.decision.deleteMany({ where: { projectId: { in: projectIds } } }));
+        await del("project", () => db.project.deleteMany({ where: { id: { in: projectIds } } }));
       }
       deletedProjects = projects.map(p => p.name);
     }
