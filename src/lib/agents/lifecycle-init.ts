@@ -476,8 +476,22 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     });
   }
 
-  // ── Step 5: Create gate approval request ──
-  // requestedById is required — find the org owner (or any admin) to attribute the request to
+  // ── Step 5: Create gate approval request (if not already created by VPS) ──
+  const existingGate = await db.approval.findFirst({
+    where: { projectId: project.id, type: "PHASE_GATE", status: "PENDING" },
+  });
+  if (existingGate) {
+    // Gate already exists (VPS created it) — update with accurate counts
+    const [ac, rc, tc] = await Promise.all([
+      db.agentArtefact.count({ where: { projectId: project.id, agentId } }),
+      db.risk.count({ where: { projectId: project.id, status: "OPEN" } }),
+      db.task.count({ where: { projectId: project.id } }),
+    ]);
+    await db.approval.update({
+      where: { id: existingGate.id },
+      data: { description: `Agent ${agent.name} has completed the ${firstPhase.name} phase. Generated ${ac} artefact(s), identified ${rc} risk(s), scaffolded ${tc} task(s). Review and approve to advance.` },
+    });
+  } else {
   const orgOwner = await db.user.findFirst({
     where: { orgId: agent.orgId, role: { in: ["OWNER", "ADMIN"] } },
     select: { id: true },
@@ -514,6 +528,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   await db.agentActivity.create({
     data: { agentId, type: "approval", summary: `Phase gate approval requested: ${firstPhase.name} → awaiting review` },
   });
+  } // end else (no existing gate)
 
   // Mark the job as completed if it exists
   try {
