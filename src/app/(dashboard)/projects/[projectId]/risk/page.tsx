@@ -9,8 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectRisks } from "@/hooks/use-api";
 import { toast } from "sonner";
-import { Plus, AlertTriangle, Shield, TrendingDown, Download, Pencil, X, Check, Loader2 } from "lucide-react";
+import {
+  Plus, AlertTriangle, Shield, TrendingDown, Download,
+  Pencil, X, Check, Loader2, ChevronDown, ChevronUp, Trash2,
+} from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
+
+// ── Constants ──────────────────────────────────────────────────────────────
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   OPEN: "destructive", MITIGATING: "secondary", WATCHING: "outline", CLOSED: "default",
@@ -18,6 +23,41 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
 
 const STATUSES = ["OPEN", "WATCHING", "MITIGATING", "CLOSED", "ESCALATED"];
 const CATEGORIES = ["Technical", "Financial", "Schedule", "Resource", "Stakeholder", "Legal", "External", "Other"];
+
+const STRATEGIES = ["AVOID", "REDUCE", "TRANSFER", "ACCEPT", "CONTINGENCY", "ESCALATE"] as const;
+type Strategy = typeof STRATEGIES[number];
+
+const STRATEGY_META: Record<Strategy, { label: string; colour: string; hint: string }> = {
+  AVOID:       { label: "Avoid",       colour: "bg-red-500/15 text-red-600 border-red-500/30",       hint: "Eliminate the risk by changing the plan" },
+  REDUCE:      { label: "Reduce",      colour: "bg-amber-500/15 text-amber-600 border-amber-500/30", hint: "Lower probability or impact" },
+  TRANSFER:    { label: "Transfer",    colour: "bg-blue-500/15 text-blue-600 border-blue-500/30",    hint: "Shift risk via insurance or outsourcing" },
+  ACCEPT:      { label: "Accept",      colour: "bg-green-500/15 text-green-600 border-green-500/30", hint: "Acknowledge and monitor" },
+  CONTINGENCY: { label: "Contingency", colour: "bg-purple-500/15 text-purple-600 border-purple-500/30", hint: "Plan B if risk materialises" },
+  ESCALATE:    { label: "Escalate",    colour: "bg-rose-500/15 text-rose-600 border-rose-500/30",    hint: "Raise to higher authority" },
+};
+
+const ACTION_STATUS_CYCLE: Record<string, string> = {
+  PLANNED: "IN_PROGRESS", IN_PROGRESS: "DONE", DONE: "PLANNED",
+};
+const ACTION_STATUS_STYLE: Record<string, string> = {
+  PLANNED:     "bg-muted text-muted-foreground",
+  IN_PROGRESS: "bg-amber-500/15 text-amber-600",
+  DONE:        "bg-green-500/15 text-green-600",
+  CANCELLED:   "bg-red-500/15 text-red-500 line-through",
+};
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type ResponseAction = {
+  id: string;
+  strategy: Strategy;
+  action: string;
+  owner?: string | null;
+  dueDate?: string | null;
+  status: string;
+  notes?: string | null;
+  createdAt: string;
+};
 
 type Risk = {
   id: string;
@@ -30,18 +70,22 @@ type Risk = {
   category?: string | null;
   owner?: string | null;
   mitigation?: string | null;
+  responseLog?: ResponseAction[] | null;
 };
 
-type RiskForm = Omit<Risk, "id" | "score">;
+type RiskForm = Omit<Risk, "id" | "score" | "responseLog">;
 
 function scoreColour(score: number) {
   return score >= 15 ? "text-destructive" : score >= 8 ? "text-amber-500" : "text-green-500";
 }
 
+// ── Component ──────────────────────────────────────────────────────────────
+
 export default function RiskRegisterPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: risks, isLoading } = useProjectRisks(projectId);
   const qc = useQueryClient();
+
   const [view, setView] = useState<"matrix" | "table">("table");
   const [selectedRisk, setSelectedRisk] = useState<Risk | null>(null);
   const [editing, setEditing] = useState(false);
@@ -51,7 +95,29 @@ export default function RiskRegisterPage() {
     status: "OPEN", category: "", owner: "", mitigation: "",
   });
 
-  // ── helpers ──────────────────────────────────────────────────────────────
+  // Response action form state
+  const [addingAction, setAddingAction] = useState(false);
+  const [actionForm, setActionForm] = useState({
+    strategy: "REDUCE" as Strategy,
+    actionText: "",
+    owner: "",
+    dueDate: "",
+    notes: "",
+  });
+  const [actionSaving, setActionSaving] = useState(false);
+  const [actionsExpanded, setActionsExpanded] = useState(true);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  async function patchRisk(body: Record<string, any>) {
+    const res = await fetch(`/api/projects/${projectId}/risks`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Request failed");
+    return (await res.json()).data as Risk;
+  }
 
   function startEdit(r: Risk) {
     setForm({
@@ -67,22 +133,12 @@ export default function RiskRegisterPage() {
     setEditing(true);
   }
 
-  function cancelEdit() {
-    setEditing(false);
-  }
-
   async function saveEdit() {
     if (!selectedRisk) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/risks`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ riskId: selectedRisk.id, ...form }),
-      });
-      if (!res.ok) throw new Error();
-      const { data } = await res.json();
-      setSelectedRisk(data);
+      const updated = await patchRisk({ riskId: selectedRisk.id, ...form });
+      setSelectedRisk({ ...updated, responseLog: selectedRisk.responseLog });
       setEditing(false);
       qc.invalidateQueries({ queryKey: ["risks", projectId] });
       toast.success("Risk updated");
@@ -90,6 +146,64 @@ export default function RiskRegisterPage() {
       toast.error("Failed to save risk");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function addResponseAction() {
+    if (!selectedRisk || !actionForm.actionText.trim()) return;
+    setActionSaving(true);
+    try {
+      const updated = await patchRisk({
+        riskId: selectedRisk.id,
+        action: "add-response-action",
+        strategy: actionForm.strategy,
+        actionText: actionForm.actionText.trim(),
+        owner: actionForm.owner.trim() || null,
+        dueDate: actionForm.dueDate || null,
+        notes: actionForm.notes.trim() || null,
+      });
+      setSelectedRisk(updated);
+      setActionForm({ strategy: "REDUCE", actionText: "", owner: "", dueDate: "", notes: "" });
+      setAddingAction(false);
+      qc.invalidateQueries({ queryKey: ["risks", projectId] });
+      toast.success("Response action added");
+    } catch {
+      toast.error("Failed to add action");
+    } finally {
+      setActionSaving(false);
+    }
+  }
+
+  async function cycleActionStatus(actionId: string, currentStatus: string) {
+    if (!selectedRisk) return;
+    const nextStatus = ACTION_STATUS_CYCLE[currentStatus] ?? "PLANNED";
+    try {
+      const updated = await patchRisk({
+        riskId: selectedRisk.id,
+        action: "update-response-action",
+        actionId,
+        patch: { status: nextStatus },
+      });
+      setSelectedRisk(updated);
+      qc.invalidateQueries({ queryKey: ["risks", projectId] });
+    } catch {
+      toast.error("Failed to update action");
+    }
+  }
+
+  async function deleteResponseAction(actionId: string) {
+    if (!selectedRisk) return;
+    try {
+      const updated = await patchRisk({
+        riskId: selectedRisk.id,
+        action: "delete-response-action",
+        actionId,
+      });
+      setSelectedRisk(updated);
+      qc.invalidateQueries({ queryKey: ["risks", projectId] });
+      toast.success("Action removed");
+    } catch {
+      toast.error("Failed to remove action");
     }
   }
 
@@ -109,7 +223,7 @@ export default function RiskRegisterPage() {
     }
   }
 
-  // ── loading ──────────────────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -128,7 +242,9 @@ export default function RiskRegisterPage() {
     ? (items.reduce((s, r) => s + (r.score ?? r.probability * r.impact), 0) / items.length).toFixed(1)
     : "0";
 
-  // ── render ────────────────────────────────────────────────────────────────
+  const responseLog: ResponseAction[] = (selectedRisk?.responseLog as any) ?? [];
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 max-w-[1400px]">
@@ -182,10 +298,8 @@ export default function RiskRegisterPage() {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
 
-          {/* Left: matrix / table */}
+          {/* ── Left: matrix / table ── */}
           <div className="xl:col-span-2">
-
-            {/* Matrix */}
             {view === "matrix" && (
               <Card>
                 <CardHeader><CardTitle className="text-sm">Probability / Impact Matrix</CardTitle></CardHeader>
@@ -203,7 +317,7 @@ export default function RiskRegisterPage() {
                           return (
                             <div key={`${p}-${imp}`}
                               className={`aspect-square rounded-lg border flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-primary/40 ${bg}`}
-                              onClick={() => cellRisks[0] && setSelectedRisk(cellRisks[0])}>
+                              onClick={() => cellRisks[0] && (setSelectedRisk(cellRisks[0]), setEditing(false))}>
                               <span className="text-[10px] font-bold">{score}</span>
                               {cellRisks.length > 0 && <span className="text-[8px] font-bold">{cellRisks.length}</span>}
                             </div>
@@ -216,7 +330,6 @@ export default function RiskRegisterPage() {
               </Card>
             )}
 
-            {/* Table */}
             {view === "table" && (
               <Card className="p-0">
                 <table className="w-full text-xs">
@@ -233,8 +346,8 @@ export default function RiskRegisterPage() {
                       const active = selectedRisk?.id === r.id;
                       return (
                         <tr key={r.id}
-                          className={`border-b border-border/30 cursor-pointer transition-colors ${active ? "bg-primary/8 border-l-2 border-l-primary" : "hover:bg-muted/30"}`}
-                          onClick={() => { setSelectedRisk(r); setEditing(false); }}>
+                          className={`border-b border-border/30 cursor-pointer transition-colors ${active ? "bg-primary/5 border-l-2 border-l-primary" : "hover:bg-muted/30"}`}
+                          onClick={() => { setSelectedRisk(r); setEditing(false); setAddingAction(false); }}>
                           <td className="py-2.5 px-3 font-semibold text-primary">{r.id.slice(-6)}</td>
                           <td className="py-2.5 px-3 font-medium max-w-[250px] truncate">{r.title}</td>
                           <td className="py-2.5 px-3"><Badge variant="outline">{r.category || "—"}</Badge></td>
@@ -252,157 +365,263 @@ export default function RiskRegisterPage() {
             )}
           </div>
 
-          {/* Right: detail / edit panel */}
-          <div>
+          {/* ── Right: detail / edit / response actions ── */}
+          <div className="space-y-4">
             {selectedRisk ? (
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-mono">{selectedRisk.id.slice(-6)}</CardTitle>
-                    {!editing ? (
-                      <Button variant="ghost" size="sm" className="h-7 px-2 gap-1" onClick={() => startEdit(selectedRisk)}>
-                        <Pencil className="w-3.5 h-3.5" /> Edit
-                      </Button>
+              <>
+                {/* Risk card */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-mono">{selectedRisk.id.slice(-6)}</CardTitle>
+                      {!editing ? (
+                        <Button variant="ghost" size="sm" className="h-7 px-2 gap-1" onClick={() => startEdit(selectedRisk)}>
+                          <Pencil className="w-3.5 h-3.5" /> Edit
+                        </Button>
+                      ) : (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditing(false)} disabled={saving}>
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="sm" className="h-7 px-2 gap-1" onClick={saveEdit} disabled={saving}>
+                            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            Save
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-3 text-sm">
+                    {editing ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Title</label>
+                          <input className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Description</label>
+                          <textarea rows={2} className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                            value={form.description ?? ""} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Probability (1–5)</label>
+                            <input type="number" min={1} max={5} className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                              value={form.probability} onChange={e => setForm(f => ({ ...f, probability: Math.min(5, Math.max(1, Number(e.target.value))) }))} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Impact (1–5)</label>
+                            <input type="number" min={1} max={5} className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                              value={form.impact} onChange={e => setForm(f => ({ ...f, impact: Math.min(5, Math.max(1, Number(e.target.value))) }))} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 py-1">
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Score:</span>
+                          <span className={`text-lg font-bold ${scoreColour(form.probability * form.impact)}`}>{form.probability * form.impact}</span>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Status</label>
+                          <select className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Category</label>
+                          <select className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            value={form.category ?? ""} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                            <option value="">— Select —</option>
+                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Owner</label>
+                          <input className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            value={form.owner ?? ""} placeholder="e.g. John Smith"
+                            onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Mitigation Strategy (summary)</label>
+                          <textarea rows={2} className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                            value={form.mitigation ?? ""} placeholder="High-level mitigation approach…"
+                            onChange={e => setForm(f => ({ ...f, mitigation: e.target.value }))} />
+                        </div>
+                      </div>
                     ) : (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={cancelEdit} disabled={saving}>
-                          <X className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" className="h-7 px-2 gap-1" onClick={saveEdit} disabled={saving}>
-                          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          Save
-                        </Button>
-                      </div>
+                      <>
+                        <p className="font-medium">{selectedRisk.title}</p>
+                        {selectedRisk.description && <p className="text-xs text-muted-foreground">{selectedRisk.description}</p>}
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div><span className="text-muted-foreground">Probability:</span> <strong>{selectedRisk.probability}/5</strong></div>
+                          <div><span className="text-muted-foreground">Impact:</span> <strong>{selectedRisk.impact}/5</strong></div>
+                          <div><span className="text-muted-foreground">Score:</span> <strong className={scoreColour(selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact)}>{selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact}</strong></div>
+                          <div><span className="text-muted-foreground">Status:</span> <Badge variant={STATUS_VARIANT[selectedRisk.status] || "outline"} className="text-[9px]">{selectedRisk.status}</Badge></div>
+                          <div><span className="text-muted-foreground">Category:</span> <strong>{selectedRisk.category || "—"}</strong></div>
+                          <div><span className="text-muted-foreground">Owner:</span> <strong>{selectedRisk.owner || "—"}</strong></div>
+                        </div>
+                        {selectedRisk.mitigation && (
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mitigation Summary</p>
+                            <p className="text-xs text-muted-foreground">{selectedRisk.mitigation}</p>
+                          </div>
+                        )}
+                      </>
                     )}
-                  </div>
-                </CardHeader>
+                  </CardContent>
+                </Card>
 
-                <CardContent className="space-y-3 text-sm">
-                  {editing ? (
-                    /* ── Edit form ── */
-                    <div className="space-y-3">
+                {/* ── Response Actions card ── */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Title</label>
-                        <input
-                          className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          value={form.title}
-                          onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                        />
+                        <CardTitle className="text-sm">Response Actions</CardTitle>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Discrete steps taken to address this risk
+                        </p>
                       </div>
-
-                      <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Description</label>
-                        <textarea
-                          rows={2}
-                          className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
-                          value={form.description ?? ""}
-                          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Probability (1–5)</label>
-                          <input type="number" min={1} max={5}
-                            className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            value={form.probability}
-                            onChange={e => setForm(f => ({ ...f, probability: Math.min(5, Math.max(1, Number(e.target.value))) }))}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Impact (1–5)</label>
-                          <input type="number" min={1} max={5}
-                            className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            value={form.impact}
-                            onChange={e => setForm(f => ({ ...f, impact: Math.min(5, Math.max(1, Number(e.target.value))) }))}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Live score preview */}
-                      <div className="flex items-center gap-2 py-1">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Score:</span>
-                        <span className={`text-lg font-bold ${scoreColour(form.probability * form.impact)}`}>
-                          {form.probability * form.impact}
-                        </span>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Status</label>
-                        <select
-                          className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          value={form.status}
-                          onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                        >
-                          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Category</label>
-                        <select
-                          className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          value={form.category ?? ""}
-                          onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                        >
-                          <option value="">— Select —</option>
-                          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Owner</label>
-                        <input
-                          className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          value={form.owner ?? ""}
-                          placeholder="e.g. John Smith"
-                          onChange={e => setForm(f => ({ ...f, owner: e.target.value }))}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Mitigation Plan</label>
-                        <textarea
-                          rows={3}
-                          className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
-                          value={form.mitigation ?? ""}
-                          placeholder="Describe how this risk will be mitigated…"
-                          onChange={e => setForm(f => ({ ...f, mitigation: e.target.value }))}
-                        />
+                      <div className="flex items-center gap-1">
+                        <Button size="sm" variant="outline" className="h-7 px-2 gap-1 text-xs"
+                          onClick={() => { setAddingAction(a => !a); setActionsExpanded(true); }}>
+                          <Plus className="w-3 h-3" /> Add
+                        </Button>
+                        <button className="p-1 rounded hover:bg-muted transition-colors"
+                          onClick={() => setActionsExpanded(e => !e)}>
+                          {actionsExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                        </button>
                       </div>
                     </div>
-                  ) : (
-                    /* ── Read-only view ── */
-                    <>
-                      <p className="font-medium">{selectedRisk.title}</p>
-                      {selectedRisk.description && (
-                        <p className="text-xs text-muted-foreground">{selectedRisk.description}</p>
-                      )}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div><span className="text-muted-foreground">Probability:</span> <strong>{selectedRisk.probability}/5</strong></div>
-                        <div><span className="text-muted-foreground">Impact:</span> <strong>{selectedRisk.impact}/5</strong></div>
-                        <div><span className="text-muted-foreground">Score:</span> <strong className={scoreColour(selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact)}>{selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact}</strong></div>
-                        <div><span className="text-muted-foreground">Status:</span> <Badge variant={STATUS_VARIANT[selectedRisk.status] || "outline"} className="text-[9px]">{selectedRisk.status}</Badge></div>
-                        <div><span className="text-muted-foreground">Category:</span> <strong>{selectedRisk.category || "—"}</strong></div>
-                        <div><span className="text-muted-foreground">Owner:</span> <strong>{selectedRisk.owner || "—"}</strong></div>
-                      </div>
-                      {selectedRisk.mitigation && (
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mitigation</p>
-                          <p className="text-xs text-muted-foreground">{selectedRisk.mitigation}</p>
+                  </CardHeader>
+
+                  {actionsExpanded && (
+                    <CardContent className="space-y-3">
+
+                      {/* Add action form */}
+                      {addingAction && (
+                        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">New Response Action</p>
+
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-1">Strategy</label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {STRATEGIES.map(s => {
+                                const m = STRATEGY_META[s];
+                                return (
+                                  <button key={s}
+                                    title={m.hint}
+                                    onClick={() => setActionForm(f => ({ ...f, strategy: s }))}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all ${actionForm.strategy === s ? m.colour + " ring-2 ring-offset-1 ring-current" : "border-border text-muted-foreground hover:bg-muted"}`}>
+                                    {m.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-1">Action *</label>
+                            <textarea rows={2}
+                              className="w-full px-2 py-1.5 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                              placeholder="What specifically will be done?"
+                              value={actionForm.actionText}
+                              onChange={e => setActionForm(f => ({ ...f, actionText: e.target.value }))}
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-1">Owner</label>
+                              <input className="w-full px-2 py-1 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                placeholder="e.g. Sarah Lee"
+                                value={actionForm.owner}
+                                onChange={e => setActionForm(f => ({ ...f, owner: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block mb-1">Due Date</label>
+                              <input type="date"
+                                className="w-full px-2 py-1 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                value={actionForm.dueDate}
+                                onChange={e => setActionForm(f => ({ ...f, dueDate: e.target.value }))} />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block mb-1">Notes</label>
+                            <input className="w-full px-2 py-1 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/40"
+                              placeholder="Any additional context…"
+                              value={actionForm.notes}
+                              onChange={e => setActionForm(f => ({ ...f, notes: e.target.value }))} />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button size="sm" className="flex-1 h-7 text-xs gap-1" onClick={addResponseAction} disabled={actionSaving || !actionForm.actionText.trim()}>
+                              {actionSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save Action
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddingAction(false)}>Cancel</Button>
+                          </div>
                         </div>
                       )}
-                      {!selectedRisk.mitigation && (
-                        <p className="text-xs text-muted-foreground italic">No mitigation plan yet — click Edit to add one.</p>
+
+                      {/* Action list */}
+                      {responseLog.length === 0 && !addingAction ? (
+                        <div className="text-center py-6">
+                          <p className="text-xs text-muted-foreground">No response actions yet.</p>
+                          <p className="text-[10px] text-muted-foreground mt-1">Add actions to document what&apos;s being done about this risk.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {responseLog.map((entry) => {
+                            const meta = STRATEGY_META[entry.strategy] ?? STRATEGY_META.REDUCE;
+                            return (
+                              <div key={entry.id} className="rounded-lg border border-border bg-background p-2.5 space-y-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${meta.colour}`}>
+                                      {meta.label}
+                                    </span>
+                                    <button
+                                      title="Click to cycle status"
+                                      onClick={() => cycleActionStatus(entry.id, entry.status)}
+                                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold transition-colors ${ACTION_STATUS_STYLE[entry.status] ?? ACTION_STATUS_STYLE.PLANNED}`}>
+                                      {entry.status.replace("_", " ")}
+                                    </button>
+                                  </div>
+                                  <button onClick={() => deleteResponseAction(entry.id)}
+                                    className="text-muted-foreground hover:text-destructive transition-colors flex-shrink-0">
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <p className="text-xs font-medium leading-relaxed">{entry.action}</p>
+                                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                                  {entry.owner && <span>👤 {entry.owner}</span>}
+                                  {entry.dueDate && <span>📅 {new Date(entry.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>}
+                                </div>
+                                {entry.notes && <p className="text-[10px] text-muted-foreground italic">{entry.notes}</p>}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
-                    </>
+
+                      {/* Summary */}
+                      {responseLog.length > 0 && (
+                        <div className="pt-1 border-t border-border/40 flex items-center gap-3 text-[10px] text-muted-foreground">
+                          <span>{responseLog.filter(a => a.status === "DONE").length}/{responseLog.length} complete</span>
+                          {responseLog.filter(a => a.status === "IN_PROGRESS").length > 0 && (
+                            <span className="text-amber-600">{responseLog.filter(a => a.status === "IN_PROGRESS").length} in progress</span>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
                   )}
-                </CardContent>
-              </Card>
+                </Card>
+              </>
             ) : (
               <Card className="p-8 text-center">
                 <Shield className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                <p className="text-xs text-muted-foreground">Click a risk to view and edit details</p>
+                <p className="text-xs text-muted-foreground">Click a risk to view details and manage response actions</p>
               </Card>
             )}
           </div>
