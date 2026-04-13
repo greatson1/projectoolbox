@@ -340,12 +340,12 @@ export function AgentStatusBar() {
   const slot       = slots[focusedIdx] ?? slots[0];
   const c          = COLOURS[slot.state];
   const agentColour = gradientColour(slot.agentGradient);
-  const initial    = slot.agentName[0].toUpperCase();
+  const initial    = (slot.agentName?.[0] ?? "?").toUpperCase();
   const commentary = buildCommentary(slot, activityIdx);
   const label      = badgeLabel(slot);
   const sidebarW   = sidebarCollapsed ? 60 : 240;
   const ctaHref    = slot.state === "questions_waiting"
-    ? `/agents/chat?agentId=${slot.agentId}`
+    ? `/agents/chat?agent=${slot.agentId}`
     : slot.projectId ? `/projects/${slot.projectId}/artefacts` : "/agents";
 
   // Other agents for switcher
@@ -455,7 +455,7 @@ export function AgentStatusBar() {
                         i === focusedIdx ? "bg-muted/60" : "hover:bg-muted/40"
                       )}>
                       <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-                        style={{ background: sc2 }}>{s.agentName[0]}</div>
+                        style={{ background: sc2 }}>{s.agentName?.[0] ?? "?"}</div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[11px] font-semibold truncate">{s.agentName}</p>
                         <p className="text-[9px] text-muted-foreground truncate">{s.projectName}</p>
@@ -562,7 +562,7 @@ export function AgentStatusBar() {
                     className="relative group flex items-center justify-center w-6 h-6 rounded-full transition-transform hover:scale-110"
                     style={{ background: sc2 }}
                   >
-                    <span className="text-[9px] font-bold text-white">{s.agentName[0]}</span>
+                    <span className="text-[9px] font-bold text-white">{s.agentName?.[0] ?? "?"}</span>
                     {/* Urgency dot */}
                     {(s.state === "questions_waiting" || s.state === "review") && (
                       <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-background"

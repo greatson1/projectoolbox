@@ -425,7 +425,7 @@ function AgentChatPage() {
       return { ...m, data: { ...m.data, onAnswered: (ans: string) => handleClarificationAnswer(m.data.question.id, ans), isSubmitting: clarificationSubmitting } };
     }
     if (m.type === "clarification_complete" && m.data && !m.data.onGenerate) {
-      return { ...m, data: { ...m.data, onGenerate: handleGenerateDocuments, isGenerating: generatingDocs } };
+      return { ...m, data: { ...m.data, onGenerate: () => handleGenerateDocuments(), isGenerating: generatingDocs } };
     }
     if (m.type === "agent_question" && m.data && !m.data.onAnswered) {
       return { ...m, data: { ...m.data, onAnswered: (ans: string) => handleAgentQuestionAnswer(m.id, ans), isSubmitting: agentQuestionSubmitting } };
@@ -877,7 +877,7 @@ function AgentChatPage() {
                 onClick={() => setActiveAgentId(agent.id)}>
                 <div className="relative flex-shrink-0">
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                    style={{ background: agent.gradient || "#6366F1" }}>{agent.name[0]}</div>
+                    style={{ background: agent.gradient || "#6366F1" }}>{agent.name?.[0] ?? "A"}</div>
                   <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${agent.status === "ACTIVE" ? "bg-green-400" : "bg-amber-400"}`} />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -911,7 +911,7 @@ function AgentChatPage() {
           {activeAgent ? (
             <>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
+                style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name?.[0] ?? "A"}</div>
               <div className="flex-1">
                 <p className="text-sm font-semibold">Agent {activeAgent.name}</p>
                 <p className="text-[10px] text-muted-foreground">L{activeAgent.autonomyLevel} · {activeAgent.deployments?.[0]?.project?.name || "No project"} · {activeAgent.status}</p>
@@ -933,7 +933,7 @@ function AgentChatPage() {
           {!historyLoading && messages.length === 0 && activeAgent && historyLoaded.has(activeAgentId!) && (
             <div className="text-center py-8">
               <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center text-xl font-bold text-white"
-                style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
+                style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name?.[0] ?? "A"}</div>
               <h3 className="text-sm font-bold mb-1">Starting conversation with {activeAgent.name}</h3>
               <p className="text-xs text-muted-foreground mb-5">
                 {activeAgent.deployments?.[0]?.project?.name
@@ -999,10 +999,10 @@ function AgentChatPage() {
             <CardContent className="pt-4 space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"
-                  style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name[0]}</div>
+                  style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name?.[0] ?? "A"}</div>
                 <div>
                   <p className="text-sm font-bold">{activeAgent.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{activeAgent.codename || `${activeAgent.name.toUpperCase()}-${activeAgent.autonomyLevel}`}</p>
+                  <p className="text-[10px] text-muted-foreground">{activeAgent.codename || `${(activeAgent.name ?? "AGENT").toUpperCase()}-${activeAgent.autonomyLevel}`}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
