@@ -670,15 +670,45 @@ function AgentStatusBanner({
             )}
           </div>
 
-          {/* CTA button */}
-          {(state === "complete" || state === "empty") && (
-            <Button size="sm" onClick={() => onGenerate(state === "complete" && nextPhase ? nextPhase.name : undefined)} disabled={generating} className="flex-shrink-0 mt-0.5">
-              <Sparkles className="w-4 h-4 mr-1.5" />
-              {state === "complete"
-                ? (nextPhase ? `Generate ${nextPhase.name} Phase` : "Generate Next Phase")
-                : "Generate Artefacts"}
-            </Button>
-          )}
+          {/* CTA buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+            {(state === "complete" || state === "empty") && (
+              <Button size="sm" onClick={() => onGenerate(state === "complete" && nextPhase ? nextPhase.name : undefined)} disabled={generating}>
+                <Sparkles className="w-4 h-4 mr-1.5" />
+                {state === "complete"
+                  ? (nextPhase ? `Generate ${nextPhase.name} Phase` : "Generate Next Phase")
+                  : "Generate Artefacts"}
+              </Button>
+            )}
+            {/* Revert to previous phase — only show if not on first phase */}
+            {phaseNumber > 1 && (
+              <Button size="sm" variant="ghost" className="text-xs text-muted-foreground"
+                onClick={async () => {
+                  const prevPhase = project.phases?.[phaseNumber - 2]; // 0-indexed, go back one
+                  if (!prevPhase) return;
+                  const reason = prompt(`Revert to ${prevPhase.name}?\n\nPlease provide a reason:`);
+                  if (!reason) return;
+                  try {
+                    const res = await fetch(`/api/projects/${project.id}/phases/revert`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ targetPhase: prevPhase.name, reason }),
+                    });
+                    const data = await res.json();
+                    if (data.data?.pendingApproval) {
+                      toast.success("Phase reversion submitted for approval", { duration: 4000 });
+                    } else if (data.data?.reverted) {
+                      toast.success(`Reverted to ${prevPhase.name}`, { duration: 4000 });
+                      window.location.reload();
+                    } else {
+                      toast.error(data.error || "Reversion failed");
+                    }
+                  } catch { toast.error("Network error"); }
+                }}>
+                ← Revert Phase
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
