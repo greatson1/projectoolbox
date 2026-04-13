@@ -34,6 +34,36 @@ function timeAgo(date: string | Date) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+function parseDescription(raw: string): { summary: string; reason: string; changes: string[] } {
+  // Strip markdown formatting
+  const clean = raw
+    .replace(/\*\*([^*]+)\*\*/g, "$1")  // bold
+    .replace(/`([^`]+)`/g, "$1")         // code
+    .replace(/^[-*]\s+/gm, "")           // bullet points
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
+  // Extract trigger/reason
+  const triggerMatch = clean.match(/Trigger:\s*(.+?)(?:\n|Confidence)/i);
+  const reason = triggerMatch?.[1]?.trim() || "";
+
+  // Extract proposed changes as array
+  const changes: string[] = [];
+  const changeMatches = clean.matchAll(/→\s*(.+?)(?:\n|$)/g);
+  for (const m of changeMatches) {
+    changes.push(m[1].replace(/^\s*_|_\s*$/g, "").trim());
+  }
+
+  // Build a clean summary — first meaningful sentence, or the title minus technical noise
+  const lines = clean.split("\n").filter(l => l.trim() && !l.startsWith("Trigger:") && !l.startsWith("Confidence:"));
+  const summaryLine = lines.find(l => l.includes("→") || l.length > 20) || lines[0] || raw.substring(0, 200);
+  const summary = changes.length > 0
+    ? `Update ${changes.length} item(s): ${changes.slice(0, 3).map(c => c.split("→")[0]?.trim() || c).join(", ")}${changes.length > 3 ? "..." : ""}`
+    : summaryLine;
+
+  return { summary, reason, changes };
+}
+
 export default function ApprovalsPage() {
   const { data: approvals, isLoading, refetch } = useApprovals();
   usePageTitle("Approvals");
@@ -239,8 +269,6 @@ export default function ApprovalsPage() {
                         <span className="text-xs font-bold" style={{ color: accentColor }}>{agentName}</span>
                       )}
                       <span className="text-sm font-semibold truncate">{item.title}</span>
-                      <Badge variant="secondary" className={cn("text-[9px]", tierColors.bg, tierColors.text)}>{riskTier}</Badge>
-                      {riskScore > 0 && <span className="text-[10px] text-muted-foreground">Score {riskScore}/16</span>}
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
                       <span>{item.project?.name || "—"}</span>
@@ -282,80 +310,82 @@ export default function ApprovalsPage() {
                 )}
 
                 {/* Expanded content */}
+                {(() => {
+                  const parsed = parseDescription(item.description || "");
+                  return (
                 <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0")}>
                   <div className="px-5 pb-5 space-y-4 border-t border-border">
-                    {/* Risk level + What's being requested */}
-                    <div className="pt-4 flex items-start gap-4 flex-wrap">
-                      {/* Risk level badge */}
-                      {(() => {
-                        const score = (scores.schedule || 1) + (scores.cost || 1) + (scores.scope || 1) + (scores.stakeholder || 1);
-                        const level = score <= 6 ? "Low Risk" : score <= 10 ? "Medium Risk" : score <= 14 ? "High Risk" : "Critical Risk";
-                        const color = score <= 6 ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/30"
-                          : score <= 10 ? "text-amber-500 bg-amber-500/10 border-amber-500/30"
-                          : "text-red-500 bg-red-500/10 border-red-500/30";
-                        return (
-                          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${color}`}>
-                            <span>{level}</span>
-                            <span className="text-base font-bold">{score}/16</span>
-                          </div>
-                        );
-                      })()}
-                      {/* What's being requested */}
-                      <div className="flex-1 px-3 py-2 rounded-lg border border-primary/20 bg-primary/5 text-xs text-foreground min-w-[200px]">
-                        <span className="font-semibold text-primary block mb-0.5">What&apos;s Requested</span>
-                        {item.description}
-                      </div>
+
+                    {/* Section 1: What the agent wants to do */}
+                    <div className="pt-4 px-4 py-3 rounded-lg border border-primary/20 bg-primary/5 text-sm text-foreground">
+                      <span className="font-semibold text-primary block mb-1 text-xs uppercase tracking-wider">What the agent wants to do</span>
+                      {parsed.summary}
                     </div>
 
-                    {/* Affected items — show specific line items if available */}
+                    {/* Section 2: Why — only show if reason exists */}
+                    {parsed.reason && (
+                      <div className="px-4 py-3 rounded-lg border border-border bg-muted/30 text-sm text-muted-foreground">
+                        <span className="font-semibold text-foreground block mb-1 text-xs uppercase tracking-wider">Why</span>
+                        {parsed.reason}
+                      </div>
+                    )}
+
+                    {/* Section 3: What will change — clean table */}
                     {Array.isArray(item.affectedItems) && (item.affectedItems as any[]).length > 0 && (
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Affected Items</p>
-                        <div className="space-y-1">
-                          {(item.affectedItems as any[]).map((ai: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/30 border border-border/30">
-                              <Badge variant="outline" className="text-[8px]">{ai.type}</Badge>
-                              <span className="font-medium flex-1 truncate">{ai.title}</span>
-                              {ai.from && ai.to && (
-                                <>
-                                  <span className="text-muted-foreground">{ai.field}:</span>
-                                  <span className="text-red-400 line-through text-[10px]">{ai.from}</span>
-                                  <span className="text-muted-foreground">→</span>
-                                  <span className="text-emerald-400 font-semibold text-[10px]">{ai.to}</span>
-                                </>
-                              )}
-                            </div>
-                          ))}
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">What will change</p>
+                        <div className="rounded-lg border border-border overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-muted/50">
+                                <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Item</th>
+                                <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Change</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(item.affectedItems as any[]).map((ai: any, idx: number) => (
+                                <tr key={idx} className="border-t border-border/50">
+                                  <td className="px-3 py-2 font-medium">
+                                    <span className="text-muted-foreground mr-1.5">{ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : "📄"}</span>
+                                    {ai.title}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {ai.from && ai.to ? (
+                                      <span>
+                                        <span className="text-muted-foreground">{ai.field}: </span>
+                                        <span className="text-red-400 line-through">{ai.from}</span>
+                                        <span className="text-muted-foreground mx-1">→</span>
+                                        <span className="text-emerald-500 font-semibold">{ai.to}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}
 
-                    {/* Agent reasoning — only show if different from description */}
-                    {item.reasoningChain && item.reasoningChain !== item.description && (
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Agent Reasoning</p>
-                        <p className="text-sm text-foreground leading-relaxed">{item.reasoningChain}</p>
-                      </div>
-                    )}
-
-                    {/* Impact Scores — 4 mini-cards */}
+                    {/* Section 4: Impact assessment — plain English, no X/4 numbers */}
                     {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && (
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Impact Analysis</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Impact assessment</p>
                         <div className="grid grid-cols-4 gap-2">
                           {[
-                            { label: "Schedule", value: scores.schedule || 1, desc: ["None", "≤1 week", "1–4 weeks", ">1 month"] },
-                            { label: "Cost", value: scores.cost || 1, desc: ["None", "<5%", "5–15%", ">15%"] },
-                            { label: "Scope", value: scores.scope || 1, desc: ["None", "Minor", "Moderate", "Major"] },
-                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["Internal", "Team", "Client", "Board"] },
+                            { label: "Schedule", value: scores.schedule || 1, desc: ["No delay", "Up to 1 week", "1-4 weeks delay", "Over 1 month"] },
+                            { label: "Cost", value: scores.cost || 1, desc: ["No cost impact", "Under 5% of budget", "5-15% of budget", "Over 15%"] },
+                            { label: "Scope", value: scores.scope || 1, desc: ["No scope change", "Minor refinement", "Deliverable affected", "Major change"] },
+                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["Internal only", "Team affected", "Client/sponsor aware", "Board escalation"] },
                           ].map(dim => {
                             const color = dim.value <= 1 ? "text-emerald-500" : dim.value <= 2 ? "text-blue-500" : dim.value <= 3 ? "text-amber-500" : "text-red-500";
                             const bg = dim.value <= 1 ? "bg-emerald-500/10" : dim.value <= 2 ? "bg-blue-500/10" : dim.value <= 3 ? "bg-amber-500/10" : "bg-red-500/10";
                             return (
                               <div key={dim.label} className={cn("rounded-lg p-2.5 text-center", bg)}>
-                                <p className="text-[10px] text-muted-foreground uppercase">{dim.label}</p>
-                                <p className={cn("text-lg font-bold", color)}>{dim.value}/4</p>
-                                <p className="text-[10px] text-muted-foreground">{dim.desc[dim.value - 1]}</p>
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{dim.label}</p>
+                                <p className={cn("text-xs font-semibold mt-1", color)}>{dim.desc[dim.value - 1]}</p>
                               </div>
                             );
                           })}
@@ -363,24 +393,15 @@ export default function ApprovalsPage() {
                       </div>
                     )}
 
-                    {/* Affected Items */}
-                    {item.affectedItems && (item.affectedItems as any[]).length > 0 && (
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Affected Items</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(item.affectedItems as any[]).map((ai: any, i: number) => (
-                            <Badge key={i} variant="outline" className="text-xs">
-                              {ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : "📄"} {ai.title}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    {/* Risk tier — shown only in expanded view */}
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className={cn("text-[10px]", tierColors.bg, tierColors.text)}>{riskTier} risk</Badge>
+                    </div>
 
                     {/* Suggested Alternatives */}
                     {item.suggestedAlternatives && (item.suggestedAlternatives as any[]).length > 0 && (
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Alternatives Considered</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Alternatives Considered</p>
                         <div className="space-y-1.5">
                           {(item.suggestedAlternatives as any[]).map((alt: any, i: number) => (
                             <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 text-xs">
@@ -410,6 +431,8 @@ export default function ApprovalsPage() {
                     )}
                   </div>
                 </div>
+                  );
+                })()}
               </div>
             );
           })}
