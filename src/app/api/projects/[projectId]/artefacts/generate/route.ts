@@ -55,40 +55,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       return NextResponse.json({ data: { generated: arts.length, skipped: 0, phase: updated?.currentPhase ?? "Pre-Project" } });
     }
 
-    // Determine target phase — explicit > deployment current > methodology first phase
-    let targetPhase = requestedPhase || deployment.currentPhase;
+    // Determine target phase — use deployment's current phase only.
+    // If caller explicitly requests a phase that differs from the current deployment phase,
+    // reject with 409 rather than silently auto-advancing. Phase advancement must happen
+    // explicitly via the approve-artefacts flow (handleApprove in the artefacts page).
+    const targetPhase = deployment.currentPhase;
 
-    // If explicit phase is requested but deployment is behind, advance the deployment phase first
     if (requestedPhase && requestedPhase !== deployment.currentPhase) {
-      const project = await db.project.findUnique({ where: { id: projectId }, select: { methodology: true } });
-      if (project) {
-        const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
-        const methodology = getMethodology(methodologyId);
-        const phases = methodology.phases;
-        const requestedIdx = phases.findIndex(p => p.name === requestedPhase);
-        const currentIdx = phases.findIndex(p => p.name === deployment.currentPhase);
-
-        // Only advance if moving forward
-        if (requestedIdx > currentIdx) {
-          // Mark intermediate phases as COMPLETED
-          for (let i = currentIdx; i < requestedIdx; i++) {
-            await db.phase.updateMany({
-              where: { projectId, name: phases[i].name },
-              data: { status: "COMPLETED" },
-            });
-          }
-          // Mark target phase as ACTIVE
-          await db.phase.updateMany({
-            where: { projectId, name: requestedPhase },
-            data: { status: "ACTIVE" },
-          });
-          // Update deployment
-          await db.agentDeployment.update({
-            where: { id: deployment.id },
-            data: { currentPhase: requestedPhase, phaseStatus: "active", lastCycleAt: new Date() },
-          });
-        }
-      }
+      return NextResponse.json({
+        error: `Phase mismatch: deployment is currently at "${deployment.currentPhase}" but "${requestedPhase}" was requested. Advance the phase explicitly by approving all current-phase artefacts before generating the next phase.`,
+      }, { status: 409 });
     }
 
     const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
