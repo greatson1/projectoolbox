@@ -794,6 +794,33 @@ export default function RiskRegisterPage() {
                               );
                             }
 
+                            // ── Stakeholder response entry (from magic link review) ──
+                            if (entry.type === "STAKEHOLDER_RESPONSE") {
+                              return (
+                                <div key={entry.id || `sr-${entry.respondedAt}`} className="rounded-lg border border-primary/30 bg-primary/5 p-2.5 space-y-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border bg-primary/15 text-primary border-primary/30">
+                                        STAKEHOLDER RESPONSE
+                                      </span>
+                                      <span className="text-[9px] text-muted-foreground">
+                                        {entry.respondedAt ? new Date(entry.respondedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                                      </span>
+                                    </div>
+                                    <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" title="External responses cannot be edited" />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold">Decision: {entry.action || entry.strategy || "—"}</span>
+                                  </div>
+                                  {entry.comment && <p className="text-[10px] text-muted-foreground leading-relaxed">{entry.comment}</p>}
+                                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                    <span>By {entry.respondedBy || "External stakeholder"}</span>
+                                    <span>· via {entry.source === "magic_link" ? "email review link" : "platform"}</span>
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             // ── Regular action entry ──
                             const meta = STRATEGY_META[entry.strategy ?? "REDUCE"] ?? STRATEGY_META.REDUCE;
                             return (
