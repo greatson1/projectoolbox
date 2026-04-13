@@ -122,10 +122,10 @@ const PRINCE2: MethodologyDefinition = {
       description: "Produce baselines: WBS, schedule, cost, quality, resource, and risk management plans",
       color: "#22D3EE",
       artefacts: [
-        { name: "WBS", required: true, aiGeneratable: true },
+        { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
         { name: "Schedule Baseline", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
-        { name: "Risk Management Plan", required: true, aiGeneratable: true },
+        { name: "Risk Management Plan", required: false, aiGeneratable: true },
         { name: "Quality Plan", required: false, aiGeneratable: true },
         { name: "Resource Plan", required: false, aiGeneratable: true },
       ],
@@ -145,9 +145,9 @@ const PRINCE2: MethodologyDefinition = {
       description: "Deliver the project: monitor progress, manage risks, produce highlight reports, handle exceptions",
       color: "#10B981",
       artefacts: [
-        { name: "Change Request Register", required: true, aiGeneratable: true },
-        { name: "Status Reports", required: false, aiGeneratable: true },
+        { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Risk Reviews", required: false, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
         { name: "Exception Reports", required: false, aiGeneratable: true },
         { name: "Quality Review Records", required: false, aiGeneratable: true },
       ],
@@ -251,9 +251,8 @@ const WATERFALL: MethodologyDefinition = {
       description: "Implementation, coding, unit testing",
       color: "#22D3EE",
       artefacts: [
-        { name: "Change Request Register", required: true, aiGeneratable: true },
-        { name: "Code", required: true, aiGeneratable: false },
-        { name: "Unit Tests", required: true, aiGeneratable: false },
+        { name: "Status Reports", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Build Complete",
@@ -313,9 +312,9 @@ const SCRUM: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Product Vision", required: false, aiGeneratable: true },
         { name: "Definition of Done", required: false, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
@@ -336,10 +335,10 @@ const SCRUM: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Sprint Plans", required: true, aiGeneratable: true },
-        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Sprint Reviews", required: false, aiGeneratable: true },
         { name: "Retrospectives", required: false, aiGeneratable: true },
         { name: "Burndown Chart", required: false, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Sprint Review",
@@ -385,9 +384,9 @@ const KANBAN: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Board Configuration", required: false, aiGeneratable: true },
         { name: "WIP Policies", required: false, aiGeneratable: true },
         { name: "Service Level Agreement", required: false, aiGeneratable: true },
@@ -407,11 +406,11 @@ const KANBAN: MethodologyDefinition = {
       description: "Ongoing flow: pull items, track cycle time, resolve bottlenecks",
       color: "#10B981",
       artefacts: [
-        { name: "Flow Metrics Reports", required: true, aiGeneratable: true },
-        { name: "Change Request Register", required: true, aiGeneratable: true },
+        { name: "Status Reports", required: true, aiGeneratable: true },
+        { name: "Flow Metrics Reports", required: false, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
         { name: "Service Level Reports", required: false, aiGeneratable: true },
         { name: "Bottleneck Analysis", required: false, aiGeneratable: true },
-        { name: "Status Reports", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Continuous Review",
@@ -454,9 +453,9 @@ const SAFE: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
         { name: "Budget Breakdown", required: true, aiGeneratable: true },
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "PI Objectives", required: false, aiGeneratable: true },
         { name: "Programme Board", required: false, aiGeneratable: true },
         { name: "Solution Vision", required: false, aiGeneratable: true },
@@ -478,10 +477,10 @@ const SAFE: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Iteration Plans", required: true, aiGeneratable: true },
-        { name: "Change Request Register", required: true, aiGeneratable: true },
+        { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "System Demos", required: false, aiGeneratable: false },
         { name: "Risk Reviews", required: false, aiGeneratable: true },
-        { name: "Status Reports", required: false, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "System Demo",
@@ -573,12 +572,12 @@ const HYBRID: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Sprint Plans", required: true, aiGeneratable: true },
-        { name: "Change Request Register", required: true, aiGeneratable: true },
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Phase Progress Reports", required: false, aiGeneratable: true },
         { name: "Retrospectives", required: false, aiGeneratable: true },
         { name: "Risk Reviews", required: false, aiGeneratable: true },
         { name: "Burndown Chart", required: false, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Delivery Review",
