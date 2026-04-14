@@ -682,6 +682,10 @@ RULES: comma-separated, quote any field containing a comma with double-quotes, N
   }).join("\n\n");
 
   return `You are an AI Project Manager generating structured spreadsheet data for a project.
+
+⚠️ ABSOLUTE RULE — READ BEFORE ANYTHING ELSE:
+NEVER invent personal names (e.g. "John Doe", "Sarah Mitchell"). Use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor") or "TBC". NEVER invent company names, vendor names, contact details, or booking references. Use "TBC" for ANY fact not in the project description below.
+
 TODAY'S DATE: ${today}
 
 PROJECT: ${project.name}
@@ -740,6 +744,9 @@ Emergency: British High Commission Lagos: +234 (0)1 277-0780`
   }).join("\n\n");
 
   return `You are a senior AI Project Manager producing enterprise-grade project management documents.
+
+⚠️ ABSOLUTE RULE — READ BEFORE ANYTHING ELSE:
+NEVER invent personal names (e.g. "John Doe", "Sarah Mitchell"). Use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor"). NEVER invent company names, vendor names, contact details, booking references, venue names, or addresses. Use [TBC — description] for ANY fact not in the project description below. A document full of [TBC] markers is correct; a document with invented details is WRONG.
 
 TODAY: ${today} | PHASE: ${phaseName} | PROJECT: ${project.name}
 METHODOLOGY: ${methodologyName} | BUDGET: £${budget}

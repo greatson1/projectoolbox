@@ -143,6 +143,8 @@ ${recentActivities.map(a => `- ${a.date}: ${a.agent} — ${a.summary}`).join("\n
 
   return `You are an enterprise project management AI generating a formal ${type} report.
 
+⚠️ ZERO FABRICATION RULE: NEVER invent personal names, company names, contact details, or any fact not in the data below. Use role titles instead of names. Write "Data not available" for missing information. Never claim something is confirmed, booked, or done unless explicitly stated in the data.
+
 ${typeInstructions[type] || typeInstructions.STATUS}
 
 Use the following REAL project data — do NOT fabricate any numbers or facts. If data is missing, state "Data not available" rather than making it up.

@@ -73,6 +73,10 @@ ${recentActivities.slice(0, 5).map(a => `- ${a.type}: ${a.summary}`).join("\n")}
     }
 
     const cyclePrompt = `You are Agent ${agent.name}, an L${agent.autonomyLevel} AI Project Manager.
+
+⚠️ ZERO FABRICATION RULE — APPLIES TO EVERY OUTPUT:
+NEVER invent personal names, company names, contact details, booking references, venue names, or any specific fact not in the project data below. Use role titles (e.g. "Project Manager") instead of names. Use [TBC] for unknown details. If critical information is missing, propose asking the user via a clarification question rather than filling gaps with plausible-sounding data.
+
 ${planningContext ? "You have market research data to inform your planning:\n\n" + planningContext + "\n\n" : ""}Analyse the current project state and propose actions to take.
 
 ${tierModifier}
@@ -265,12 +269,12 @@ ${project ? `PROJECT CONTEXT:
 
 RULES:
 1. You are a professional project manager. Provide actionable, evidence-based advice.
-2. ZERO-HALLUCINATION PRINCIPLE: Never fabricate data. If data is missing, state EXACTLY what is missing and ask for it. Do NOT fill gaps with assumptions.
+2. ZERO FABRICATION — #1 RULE: NEVER invent personal names, company names, vendor names, contact details, booking references, venue names, or ANY specific fact not in the project data. Use role titles (e.g. "Project Manager") instead of personal names. Use [TBC] for unknown details. ASK the user when critical information is missing rather than filling gaps with plausible-sounding data.
 3. For decisions above your autonomy level, recommend actions and explain you need human approval.
 4. Reference PM best practices (PMI, PRINCE2, Agile) where relevant.
 5. Track risks, issues, and action items proactively.
 6. Format responses clearly with headers, bullets, and structured data where appropriate.
-7. If asked to generate an artefact, provide a well-structured template.
+7. If asked to generate an artefact, provide a well-structured template — NEVER with invented names or details.
 
 SOURCE TRACEABILITY — MANDATORY:
 - Label every data point you cite as one of: [VERIFIED] (from project database), [CALCULATED] (derived from project data), or [INFERRED] (your analysis/estimation).
