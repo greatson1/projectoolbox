@@ -91,33 +91,79 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let openRisks: any[] = [];
   let recentActivity: any[] = [];
   let knowledgeItems: any[] = [];
+  let tasks: any[] = [];
+  let costEntries: any[] = [];
+  let issues: any[] = [];
+  let stakeholders: any[] = [];
+  let latestMetrics: any = null;
 
   if (project?.id) {
-    [phases, pendingApprovals, recentArtefacts, openRisks, recentActivity, knowledgeItems] = await Promise.all([
+    [phases, pendingApprovals, recentArtefacts, openRisks, recentActivity, knowledgeItems,
+     tasks, costEntries, issues, stakeholders, latestMetrics] = await Promise.all([
       db.phase.findMany({ where: { projectId: project.id }, orderBy: { order: "asc" } }),
       db.approval.findMany({ where: { projectId: project.id, status: "PENDING" }, take: 5 }),
-      db.agentArtefact.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "desc" }, take: 8 }),
-      db.risk.findMany({ where: { projectId: project.id }, orderBy: { score: "desc" }, take: 10, select: { title: true, description: true, probability: true, impact: true, score: true, status: true, category: true, owner: true, mitigation: true, responseLog: true } }),
+      // Artefacts — include content so the agent knows what was actually decided/written
+      db.agentArtefact.findMany({
+        where: { projectId: project.id },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, name: true, status: true, content: true, phaseId: true, createdAt: true, updatedAt: true },
+      }),
+      db.risk.findMany({ where: { projectId: project.id }, orderBy: { score: "desc" }, take: 15, select: { title: true, description: true, probability: true, impact: true, score: true, status: true, category: true, owner: true, mitigation: true, responseLog: true } }),
       db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 10 }),
-      // Knowledge base: user-confirmed answers + artefact knowledge + workspace items
-      // Exclude internal session metadata; prioritise HIGH_TRUST (user answers)
+      // Knowledge base: exclude CHAT items (already in conversation history) and internal metadata
       db.knowledgeBaseItem.findMany({
         where: {
           OR: [{ agentId }, { projectId: project.id }, { layer: "WORKSPACE", orgId: caller.orgId }],
-          NOT: { title: { startsWith: "__" } }, // exclude internal session metadata
+          NOT: [
+            { title: { startsWith: "__" } },
+            { type: "CHAT" },
+          ],
         },
         orderBy: [{ trustLevel: "desc" }, { createdAt: "desc" }],
-        take: 25,
-        select: { title: true, content: true, type: true, trustLevel: true, tags: true, createdAt: true },
+        take: 40,
+        select: { title: true, content: true, type: true, layer: true, trustLevel: true, tags: true, createdAt: true },
+      }),
+      // Tasks — full list for status awareness (capped at 60 to stay lean)
+      db.task.findMany({
+        where: { projectId: project.id },
+        orderBy: [{ status: "asc" }, { endDate: "asc" }],
+        take: 60,
+        select: { title: true, status: true, priority: true, assigneeName: true, endDate: true, progress: true, isCriticalPath: true, blocked: true, phaseId: true, storyPoints: true },
+      }),
+      // Cost entries — all estimates and actuals for budget picture
+      db.costEntry.findMany({
+        where: { projectId: project.id },
+        orderBy: { recordedAt: "desc" },
+        take: 100,
+        select: { entryType: true, category: true, amount: true, description: true, vendorName: true, recordedAt: true },
+      }),
+      // Open issues
+      db.issue.findMany({
+        where: { projectId: project.id, status: { not: "CLOSED" } },
+        orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
+        take: 15,
+        select: { title: true, priority: true, status: true, dueDate: true },
+      }),
+      // Stakeholders
+      db.stakeholder.findMany({
+        where: { projectId: project.id },
+        take: 20,
+        select: { name: true, role: true, organisation: true, power: true, interest: true, sentiment: true },
+      }),
+      // Latest EVM/health metrics snapshot
+      db.metricsSnapshot.findFirst({
+        where: { projectId: project.id },
+        orderBy: { createdAt: "desc" },
       }),
     ]);
   } else {
-    // No project — still load workspace-level knowledge
+    // No project — still load workspace-level knowledge (exclude CHAT noise)
     knowledgeItems = await db.knowledgeBaseItem.findMany({
-      where: { layer: "WORKSPACE", orgId: caller.orgId },
+      where: { layer: "WORKSPACE", orgId: caller.orgId, NOT: { type: "CHAT" } },
       orderBy: [{ trustLevel: "desc" }, { createdAt: "desc" }],
-      take: 8,
-      select: { title: true, content: true, type: true, trustLevel: true, tags: true, createdAt: true },
+      take: 20,
+      select: { title: true, content: true, type: true, layer: true, trustLevel: true, tags: true, createdAt: true },
     });
   }
 
@@ -232,10 +278,109 @@ ${pendingApprovals.length > 0
   ? pendingApprovals.map(a => `- **${a.title}** — ${a.description} [${a.type}]`).join("\n")
   : "No pending approvals."}
 
-## GENERATED ARTEFACTS
+## GENERATED ARTEFACTS (${recentArtefacts.length} total)
 ${recentArtefacts.length > 0
-  ? recentArtefacts.map(a => `- ${a.name} [${a.status}]`).join("\n")
+  ? recentArtefacts.map(a => {
+      const statusIcon = a.status === "APPROVED" ? "✅" : a.status === "PENDING_REVIEW" ? "⏳" : a.status === "REJECTED" ? "❌" : "📝";
+      // Approved artefacts: show first 800 chars of content so agent knows what was decided
+      // Draft/pending: just name and status — content not yet confirmed
+      const preview = a.status === "APPROVED" && a.content
+        ? `\n  > ${a.content.slice(0, 800).replace(/\n/g, "\n  > ")}${a.content.length > 800 ? "…" : ""}`
+        : "";
+      return `${statusIcon} **${a.name}** [${a.status}] — ${new Date(a.updatedAt || a.createdAt).toLocaleDateString("en-GB")}${preview}`;
+    }).join("\n\n")
   : "No artefacts generated yet."}
+
+## TASK STATUS SUMMARY
+${(() => {
+  if (tasks.length === 0) return "No tasks created yet.";
+  const byStatus: Record<string, any[]> = {};
+  tasks.forEach(t => { (byStatus[t.status] = byStatus[t.status] || []).push(t); });
+  const done      = (byStatus["DONE"] || byStatus["COMPLETE"] || []).length;
+  const inProg    = (byStatus["IN_PROGRESS"] || []).length;
+  const todo      = (byStatus["TODO"] || []).length;
+  const blocked   = tasks.filter(t => t.blocked).length;
+  const overdue   = tasks.filter(t => t.endDate && new Date(t.endDate) < new Date() && t.status !== "DONE" && t.status !== "COMPLETE");
+  const critPath  = tasks.filter(t => t.isCriticalPath && t.status !== "DONE" && t.status !== "COMPLETE");
+  const pct       = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
+
+  let out = `**${tasks.length} tasks total — ${done} done (${pct}%), ${inProg} in progress, ${todo} to do, ${blocked} blocked**\n`;
+
+  if (overdue.length > 0) {
+    out += `\n⚠️ **OVERDUE (${overdue.length}):**\n`;
+    out += overdue.slice(0, 8).map(t =>
+      `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""} (due ${new Date(t.endDate).toLocaleDateString("en-GB")})`
+    ).join("\n");
+  }
+  if (critPath.length > 0) {
+    out += `\n\n🔴 **CRITICAL PATH (${critPath.length} incomplete):**\n`;
+    out += critPath.slice(0, 6).map(t =>
+      `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""}${t.endDate ? ` (due ${new Date(t.endDate).toLocaleDateString("en-GB")})` : ""}`
+    ).join("\n");
+  }
+  if (inProg > 0) {
+    out += `\n\n🔵 **IN PROGRESS:**\n`;
+    out += (byStatus["IN_PROGRESS"] || []).slice(0, 8).map(t =>
+      `- ${t.title}${t.progress > 0 ? ` (${t.progress}%)` : ""}${t.assigneeName ? ` — ${t.assigneeName}` : ""}`
+    ).join("\n");
+  }
+  return out;
+})()}
+
+## BUDGET & COST POSITION
+${(() => {
+  const budget = (project as any)?.budget || 0;
+  if (costEntries.length === 0 && !budget) return "No budget or cost data recorded yet.";
+
+  const estimates = costEntries.filter((c: any) => c.entryType === "ESTIMATE");
+  const actuals   = costEntries.filter((c: any) => c.entryType === "ACTUAL");
+  const forecasts = costEntries.filter((c: any) => c.entryType === "FORECAST");
+
+  const totalEst  = estimates.reduce((s: number, c: any) => s + c.amount, 0);
+  const totalAct  = actuals.reduce((s: number, c: any) => s + c.amount, 0);
+  const totalFore = forecasts.reduce((s: number, c: any) => s + c.amount, 0);
+  const remaining = budget - totalAct;
+  const burnPct   = budget > 0 ? Math.round((totalAct / budget) * 100) : 0;
+
+  // Group actuals by category
+  const byCat: Record<string, number> = {};
+  actuals.forEach((c: any) => { byCat[c.category] = (byCat[c.category] || 0) + c.amount; });
+
+  let out = `**Project Budget: £${budget.toLocaleString()}**\n`;
+  out += `- Total Estimated Cost: £${totalEst.toLocaleString()}\n`;
+  out += `- Actual Spend to Date: £${totalAct.toLocaleString()} (${burnPct}% of budget)\n`;
+  if (totalFore > 0) out += `- Latest Forecast: £${totalFore.toLocaleString()}\n`;
+  out += `- Remaining Budget: £${remaining.toLocaleString()}${remaining < 0 ? " ⚠️ OVER BUDGET" : ""}`;
+
+  if (Object.keys(byCat).length > 0) {
+    out += `\n\n**Spend by Category:**\n`;
+    out += Object.entries(byCat).map(([cat, amt]: [string, number]) => `- ${cat}: £${amt.toLocaleString()}`).join("\n");
+  }
+
+  if (latestMetrics?.cpi) {
+    out += `\n\n**Earned Value (latest snapshot):**\n`;
+    out += `- CPI: ${latestMetrics.cpi?.toFixed(2)} (${latestMetrics.cpi >= 1 ? "✅ on/under budget" : "⚠️ over budget"})\n`;
+    out += `- SPI: ${latestMetrics.spi?.toFixed(2)} (${latestMetrics.spi >= 1 ? "✅ on/ahead of schedule" : "⚠️ behind schedule"})\n`;
+    if (latestMetrics.eac) out += `- EAC (forecast at completion): £${Math.round(latestMetrics.eac).toLocaleString()}\n`;
+    if (latestMetrics.ragStatus) out += `- RAG Status: ${latestMetrics.ragStatus}`;
+  }
+  return out;
+})()}
+
+## OPEN ISSUES (${issues.length})
+${issues.length > 0
+  ? issues.map((i: any) => {
+      const icon = i.priority === "CRITICAL" || i.priority === "HIGH" ? "🔴" : i.priority === "MEDIUM" ? "🟡" : "🟢";
+      return `${icon} **${i.title}** [${i.status}] — ${i.priority}${i.dueDate ? ` — due ${new Date(i.dueDate).toLocaleDateString("en-GB")}` : ""}`;
+    }).join("\n")
+  : "No open issues."}
+
+## STAKEHOLDERS (${stakeholders.length})
+${stakeholders.length > 0
+  ? stakeholders.map((s: any) =>
+      `- **${s.name}** (${s.role || "Stakeholder"}${s.organisation ? `, ${s.organisation}` : ""}) — Power: ${s.power}/100, Interest: ${s.interest}/100${s.sentiment ? `, Sentiment: ${s.sentiment}` : ""}`
+    ).join("\n")
+  : "No stakeholders recorded yet."}
 
 ## PROJECT RISKS (${openRisks.length} total)
 ${openRisks.length > 0
@@ -274,18 +419,33 @@ ${recentActivity.length > 0
 
 ## YOUR IMMEDIATE PRIORITY RIGHT NOW
 ${(() => {
-  const draftArts = recentArtefacts.filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW");
-  const approvedArts = recentArtefacts.filter(a => a.status === "APPROVED");
-  const hasPendingGate = pendingApprovals.some(a => a.type === "PHASE_GATE");
+  const draftArts   = recentArtefacts.filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW");
+  const approvedArts= recentArtefacts.filter(a => a.status === "APPROVED");
+  const hasPendingGate = pendingApprovals.some((a: any) => a.type === "PHASE_GATE");
+  const overdueTaskCount = tasks.filter(t => t.endDate && new Date(t.endDate) < new Date() && t.status !== "DONE" && t.status !== "COMPLETE").length;
+  const criticalIssues = issues.filter((i: any) => i.priority === "CRITICAL" || i.priority === "HIGH");
+  const budget = (project as any)?.budget || 0;
+  const totalAct = costEntries.filter((c: any) => c.entryType === "ACTUAL").reduce((s: number, c: any) => s + c.amount, 0);
+  const overBudget = budget > 0 && totalAct > budget;
+
+  const flags: string[] = [];
+  if (overBudget) flags.push(`💰 OVER BUDGET — £${(totalAct - budget).toLocaleString()} overspend`);
+  if (criticalIssues.length > 0) flags.push(`🔴 ${criticalIssues.length} CRITICAL/HIGH issue(s): ${criticalIssues.slice(0, 3).map((i: any) => i.title).join(", ")}`);
+  if (overdueTaskCount > 0) flags.push(`⏰ ${overdueTaskCount} overdue task(s)`);
+  if (latestMetrics?.spi && latestMetrics.spi < 0.85) flags.push(`📉 Schedule is significantly behind (SPI ${latestMetrics.spi?.toFixed(2)})`);
+  if (latestMetrics?.cpi && latestMetrics.cpi < 0.85) flags.push(`📉 Cost performance poor (CPI ${latestMetrics.cpi?.toFixed(2)})`);
 
   if (recentArtefacts.length === 0 && phases.length > 0) {
     return `🎯 ARTEFACTS NOT YET GENERATED. You are in the ${currentPhase?.name || "first"} phase. Your job is to generate the phase artefacts. If the user hasn't answered your clarification questions yet, ask them ONE question at a time. Once you have enough context, generate the artefacts. Tell the user exactly what you need from them to proceed.`;
   }
   if (draftArts.length > 0) {
-    return `🎯 ${draftArts.length} ARTEFACT(S) AWAITING REVIEW: ${draftArts.map(a => a.name).join(", ")}. Direct the user to [Review Artefacts](/agents/${agentId}?tab=artefacts) to approve them. Summarise what each document contains and why it matters. Once all are approved, you can advance to the next phase.`;
+    return `🎯 ${draftArts.length} ARTEFACT(S) AWAITING REVIEW: ${draftArts.map(a => a.name).join(", ")}. Direct the user to [Review Artefacts](/agents/${agentId}?tab=artefacts) to approve them. Summarise what each document contains and why it matters. Once all are approved, you can advance to the next phase.${flags.length > 0 ? `\n\nAlso flag these issues:\n${flags.map(f => `- ${f}`).join("\n")}` : ""}`;
   }
   if (hasPendingGate) {
     return `🎯 PHASE GATE AWAITING APPROVAL. The ${currentPhase?.name} phase is complete. Direct the user to [Pending Approvals](/approvals) to approve the phase gate and advance to ${nextPhase?.name || "the next phase"}.`;
+  }
+  if (flags.length > 0) {
+    return `🎯 ATTENTION REQUIRED:\n${flags.map(f => `- ${f}`).join("\n")}\n\nAddress these proactively — brief the user on each issue and recommend action.`;
   }
   if (approvedArts.length > 0 && !nextPhase) {
     return `🎯 ALL PHASES COMPLETE. All artefacts approved, all phases done. Help the user with any remaining questions, generate reports, or close out the project.`;
@@ -293,7 +453,7 @@ ${(() => {
   if (openRisks.length > 0) {
     return `🎯 ${openRisks.length} OPEN RISK(S) need attention. Proactively discuss the highest-scored risks and recommend mitigation strategies. Link to [Risk Register](/projects/${project?.id || ""}/risk).`;
   }
-  return `🎯 Monitor the project. Check if tasks are progressing, risks are mitigated, and stakeholders are informed. Be proactive — don't wait to be asked.`;
+  return `🎯 Project is progressing. Monitor tasks, risks, costs and stakeholders. Be proactive — brief the user on any changes or items needing attention without waiting to be asked.`;
 })()}
 
 ## GOVERNANCE RULES (HITL)
@@ -422,21 +582,82 @@ STRICT RULES:
 - For questions with clear options, use choice type. For yes/no, use yesno type
 - NEVER use markdown bullet lists of questions — one <ASK> block only
 
-## KNOWLEDGE BASE
-${knowledgeItems.length > 0
-  ? `The following knowledge has been ingested and is available to you. Use it to inform your answers, decisions, and artefacts. HIGH_TRUST items override your defaults; STANDARD items inform and supplement.
+## FACT EXTRACTION — LEARN FROM EVERY CONVERSATION
+When the user tells you something new about the project (a name, date, decision, preference, constraint, confirmation), include a <FACTS> block at the END of your response (after all visible text). This is parsed by the system and stored to the Knowledge Base so you remember it in future conversations.
 
-${knowledgeItems.map(k => {
+Format — one fact per line, pipe-separated:
+<FACTS>
+title | content
+</FACTS>
+
+Examples:
+<FACTS>
+Venue confirmed | The training will be held at the Hilton Birmingham Metropole
+Number of attendees | 5 senior executives attending the programme
+Budget approved | £15,000 approved by finance director on 10/04/2026
+Catering preference | Vegetarian options required for 2 of 5 attendees
+</FACTS>
+
+Rules:
+- Only include GENUINELY NEW facts the user just told you — not things already in the KB
+- Title should be a short label (2-5 words). Content should be the specific detail.
+- Do NOT include facts you inferred or assumed — only what the user explicitly stated
+- If the user didn't provide any new facts in their message, do NOT include a <FACTS> block
+- The <FACTS> block is invisible to the user — it's stripped before display
+
+## KNOWLEDGE BASE
+${(() => {
+  if (knowledgeItems.length === 0) {
+    return "No knowledge base items yet. Add documents, decisions, URLs, or run research to build project context.";
+  }
+
+  // --- Relevance scoring: boost items whose title/tags overlap with the current message ---
+  const msgWords = new Set(
+    message.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 3)
+  );
+  const scored = knowledgeItems.map(k => {
+    const titleWords = (k.title || "").toLowerCase().split(/\s+/);
+    const tagWords   = (k.tags || []).flatMap((t: string) => t.toLowerCase().split(/[\s_-]+/));
+    const overlap = [...titleWords, ...tagWords].filter(w => msgWords.has(w)).length;
+    // Trust weight: HIGH_TRUST=3, STANDARD=1, REFERENCE_ONLY=0
+    const trustWeight = k.trustLevel === "HIGH_TRUST" ? 3 : k.trustLevel === "REFERENCE_ONLY" ? 0 : 1;
+    return { ...k, _score: overlap * 2 + trustWeight };
+  }).sort((a, b) => b._score - a._score);
+
+  // --- Per-item char limits by trust level ---
+  const charLimit = (item: any) => {
+    if (item.trustLevel === "HIGH_TRUST" || item.type === "DECISION") return 1500;
+    if (item.trustLevel === "REFERENCE_ONLY") return 200;
+    return 600; // STANDARD
+  };
+
+  // --- Budget-aware render: stop once we hit 8000 chars total ---
+  const KB_BUDGET = 8000;
+  let used = 0;
+  const rendered: string[] = [];
+
+  for (const k of scored) {
+    if (used >= KB_BUDGET) break;
     const trust = k.trustLevel === "HIGH_TRUST" ? "⭐ HIGH TRUST" : k.trustLevel === "REFERENCE_ONLY" ? "📎 REFERENCE" : "📄 STANDARD";
-    const tags = k.tags?.length > 0 ? ` [${k.tags.join(", ")}]` : "";
-    const date = new Date(k.createdAt).toLocaleDateString("en-GB");
-    // For transcripts/long content: summarise to first 400 chars to stay within context budget
-    const body = k.content.length > 400 && k.type !== "DECISION"
-      ? k.content.slice(0, 400) + "…"
+    const tags  = k.tags?.length > 0 ? ` [${k.tags.join(", ")}]` : "";
+    const date  = new Date(k.createdAt).toLocaleDateString("en-GB");
+    const limit = charLimit(k);
+    const remaining = KB_BUDGET - used;
+    const allowedChars = Math.min(limit, remaining);
+    const body = k.content.length > allowedChars
+      ? k.content.slice(0, allowedChars) + "…"
       : k.content;
-    return `### ${k.title} (${trust}${tags} — ${date})\n${body}`;
-  }).join("\n\n")}`
-  : "No knowledge base items yet. You can ingest meetings, documents, transcripts, and URLs to build your knowledge."}
+    const block = `### ${k.title} (${trust}${tags} — ${date})\n${body}`;
+    rendered.push(block);
+    used += block.length;
+  }
+
+  return `The following project knowledge is available. HIGH_TRUST items are confirmed facts — treat them as ground truth. STANDARD items inform your reasoning. REFERENCE_ONLY items are supplementary.
+
+${rendered.join("\n\n")}
+
+_(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by relevance to your query and trust level)_`;
+})()}
 
 ## MEMORY & CONTINUITY
 You have access to the full conversation history from all previous sessions with this user.
@@ -934,8 +1155,19 @@ These are handled by the platform automatically. Just write normal text.
                   p1AssistantTextContent += event.delta.text;
                   fullContent += event.delta.text;
                   // Strip sentinel strings from live stream (they're post-processed into cards)
-                  const cleanToken = event.delta.text
+                  let cleanToken = event.delta.text
                     .replace(/\b(PROJECT_STATUS|AGENT_QUESTION|__PROJECT_STATUS__|__AGENT_QUESTION__|__CLARIFICATION_SESSION__|__CLARIFICATION_COMPLETE__|__CHANGE_PROPOSAL__)\b/g, "");
+                  // Suppress <FACTS> block from live stream — it's extracted post-stream for KB storage
+                  if (fullContent.includes("<FACTS>") && !fullContent.includes("</FACTS>")) {
+                    // We're inside a <FACTS> block — suppress entirely
+                    cleanToken = cleanToken.replace(/<FACTS>/gi, "");
+                    cleanToken = "";
+                  } else if (cleanToken.includes("<FACTS>")) {
+                    // Token contains the start of <FACTS> — suppress from here
+                    cleanToken = cleanToken.replace(/<FACTS>[\s\S]*/gi, "");
+                  }
+                  // Also strip closing tag if it appears
+                  cleanToken = cleanToken.replace(/<\/?FACTS>/gi, "");
                   if (cleanToken.trim()) {
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: cleanToken })}\n\n`));
                   }
@@ -1169,9 +1401,26 @@ These are handled by the platform automatically. Just write normal text.
           });
         }
 
-        // Clean <ASK> blocks from the persisted text
+        // ── Extract <FACTS> for KB storage ──────────────────────────────
+        const factsMatch = fullContent.match(/<FACTS>([\s\S]*?)<\/FACTS>/i);
+        if (factsMatch && deployment?.projectId) {
+          const factLines = factsMatch[1].trim().split("\n").filter(l => l.includes("|"));
+          for (const line of factLines) {
+            const [title, ...rest] = line.split("|").map(s => s.trim());
+            const content = rest.join("|").trim();
+            if (title && content) {
+              try {
+                const { storeFactToKB } = await import("@/lib/agents/clarification-session");
+                await storeFactToKB(agentId, deployment.projectId, orgId, title, content, ["chat_extracted"]);
+              } catch {}
+            }
+          }
+        }
+
+        // Clean <ASK> and <FACTS> blocks from the persisted text
         const cleanedContent = fullContent
           .replace(/<ASK[\s\S]*?<\/ASK>/gi, "")
+          .replace(/<FACTS>[\s\S]*?<\/FACTS>/gi, "")
           .replace(/\n{3,}/g, "\n\n")
           .trim();
 
