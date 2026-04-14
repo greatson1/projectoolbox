@@ -168,6 +168,35 @@ NEVER invent personal names, company names, vendor names, contact details, booki
 - NEVER claim something is "confirmed", "booked", "in progress", or "done" unless explicitly stated in the project data
 - A response with honest [TBC] markers is better than one with invented details
 
+## EVIDENCE-BASED DECISION MAKING (CRITICAL)
+You must ALWAYS have evidence or basis for every action, recommendation, or content you generate:
+
+1. **CITE YOUR SOURCES** — when making a claim, reference WHERE the information came from:
+   - "Based on the Budget Breakdown artefact..." / "According to your answer about..."
+   - "The Risk Register shows..." / "From the meeting notes on [date]..."
+   - "Industry standard for [category] projects suggests..."
+
+2. **DECLARE ASSUMPTIONS** — when you don't have confirmed data but need to proceed:
+   - Clearly state: "**ASSUMPTION:** [what you assumed] — based on [reasoning]"
+   - List all assumptions at the end of any generated artefact
+   - Mark assumed content with [ASSUMPTION] tags in documents
+
+3. **ASK BEFORE ASSUMING** — for critical decisions (budget, dates, scope):
+   - Ask the user directly rather than assuming
+   - "I need to know X before I can proceed. What is the [specific detail]?"
+   - Never silently fill in budget figures, dates, or names
+
+4. **FLAG UNCERTAINTY** — be transparent about confidence:
+   - HIGH confidence: backed by user-confirmed KB facts or approved artefacts
+   - MEDIUM confidence: inferred from project context or industry standards
+   - LOW confidence: assumed with no direct evidence — MUST be flagged
+
+5. **NO FABRICATION** — these are absolute rules:
+   - NEVER invent personal names (use role titles: "Project Manager", "Team Lead")
+   - NEVER fabricate specific costs, dates, or statistics without basis
+   - NEVER claim something is booked, confirmed, or done unless the data says so
+   - If you don't know, say "I don't have this information — [TBC]"
+
 ## YOUR IDENTITY & BEHAVIOUR
 - You are a proactive, expert PM agent — not a passive chatbot
 - You DRIVE the project forward: you propose actions, create documents, identify risks, and manage stakeholders
@@ -226,6 +255,17 @@ ${openRisks.length > 0
       return detail;
     }).join("\n")
   : "No risks logged yet."}
+
+## ACTIVE ASSUMPTIONS (you made these — pending user confirmation)
+${await (async () => {
+  try {
+    const { getProjectAssumptions } = await import("@/lib/agents/assumptions");
+    const assumptions = await getProjectAssumptions(agentId, project?.id || "");
+    return assumptions || "No assumptions recorded. All content should be based on confirmed facts from the Knowledge Base.";
+  } catch { return "No assumptions recorded."; }
+})()}
+
+When the user confirms or changes an assumption, affected artefacts will be automatically flagged for update.
 
 ## RECENT ACTIVITY LOG (what happened recently)
 ${recentActivity.length > 0
@@ -551,6 +591,22 @@ These are handled by the platform automatically. Just write normal text.
           type: { type: "string", enum: ["status", "risk", "budget", "stakeholder"], description: "Report type" },
         },
         required: ["type"],
+      },
+    },
+    {
+      name: "record_assumption",
+      description: "Record an assumption you are making. Use EVERY TIME you generate content or make a recommendation that is not backed by confirmed user input. This creates a trackable assumption that the user can later confirm or change.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string", description: "Short name of what is being assumed (e.g., 'Venue capacity', 'Budget for catering')" },
+          value: { type: "string", description: "The assumed value (e.g., '50 guests', '£500')" },
+          source: { type: "string", enum: ["agent_inference", "industry_standard", "default_value", "similar_project"], description: "Basis for the assumption" },
+          confidence: { type: "string", enum: ["high", "medium", "low"], description: "How confident you are" },
+          reasoning: { type: "string", description: "Why you made this assumption" },
+          affectedArtefacts: { type: "array", items: { type: "string" }, description: "Which artefacts depend on this assumption" },
+        },
+        required: ["title", "value", "source", "confidence", "reasoning", "affectedArtefacts"],
       },
     },
   ];
@@ -1010,6 +1066,23 @@ These are handled by the platform automatically. Just write normal text.
                   budget: project?.budget,
                   generatedAt: new Date().toISOString(),
                 }) });
+              } catch (err: any) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else if (toolBlock.name === "record_assumption") {
+              try {
+                const depForAssumption = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true } });
+                const { recordAssumption } = await import("@/lib/agents/assumptions");
+                const assId = await recordAssumption(agentId, depForAssumption?.projectId || "", orgId, {
+                  title: toolBlock.input.title,
+                  value: toolBlock.input.value,
+                  source: toolBlock.input.source || "agent_inference",
+                  confidence: toolBlock.input.confidence || "medium",
+                  affectedArtefacts: toolBlock.input.affectedArtefacts || [],
+                  reasoning: toolBlock.input.reasoning || "",
+                });
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, assumptionId: assId, message: "Assumption recorded. User can confirm or change it in the Knowledge Base." }) });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
               }
