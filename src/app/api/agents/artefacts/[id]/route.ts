@@ -122,17 +122,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // ── Phase advancement ────────────────────────────────────────────────────
-    // When the last artefact in the current phase is approved, advance the
-    // deployment's currentPhase and Phase records so the generate route's
-    // phase-mismatch guard passes for the next phase.
+    // When all artefacts in the current phase are approved, check if the phase
+    // can advance. Planning phases (first phase, setup, requirements) advance on
+    // artefact approval alone. Execution/delivery phases also require that the
+    // phase's tasks are substantially complete — approving documents doesn't mean
+    // the actual project work is done.
     if (artefact.phaseId) {
       try {
-        // Re-fetch all artefacts for this phase (including the one we just approved)
         const phaseArtefacts = await db.agentArtefact.findMany({
           where: { projectId: artefact.projectId, phaseId: artefact.phaseId },
           select: { id: true, status: true },
         });
-        // Treat the current artefact as APPROVED even if DB hasn't updated yet
         const allApproved = phaseArtefacts.length > 0 && phaseArtefacts.every(
           a => a.status === "APPROVED" || a.id === id,
         );
@@ -140,10 +140,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (allApproved) {
           const dep = await db.agentDeployment.findFirst({
             where: { projectId: artefact.projectId, isActive: true },
-            select: { id: true, currentPhase: true },
+            select: { id: true, currentPhase: true, agentId: true },
           });
 
-          // Only advance if the deployment is still on this phase
           if (dep && dep.currentPhase === artefact.phaseId) {
             const project = await db.project.findUnique({
               where: { id: artefact.projectId },
@@ -155,9 +154,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             const phases = methodology.phases;
             const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
 
-            if (currentIdx >= 0 && currentIdx < phases.length - 1) {
+            // Determine if this is a planning phase (first phase) or execution phase
+            const isPlanningPhase = currentIdx === 0;
+
+            let canAdvance = isPlanningPhase; // Planning phases advance on artefact approval alone
+
+            if (!isPlanningPhase) {
+              // Execution phases require task completion before advancing.
+              // Check: at least 80% of phase tasks must be DONE.
+              const phaseRow = await db.phase.findFirst({
+                where: { projectId: artefact.projectId, name: artefact.phaseId },
+                select: { id: true },
+              });
+              if (phaseRow) {
+                const [totalTasks, doneTasks] = await Promise.all([
+                  db.task.count({ where: { projectId: artefact.projectId, phaseId: phaseRow.id } }),
+                  db.task.count({ where: { projectId: artefact.projectId, phaseId: phaseRow.id, status: "DONE" } }),
+                ]);
+                // If no tasks exist in this phase, fall back to artefact-only advancement
+                const completionPct = totalTasks > 0 ? doneTasks / totalTasks : 1;
+                canAdvance = completionPct >= 0.8;
+
+                if (!canAdvance) {
+                  // Log that advancement is blocked — tasks incomplete
+                  await db.agentActivity.create({
+                    data: {
+                      agentId: dep.agentId,
+                      type: "approval",
+                      summary: `All ${artefact.phaseId} artefacts approved, but phase cannot advance yet — ${doneTasks}/${totalTasks} tasks complete (${Math.round(completionPct * 100)}%, need 80%). Complete the project tasks before advancing.`,
+                    },
+                  });
+                }
+              }
+            }
+
+            if (canAdvance && currentIdx >= 0 && currentIdx < phases.length - 1) {
               const nextPhaseName = phases[currentIdx + 1].name;
-              // Mark current phase COMPLETED, next ACTIVE, advance deployment
               await db.phase.updateMany({
                 where: { projectId: artefact.projectId, name: artefact.phaseId },
                 data: { status: "COMPLETED" },

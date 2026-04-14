@@ -73,6 +73,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
 
       // ── PHASE_GATE: advance to the next phase and generate artefacts ──
+      // User has explicitly approved the gate, so we advance — but log a warning
+      // if the phase's tasks aren't substantially complete.
       if (approval.type === "PHASE_GATE" && deployment.projectId) {
         try {
           const project = await db.project.findUnique({ where: { id: deployment.projectId } });
@@ -83,6 +85,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
             const currentPhase = deployment.currentPhase;
             const nextPhase = currentPhase ? getNextPhase(methodologyId, currentPhase) : null;
+
+            // Warn if tasks incomplete (but still advance since user explicitly approved)
+            if (currentPhase) {
+              try {
+                const phaseRow = await db.phase.findFirst({
+                  where: { projectId: deployment.projectId, name: currentPhase },
+                  select: { id: true },
+                });
+                if (phaseRow) {
+                  const [total, done] = await Promise.all([
+                    db.task.count({ where: { projectId: deployment.projectId, phaseId: phaseRow.id } }),
+                    db.task.count({ where: { projectId: deployment.projectId, phaseId: phaseRow.id, status: "DONE" } }),
+                  ]);
+                  if (total > 0 && done / total < 0.5) {
+                    await db.agentActivity.create({
+                      data: {
+                        agentId: deployment.agentId,
+                        type: "approval",
+                        summary: `⚠️ Phase gate approved with only ${done}/${total} tasks complete (${Math.round(done / total * 100)}%). Documents are approved but project tasks may still need attention.`,
+                      },
+                    });
+                  }
+                }
+              } catch {}
+            }
 
             if (nextPhase) {
               // 1. Advance the phase in DB
