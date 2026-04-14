@@ -138,7 +138,7 @@ export default function LandingPage() {
             <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] mb-6">
               Your Projects. Delivered with AI.{" "}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-cyan-400">
-                Humans in Control.
+                You Stay in Control.
               </span>
             </h1>
 
