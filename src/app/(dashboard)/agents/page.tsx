@@ -94,12 +94,19 @@ const STATUS_CONFIG: Record<AgentStatus, { label: string; color: string; pulseCo
   error: { label: "Error", color: "#EF4444", pulseColor: "red", badgeCn: "border-red-500/30 bg-red-500/10 text-red-600" },
 };
 
-const METHODOLOGY_CN: Record<Methodology, string> = {
+const METHODOLOGY_CN: Record<string, string> = {
   "Traditional": "border-blue-500/30 bg-blue-500/10 text-blue-600",
   "Scrum": "border-purple-500/30 bg-purple-500/10 text-purple-600",
   "Waterfall": "border-slate-500/30 bg-slate-500/10 text-slate-600",
   "Kanban": "border-amber-500/30 bg-amber-500/10 text-amber-600",
   "Hybrid": "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
+};
+
+const METHOD_LABEL: Record<string, string> = {
+  PRINCE2: "Traditional", prince2: "Traditional", WATERFALL: "Waterfall", waterfall: "Waterfall",
+  AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban",
+  HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe",
+  Traditional: "Traditional", Scrum: "Scrum", Waterfall: "Waterfall", Kanban: "Kanban", Hybrid: "Hybrid",
 };
 
 const EVENT_ICONS: Record<string, string> = {
@@ -155,7 +162,7 @@ export default function AgentFleetPage() {
         id: a.id, name: a.name, initials: (a.name || "?")[0].toUpperCase(),
         gradient: a.gradient || fallbackGradients[i % 5], color,
         project: project?.name || "Unassigned",
-        methodology: (project?.methodology || "Hybrid") as Methodology,
+        methodology: (METHOD_LABEL[project?.methodology] || project?.methodology || "Hybrid") as Methodology,
         status: (a.status?.toLowerCase() || "idle") as AgentStatus,
         currentTask: a.currentTask || "Awaiting instructions",
         autonomyLevel: a.autonomyLevel || 2, autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous", "Strategic"][a.autonomyLevel || 2],
@@ -476,7 +483,7 @@ export default function AgentFleetPage() {
                       <span className="font-medium">{agent.name}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-3"><Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology]}>{agent.methodology}</Badge></td>
+                  <td className="py-2.5 px-3"><Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology] || "border-slate-500/30 bg-slate-500/10 text-slate-600"}>{agent.methodology}</Badge></td>
                   <td className="py-2.5 px-3" style={{ color: "var(--muted-foreground)" }}>{agent.phase}</td>
                   <td className="py-2.5 px-3">
                     <RAGDot rag={agent.health} />
@@ -608,7 +615,7 @@ function AgentCard({ agent }: { agent: Agent }) {
             <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{agent.project}</span>
           </div>
         </div>
-        <Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology]}>{agent.methodology}</Badge>
+        <Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology] || "border-slate-500/30 bg-slate-500/10 text-slate-600"}>{agent.methodology}</Badge>
       </div>
 
       {/* Current task / phase */}

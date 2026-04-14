@@ -60,6 +60,12 @@ const NOTIFICATION_PREFS = [
   { label: "Meeting transcript processed", enabled: false },
 ];
 
+const METHOD_LABEL: Record<string, string> = {
+  PRINCE2: "Traditional", prince2: "Traditional", WATERFALL: "Waterfall", waterfall: "Waterfall",
+  AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban",
+  HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe",
+};
+
 const INTEGRATIONS = [
   { name: "Jira", status: "connected", icon: "🔗" },
   { name: "Slack", status: "connected", icon: "💬" },
@@ -401,7 +407,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 <span className="font-semibold text-foreground">{AGENT_RESOLVED.project}</span>
                 {AGENT_RESOLVED.methodology && (
                   <Badge variant="secondary" className="border-blue-500/30 bg-blue-500/10 text-blue-600">
-                    {AGENT_RESOLVED.methodology}
+                    {METHOD_LABEL[AGENT_RESOLVED.methodology] || AGENT_RESOLVED.methodology}
                   </Badge>
                 )}
                 {AGENT_RESOLVED.deployedDate && <span>Deployed {AGENT_RESOLVED.deployedDate}</span>}
