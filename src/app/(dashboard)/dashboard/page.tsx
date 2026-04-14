@@ -120,7 +120,7 @@ export default function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold">{a.name}</span>
-                        <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${a.status === "ACTIVE" ? "border-green-500/30 text-green-500" : a.status === "PAUSED" ? "border-amber-500/30 text-amber-500" : ""}`}>
+                        <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${a.status === "ACTIVE" ? "border-green-600/40 text-green-700 dark:text-green-400" : a.status === "PAUSED" ? "border-amber-600/40 text-amber-700 dark:text-amber-400" : ""}`}>
                           {a.status === "ACTIVE" ? "Online" : a.status === "PAUSED" ? "Paused" : a.status}
                         </Badge>
                         <span className="text-[10px] text-muted-foreground">L{a.autonomyLevel}</span>
@@ -159,17 +159,17 @@ export default function DashboardPage() {
 
         // 1. No agent — first-time user
         if (!hasAgent) {
-          suggestions.push({ icon: "🚀", label: "Deploy your first AI agent", desc: "Create a project and deploy an autonomous agent to manage it — plans, risks, reports, all handled by AI", href: "/agents/deploy", priority: "high", color: "border-primary/30 bg-primary/5" });
+          suggestions.push({ icon: "🚀", label: "Deploy your first AI agent", desc: "Create a project and deploy an autonomous agent to manage it — plans, risks, reports, all handled by AI", href: "/agents/deploy", priority: "high", color: "border-primary/40 bg-primary/10" });
         }
 
         // 2. Pending approvals — agent is blocked
         if (pendingApprovals > 0) {
-          suggestions.push({ icon: "⏳", label: `${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""} waiting for you`, desc: "Your agent is paused at a governance gate — review and approve to let it continue", href: "/approvals", priority: "critical", color: "border-amber-500/30 bg-amber-500/5" });
+          suggestions.push({ icon: "⏳", label: `${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""} waiting for you`, desc: "Your agent is paused at a governance gate — review and approve to let it continue", href: "/approvals", priority: "critical", color: "border-amber-600/40 bg-amber-500/10" });
         }
 
         // 3. High risks flagged
         if (openRisks > 2) {
-          suggestions.push({ icon: "⚠️", label: `${openRisks} open risks need attention`, desc: "Your agent flagged risks that may need mitigation strategies or escalation", href: hasProject ? `/projects/${projects[0]?.id}/risk` : "/projects", priority: "high", color: "border-red-500/30 bg-red-500/5" });
+          suggestions.push({ icon: "⚠️", label: `${openRisks} open risks need attention`, desc: "Your agent flagged risks that may need mitigation strategies or escalation", href: hasProject ? `/projects/${projects[0]?.id}/risk` : "/projects", priority: "high", color: "border-red-600/40 bg-red-500/10" });
         }
 
         // 4. Credits running low
@@ -185,24 +185,24 @@ export default function DashboardPage() {
         // 6. Recent artefact generation (from activity feed)
         const artefactActivity = activities.find((a: any) => a.type === "artefact_generated");
         if (artefactActivity && hasAgent) {
-          suggestions.push({ icon: "📄", label: "New artefacts ready for review", desc: artefactActivity.summary || "Your agent generated documents — review and approve them", href: `/agents/${agents[0]?.id}`, priority: "high", color: "border-emerald-500/30 bg-emerald-500/5" });
+          suggestions.push({ icon: "📄", label: "New artefacts ready for review", desc: artefactActivity.summary || "Your agent generated documents — review and approve them", href: `/agents/${agents[0]?.id}`, priority: "high", color: "border-emerald-600/40 bg-emerald-500/10" });
         }
 
         // 7. Phase advanced (celebration)
         const phaseActivity = activities.find((a: any) => a.type === "phase_advance" || a.type === "phase_advanced");
         if (phaseActivity) {
-          suggestions.push({ icon: "🎉", label: "Phase advanced", desc: phaseActivity.summary || "Your project moved to the next phase", href: hasAgent ? `/agents/${agents[0]?.id}` : "/agents", priority: "low", color: "border-emerald-500/30 bg-emerald-500/5" });
+          suggestions.push({ icon: "🎉", label: "Phase advanced", desc: phaseActivity.summary || "Your project moved to the next phase", href: hasAgent ? `/agents/${agents[0]?.id}` : "/agents", priority: "low", color: "border-emerald-600/40 bg-emerald-500/10" });
         }
 
         // 8. Tasks overdue
         const overdueActivity = activities.find((a: any) => a.type === "overdue_alert");
         if (overdueActivity) {
-          suggestions.push({ icon: "📋", label: "Overdue tasks detected", desc: overdueActivity.summary || "Some tasks are past their deadline", href: hasProject ? `/projects/${projects[0]?.id}/schedule` : "/projects", priority: "high", color: "border-red-500/30 bg-red-500/5" });
+          suggestions.push({ icon: "📋", label: "Overdue tasks detected", desc: overdueActivity.summary || "Some tasks are past their deadline", href: hasProject ? `/projects/${projects[0]?.id}/schedule` : "/projects", priority: "high", color: "border-red-600/40 bg-red-500/10" });
         }
 
         // 9. No projects but has agent (unusual state)
         if (hasAgent && !hasProject) {
-          suggestions.push({ icon: "📁", label: "No active projects", desc: "Your agent is deployed but has no project — deploy to a project to start autonomous management", href: "/agents/deploy", priority: "medium", color: "border-amber-500/30 bg-amber-500/5" });
+          suggestions.push({ icon: "📁", label: "No active projects", desc: "Your agent is deployed but has no project — deploy to a project to start autonomous management", href: "/agents/deploy", priority: "medium", color: "border-amber-600/40 bg-amber-500/10" });
         }
 
         // Sort by priority
