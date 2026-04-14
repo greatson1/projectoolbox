@@ -18,7 +18,13 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Projectoolbox — AI Project Management",
   description: "Deploy autonomous AI project managers that plan, track, and deliver. Built for PMOs that demand governance.",
-  icons: { icon: "/favicon.ico" },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/pt-logo.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: "/pt-logo.png",
+  },
   metadataBase: new URL("https://www.projectoolbox.com"),
   alternates: { canonical: "/" },
   openGraph: {

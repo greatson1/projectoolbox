@@ -229,10 +229,7 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-2 px-4 h-16 border-b border-sidebar-border flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm"
-          style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>
-          PT
-        </div>
+        <img src="/pt-logo.png" alt="Projectoolbox" className="w-8 h-8 object-contain flex-shrink-0" />
         {!sidebarCollapsed && (
           <span className="text-[15px] font-bold text-sidebar-foreground">Projectoolbox</span>
         )}

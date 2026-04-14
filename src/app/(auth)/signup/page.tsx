@@ -132,7 +132,7 @@ function SignupPageInner() {
       <div className="w-full max-w-[480px]">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-base bg-gradient-to-br from-primary to-purple-500">PT</div>
+          <img src="/pt-logo.png" alt="Projectoolbox" className="w-9 h-9 object-contain" />
           <span className="text-lg font-bold">Projectoolbox</span>
         </div>
 

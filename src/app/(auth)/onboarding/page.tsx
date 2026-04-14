@@ -40,7 +40,7 @@ export default function OnboardingPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-[480px]">
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white text-sm font-bold">PT</div>
+          <img src="/pt-logo.png" alt="Projectoolbox" className="w-8 h-8 object-contain" />
           <span className="text-lg font-bold">Projectoolbox</span>
         </div>
 

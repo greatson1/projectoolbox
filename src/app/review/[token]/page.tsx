@@ -97,7 +97,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white text-sm font-bold mx-auto mb-3">PT</div>
+          <img src="/pt-logo.png" alt="Projectoolbox" className="w-10 h-10 object-contain mx-auto mb-3" />
           <p className="text-xs text-muted-foreground">Review requested by {data.agentName} via Projectoolbox</p>
         </div>
 

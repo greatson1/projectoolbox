@@ -43,8 +43,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[400px]">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg"
-            style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>PT</div>
+          <img src="/pt-logo.png" alt="Projectoolbox" className="w-10 h-10 object-contain" />
           <span className="text-xl font-bold">Projectoolbox</span>
         </div>
 
