@@ -34,7 +34,7 @@ const PLANS = [
   { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Supervised mode (L1)", "Community support"], cta: "Get Started", popular: false },
   { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–3", "Email support", "PDF export"], cta: "Start Free Trial", popular: false },
   { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–4", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Start Free Trial", popular: true },
-  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–5", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Start Free Trial", popular: false },
+  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–4", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Start Free Trial", popular: false },
 ];
 
 const AUTONOMY_LEVELS = [
@@ -42,12 +42,11 @@ const AUTONOMY_LEVELS = [
   { level: "L2", label: "Assisted", desc: "Handles routine tasks, escalates decisions" },
   { level: "L3", label: "Managed", desc: "Runs phases independently with check-ins" },
   { level: "L4", label: "Autonomous", desc: "Manages end-to-end, alerts on exceptions" },
-  { level: "L5", label: "Executive", desc: "Full autonomy with minimal oversight" },
 ];
 
 const FAQS = [
   { q: "How does the AI agent actually manage a project?", a: "Your agent uses Claude AI to generate artefacts, process meeting transcripts, track tasks, monitor budgets, and communicate with stakeholders. It follows your chosen methodology and escalates to you when human judgement is needed." },
-  { q: "What's the difference between autonomy levels?", a: "Levels 1–5 control how independently the agent operates. L1 only suggests — you approve everything. L3 handles routine tasks and flags decisions. L5 runs projects end-to-end with minimal oversight. You choose, and you can change it anytime." },
+  { q: "What's the difference between autonomy levels?", a: "Levels 1–4 control how independently the agent operates. L1 only suggests — you approve everything. L2 handles routine tasks and escalates decisions. L3 runs phases independently with check-ins. L4 manages end-to-end and alerts you on exceptions. You choose your level, and you can change it at any time." },
   { q: "What does 1 credit equal?", a: "Roughly 1 document or artefact generated (e.g. a risk register, status report, or WBS). Meeting transcriptions cost 1 credit per session. You can see your credit usage in real time on your dashboard." },
   { q: "Is my project data secure?", a: "All data is encrypted at rest and in transit. We're SOC 2 compliant, GDPR-ready, and offer single-tenant deployment for Enterprise customers. Your data is never used to train AI models." },
   { q: "Can agents join my actual meetings?", a: "Yes. Using Recall.ai (included from Professional), your agent joins Google Meet, Zoom, or Teams as a participant. It transcribes, extracts actions, logs decisions, and updates your project plan automatically." },
@@ -327,7 +326,7 @@ export default function LandingPage() {
           {/* Autonomy level explainer */}
           <div className="max-w-[800px] mx-auto mb-10 rounded-xl border border-border/40 bg-card p-5">
             <p className="text-xs font-bold uppercase tracking-widest text-primary mb-3">Autonomy Levels Explained</p>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {AUTONOMY_LEVELS.map(a => (
                 <div key={a.level} className="text-center">
                   <div className="text-sm font-bold text-primary">{a.level}</div>
@@ -402,9 +401,9 @@ export default function LandingPage() {
       <section className="py-20 px-6 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-gradient-to-br from-primary via-purple-500 to-cyan-400" />
         <div className="max-w-[600px] mx-auto text-center relative z-10">
-          <h2 className="text-3xl font-bold mb-4">Ready to put a real PM in your corner?</h2>
-          <p className="text-base text-muted-foreground mb-2">Start your free 14-day trial. No credit card required.</p>
-          <p className="text-sm text-muted-foreground mb-8">Deploy your first sector-tailored agent in under 5 minutes.</p>
+          <h2 className="text-3xl font-bold mb-4">Your projects. Delivered with AI. On your terms.</h2>
+          <p className="text-base text-muted-foreground mb-2">Start free — no credit card required. Your first agent is live in under 5 minutes.</p>
+          <p className="text-sm text-muted-foreground mb-8">You choose the autonomy level. You approve what matters. You stay in control.</p>
           <Link href="/signup">
             <Button size="lg" className="px-10 text-base shadow-lg shadow-primary/25">Start Free Trial →</Button>
           </Link>
