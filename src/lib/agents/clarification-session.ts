@@ -192,7 +192,7 @@ ${isTravel ? `TRAVEL PROJECT QUESTION HINTS — prioritise these types of questi
 - Key delivery approach (choice: Phased / Big bang / Iterative / Pilot then rollout / Other)
 - Is there an existing budget approval? (yesno)`}
 
-Limit to the 8 most important questions. Prioritise fields that appear across multiple documents.
+Ask only the questions that are genuinely needed — typically 3-8 depending on how much detail the project description already provides. A detailed description may only need 2-3 questions; a vague one may need 8. Never pad with unnecessary questions. Prioritise fields that appear across multiple documents.
 Do NOT ask about things already in the description or KB above.
 
 Return ONLY a JSON array in this exact format — no preamble, no explanation:
@@ -448,9 +448,49 @@ export async function answerQuestionInSession(
       data: {
         agentId,
         type: "document",
-        summary: `Clarification complete — ${answeredCount}/${session.questions.length} questions answered. Ready to generate ${session.artefactNames.length} artefact(s).`,
+        summary: `Clarification complete — ${answeredCount}/${session.questions.length} questions answered. Regenerating ${session.artefactNames.length} artefact(s) with your answers...`,
       },
     }).catch(() => {});
+
+    // Auto-regenerate artefacts now that the KB is enriched with user answers.
+    // The initial artefacts were generated with [TBC] markers; delete them so
+    // generatePhaseArtefacts creates fresh versions using the real KB data.
+    (async () => {
+      try {
+        const deployment = await db.agentDeployment.findFirst({
+          where: { agentId, isActive: true },
+          select: { projectId: true, currentPhase: true },
+        });
+        if (deployment?.projectId) {
+          // Delete existing DRAFT artefacts for this phase so they get regenerated
+          const targetNames = session.artefactNames.map(n => n.toLowerCase());
+          const drafts = await db.agentArtefact.findMany({
+            where: { projectId: deployment.projectId, agentId, status: "DRAFT" },
+            select: { id: true, name: true },
+          });
+          const toDelete = drafts.filter(a => targetNames.includes(a.name.toLowerCase()));
+          if (toDelete.length > 0) {
+            await db.agentArtefact.deleteMany({
+              where: { id: { in: toDelete.map(a => a.id) } },
+            });
+          }
+
+          const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+          const result = await generatePhaseArtefacts(agentId, deployment.projectId, deployment.currentPhase ?? undefined);
+          if (result.generated > 0) {
+            await db.chatMessage.create({
+              data: {
+                agentId,
+                role: "agent",
+                content: `I've regenerated ${result.generated} artefact(s) using your answers — they should now have real details instead of [TBC] markers. Head to the **Artefacts** tab to review them.`,
+              },
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.error("[clarification] auto-regenerate after session complete failed:", e);
+      }
+    })();
 
     return {
       status: "complete",
