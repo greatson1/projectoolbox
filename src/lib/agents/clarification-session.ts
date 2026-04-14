@@ -192,7 +192,7 @@ ${isTravel ? `TRAVEL PROJECT QUESTION HINTS — prioritise these types of questi
 - Key delivery approach (choice: Phased / Big bang / Iterative / Pilot then rollout / Other)
 - Is there an existing budget approval? (yesno)`}
 
-Ask only the questions that are genuinely needed — typically 3-8 depending on how much detail the project description already provides. A detailed description may only need 2-3 questions; a vague one may need 8. Never pad with unnecessary questions. Prioritise fields that appear across multiple documents.
+Ask only the questions that are genuinely needed — typically 3-12 depending on how much detail the project description already provides. A detailed description may only need 2-3 questions; a vague one-liner may need 10-12. Never pad with unnecessary questions but never skip a question that would prevent a [TBC] marker in the final documents. Prioritise fields that appear across multiple documents.
 Do NOT ask about things already in the description or KB above.
 
 Return ONLY a JSON array in this exact format — no preamble, no explanation:
