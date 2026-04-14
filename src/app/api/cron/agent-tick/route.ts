@@ -204,6 +204,12 @@ export async function GET(req: NextRequest) {
               console.error(`Knowledge scan failed for agent ${dep.agentId}:`, e);
             }
 
+            // 4c3. Process timed-out proactive questions (auto-proceed with defaults)
+            try {
+              const { processTimedOutQuestions } = await import("@/lib/agents/proactive-outreach");
+              await processTimedOutQuestions(dep.agentId);
+            } catch {}
+
             // 4d. Run calibration loop (weekly — checks if enough decisions have accumulated)
             try {
               const { runCalibrationLoop } = await import("@/lib/agents/learning-loop");

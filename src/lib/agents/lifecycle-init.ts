@@ -72,9 +72,9 @@ export async function generatePhaseArtefacts(
 
   if (toGenerate.length === 0) return { generated: 0, skipped, phase: targetPhaseName };
 
-  // ── Clarification session (non-blocking) ─────────────────────────────────
-  // Start clarification questions in parallel but NEVER block artefact generation.
-  // Generate immediately with [TBC] markers; update later if user provides answers.
+  // ── Clarification + Proactive outreach ───────────────────────────────────
+  // If KB is sparse, proactively reach out to the user via all channels.
+  // Generate with [TBC] markers but notify the user that input is needed.
   try {
     const { startClarificationSession, getActiveSession } = await import("@/lib/agents/clarification-session");
     const activeSession = await getActiveSession(agentId, projectId);
@@ -83,10 +83,22 @@ export async function generatePhaseArtefacts(
         where: { agentId, projectId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
       });
       if (confirmedFacts < 10) {
-        // Fire-and-forget — don't await, don't block generation
-        startClarificationSession(agentId, projectId, agent.orgId, toGenerate).catch(e =>
-          console.error("[generatePhaseArtefacts] clarification session failed (non-blocking):", e)
-        );
+        // Start clarification session (non-blocking)
+        startClarificationSession(agentId, projectId, agent.orgId, toGenerate).catch(() => {});
+
+        // Proactively notify the user that input is needed
+        try {
+          const { askUser } = await import("@/lib/agents/proactive-outreach");
+          await askUser(agentId, projectId, {
+            question: `I'm generating ${toGenerate.length} document(s) for the ${targetPhaseName} phase, but I have limited project details. Can you answer a few questions to improve accuracy?`,
+            context: `Only ${confirmedFacts} confirmed fact(s) in the knowledge base. Documents will contain [TBC] markers for unconfirmed details. Your input will make them significantly more useful.`,
+            urgency: confirmedFacts === 0 ? "high" : "medium",
+            category: "clarification",
+            affectedAction: `${targetPhaseName} phase artefact generation`,
+            timeoutHours: 24,
+            defaultValue: "Proceed with assumptions and [TBC] markers",
+          });
+        } catch {}
       }
     }
   } catch (e) {
