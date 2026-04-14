@@ -993,3 +993,29 @@ enum MeetingStatus {
   COMPLETED
   CANCELLED
 }
+
+// ─── Waitlist & Invites ───
+
+model WaitlistEntry {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  sector    String?
+  createdAt DateTime @default(now())
+  status    WaitlistStatus @default(WAITING)
+}
+
+model InviteToken {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  email     String?  // pre-fill signup email if set
+  usedAt    DateTime?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+}
+
+enum WaitlistStatus {
+  WAITING
+  INVITED
+  REGISTERED
+}

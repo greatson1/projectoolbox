@@ -48,13 +48,27 @@ const AUTONOMY = [
 function SignupPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // ── Invite gate ───────────────────────────────────────────────────────────
+  // During waitlist phase, signup requires a valid invite token.
+  // Set NEXT_PUBLIC_INVITE_ONLY=true in env to enable.
+  const inviteOnly = process.env.NEXT_PUBLIC_INVITE_ONLY === "true";
+  const inviteToken = searchParams.get("invite");
+  const prefilledEmail = searchParams.get("email") || "";
+
+  if (inviteOnly && !inviteToken) {
+    // Redirect to waitlist — don't render the form at all
+    router.replace("/waitlist");
+    return null;
+  }
+
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   // Step 1 — Account
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefilledEmail);
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [agreed, setAgreed] = useState(false);

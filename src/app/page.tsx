@@ -31,10 +31,10 @@ const STEPS = [
 ];
 
 const PLANS = [
-  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Supervised mode (L1)", "Community support"], cta: "Get Started", popular: false },
-  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–3", "Email support", "PDF export"], cta: "Start Free Trial", popular: false },
-  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–4", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Start Free Trial", popular: true },
-  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–4", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Start Free Trial", popular: false },
+  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Supervised mode (L1)", "Community support"], cta: "Join Waitlist", popular: false },
+  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–3", "Email support", "PDF export"], cta: "Join Waitlist", popular: false },
+  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–4", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Join Waitlist", popular: true },
+  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–4", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Join Waitlist", popular: false },
 ];
 
 const AUTONOMY_LEVELS = [
@@ -97,7 +97,7 @@ export default function LandingPage() {
               {!mounted || theme !== "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </Button>
             <Link href="/login"><Button variant="ghost" size="sm">Log In</Button></Link>
-            <Link href="/signup"><Button size="sm">Start Free Trial</Button></Link>
+            <Link href="/waitlist"><Button size="sm">Join Waitlist</Button></Link>
             <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileMenu(!mobileMenu)}>
               {mobileMenu ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </Button>
@@ -151,9 +151,9 @@ export default function LandingPage() {
             </p>
 
             <div className="flex items-center justify-center gap-4 flex-wrap">
-              <Link href="/signup">
+              <Link href="/waitlist">
                 <Button size="lg" className="px-8 text-base shadow-lg shadow-primary/25">
-                  Start Free Trial →
+                  Join the Waitlist →
                 </Button>
               </Link>
               <a href="#how-it-works">
@@ -163,7 +163,7 @@ export default function LandingPage() {
                 </Button>
               </a>
             </div>
-            <p className="text-xs text-muted-foreground mt-4">Free plan available. No credit card required.</p>
+            <p className="text-xs text-muted-foreground mt-4">Free plan included. No credit card required when you get access.</p>
           </div>
 
           {/* Dashboard preview */}
@@ -359,9 +359,7 @@ export default function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <Link href={`/signup?plan=${plan.name.toLowerCase()}`}>
-                    <Button variant={plan.popular ? "default" : "outline"} className="w-full">{plan.cta}</Button>
-                  </Link>
+                  <Link href="/waitlist"><Button variant={plan.popular ? "default" : "outline"} className="w-full">Join Waitlist</Button></Link>
                 </CardContent>
               </Card>
             ))}
@@ -404,8 +402,8 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold mb-4">Your projects. Delivered with AI. On your terms.</h2>
           <p className="text-base text-muted-foreground mb-2">Start free — no credit card required. Your first agent is live in under 5 minutes.</p>
           <p className="text-sm text-muted-foreground mb-8">You choose the autonomy level. You approve what matters. You stay in control.</p>
-          <Link href="/signup">
-            <Button size="lg" className="px-10 text-base shadow-lg shadow-primary/25">Start Free Trial →</Button>
+          <Link href="/waitlist">
+            <Button size="lg" className="px-10 text-base shadow-lg shadow-primary/25">Join the Waitlist →</Button>
           </Link>
           <p className="text-xs text-muted-foreground mt-4">
             Building a team? <Link href="/contact" className="text-primary font-semibold hover:underline">Talk to us about Enterprise</Link>
