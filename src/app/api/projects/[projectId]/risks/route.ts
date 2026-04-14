@@ -259,12 +259,22 @@ ${project?.name ?? "Project"} — AI Project Manager`;
       for (const email of recipients) {
         const token = randomBytes(32).toString("hex");
         reviewTokens[email] = token;
-        // Store token for verification (reuse ReviewLink model — link to any approval for this project)
+        // Create a risk-specific approval and ReviewLink for this escalation
         try {
-          const approval = await db.approval.findFirst({
-            where: { projectId, status: "PENDING" },
-            select: { id: true },
+          const riskApproval = await db.approval.create({
+            data: {
+              projectId,
+              requestedById: deployment?.agent?.name || "system",
+              type: "RISK_RESPONSE",
+              title: `Risk Escalation: ${existing.title}`,
+              description: emailBody.slice(0, 500),
+              status: "PENDING",
+              urgency: (existing.score ?? 0) >= 15 ? "CRITICAL" : (existing.score ?? 0) >= 10 ? "HIGH" : "MEDIUM",
+              impact: { riskId: existing.id, riskTitle: existing.title, riskScore: existing.score } as any,
+              impactScores: { schedule: 1, cost: Math.min(4, Math.ceil((existing.impact || 3) * 0.8)), scope: 1, stakeholder: Math.min(4, existing.impact || 3) } as any,
+            },
           });
+          const approval = riskApproval;
           if (approval) {
             await db.reviewLink.create({
               data: {

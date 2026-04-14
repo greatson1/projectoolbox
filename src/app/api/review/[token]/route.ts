@@ -27,10 +27,34 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     await db.reviewLink.update({ where: { token }, data: { viewedAt: new Date() } });
   }
 
-  // Load risks for this project (sorted by severity)
-  const risks = await db.risk.findMany({
+  // Load risks for this project
+  // Try to identify the specific risk this escalation is about
+  const impact = link.approval.impact as any;
+  const affectedItems = link.approval.affectedItems as any[];
+  const targetRiskId = impact?.riskId
+    || affectedItems?.find((i: any) => i.type === "risk")?.id
+    || null;
+
+  // Extract risk title from approval title for fuzzy matching
+  const approvalTitle = (link.approval.title || "").toLowerCase();
+
+  const allRisks = await db.risk.findMany({
     where: { projectId: link.approval.projectId },
     orderBy: [{ score: "desc" }, { createdAt: "desc" }],
+  });
+
+  // Sort: put the targeted risk first, then by score
+  const risks = [...allRisks].sort((a, b) => {
+    // Exact ID match goes first
+    if (a.id === targetRiskId) return -1;
+    if (b.id === targetRiskId) return 1;
+    // Title match from approval title goes first
+    const aMatch = approvalTitle.includes(a.title.toLowerCase());
+    const bMatch = approvalTitle.includes(b.title.toLowerCase());
+    if (aMatch && !bMatch) return -1;
+    if (bMatch && !aMatch) return 1;
+    // Then by score
+    return (b.score || 0) - (a.score || 0);
   });
 
   // Load agent context
@@ -63,6 +87,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
         mitigation: r.mitigation, responseLog: r.responseLog,
       })),
       // Guest state
+      targetRiskId: targetRiskId || (risks[0]?.id || null),
       alreadyActioned: !!link.actionedAt,
       previousAction: link.action,
       previousComment: link.comment,

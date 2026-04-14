@@ -29,7 +29,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
 
   const handleAction = async (action: string) => {
     setActing(true);
-    const topRiskId = data?.risks?.[0]?.id;
+    const topRiskId = data?.targetRiskId || data?.risks?.[0]?.id;
     const riskAction = ["ACCEPT", "MITIGATE", "TRANSFER", "AVOID", "ESCALATE"].includes(action);
     try {
       const r = await fetch(`/api/review/${token}`, {
@@ -81,7 +81,10 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
   );
 
   const scores = data.impactScores || {};
-  const topRisk = data.risks?.[0];
+  // Show the specific risk this escalation is about (not just highest scored)
+  const topRisk = data.targetRiskId
+    ? data.risks?.find((r: any) => r.id === data.targetRiskId) || data.risks?.[0]
+    : data.risks?.[0];
   const isRiskEscalation = data.type === "CHANGE_REQUEST" || data.type === "RISK_RESPONSE" || !!topRisk;
 
   const RISK_ACTIONS = [
