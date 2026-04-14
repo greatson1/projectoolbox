@@ -131,6 +131,10 @@ export default function LandingPage() {
               </Badge>
             </div>
 
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">
+              AI Project Management Platform
+            </p>
+
             <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] mb-6">
               Projects Delivered.{" "}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-cyan-400">
