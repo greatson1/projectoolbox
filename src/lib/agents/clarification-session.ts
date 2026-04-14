@@ -149,6 +149,7 @@ async function generateQuestions(
   project: any,
   artefactNames: string[],
   kbContext: string,
+  researchContext?: string,
 ): Promise<ClarificationQuestion[]> {
   if (!process.env.ANTHROPIC_API_KEY) return [];
 
@@ -164,8 +165,8 @@ DATES: ${project.startDate ? new Date(project.startDate).toLocaleDateString("en-
 CATEGORY: ${category}
 
 ${kbContext ? `ALREADY KNOWN (do NOT ask about these):\n${kbContext}\n` : ""}
-
-Your task: identify the SPECIFIC pieces of information you need from the user to populate these documents accurately. Only ask about things NOT already in the description or KB above.
+${researchContext ? `FEASIBILITY RESEARCH (use this to ask BETTER questions — the research revealed these details about this type of project):\n${researchContext.slice(0, 3000)}\n` : ""}
+Your task: identify the SPECIFIC pieces of information you need from the user to populate these documents accurately. Use the research context to ask informed, specific questions — not generic ones. Only ask about things NOT already in the description or KB above.
 
 QUESTION TYPE RULES — choose the most helpful type for each question:
 - "text"   → open-ended: names, venue names, descriptions, free details
@@ -280,27 +281,30 @@ export async function startClarificationSession(
   projectId: string,
   orgId: string,
   artefactNames: string[],
+  researchContext?: string,
 ): Promise<boolean> {
   // Don't start a new session if one is already active
   const existing = await getActiveSession(agentId, projectId);
   if (existing) return true;
 
-  // Load project + KB context
+  // Load project + KB context (includes research facts stored by feasibility-research)
   const [project, kbItems] = await Promise.all([
     db.project.findUnique({ where: { id: projectId } }),
     db.knowledgeBaseItem.findMany({
-      where: { projectId, agentId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
-      select: { title: true, content: true },
-      take: 20,
+      where: { projectId, agentId, NOT: { title: { startsWith: "__" } } },
+      orderBy: [{ trustLevel: "desc" }, { updatedAt: "desc" }],
+      select: { title: true, content: true, trustLevel: true },
+      take: 30,
     }),
   ]);
   if (!project) return false;
 
-  // If we already have 10+ confirmed facts, KB is probably rich enough — generate directly
-  if (kbItems.length >= 10) return false;
+  // If we already have 15+ confirmed facts, KB is probably rich enough — generate directly
+  const confirmedFacts = kbItems.filter(i => i.trustLevel === "HIGH_TRUST");
+  if (confirmedFacts.length >= 15) return false;
 
-  const kbContext = kbItems.map(i => `${i.title}: ${i.content}`).join("\n");
-  const questions = await generateQuestions(project, artefactNames, kbContext);
+  const kbContext = kbItems.map(i => `[${i.trustLevel}] ${i.title}: ${i.content}`).join("\n");
+  const questions = await generateQuestions(project, artefactNames, kbContext, researchContext);
 
   // If Claude found nothing to ask, proceed with generation
   if (questions.length === 0) return false;

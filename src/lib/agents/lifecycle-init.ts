@@ -72,34 +72,14 @@ export async function generatePhaseArtefacts(
 
   if (toGenerate.length === 0) return { generated: 0, skipped, phase: targetPhaseName };
 
-  // ── Clarification + Proactive outreach ───────────────────────────────────
-  // If KB is sparse, proactively reach out to the user via all channels.
-  // Generate with [TBC] markers but notify the user that input is needed.
+  // ── Clarification session guard ──────────────────────────────────────────
+  // If a clarification session is active, defer generation — the session-complete
+  // handler will trigger generation once the user has answered all questions.
   try {
-    const { startClarificationSession, getActiveSession } = await import("@/lib/agents/clarification-session");
+    const { getActiveSession } = await import("@/lib/agents/clarification-session");
     const activeSession = await getActiveSession(agentId, projectId);
-    if (!activeSession) {
-      const confirmedFacts = await db.knowledgeBaseItem.count({
-        where: { agentId, projectId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
-      });
-      if (confirmedFacts < 10) {
-        // Start clarification session (non-blocking)
-        startClarificationSession(agentId, projectId, agent.orgId, toGenerate).catch(() => {});
-
-        // Proactively notify the user that input is needed
-        try {
-          const { askUser } = await import("@/lib/agents/proactive-outreach");
-          await askUser(agentId, projectId, {
-            question: `I'm generating ${toGenerate.length} document(s) for the ${targetPhaseName} phase, but I have limited project details. Can you answer a few questions to improve accuracy?`,
-            context: `Only ${confirmedFacts} confirmed fact(s) in the knowledge base. Documents will contain [TBC] markers for unconfirmed details. Your input will make them significantly more useful.`,
-            urgency: confirmedFacts === 0 ? "high" : "medium",
-            category: "clarification",
-            affectedAction: `${targetPhaseName} phase artefact generation`,
-            timeoutHours: 24,
-            defaultValue: "Proceed with assumptions and [TBC] markers",
-          });
-        } catch {}
-      }
+    if (activeSession) {
+      return { generated: 0, skipped, phase: targetPhaseName };
     }
   } catch (e) {
     console.error("[generatePhaseArtefacts] clarification import failed:", e);
@@ -293,37 +273,61 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     console.error("[lifecycle-init] task scaffolding failed:", e);
   }
 
-  // ── Step 3: Start clarification session OR generate initial artefacts ──
-  // On first deploy the KB is empty — always ask the user for key details first.
-  const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
-  const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
+  // ── Step 3: Feasibility research → Clarification questions → Generate artefacts ──
+  // The agent researches the project context FIRST, then asks informed questions,
+  // then generates artefacts with full knowledge. Artefacts are NOT generated
+  // until clarification is complete (the session-complete handler triggers generation).
 
   if (process.env.ANTHROPIC_API_KEY) {
     // Build the AI-generatable set from the methodology definition (capability filter)
     const aiGeneratableSet = new Set(firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name.toLowerCase()));
 
-    // Use user's selections for the first phase (already written to Phase row above)
     const firstPhaseConfig = configPhases.find(p => p.name === firstPhase.name);
     const artefactNames = firstPhaseConfig
       ? firstPhaseConfig.artefacts.filter(a => a.required && aiGeneratableSet.has(a.name.toLowerCase())).map(a => a.name)
       : firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
     if (artefactNames.length > 0) {
-      // Start clarification session in parallel (non-blocking) — generate artefacts immediately
-      // with [TBC] markers, then update them if the user provides answers later.
+      // ── 3a: Feasibility research via Perplexity AI ──
+      let researchSummary = "";
       try {
-        const { startClarificationSession } = await import("@/lib/agents/clarification-session");
-        startClarificationSession(agentId, project.id, agent.orgId, artefactNames).then(started => {
-          if (started) {
-            db.agentActivity.create({
-              data: { agentId, type: "chat", summary: `Clarification questions posted — answers will refine the ${artefactNames.length} artefact(s) already generated` },
-            }).catch(() => {});
-          }
-        }).catch(e => console.error("[runLifecycleInit] clarification session failed (non-blocking):", e));
+        const { runFeasibilityResearch } = await import("@/lib/agents/feasibility-research");
+        const research = await runFeasibilityResearch(agentId, project.id, agent.orgId);
+        researchSummary = research.summary;
+        await db.chatMessage.create({
+          data: {
+            agentId,
+            role: "agent",
+            content: `I've completed my initial research on your project. I found **${research.factsDiscovered} relevant facts** that will help me create accurate project documents. I have a few questions before I begin — your answers will make the artefacts much more specific to your situation.`,
+          },
+        }).catch(() => {});
       } catch (e) {
-        console.error("[runLifecycleInit] clarification import failed:", e);
+        console.error("[runLifecycleInit] feasibility research failed:", e);
+        await db.agentActivity.create({
+          data: { agentId, type: "chat", summary: "Feasibility research skipped (API unavailable) — proceeding with clarification questions" },
+        }).catch(() => {});
       }
 
+      // ── 3b: Start clarification session (informed by research) ──
+      // Artefact generation is deferred until the session completes (the session-complete
+      // handler in clarification-session.ts auto-generates artefacts).
+      let sessionStarted = false;
+      try {
+        const { startClarificationSession } = await import("@/lib/agents/clarification-session");
+        sessionStarted = await startClarificationSession(agentId, project.id, agent.orgId, artefactNames, researchSummary);
+        if (sessionStarted) {
+          await db.agentActivity.create({
+            data: { agentId, type: "chat", summary: `Clarification questions posted — artefacts will be generated once you've answered` },
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.error("[runLifecycleInit] clarification session failed:", e);
+      }
+
+      // ── 3c: If clarification didn't start (no questions needed or failed), generate now ──
+      if (!sessionStarted) {
+      const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
+      const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
       {
       await db.agentActivity.create({
         data: { agentId, type: "document", summary: `Generating ${artefactNames.length} artefact(s) for ${firstPhase.name} phase` },
@@ -465,6 +469,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         });
       }
       } // end artefact generation block
+      } // end if (!sessionStarted)
     }
   }
 
