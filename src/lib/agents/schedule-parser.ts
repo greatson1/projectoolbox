@@ -71,15 +71,19 @@ export async function parseScheduleArtefactIntoTasks(
     : [];
   const phaseMap = Object.fromEntries(phaseRows.map(p => [p.name.toLowerCase(), p.id]));
 
-  // ── Delete only tasks seeded from THIS artefact type (WBS or Schedule) ──
-  // Preserve: scaffolded PM tasks ([scaffolded] in description), user-created tasks,
-  // and tasks seeded from OTHER artefacts (e.g. Sprint Plans).
+  // ── Replace agent-generated tasks with the real WBS/Schedule data ──
+  // When a WBS or Schedule artefact is approved, it becomes the source of truth.
+  // Delete both previously seeded tasks AND scaffolded placeholder tasks — the
+  // artefact data supersedes the generic scaffolding.
   const sourceTag = isWBS ? "[source:wbs]" : "[source:schedule]";
   const deleted = await db.task.deleteMany({
     where: {
       projectId: artefact.projectId,
       createdBy: `agent:${agentId}`,
-      description: { contains: sourceTag },
+      OR: [
+        { description: { contains: sourceTag } },
+        { description: { contains: "[scaffolded]" } },
+      ],
     },
   });
 
