@@ -120,21 +120,28 @@ export default function LandingPage() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] rounded-full opacity-20 blur-[120px] bg-gradient-to-br from-primary via-purple-500 to-cyan-400" />
         <div className="max-w-[1200px] mx-auto relative z-10 text-center">
           <div className="max-w-[760px] mx-auto">
-            <Badge variant="outline" className="mb-6 bg-primary/5 border-primary/20 text-primary gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Now in Early Access — Join 500+ PMs on the waitlist
-            </Badge>
+            <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
+              <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Early Access — Join 500+ PMs on the waitlist
+              </Badge>
+              <Badge variant="outline" className="bg-cyan-500/5 border-cyan-500/20 text-cyan-400 gap-1.5 text-[11px]">
+                <span className="font-bold">SaaS 2.0</span>
+                <span className="text-muted-foreground">· Service as Software</span>
+              </Badge>
+            </div>
 
             <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] mb-6">
-              The AI PM Built for{" "}
+              Projects Delivered.{" "}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-cyan-400">
-                Governance
+                Humans in Control.
               </span>
             </h1>
 
-            <p className="text-lg text-muted-foreground leading-relaxed mb-4 max-w-[600px] mx-auto">
-              Deploy a sector-tailored AI project manager that speaks your industry's language,
-              follows your methodology, and keeps humans in control of every decision that matters.
+            <p className="text-lg text-muted-foreground leading-relaxed mb-4 max-w-[620px] mx-auto">
+              Projectoolbox deploys a sector-tailored AI project manager that plans, tracks, and delivers your projects —
+              while you stay in control of every decision that matters.
+              This is the new SaaS: <em className="text-foreground not-italic font-medium">software that does the service.</em>
             </p>
             <p className="text-sm text-muted-foreground mb-8 max-w-[500px] mx-auto">
               From the team behind the UK&apos;s leading <strong className="text-foreground">AI in Project Management</strong> training programme.
