@@ -72,31 +72,25 @@ export async function generatePhaseArtefacts(
 
   if (toGenerate.length === 0) return { generated: 0, skipped, phase: targetPhaseName };
 
-  // ── Clarification session check ──────────────────────────────────────────
-  // Before generating, check if the agent should ask the user for missing info.
-  // Skip if KB already has 10+ confirmed facts (rich enough to proceed).
+  // ── Clarification session (non-blocking) ─────────────────────────────────
+  // Start clarification questions in parallel but NEVER block artefact generation.
+  // Generate immediately with [TBC] markers; update later if user provides answers.
   try {
     const { startClarificationSession, getActiveSession } = await import("@/lib/agents/clarification-session");
     const activeSession = await getActiveSession(agentId, projectId);
     if (!activeSession) {
-      // No active session — check if we should start one
       const confirmedFacts = await db.knowledgeBaseItem.count({
         where: { agentId, projectId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
       });
       if (confirmedFacts < 10) {
-        const sessionStarted = await startClarificationSession(agentId, projectId, agent.orgId, toGenerate);
-        if (sessionStarted) {
-          // Defer generation — session will trigger it once user has answered
-          return { generated: 0, skipped, phase: targetPhaseName };
-        }
+        // Fire-and-forget — don't await, don't block generation
+        startClarificationSession(agentId, projectId, agent.orgId, toGenerate).catch(e =>
+          console.error("[generatePhaseArtefacts] clarification session failed (non-blocking):", e)
+        );
       }
-    } else {
-      // Session is still active — don't generate yet
-      return { generated: 0, skipped, phase: targetPhaseName };
     }
   } catch (e) {
-    console.error("[generatePhaseArtefacts] clarification session check failed:", e);
-    // Fall through and generate anyway rather than blocking indefinitely
+    console.error("[generatePhaseArtefacts] clarification import failed:", e);
   }
 
   await db.agentActivity.create({
@@ -303,22 +297,22 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       : firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
     if (artefactNames.length > 0) {
-      // Check for clarification session — on first deploy KB is always empty so we always ask first
-      let skipGeneration = false;
+      // Start clarification session in parallel (non-blocking) — generate artefacts immediately
+      // with [TBC] markers, then update them if the user provides answers later.
       try {
         const { startClarificationSession } = await import("@/lib/agents/clarification-session");
-        const sessionStarted = await startClarificationSession(agentId, project.id, agent.orgId, artefactNames);
-        if (sessionStarted) {
-          skipGeneration = true;
-          await db.agentActivity.create({
-            data: { agentId, type: "chat", summary: `Waiting for user input before generating ${artefactNames.length} artefact(s) — clarification questions posted to chat` },
-          });
-        }
+        startClarificationSession(agentId, project.id, agent.orgId, artefactNames).then(started => {
+          if (started) {
+            db.agentActivity.create({
+              data: { agentId, type: "chat", summary: `Clarification questions posted — answers will refine the ${artefactNames.length} artefact(s) already generated` },
+            }).catch(() => {});
+          }
+        }).catch(e => console.error("[runLifecycleInit] clarification session failed (non-blocking):", e));
       } catch (e) {
-        console.error("[runLifecycleInit] clarification session failed, proceeding with generation:", e);
+        console.error("[runLifecycleInit] clarification import failed:", e);
       }
 
-      if (!skipGeneration) {
+      {
       await db.agentActivity.create({
         data: { agentId, type: "document", summary: `Generating ${artefactNames.length} artefact(s) for ${firstPhase.name} phase` },
       });
@@ -458,7 +452,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
           data: { agentId, type: "chat", summary: `Artefact generation failed — will retry on next cycle` },
         });
       }
-      } // end if (!skipGeneration)
+      } // end artefact generation block
     }
   }
 
