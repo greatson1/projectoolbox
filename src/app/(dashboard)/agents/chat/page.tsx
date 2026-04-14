@@ -309,7 +309,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
   // Strip sentinel values and <ASK> tags from content
   const rawContent = content
     .replace(/^__(?:AGENT_QUESTION|CLARIFICATION_SESSION|CLARIFICATION_COMPLETE|PROJECT_STATUS|CHANGE_PROPOSAL)__$/g, "");
-  const askMatches = [...rawContent.matchAll(/<ASK\s+([^>]*)>([^<]*)<\/ASK>/gi)];
+  // Strip <ASK> tags entirely — clarification questions are rendered via dedicated ClarificationCard widgets
   const cleanContent = rawContent.replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
 
   // Default text — render with proper markdown (tables, headings, lists, bold, etc.)
@@ -322,38 +322,6 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
               {cleanContent}
             </ReactMarkdown>
-          </div>
-        )}
-        {askMatches.length > 0 && (
-          <div className="space-y-2 pl-1">
-            {askMatches.map((m, i) => {
-              const attrs = m[1];
-              const label = m[2].trim();
-              const typeMatch = attrs.match(/type="([^"]+)"/);
-              const idMatch = attrs.match(/id="([^"]+)"/);
-              const optionsMatch = attrs.match(/options="([^"]+)"/);
-              const askType = typeMatch?.[1] || "text";
-              const askId = idMatch?.[1] || `ask-${i}`;
-              const options = optionsMatch?.[1]?.split("|") || [];
-
-              return (
-                <div key={askId} className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-                  <label className="text-xs font-medium text-foreground mb-1.5 block">{label}</label>
-                  {askType === "choice" && options.length > 0 ? (
-                    <select className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-input" defaultValue="">
-                      <option value="" disabled>Select an option...</option>
-                      {options.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  ) : askType === "date" ? (
-                    <input type="date" className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-input" />
-                  ) : askType === "number" ? (
-                    <input type="number" className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-input" placeholder={label} />
-                  ) : (
-                    <input type="text" className="w-full px-3 py-2 rounded-lg text-sm bg-background border border-input" placeholder={label} />
-                  )}
-                </div>
-              );
-            })}
           </div>
         )}
       </div>
