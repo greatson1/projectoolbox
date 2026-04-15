@@ -310,32 +310,37 @@ export default function ApprovalsPage() {
                   </div>
                 )}
 
-                {/* Expanded content */}
-                <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0")}>
+                {/* Expanded governance deck */}
+                <div className={cn("transition-all duration-300 overflow-hidden", isExpanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0")}>
                   <div className="px-5 pb-5 space-y-4 border-t border-border">
 
-                    {/* Section 1: What the agent wants to do */}
-                    <div className="pt-4 px-4 py-3 rounded-lg border border-primary/20 bg-primary/5 text-sm text-foreground">
-                      <span className="font-semibold text-primary block mb-1 text-xs uppercase tracking-wider">What the agent wants to do</span>
-                      {parsed.summary}
+                    {/* ── 1. EXECUTIVE SUMMARY ── */}
+                    <div className="pt-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-primary mb-2">1. Executive Summary</p>
+                      <div className="px-4 py-3 rounded-lg border border-primary/20 bg-primary/5 text-sm text-foreground leading-relaxed whitespace-pre-line">
+                        {item.description || parsed.summary}
+                      </div>
                     </div>
 
-                    {/* Section 2: Why — only show if reason exists */}
-                    {parsed.reason && (
-                      <div className="px-4 py-3 rounded-lg border border-border bg-muted/30 text-sm text-muted-foreground">
-                        <span className="font-semibold text-foreground block mb-1 text-xs uppercase tracking-wider">Why</span>
-                        {parsed.reason}
+                    {/* ── 2. AGENT RATIONALE ── */}
+                    {(item.reasoningChain || parsed.reason) && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">2. Agent Rationale</p>
+                        <div className="px-4 py-3 rounded-lg border border-border bg-muted/20 text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                          {item.reasoningChain || parsed.reason}
+                        </div>
                       </div>
                     )}
 
-                    {/* Section 3: What will change — clean table */}
+                    {/* ── 3. WHAT WILL CHANGE ── */}
                     {Array.isArray(item.affectedItems) && (item.affectedItems as any[]).length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">What will change</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">3. Affected Items</p>
                         <div className="rounded-lg border border-border overflow-hidden">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="bg-muted/50">
+                                <th className="text-left px-3 py-2 font-semibold text-muted-foreground w-8">Type</th>
                                 <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Item</th>
                                 <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Change</th>
                               </tr>
@@ -343,10 +348,8 @@ export default function ApprovalsPage() {
                             <tbody>
                               {(item.affectedItems as any[]).map((ai: any, idx: number) => (
                                 <tr key={idx} className="border-t border-border/50">
-                                  <td className="px-3 py-2 font-medium">
-                                    <span className="text-muted-foreground mr-1.5">{ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : "📄"}</span>
-                                    {ai.title}
-                                  </td>
+                                  <td className="px-3 py-2 text-center">{ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : ai.type === "phase" ? "🔄" : "📄"}</td>
+                                  <td className="px-3 py-2 font-medium">{ai.title}</td>
                                   <td className="px-3 py-2">
                                     {ai.from && ai.to ? (
                                       <span>
@@ -355,9 +358,7 @@ export default function ApprovalsPage() {
                                         <span className="text-muted-foreground mx-1">→</span>
                                         <span className="text-emerald-500 font-semibold">{ai.to}</span>
                                       </span>
-                                    ) : (
-                                      <span className="text-muted-foreground">—</span>
-                                    )}
+                                    ) : <span className="text-muted-foreground">—</span>}
                                   </td>
                                 </tr>
                               ))}
@@ -367,43 +368,87 @@ export default function ApprovalsPage() {
                       </div>
                     )}
 
-                    {/* Section 4: Impact assessment — plain English, no X/4 numbers */}
+                    {/* ── 4. IMPACT ASSESSMENT ── */}
                     {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && (
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Impact assessment</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">4. Impact Assessment</p>
                         <div className="grid grid-cols-4 gap-2">
                           {[
                             { label: "Schedule", value: scores.schedule || 1, desc: ["No delay", "Up to 1 week", "1-4 weeks delay", "Over 1 month"] },
-                            { label: "Cost", value: scores.cost || 1, desc: ["No cost impact", "Under 5% of budget", "5-15% of budget", "Over 15%"] },
+                            { label: "Cost", value: scores.cost || 1, desc: ["No cost impact", "Under 5% budget", "5-15% budget", "Over 15%"] },
                             { label: "Scope", value: scores.scope || 1, desc: ["No scope change", "Minor refinement", "Deliverable affected", "Major change"] },
-                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["Internal only", "Team affected", "Client/sponsor aware", "Board escalation"] },
+                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["Internal only", "Team affected", "Client aware", "Board escalation"] },
                           ].map(dim => {
                             const color = dim.value <= 1 ? "text-emerald-500" : dim.value <= 2 ? "text-blue-500" : dim.value <= 3 ? "text-amber-500" : "text-red-500";
                             const bg = dim.value <= 1 ? "bg-emerald-500/10" : dim.value <= 2 ? "bg-blue-500/10" : dim.value <= 3 ? "bg-amber-500/10" : "bg-red-500/10";
                             return (
                               <div key={dim.label} className={cn("rounded-lg p-2.5 text-center", bg)}>
-                                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{dim.label}</p>
-                                <p className={cn("text-xs font-semibold mt-1", color)}>{dim.desc[dim.value - 1]}</p>
+                                <p className="text-[10px] text-muted-foreground uppercase">{dim.label}</p>
+                                <p className={cn("text-xs font-semibold mt-0.5", color)}>{dim.desc[dim.value - 1]}</p>
                               </div>
                             );
                           })}
                         </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge variant="secondary" className={cn("text-[10px]", tierColors.bg, tierColors.text)}>{riskTier} Risk</Badge>
+                          <span className="text-[10px] text-muted-foreground">Overall score: {riskScore}/16</span>
+                        </div>
                       </div>
                     )}
 
-                    {/* Risk tier — shown only in expanded view */}
-                    <div className="flex items-center gap-3">
-                      <Badge variant="secondary" className={cn("text-[10px]", tierColors.bg, tierColors.text)}>{riskTier} risk</Badge>
+                    {/* ── 5. AGENT RECOMMENDATION ── */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">5. Recommendation</p>
+                      <div className="px-4 py-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-sm">
+                        <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs mb-1">Agent recommends: Approve</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.type === "PHASE_GATE"
+                            ? "All phase artefacts have been reviewed and approved. The agent has completed all required deliverables for this phase and is ready to advance."
+                            : item.type === "CHANGE_REQUEST"
+                            ? "The proposed changes are based on new information and will improve project accuracy. The impact is within acceptable thresholds."
+                            : item.type === "RISK_RESPONSE"
+                            ? "The identified risk requires a decision on response strategy. The agent has provided recommended approaches above."
+                            : "This action is within the project's governance framework and aligns with the approved methodology."}
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Suggested Alternatives */}
+                    {/* ── 6. IF REJECTED ── */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">6. If Rejected</p>
+                      <div className="px-4 py-3 rounded-lg border border-red-500/20 bg-red-500/5 text-xs text-muted-foreground leading-relaxed">
+                        {item.type === "PHASE_GATE" ? (
+                          <ul className="space-y-1 list-disc list-inside">
+                            <li>The project will remain in the current phase</li>
+                            <li>Please provide feedback on what needs to change in the artefacts</li>
+                            <li>The agent will revise the documents and resubmit for approval</li>
+                            <li>This is iteration {item.iteration || 1} of max 3 — after 3 rejections the agent will escalate</li>
+                          </ul>
+                        ) : item.type === "CHANGE_REQUEST" ? (
+                          <ul className="space-y-1 list-disc list-inside">
+                            <li>The proposed changes will NOT be applied</li>
+                            <li>Current schedule/budget/scope will remain as-is</li>
+                            <li>The agent will log the rejection and continue monitoring</li>
+                            <li>You can provide specific feedback for the agent to consider alternative approaches</li>
+                          </ul>
+                        ) : (
+                          <ul className="space-y-1 list-disc list-inside">
+                            <li>The agent will not proceed with this action</li>
+                            <li>Please provide feedback so the agent can adjust its approach</li>
+                            <li>The agent will present a revised proposal based on your feedback</li>
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── 7. ALTERNATIVES ── */}
                     {item.suggestedAlternatives && (item.suggestedAlternatives as any[]).length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Alternatives Considered</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">7. Alternatives Considered</p>
                         <div className="space-y-1.5">
                           {(item.suggestedAlternatives as any[]).map((alt: any, i: number) => (
-                            <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 text-xs">
-                              <span className="text-muted-foreground">{i + 1}.</span>
+                            <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 text-xs">
+                              <span className="text-muted-foreground font-bold">{i + 1}.</span>
                               <span className="flex-1">{alt.description}</span>
                               {alt.creditCost && <Badge variant="secondary" className="text-[9px]">{alt.creditCost} credits</Badge>}
                             </div>
@@ -411,6 +456,30 @@ export default function ApprovalsPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* ── DECISION ACTIONS ── */}
+                    <div className="pt-3 border-t border-border">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3">Your Decision</p>
+                      <div className="flex gap-2">
+                        <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600" disabled={isProcessing}
+                          onClick={() => handleAction(item.id, "approve")}>
+                          {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                          Approve & Proceed
+                        </Button>
+                        <Button variant="outline" className="flex-1" onClick={() => {
+                          setFeedbackId(feedbackId === item.id ? null : item.id);
+                        }}>
+                          <MessageSquare className="h-4 w-4 mr-1" /> Request Changes
+                        </Button>
+                        <Button variant="ghost" className="text-destructive" onClick={() => {
+                          if (confirm("Reject this request? The agent will be notified and may revise its approach.")) {
+                            handleAction(item.id, "reject");
+                          }
+                        }}>
+                          Reject
+                        </Button>
+                      </div>
+                    </div>
 
                     {/* Expiry timer */}
                     {item.expiresAt && (
