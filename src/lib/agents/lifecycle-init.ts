@@ -113,7 +113,7 @@ export async function generatePhaseArtefacts(
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-4-20250514",
           max_tokens: 8192,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -231,9 +231,13 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       const phase = methodology.phases[i];
       // Use user's wizard selections if present; fall back to methodology defaults
       const phaseConfig = configPhases.find(p => p.name === phase.name);
+      // Store ALL aiGeneratable artefacts in Phase.artefacts (required + optional).
+      // generatePhaseArtefacts() reads this list — if only required ones are stored,
+      // optional artefacts are never generated on subsequent cycles.
+      const aiGeneratableNames = new Set(phase.artefacts.filter(a => a.aiGeneratable).map(a => a.name));
       const selectedArtefacts = phaseConfig
-        ? phaseConfig.artefacts.filter(a => a.required).map(a => a.name)
-        : phase.artefacts.map(a => a.name);
+        ? phaseConfig.artefacts.filter(a => aiGeneratableNames.has(a.name)).map(a => a.name)
+        : phase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
       await db.phase.create({
         data: {
           projectId: project.id,
@@ -328,6 +332,13 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       if (!sessionStarted) {
       const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
       const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
+      // Resolve the first phase row ID so artefacts are correctly linked to the Phase record.
+      // Without this, artefacts get phaseId: null and the phase-advancement check breaks.
+      const firstPhaseRow = await db.phase.findFirst({
+        where: { projectId: project.id, name: firstPhase.name },
+        select: { id: true },
+      });
+      const firstPhaseId = firstPhaseRow?.id ?? null;
       {
       await db.agentActivity.create({
         data: { agentId, type: "document", summary: `Generating ${artefactNames.length} artefact(s) for ${firstPhase.name} phase` },
@@ -361,7 +372,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
               "anthropic-version": "2023-06-01",
             },
             body: JSON.stringify({
-              model: "claude-sonnet-4-6",
+              model: "claude-sonnet-4-20250514",
               max_tokens: 8192,
               messages: [{ role: "user", content: prompt }],
             }),
@@ -419,6 +430,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
                   content,
                   status: "DRAFT",
                   version: 1,
+                  ...(firstPhaseId ? { phaseId: firstPhaseId } : {}),
                 },
               });
               totalGenerated++;
@@ -1775,8 +1787,10 @@ export function extractTBCItems(artefacts: { name: string; content: string }[]):
 }
 
 /**
- * Creates a proactive chat message from the agent listing all [TBC] items
- * found across the just-generated artefacts. Users see this in Chat with Agent.
+ * Creates a clarification session from [TBC] items found in generated artefacts.
+ * Instead of dumping a text list, this starts a proper interactive session using
+ * the same ClarificationCard widgets as the deploy-time questions.
+ * Each TBC item becomes a question the user answers one at a time.
  */
 export async function createClarificationMessage(
   agentId: string,
@@ -1786,50 +1800,55 @@ export async function createClarificationMessage(
 ): Promise<void> {
   if (tbcItems.length === 0) return;
 
-  // Group by artefact name
-  const grouped = new Map<string, string[]>();
-  for (const { artefactName, item } of tbcItems) {
-    if (!grouped.has(artefactName)) grouped.set(artefactName, []);
-    grouped.get(artefactName)!.push(item);
+  // Don't start a new session if one is already active
+  try {
+    const { getActiveSession, startTBCClarificationSession } = await import("@/lib/agents/clarification-session");
+    const existing = await getActiveSession(agentId, projectId);
+    if (existing) return; // Session already active — don't stack
+
+    // Convert TBC items into clarification questions
+    const questions = tbcItems.slice(0, 20).map((item, i) => ({
+      id: `tbc_${i}`,
+      artefact: item.artefactName,
+      field: item.item.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
+      question: `What is the ${item.item.toLowerCase()}?`,
+      type: "text" as const,
+      answered: false,
+    }));
+
+    await startTBCClarificationSession(agentId, projectId, orgId, questions);
+
+    // Brief intro message
+    await db.chatMessage.create({
+      data: {
+        agentId,
+        role: "agent",
+        content: `Your artefacts are ready for review, but I have **${tbcItems.length} detail${tbcItems.length !== 1 ? "s" : ""}** marked as [TBC] that I couldn't find from my research or the project description. I'll ask you about each one now — your answers will update the documents automatically.`,
+      },
+    }).catch(() => {});
+  } catch (e) {
+    console.error("[createClarificationMessage] failed to start TBC session:", e);
+
+    // Fallback: just log the count
+    await db.chatMessage.create({
+      data: {
+        agentId,
+        role: "agent",
+        content: `Your artefacts are ready for review. ${tbcItems.length} item${tbcItems.length !== 1 ? "s are" : " is"} marked [TBC] — you can edit these directly on the Artefacts tab.`,
+      },
+    }).catch(() => {});
   }
 
-  const lines: string[] = [
-    `I've generated your project artefacts and they're ready for review. However, I need your input on **${tbcItems.length} item${tbcItems.length !== 1 ? "s" : ""}** that I couldn't populate from the project description — I've marked these as [TBC] rather than guessing.`,
-    "",
-    "Please confirm the following so I can update the documents:",
-    "",
-  ];
-
-  let qNum = 1;
-  for (const [artName, items] of grouped.entries()) {
-    lines.push(`**${artName}**`);
-    for (const item of items) {
-      lines.push(`${qNum}. ${item}`);
-      qNum++;
-    }
-    lines.push("");
-  }
-
-  lines.push("You can reply here with the answers (numbered to match), or go to the Artefacts tab to edit the documents directly. Once you've confirmed the details I'll update all affected documents automatically.");
-
-  const content = lines.join("\n");
-
-  // Save as an agent chat message (shows in Chat with Agent)
-  await db.chatMessage.create({
-    data: { agentId, role: "agent", content },
-  }).catch(() => {}); // non-blocking
-
-  // Also create an activity log entry so it appears in Activity Log
+  // Activity log + notification
   await db.agentActivity.create({
     data: {
       agentId,
       type: "chat",
-      summary: `${tbcItems.length} item${tbcItems.length !== 1 ? "s" : ""} need your confirmation before artefacts are finalised`,
-      metadata: { tbcCount: tbcItems.length, artefacts: Array.from(grouped.keys()) } as any,
+      summary: `${tbcItems.length} [TBC] item${tbcItems.length !== 1 ? "s" : ""} — clarification questions posted`,
+      metadata: { tbcCount: tbcItems.length } as any,
     },
   }).catch(() => {});
 
-  // Push a notification to all org admins/owners
   try {
     const admins = await db.user.findMany({
       where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
@@ -1841,8 +1860,8 @@ export async function createClarificationMessage(
           userId: admin.id,
           type: "AGENT_ALERT",
           title: `Agent needs your input — ${tbcItems.length} item${tbcItems.length !== 1 ? "s" : ""} to confirm`,
-          body: `${tbcItems.length} field${tbcItems.length !== 1 ? "s" : ""} in your project artefacts need confirmation. Open Chat with Agent to review.`,
-          actionUrl: `/agents/${agentId}/chat`,
+          body: `Answer the questions in Chat with Agent to fill in [TBC] details.`,
+          actionUrl: `/agents/chat?agent=${agentId}`,
           metadata: { agentId, alertType: "clarification_needed", tbcCount: tbcItems.length } as any,
         },
       }).catch(() => {});

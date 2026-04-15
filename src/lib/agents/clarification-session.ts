@@ -374,6 +374,53 @@ export async function startClarificationSession(
   return true; // session started — defer generation
 }
 
+// ─── TBC Clarification Session ───────────────────────────────────────────────
+
+/**
+ * Starts a clarification session from pre-built TBC questions (extracted from
+ * generated artefacts). Uses the same interactive card widgets as the deploy-time
+ * clarification flow — one question at a time, answers stored to KB.
+ */
+export async function startTBCClarificationSession(
+  agentId: string,
+  projectId: string,
+  orgId: string,
+  questions: ClarificationQuestion[],
+): Promise<void> {
+  if (questions.length === 0) return;
+
+  const session: ClarificationSession = {
+    sessionId: `tbc_${Date.now()}`,
+    agentId,
+    projectId,
+    artefactNames: [...new Set(questions.map(q => q.artefact))],
+    questions,
+    startedAt: new Date().toISOString(),
+    status: "active",
+    currentQuestionIndex: 0,
+  };
+
+  await saveSession(agentId, projectId, orgId, session);
+
+  // Post the first question as an interactive card
+  await db.chatMessage.create({
+    data: {
+      agentId,
+      role: "agent",
+      content: `__CLARIFICATION_SESSION__`,
+      metadata: {
+        type: "clarification_question",
+        sessionId: session.sessionId,
+        questionIndex: 0,
+        totalQuestions: questions.length,
+        artefactNames: session.artefactNames,
+        question: questions[0],
+        intro: false,
+      } as any,
+    },
+  }).catch(() => {});
+}
+
 // ─── Interactive answer handler ──────────────────────────────────────────────
 
 /**
