@@ -49,8 +49,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 const AUTONOMY_LEVELS = [
   { level: 1, name: "Advisor", desc: "Agent works, everything goes to your approval queue" },
   { level: 2, name: "Co-pilot", desc: "Handles routine tasks, risks, and resources — documents need approval" },
-  { level: 3, name: "Autonomous", desc: "Runs the project day-to-day including documents and schedule" },
-  { level: 4, name: "Strategic", desc: "Full autonomy within governance bounds, self-correcting" },
+  { level: 3, name: "Autonomous", desc: "Full autonomy within governance bounds — runs the project end-to-end" },
 ];
 
 const NOTIFICATION_PREFS = [
@@ -267,7 +266,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       methodology: project?.methodology || "",
       status: (apiAgent.status?.toLowerCase() || AGENT_DEFAULTS.status) as "active" | "paused" | "idle" | "error",
       autonomyLevel: apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel,
-      autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous", "Strategic"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
+      autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
       performanceScore: apiAgent.performanceScore || 0,
       currentTask: apiAgent.activities?.[0]?.summary || "",
       deployedDate: apiAgent.createdAt ? new Date(apiAgent.createdAt).toISOString().split("T")[0] : "",
@@ -339,7 +338,6 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const { data: agentMetrics } = useAgentMetrics(agentId);
   const updateArtefact = useUpdateArtefact();
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const projectId = apiAgent?.deployments?.[0]?.project?.id;
 
   // Agent-specific pending approvals — deduplicated by id in case same approval
   // appears via both agentId and projectId paths
@@ -1385,7 +1383,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex gap-1">
-                          {[1, 2, 3, 4].map((d) => (
+                          {[1, 2, 3].map((d) => (
                             <div
                               key={d}
                               className="size-2.5 rounded-full"
