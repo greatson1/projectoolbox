@@ -86,18 +86,7 @@ export default function SchedulePage() {
 
   const TASKS_DATA: ScheduleTask[] = useMemo(() => {
     if (!apiTasks || apiTasks.length === 0) return [];
-    // Filter out agent overhead tasks that leaked without the [scaffolded] tag.
-    // These have agent-action titles like "Generate...", "Create WBS...", "Conduct..."
-    // and no real start/end dates (the Gantt assigns fallback dates, making them look wrong).
-    const deliveryTasks = apiTasks.filter((t: any) => {
-      // If it was created by the agent and has no real dates, it's overhead
-      if (t.createdBy?.startsWith("agent:") && !t.startDate && !t.endDate) return false;
-      // Also filter by common overhead title patterns (agent action descriptions, not task names)
-      const title = (t.title || "").toLowerCase();
-      if (/^(generate |conduct |create (wbs|project charter|risk|stakeholder)|set up |define )/.test(title) && !t.startDate) return false;
-      return true;
-    });
-    return deliveryTasks.map((t: any) => {
+    return apiTasks.map((t: any) => {
       // DB stores uppercase: "DONE", "IN_PROGRESS", "AT_RISK", "TODO", "BLOCKED"
       const s = (t.status || "").toUpperCase();
       const status: TaskStatus =

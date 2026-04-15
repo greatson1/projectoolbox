@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
   const { searchParams } = new URL(req.url);
   const includeAll = searchParams.get("include") === "all";
 
-  const tasks = await db.task.findMany({
+  let tasks = await db.task.findMany({
     where: {
       projectId,
       // By default, exclude scaffolded PM overhead tasks from delivery views.
@@ -24,6 +24,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
     },
     orderBy: { createdAt: "desc" },
   });
+
+  // Second pass: also remove agent-created overhead that slipped through without [scaffolded] tag.
+  // Agent overhead tasks have no real dates — delivery tasks always have dates from WBS/Schedule.
+  if (!includeAll) {
+    tasks = tasks.filter((t) =>
+      !(t.createdBy?.startsWith("agent:") && !t.startDate && !t.endDate)
+    );
+  }
 
   return NextResponse.json({ data: tasks });
 }
