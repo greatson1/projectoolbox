@@ -777,6 +777,28 @@ model CostEntry {
   @@index([projectId, category])
 }
 
+// ─── Benefits Realisation ───
+
+model Benefit {
+  id             String   @id @default(cuid())
+  projectId      String
+  name           String
+  description    String?
+  category       String   @default("Strategic") // Strategic | Financial | Operational
+  status         String   @default("NOT_STARTED") // NOT_STARTED | ON_TRACK | AT_RISK | REALISED
+  targetValue    Float    @default(0)
+  realisedValue  Float    @default(0)
+  currency       String   @default("GBP")
+  owner          String?              // Role title or person name
+  targetDate     DateTime?
+  measures       String?              // How benefit is measured (KPI description)
+  createdBy      String?              // agent:<id> or user:<id>
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([projectId])
+}
+
 // ─── Metrics Snapshots ───
 
 model MetricsSnapshot {

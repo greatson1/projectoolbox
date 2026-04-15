@@ -80,6 +80,17 @@ export async function seedArtefactData(
   }
 
   if (
+    lname.includes("business case") ||
+    lname.includes("benefits") ||
+    lname.includes("benefit register") ||
+    lname.includes("benefit realisation") ||
+    lname.includes("benefits management")
+  ) {
+    await seedBenefits(artefact, agentId);
+    return;
+  }
+
+  if (
     lname.includes("change request register") ||
     lname.includes("change request log") ||
     lname.includes("change log")
@@ -675,4 +686,58 @@ function parseDate(raw: string): Date | undefined {
   }
   const d = new Date(raw);
   return isNaN(d.getTime()) ? undefined : d;
+}
+
+// ─── Benefits ────────────────────────────────────────────────────────────────
+
+async function seedBenefits(artefact: ArtefactInput, agentId: string): Promise<void> {
+  const rows = parseCSV(artefact.content);
+  if (rows.length === 0) return;
+
+  // Delete previous agent-seeded benefits
+  await db.benefit.deleteMany({
+    where: { projectId: artefact.projectId, createdBy: `agent:${agentId}` },
+  });
+
+  const headers = rows[0].map(h => h.toLowerCase().trim());
+  const nameIdx = headers.findIndex(h => h.includes("benefit") || h.includes("name") || h.includes("title"));
+  const categoryIdx = headers.findIndex(h => h.includes("category") || h.includes("type"));
+  const targetIdx = headers.findIndex(h => h.includes("target") && (h.includes("value") || h.includes("£") || h.includes("amount")));
+  const realisedIdx = headers.findIndex(h => h.includes("realised") || h.includes("actual") || h.includes("achieved"));
+  const statusIdx = headers.findIndex(h => h.includes("status"));
+  const ownerIdx = headers.findIndex(h => h.includes("owner") || h.includes("responsible") || h.includes("lead"));
+  const dateIdx = headers.findIndex(h => h.includes("date") || h.includes("target date") || h.includes("deadline"));
+  const descIdx = headers.findIndex(h => h.includes("description") || h.includes("detail") || h.includes("notes"));
+  const measureIdx = headers.findIndex(h => h.includes("measure") || h.includes("kpi") || h.includes("metric"));
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const name = nameIdx >= 0 ? row[nameIdx]?.trim() : null;
+    if (!name || name.toLowerCase().startsWith("tbc")) continue;
+
+    const rawTarget = targetIdx >= 0 ? row[targetIdx]?.replace(/[£$,\s]/g, "") : "0";
+    const rawRealised = realisedIdx >= 0 ? row[realisedIdx]?.replace(/[£$,\s]/g, "") : "0";
+    const rawStatus = statusIdx >= 0 ? row[statusIdx]?.trim().toUpperCase().replace(/\s+/g, "_") : "NOT_STARTED";
+    const status = ["ON_TRACK", "AT_RISK", "REALISED", "NOT_STARTED"].includes(rawStatus) ? rawStatus : "NOT_STARTED";
+
+    try {
+      await db.benefit.create({
+        data: {
+          projectId: artefact.projectId,
+          name,
+          description: descIdx >= 0 ? row[descIdx]?.trim() || null : null,
+          category: categoryIdx >= 0 ? row[categoryIdx]?.trim() || "Strategic" : "Strategic",
+          status,
+          targetValue: parseFloat(rawTarget) || 0,
+          realisedValue: parseFloat(rawRealised) || 0,
+          owner: ownerIdx >= 0 ? row[ownerIdx]?.trim() || null : null,
+          targetDate: dateIdx >= 0 ? parseDate(row[dateIdx]) || null : null,
+          measures: measureIdx >= 0 ? row[measureIdx]?.trim() || null : null,
+          createdBy: `agent:${agentId}`,
+        },
+      });
+    } catch (e) {
+      console.error(`[seedBenefits] row ${i} failed:`, e);
+    }
+  }
 }
