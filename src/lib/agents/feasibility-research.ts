@@ -15,10 +15,22 @@ import { db } from "@/lib/db";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface ResearchResult {
+interface ResearchSection {
+  label: string;
+  content: string;
+}
+
+interface ResearchFact {
+  title: string;
+  content: string;
+}
+
+export interface ResearchResult {
   factsDiscovered: number;
   queries: string[];
   summary: string;
+  sections: ResearchSection[];
+  facts: ResearchFact[];
 }
 
 interface ProjectContext {
@@ -281,5 +293,23 @@ export async function runFeasibilityResearch(
     },
   }).catch(() => {});
 
-  return { factsDiscovered: totalFacts, queries, summary };
+  // Build sections for the research card
+  const sections: ResearchSection[] = allResearch.map((r, i) => ({
+    label: queryLabels[i],
+    content: r,
+  }));
+
+  // Fetch extracted facts for the card
+  const storedFacts = await db.knowledgeBaseItem.findMany({
+    where: { agentId, projectId, tags: { has: "feasibility" }, NOT: { tags: { has: "raw_research" } } },
+    select: { title: true, content: true },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+  });
+  const facts: ResearchFact[] = storedFacts.map(f => ({
+    title: f.title,
+    content: f.content.replace(/^\[Research.*?\]\s*/i, ""),
+  }));
+
+  return { factsDiscovered: totalFacts, queries, summary, sections, facts };
 }

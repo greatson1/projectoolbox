@@ -14,6 +14,7 @@ import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Searc
 import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
 import { AgentQuestionCard, ProjectStatusCard } from "@/components/agents/AgentResponseCards";
+import { ResearchFindingsCard } from "@/components/agents/ResearchFindingsCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -59,7 +60,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
 };
 
 // ── Rich message types matching Vite original ──
-type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal";
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings";
 
 interface Message {
   id: string;
@@ -184,6 +185,23 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Research findings card — enterprise visual display of feasibility research
+  if (msg.type === "research_findings" && msg.data) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[90%]">
+          <ResearchFindingsCard
+            projectName={msg.data.projectName || "Project"}
+            factsCount={msg.data.factsCount || 0}
+            sections={msg.data.sections || []}
+            facts={msg.data.facts || []}
+          />
         </div>
       </div>
     );
@@ -490,6 +508,17 @@ function AgentChatPage() {
             };
           }
 
+          if (meta?.type === "research_findings") {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "research_findings" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: meta,
+            };
+          }
+
           if (meta?.type === "project_status") {
             return {
               id: m.id,
@@ -526,7 +555,8 @@ function AgentChatPage() {
             m.content === "__CLARIFICATION_COMPLETE__" ||
             m.content === "__AGENT_QUESTION__" ||
             m.content === "__PROJECT_STATUS__" ||
-            m.content === "__CHANGE_PROPOSAL__"
+            m.content === "__CHANGE_PROPOSAL__" ||
+            m.content === "__RESEARCH_FINDINGS__"
           ));
         });
 

@@ -309,11 +309,15 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       // ── 3a: Feasibility research via Perplexity AI ──
       let researchSummary = "";
       let researchFacts = 0;
+      let researchSections: Array<{ label: string; content: string }> = [];
+      let researchFactsList: Array<{ title: string; content: string }> = [];
       try {
         const { runFeasibilityResearch } = await import("@/lib/agents/feasibility-research");
         const research = await runFeasibilityResearch(agentId, project.id, agent.orgId);
         researchSummary = research.summary;
         researchFacts = research.factsDiscovered;
+        researchSections = research.sections || [];
+        researchFactsList = research.facts || [];
       } catch (e) {
         console.error("[runLifecycleInit] feasibility research failed:", e);
         await db.agentActivity.create({
@@ -321,36 +325,20 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         }).catch(() => {});
       }
 
-      // ── 3b: Present research findings to user ──
-      // Post the research as a detailed message the user can review.
-      // Also post the KB items so the user sees what the agent "knows".
+      // ── 3b: Present research findings as enterprise card ──
       if (researchFacts > 0) {
-        // Fetch the stored research KB items to show the user
-        const researchItems = await db.knowledgeBaseItem.findMany({
-          where: { agentId, projectId: project.id, tags: { has: "research" } },
-          orderBy: { createdAt: "desc" },
-          take: 30,
-          select: { title: true, content: true },
-        });
-
-        const factsList = researchItems
-          .map(item => `- **${item.title}**: ${item.content.replace(/^\[Research.*?\]\s*/i, "").slice(0, 200)}`)
-          .join("\n");
-
         await db.chatMessage.create({
           data: {
             agentId,
             role: "agent",
-            content: [
-              `## Research Complete`,
-              ``,
-              `I've researched your project **"${project.name}"** and gathered **${researchFacts} key facts**. Please review what I found — this will inform the documents I generate for you.`,
-              ``,
-              `### What I discovered:`,
-              factsList,
-              ``,
-              `> Review the above and let me know if anything needs correcting. I'll now ask you some specific questions to fill in the gaps before generating your project documents.`,
-            ].join("\n"),
+            content: "__RESEARCH_FINDINGS__",
+            metadata: {
+              type: "research_findings",
+              projectName: project.name,
+              factsCount: researchFacts,
+              sections: researchSections.map(s => ({ label: s.label, content: s.content.slice(0, 3000) })),
+              facts: researchFactsList.slice(0, 30).map(f => ({ title: f.title, content: f.content.slice(0, 300) })),
+            } as any,
           },
         }).catch(() => {});
       }
@@ -375,163 +363,53 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         console.error("[runLifecycleInit] clarification session failed:", e);
       }
 
-      // ── 3e: If clarification didn't start (no questions needed or failed), unlock and generate now ──
+      // ── 3e: If clarification didn't start, present assumptions and ask for approval ──
+      // Instead of auto-generating artefacts, we inform the user what we know and
+      // what we'll assume, then wait for them to approve before generating.
       if (!sessionStarted) {
-      await db.agentDeployment.update({
-        where: { id: deploymentId },
-        data: { phaseStatus: "active", nextCycleAt: new Date(Date.now() + 10 * 60_000) },
-      });
-      const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
-      const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
-      // Resolve the first phase row ID so artefacts are correctly linked to the Phase record.
-      // Without this, artefacts get phaseId: null and the phase-advancement check breaks.
-      const firstPhaseRow = await db.phase.findFirst({
-        where: { projectId: project.id, name: firstPhase.name },
-        select: { id: true },
-      });
-      const firstPhaseId = firstPhaseRow?.id ?? null;
-      {
-      await db.agentActivity.create({
-        data: { agentId, type: "document", summary: `Generating ${artefactNames.length} artefact(s) for ${firstPhase.name} phase` },
-      });
+        // Fetch what the agent knows from KB to present as assumptions
+        const kbItems = await db.knowledgeBaseItem.findMany({
+          where: { agentId, projectId: project.id, NOT: { title: { startsWith: "__" } } },
+          orderBy: [{ trustLevel: "desc" }, { updatedAt: "desc" }],
+          select: { title: true, content: true, trustLevel: true },
+          take: 20,
+        });
 
-      // Separate spreadsheet (CSV) from prose (markdown) artefacts
-      const spreadsheetNames = artefactNames.filter(n => isSpreadsheetArtefact(n));
-      const proseNames = artefactNames.filter(n => !isSpreadsheetArtefact(n));
+        const assumptionsList = kbItems.length > 0
+          ? kbItems.map(i => `- **${i.title}** [${i.trustLevel}]: ${i.content.replace(/^\[Research.*?\]\s*/i, "").slice(0, 200)}`).join("\n")
+          : "- No specific assumptions — I'll use only the project details you provided.";
 
-      // Batch into groups of 3 — each group gets its own Claude call with full token budget.
-      const BATCH_SIZE = 3;
-      let totalGenerated = 0;
+        const artefactList = artefactNames.map(n => `- ${n}`).join("\n");
 
-      // Process all artefacts (prose + spreadsheet) in batches
-      const allBatches: Array<{ names: string[]; isSheet: boolean }> = [];
-      for (let i = 0; i < proseNames.length; i += BATCH_SIZE) allBatches.push({ names: proseNames.slice(i, i + BATCH_SIZE), isSheet: false });
-      for (let i = 0; i < spreadsheetNames.length; i += BATCH_SIZE) allBatches.push({ names: spreadsheetNames.slice(i, i + BATCH_SIZE), isSheet: true });
-
-      for (let batchIdx = 0; batchIdx < allBatches.length; batchIdx++) {
-        const { names: batch, isSheet } = allBatches[batchIdx];
-        const prompt = isSheet
-          ? buildSpreadsheetPrompt(project, firstPhase.name, batch, methodology.name, knowledgeContext)
-          : buildArtefactPrompt(project, firstPhase.name, batch, methodology.name, knowledgeContext);
-
-        try {
-          const response = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": process.env.ANTHROPIC_API_KEY,
-              "anthropic-version": "2023-06-01",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 8192,
-              messages: [{ role: "user", content: prompt }],
-            }),
-          });
-
-          if (!response.ok) {
-            const errText = await response.text().catch(() => "unknown");
-            console.error(`[lifecycle-init] Batch ${batchIdx} API error ${response.status}: ${errText}`);
-            continue;
-          }
-
-          const data = await response.json();
-          const text = (data.content?.[0]?.text || "").trim();
-
-          if (!text) {
-            console.error(`[lifecycle-init] Batch ${batchIdx} returned empty response`);
-            continue;
-          }
-
-          // Parse sections — each artefact separated by "## ARTEFACT: <name>"
-          const sections = text.split(/^## ARTEFACT:\s*/im).filter(Boolean);
-
-          for (const section of sections) {
-            const lines = section.trim().split("\n");
-            // Strip bold markers, version numbers, and parenthetical notes from title
-            const title = lines[0]?.trim()
-              .replace(/\*+/g, "")
-              .replace(/\s*\(.*?\)/g, "")
-              .replace(/\s+v?\d+(\.\d+)*\s*$/i, "")
-              .trim();
-            const content = lines.slice(1).join("\n").trim();
-
-            if (title && content.length > 20) {
-              const normTitle = title.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
-              const matchingDef = artefactNames.find(a => {
-                const normDef = a.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
-                return normTitle.includes(normDef) || normDef.includes(normTitle) ||
-                  normTitle.startsWith(normDef.split(" ").slice(0, 2).join(" "));
-              });
-
-              const artName = matchingDef || title;
-              // Detect format: CSV for spreadsheets, HTML if content starts with an HTML tag, else markdown
-              let detectedFormat = "markdown";
-              if (isSheet) {
-                detectedFormat = "csv";
-              } else if (content.trimStart().startsWith("<")) {
-                detectedFormat = "html";
-              }
-              await db.agentArtefact.create({
-                data: {
-                  agentId,
-                  projectId: project.id,
-                  name: artName,
-                  format: detectedFormat,
-                  content,
-                  status: "DRAFT",
-                  version: 1,
-                  ...(firstPhaseId ? { phaseId: firstPhaseId } : {}),
-                },
-              });
-              totalGenerated++;
-              // Update scaffolded task progress
-              try {
-                const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
-                await onArtefactGenerated(agentId, project.id, artName);
-              } catch {}
-            }
-          }
-        } catch (e) {
-          console.error(`[lifecycle-init] Batch ${batchIdx} generation failed:`, e);
-        }
-      }
-
-      if (totalGenerated > 0) {
-        // Deduct credits for artefact generation
-        try {
-          const { CreditService } = await import("@/lib/credits/service");
-          await CreditService.deduct(
-            agent.orgId, Math.max(5, totalGenerated * 2),
-            `Generated ${firstPhase.name} artefacts for "${project.name}"`,
+        await db.chatMessage.create({
+          data: {
             agentId,
-          );
-        } catch {}
+            role: "agent",
+            content: [
+              `## Ready to Generate Documents`,
+              ``,
+              `I've completed my research on **"${project.name}"** and I'm ready to generate the following **${firstPhase.name}** phase artefacts:`,
+              ``,
+              artefactList,
+              ``,
+              `### Assumptions I'll use:`,
+              assumptionsList,
+              ``,
+              `> **Please review the above.** If anything needs correcting or if you have additional information, let me know now. Otherwise, reply **"Go ahead"** or **"Generate"** and I'll create these documents for you.`,
+            ].join("\n"),
+          },
+        }).catch(() => {});
 
-        await db.agentActivity.create({
-          data: { agentId, type: "document", summary: `${firstPhase.name}: ${totalGenerated} artefact(s) generated — ready for review` },
+        // Keep status as awaiting_clarification — artefacts will be generated
+        // when the user replies with approval (handled by chat response logic)
+        await db.agentDeployment.update({
+          where: { id: deploymentId },
+          data: { phaseStatus: "awaiting_clarification" },
         });
 
-        // Collect TBC items and proactively ask the user to confirm them
-        try {
-          const newArtefacts = await db.agentArtefact.findMany({
-            where: { projectId: project.id, agentId },
-            select: { name: true, content: true },
-            orderBy: { createdAt: "desc" },
-            take: totalGenerated,
-          });
-          const tbcItems = extractTBCItems(newArtefacts);
-          await createClarificationMessage(agentId, project.id, agent.orgId, tbcItems);
-        } catch (e) {
-          console.error("[runLifecycleInit] TBC extraction failed:", e);
-        }
-      } else {
-        console.error("[lifecycle-init] No artefacts were saved — check API key and model access");
         await db.agentActivity.create({
-          data: { agentId, type: "chat", summary: `Artefact generation failed — will retry on next cycle` },
-        });
-      }
-      } // end artefact generation block
+          data: { agentId, type: "chat", summary: `Research complete — assumptions presented, awaiting user approval before generating ${artefactNames.length} artefact(s)` },
+        }).catch(() => {});
       } // end if (!sessionStarted)
     }
   }
