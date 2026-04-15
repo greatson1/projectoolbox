@@ -642,6 +642,20 @@ function AgentChatPage() {
           m.id === messageId ? { ...m, data: { ...m.data, onAnswered: null, isSubmitting: false } } : m
         ),
       }));
+
+      // Store the answer to KB directly (zero-credit) before sending to chat
+      const questionData = messagesByAgent[activeAgentId!]?.find(m => m.id === messageId)?.data;
+      if (questionData?.question) {
+        fetch(`/api/agents/${activeAgentId}/kb/store-fact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: questionData.question.question?.slice(0, 80) || questionData.question.id || "User answer",
+            content: answer,
+          }),
+        }).catch(() => {}); // Non-blocking — don't fail if KB store fails
+      }
+
       // Send the answer as a normal user message — this triggers a full Claude response
       await sendMessage(answer);
     } finally {

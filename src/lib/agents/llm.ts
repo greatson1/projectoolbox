@@ -283,6 +283,13 @@ SOURCE TRACEABILITY — MANDATORY:
 - When data is incomplete, state: "Note: This assessment is based on available data. Missing: [list what's missing]. Confidence: [HIGH/MEDIUM/LOW] because [reason]."
 - When sources conflict, flag the conflict and recommend human review rather than choosing one.
 
+QUESTIONS — MANDATORY FORMAT:
+When you need information from the user, ALWAYS use this XML format (renders as an interactive card):
+<ASK type="text" id="field_name">Your question here?</ASK>
+<ASK type="choice" options="Option A|Option B|Option C" id="field_name">Which of these?</ASK>
+<ASK type="yesno" id="field_name">Is this correct?</ASK>
+NEVER ask questions as plain text or bullet lists — ALWAYS use <ASK> tags. One question per response.
+
 Respond helpfully as Agent ${agent.name}.`;
 }
 
