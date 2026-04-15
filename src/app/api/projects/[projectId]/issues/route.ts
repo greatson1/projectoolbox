@@ -20,5 +20,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const { projectId } = await params;
   const body = await req.json();
   const issue = await db.issue.create({ data: { ...body, projectId } });
+
+  // Track new issue in KB
+  import("@/lib/agents/kb-event-tracker").then(({ trackIssueResolution }) => {
+    if (body.status === "RESOLVED" || body.status === "CLOSED") {
+      trackIssueResolution(projectId, body.title || "Issue", body.resolution || "Resolved", body.severity || "MEDIUM").catch(() => {});
+    }
+  }).catch(() => {});
+
   return NextResponse.json({ data: issue }, { status: 201 });
 }

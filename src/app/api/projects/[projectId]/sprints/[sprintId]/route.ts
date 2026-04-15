@@ -60,6 +60,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     syncSprintsToArtefact(projectId).catch(() => {});
   } catch {}
 
+  // Track sprint completion in KB
+  if (body.status === "COMPLETED") {
+    import("@/lib/agents/kb-event-tracker").then(({ trackSprintCompletion }) => {
+      const incomplete = data.committedPoints - (data.completedPoints || 0);
+      trackSprintCompletion(projectId, sprint.name || `Sprint ${sprintId.slice(-4)}`, data.completedPoints || 0, data.committedPoints || 0, incomplete > 0 ? 1 : 0).catch(() => {});
+    }).catch(() => {});
+  }
+
   return NextResponse.json({ data: sprint });
 }
 

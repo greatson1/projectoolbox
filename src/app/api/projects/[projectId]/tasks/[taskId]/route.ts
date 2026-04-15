@@ -96,6 +96,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } catch {}
   }
 
+  // Track significant status changes in KB
+  if (status) {
+    import("@/lib/agents/kb-event-tracker").then(({ trackTaskStatusChange }) => {
+      trackTaskStatusChange(projectId, task.title, body._oldStatus || "TODO", status, session.user?.name || "User").catch(() => {});
+    }).catch(() => {});
+  }
+
   // Audit log
   const orgId = (session.user as any).orgId;
   if (orgId) {

@@ -59,6 +59,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  // Track approval decision in KB
+  if (approval.projectId && (newStatus === "APPROVED" || newStatus === "REJECTED")) {
+    import("@/lib/agents/kb-event-tracker").then(({ trackApprovalDecision, trackPhaseGateDecision }) => {
+      const approverName = session.user?.name || session.user?.email || "User";
+      trackApprovalDecision(approval.projectId!, approval.title, newStatus as "APPROVED" | "REJECTED", approverName, comment).catch(() => {});
+      if (approval.type === "PHASE_GATE") {
+        trackPhaseGateDecision(approval.projectId!, approval.title, null, newStatus as "APPROVED" | "REJECTED", approverName).catch(() => {});
+      }
+    }).catch(() => {});
+  }
+
   // Find active deployment for this project
   const deployment = await db.agentDeployment.findFirst({
     where: { projectId: approval.projectId, isActive: true },

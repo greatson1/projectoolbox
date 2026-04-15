@@ -75,5 +75,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     },
   });
 
+  // Track cost entries in KB
+  import("@/lib/agents/kb-event-tracker").then(({ trackCostEntry }) => {
+    trackCostEntry(projectId, body.entryType || "ACTUAL", body.amount, body.category || "OTHER", body.description).catch(() => {});
+  }).catch(() => {});
+
   return NextResponse.json({ data: entry }, { status: 201 });
 }

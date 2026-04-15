@@ -398,5 +398,15 @@ ${project?.name ?? "Project"} — AI Project Manager`;
     data,
   });
 
+  // Track significant risk changes in KB
+  if (data.status || data.probability || data.impact) {
+    import("@/lib/agents/kb-event-tracker").then(({ trackRiskChange }) => {
+      const changes: string[] = [];
+      if (data.status) changes.push(`status → ${data.status}`);
+      if (data.score) changes.push(`score → ${data.score}`);
+      trackRiskChange(projectId, risk.title, changes.join(", ")).catch(() => {});
+    }).catch(() => {});
+  }
+
   return NextResponse.json({ data: risk });
 }

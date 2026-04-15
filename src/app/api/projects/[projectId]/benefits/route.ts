@@ -58,10 +58,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   // Convert targetDate string to Date if present
   if (updates.targetDate) updates.targetDate = new Date(updates.targetDate);
 
+  // Fetch old status for change detection
+  const oldBenefit = await db.benefit.findUnique({ where: { id }, select: { status: true, name: true } });
+
   const benefit = await db.benefit.update({
     where: { id },
     data: updates,
   });
+
+  // Track benefit status changes in KB
+  if (updates.status && oldBenefit && updates.status !== oldBenefit.status) {
+    const { projectId } = await params;
+    import("@/lib/agents/kb-event-tracker").then(({ trackBenefitUpdate }) => {
+      trackBenefitUpdate(projectId, benefit.name, oldBenefit.status, updates.status, updates.realisedValue).catch(() => {});
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ data: benefit });
 }
