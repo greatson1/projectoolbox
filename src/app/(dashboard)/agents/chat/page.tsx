@@ -612,15 +612,33 @@ function AgentChatPage() {
     if (!activeAgentId || generatingDocs) return;
     setGeneratingDocs(true);
     try {
+      // Check if artefacts already exist
+      const checkRes = await fetch(`/api/agents/${activeAgentId}/artefacts`);
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        const existing = Array.isArray(checkData) ? checkData : (checkData.data || []);
+        if (existing.length > 0) {
+          const drafts = existing.filter((a: any) => a.status === "DRAFT").length;
+          const approved = existing.filter((a: any) => a.status === "APPROVED").length;
+          const msg: Message = {
+            id: `exists-${Date.now()}`, role: "agent", type: "text",
+            content: `Your documents have already been created — **${existing.length} artefact(s)** (${drafts} drafts, ${approved} approved). Head to the **[Artefacts tab](/agents/${activeAgentId}?tab=artefacts)** to review and approve them.`,
+            timestamp: new Date(),
+          };
+          setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), msg] }));
+          scrollToBottom();
+          setGeneratingDocs(false);
+          return;
+        }
+      }
+
       await fetch(`/api/agents/${activeAgentId}/clarification/generate`, { method: "POST" });
-      // Update the complete card to show generating state
       setMessagesByAgent(prev => ({
         ...prev,
         [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
           m.type === "clarification_complete" ? { ...m, data: { ...m.data, isGenerating: true } } : m
         ),
       }));
-      // Notify user
       setTimeout(() => {
         const doneMsg: Message = { id: `done-${Date.now()}`, role: "agent", type: "text", content: "Your documents are being generated. Head to the **Artefacts** tab to review them once ready.", timestamp: new Date() };
         setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), doneMsg] }));

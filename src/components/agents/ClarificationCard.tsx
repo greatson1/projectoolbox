@@ -357,9 +357,7 @@ export function ClarificationCompleteCard({
             className="h-8 text-xs gap-1.5"
           >
             {isGenerating ? (
-              <>
-                <span className="animate-pulse">Generating…</span>
-              </>
+              <span className="animate-pulse">Generating…</span>
             ) : (
               <>
                 Generate {artefactNames.length} document{artefactNames.length !== 1 ? "s" : ""}
@@ -368,7 +366,7 @@ export function ClarificationCompleteCard({
             )}
           </Button>
           <a href={`/agents/${agentId}?tab=artefacts`}
-            className="inline-flex items-center gap-1 h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors">
+            className="inline-flex items-center gap-1 h-8 px-3 text-xs font-semibold rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors">
             Go to Artefacts
             <ExternalLink className="w-3 h-3" />
           </a>
