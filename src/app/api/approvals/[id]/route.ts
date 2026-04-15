@@ -45,6 +45,66 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  // ── Rejection/Changes workflow: notify agent and trigger revision ──
+  if ((action === "reject" || action === "request_changes") && approval.requestedById) {
+    try {
+      const agentId = approval.requestedById;
+      const feedback = comment || "No specific feedback provided";
+
+      // Post feedback to agent chat so it knows what to fix
+      await db.chatMessage.create({
+        data: {
+          agentId,
+          role: "agent",
+          content: `**${action === "reject" ? "Approval Rejected" : "Changes Requested"}** for: ${approval.title}\n\n**Your feedback:** ${feedback}\n\n${action === "request_changes" ? "I will revise the affected artefacts based on your feedback and resubmit for approval." : "This request has been rejected. I will adjust my approach based on your feedback."}`,
+        },
+      }).catch(() => {});
+
+      // Log activity
+      await db.agentActivity.create({
+        data: {
+          agentId,
+          type: "approval",
+          summary: `${action === "reject" ? "Rejected" : "Changes requested"}: ${approval.title}. Feedback: ${feedback.slice(0, 80)}`,
+        },
+      }).catch(() => {});
+
+      // For PHASE_GATE rejections: re-open artefacts as DRAFT so agent can revise
+      if (approval.type === "PHASE_GATE" && approval.projectId) {
+        const deployment = await db.agentDeployment.findFirst({
+          where: { agentId, isActive: true },
+          select: { id: true, currentPhase: true },
+        });
+        if (deployment?.currentPhase) {
+          // Re-open current phase artefacts for revision
+          await db.agentArtefact.updateMany({
+            where: {
+              projectId: approval.projectId,
+              agentId,
+              phaseId: deployment.currentPhase,
+              status: "APPROVED",
+            },
+            data: { status: "DRAFT", feedback: `Revision needed: ${feedback}` },
+          });
+
+          // Set deployment back to active (not pending_approval)
+          await db.agentDeployment.update({
+            where: { id: deployment.id },
+            data: { phaseStatus: "active" },
+          });
+
+          // Increment iteration count for resubmission tracking
+          await db.approval.update({
+            where: { id },
+            data: { iteration: (approval.iteration || 1) + 1 },
+          });
+        }
+      }
+    } catch (e) {
+      console.error("[approval] rejection workflow failed:", e);
+    }
+  }
+
   // Create audit log
   const orgId = (session.user as any).orgId;
   if (orgId) {
