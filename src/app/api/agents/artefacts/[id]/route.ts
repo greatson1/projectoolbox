@@ -178,12 +178,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       console.error("[artefact PATCH] seeding dispatch failed:", e);
     }
 
-    // ── Phase advancement ────────────────────────────────────────────────────
-    // When all artefacts in the current phase are approved, check if the phase
-    // can advance. Planning phases (first phase, setup, requirements) advance on
-    // artefact approval alone. Execution/delivery phases also require that the
-    // phase's tasks are substantially complete — approving documents doesn't mean
-    // the actual project work is done.
+    // ── Phase gate check ────────────────────────────────────────────────────
+    // When all artefacts in the current phase are approved, create a PHASE_GATE
+    // approval. NEVER auto-advance — the user must explicitly approve the gate.
     if (artefact.phaseId) {
       try {
         const phaseArtefacts = await db.agentArtefact.findMany({
@@ -201,69 +198,49 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           });
 
           if (dep && dep.currentPhase === artefact.phaseId) {
-            const project = await db.project.findUnique({
-              where: { id: artefact.projectId },
-              select: { methodology: true },
+            // Check if a gate approval already exists for this phase
+            const existingGate = await db.approval.findFirst({
+              where: { projectId: artefact.projectId, type: "PHASE_GATE", status: "PENDING" },
             });
-            const { getMethodology } = await import("@/lib/methodology-definitions");
-            const methodologyId = (project?.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
-            const methodology = getMethodology(methodologyId);
-            const phases = methodology.phases;
-            const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
 
-            // Determine if this is a planning phase (first phase) or execution phase
-            const isPlanningPhase = currentIdx === 0;
+            if (!existingGate) {
+              const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { methodology: true } });
+              const { getMethodology } = await import("@/lib/methodology-definitions");
+              const methodology = getMethodology((project?.methodology || "PRINCE2").toLowerCase().replace("agile_", ""));
+              const phases = methodology.phases;
+              const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
+              const nextPhase = currentIdx >= 0 && currentIdx < phases.length - 1 ? phases[currentIdx + 1] : null;
 
-            let canAdvance = isPlanningPhase; // Planning phases advance on artefact approval alone
-
-            if (!isPlanningPhase) {
-              // Execution phases require task completion before advancing.
-              // Check: at least 80% of phase tasks must be DONE.
-              const phaseRow = await db.phase.findFirst({
-                where: { projectId: artefact.projectId, name: artefact.phaseId },
-                select: { id: true },
-              });
-              if (phaseRow) {
-                const [totalTasks, doneTasks] = await Promise.all([
-                  db.task.count({ where: { projectId: artefact.projectId, phaseId: phaseRow.id } }),
-                  db.task.count({ where: { projectId: artefact.projectId, phaseId: phaseRow.id, status: "DONE" } }),
-                ]);
-                // If no tasks exist in this phase, fall back to artefact-only advancement
-                const completionPct = totalTasks > 0 ? doneTasks / totalTasks : 1;
-                canAdvance = completionPct >= 0.8;
-
-                if (!canAdvance) {
-                  // Log that advancement is blocked — tasks incomplete
-                  await db.agentActivity.create({
-                    data: {
-                      agentId: dep.agentId,
-                      type: "approval",
-                      summary: `All ${artefact.phaseId} artefacts approved, but phase cannot advance yet — ${doneTasks}/${totalTasks} tasks complete (${Math.round(completionPct * 100)}%, need 80%). Complete the project tasks before advancing.`,
-                    },
-                  });
-                }
+              if (nextPhase) {
+                await db.approval.create({
+                  data: {
+                    projectId: artefact.projectId,
+                    requestedById: dep.agentId,
+                    type: "PHASE_GATE",
+                    title: `Phase Gate: ${artefact.phaseId} → ${nextPhase.name}`,
+                    description: `All ${phaseArtefacts.length} artefact(s) in the ${artefact.phaseId} phase have been approved. Review and approve to advance to ${nextPhase.name}.`,
+                    status: "PENDING",
+                    urgency: "MEDIUM",
+                    impactScores: { schedule: 2, cost: 1, scope: 1, stakeholder: 1 } as any,
+                  },
+                });
+                await db.agentDeployment.update({
+                  where: { id: dep.id },
+                  data: { phaseStatus: "pending_approval" },
+                });
+                await db.agentActivity.create({
+                  data: {
+                    agentId: dep.agentId,
+                    type: "gate_request",
+                    summary: `All ${artefact.phaseId} artefacts approved. Phase gate created — awaiting your approval to advance to ${nextPhase.name}.`,
+                  },
+                });
               }
-            }
-
-            if (canAdvance && currentIdx >= 0 && currentIdx < phases.length - 1) {
-              const nextPhaseName = phases[currentIdx + 1].name;
-              await db.phase.updateMany({
-                where: { projectId: artefact.projectId, name: artefact.phaseId },
-                data: { status: "COMPLETED" },
-              });
-              await db.phase.updateMany({
-                where: { projectId: artefact.projectId, name: nextPhaseName },
-                data: { status: "ACTIVE" },
-              });
-              await db.agentDeployment.update({
-                where: { id: dep.id },
-                data: { currentPhase: nextPhaseName, phaseStatus: "active", lastCycleAt: new Date() },
-              });
             }
           }
         }
       } catch (e) {
-        console.error("[artefact PATCH] phase advancement failed:", e);
+        console.error("[artefact PATCH] phase gate check failed:", e);
       }
     }
   }
