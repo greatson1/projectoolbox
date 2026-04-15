@@ -24,14 +24,68 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json();
   const { status, feedback, content } = body;
 
+  // ── Human-only approval guard ────────────────────────────────────────────
+  // Artefact approval is a governance action that MUST come from a verified
+  // human user. Autonomous agents — regardless of their autonomy level — are
+  // not permitted to approve artefacts they generated. This prevents the agent
+  // from rubber-stamping its own work and bypassing the human review gate.
+  if (status === "APPROVED") {
+    const humanId = (session.user as any).id as string | undefined;
+    if (!humanId) {
+      return NextResponse.json(
+        { error: "Artefact approval requires a verified human session. Automated agents cannot approve artefacts." },
+        { status: 403 },
+      );
+    }
+  }
+
+  // Read the current artefact so we can merge metadata
+  const existing = await db.agentArtefact.findUnique({ where: { id }, select: { metadata: true } });
+
+  // Build metadata update — stamp approvedBy/approvedAt when approving
+  let metadataUpdate: Record<string, unknown> | undefined;
+  if (status === "APPROVED") {
+    const currentMeta = (existing?.metadata as Record<string, unknown>) ?? {};
+    metadataUpdate = {
+      ...currentMeta,
+      approvedBy: (session.user as any).id,
+      approvedAt: new Date().toISOString(),
+      approvedByName: session.user.name ?? session.user.email ?? "unknown",
+    };
+  }
+
   const artefact = await db.agentArtefact.update({
     where: { id },
     data: {
       ...(status && { status }),
       ...(feedback !== undefined && { feedback }),
       ...(content && { content, version: { increment: 1 } }),
+      ...(metadataUpdate && { metadata: metadataUpdate }),
     },
   });
+
+  // ── Approval audit log ──────────────────────────────────────────────────
+  // Record who approved the artefact so there is a permanent, human-attributed
+  // audit trail separate from the agent activity feed.
+  if (status === "APPROVED") {
+    try {
+      const deployment = await db.agentDeployment.findFirst({
+        where: { projectId: artefact.projectId, isActive: true },
+        select: { agentId: true },
+      });
+      const auditAgentId = deployment?.agentId || artefact.agentId;
+      const approverName = session.user.name ?? session.user.email ?? "Unknown user";
+      await db.agentActivity.create({
+        data: {
+          agentId: auditAgentId,
+          type: "approval",
+          summary: `Artefact approved by ${approverName} (human): "${artefact.name}"`,
+        },
+      });
+    } catch (e) {
+      console.error("[artefact PATCH] approval audit log failed:", e);
+    }
+  }
 
   // ── Knowledge extraction ──────────────────────────────────────────────────
   // When an artefact is saved (content changed) or approved, extract facts
@@ -64,10 +118,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   // ── Artefact → DB seeding ─────────────────────────────────────────────────
-  // When any artefact is APPROVED, parse its CSV/content and seed the relevant
-  // DB table so every project module (Schedule, Risks, Stakeholders, Cost…)
-  // shows live data.
-  if (status === "APPROVED") {
+  // Seed the relevant DB tables when:
+  //   1. An artefact is approved for the first time (status → APPROVED)
+  //   2. An already-approved artefact's content is edited (re-seed with new data)
+  // This ensures edits to approved documents propagate to Schedule, Risks, etc.
+  const isNewApproval = status === "APPROVED";
+  const isApprovedContentEdit = !status && content && artefact.status === "APPROVED";
+  if (isNewApproval || isApprovedContentEdit) {
     try {
       const seedDeployment = await db.agentDeployment.findFirst({
         where: { projectId: artefact.projectId, isActive: true },
