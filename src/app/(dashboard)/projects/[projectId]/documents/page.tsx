@@ -207,27 +207,26 @@ export default function DocumentsLibraryPage() {
       {viewingDoc && (
         isSpreadsheetArtefact(viewingDoc.name) ? (
           <SpreadsheetViewer
-            name={viewingDoc.name}
+            reportId={viewingDoc.id}
+            title={viewingDoc.name}
             content={viewingDoc.content}
             status={viewingDoc.status}
-            version={viewingDoc.version}
             onClose={() => setViewingDoc(null)}
             onSave={async () => {}}
             onApprove={async () => {}}
             onReject={async () => {}}
-            readOnly
           />
         ) : (
           <DocumentEditor
-            name={viewingDoc.name}
+            reportId={viewingDoc.id}
+            title={viewingDoc.name}
+            type={viewingDoc.type || "document"}
             content={viewingDoc.format === "markdown" ? marked.parse(viewingDoc.content || "") as string : viewingDoc.content}
             status={viewingDoc.status}
-            version={viewingDoc.version}
             onClose={() => setViewingDoc(null)}
             onSave={async () => {}}
             onApprove={async () => {}}
             onReject={async () => {}}
-            readOnly
           />
         )
       )}

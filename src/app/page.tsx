@@ -31,22 +31,21 @@ const STEPS = [
 ];
 
 const PLANS = [
-  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Supervised mode (L1)", "Community support"], cta: "Join Waitlist", popular: false },
-  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–3", "Email support", "PDF export"], cta: "Join Waitlist", popular: false },
-  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–4", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Join Waitlist", popular: true },
-  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–4", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Join Waitlist", popular: false },
+  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Advisor mode (L1)", "Community support"], cta: "Join Waitlist", popular: false },
+  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–2", "Email support", "PDF export"], cta: "Join Waitlist", popular: false },
+  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–3", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Join Waitlist", popular: true },
+  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–3", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Join Waitlist", popular: false },
 ];
 
 const AUTONOMY_LEVELS = [
-  { level: "L1", label: "Supervised", desc: "Suggests only — you approve everything" },
-  { level: "L2", label: "Assisted", desc: "Handles routine tasks, escalates decisions" },
-  { level: "L3", label: "Managed", desc: "Runs phases independently with check-ins" },
-  { level: "L4", label: "Autonomous", desc: "Manages end-to-end, alerts on exceptions" },
+  { level: "L1", label: "Advisor", desc: "Suggests only — you approve everything" },
+  { level: "L2", label: "Co-pilot", desc: "Handles routine tasks, escalates decisions" },
+  { level: "L3", label: "Autonomous", desc: "Runs the project end-to-end, alerts on exceptions" },
 ];
 
 const FAQS = [
   { q: "How does the AI agent actually manage a project?", a: "Your agent uses Claude AI to generate artefacts, process meeting transcripts, track tasks, monitor budgets, and communicate with stakeholders. It follows your chosen methodology and escalates to you when human judgement is needed." },
-  { q: "What's the difference between autonomy levels?", a: "Levels 1–4 control how independently the agent operates. L1 only suggests — you approve everything. L2 handles routine tasks and escalates decisions. L3 runs phases independently with check-ins. L4 manages end-to-end and alerts you on exceptions. You choose your level, and you can change it at any time." },
+  { q: "What's the difference between autonomy levels?", a: "Levels 1–3 control how independently the agent operates. L1 (Advisor) only suggests — you approve everything. L2 (Co-pilot) handles routine tasks and escalates decisions. L3 (Autonomous) runs the project end-to-end and alerts you on exceptions. You choose your level, and you can change it at any time." },
   { q: "What does 1 credit equal?", a: "Roughly 1 document or artefact generated (e.g. a risk register, status report, or WBS). Meeting transcriptions cost 1 credit per session. You can see your credit usage in real time on your dashboard." },
   { q: "Is my project data secure?", a: "All data is encrypted at rest and in transit. We're SOC 2 compliant, GDPR-ready, and offer single-tenant deployment for Enterprise customers. Your data is never used to train AI models." },
   { q: "Can agents join my actual meetings?", a: "Yes. Using Recall.ai (included from Professional), your agent joins Google Meet, Zoom, or Teams as a participant. It transcribes, extracts actions, logs decisions, and updates your project plan automatically." },
@@ -429,7 +428,7 @@ export default function LandingPage() {
           {/* Autonomy level explainer */}
           <div className="max-w-[800px] mx-auto mb-10 rounded-xl border border-border/40 bg-card p-5">
             <p className="text-xs font-bold uppercase tracking-widest text-primary mb-3">Autonomy Levels Explained</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {AUTONOMY_LEVELS.map(a => (
                 <div key={a.level} className="text-center">
                   <div className="text-sm font-bold text-primary">{a.level}</div>

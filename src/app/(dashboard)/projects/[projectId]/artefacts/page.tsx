@@ -129,12 +129,8 @@ export default function ArtefactsPage() {
     if (res.ok) {
       if (wasLastPending) {
         toast.success("All artefacts approved! Generating next phase documents…", { duration: 5000 });
-        // Auto-advance: compute next phase from project data and pass it explicitly
-        const activeIdx = project?.phases?.findIndex((p: any) => p.status === "ACTIVE") ?? -1;
-        const nextPhaseName = (activeIdx >= 0 && activeIdx < (project?.phases?.length ?? 0) - 1)
-          ? project.phases[activeIdx + 1].name
-          : undefined;
-        handleGenerate(nextPhaseName);
+        // Delay slightly so the phase-advance DB write propagates before we hit the generate endpoint
+        setTimeout(() => handleGenerate(), 1500);
       } else {
         toast.success("Artefact approved ✓");
       }
