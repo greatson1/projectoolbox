@@ -19,13 +19,30 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   // Accept both "phaseName" and "phase" for compatibility with VPS caller
-  const { agentId, projectId, phaseName, phase } = body as {
-    agentId?: string; projectId: string; phaseName?: string; phase?: string;
+  // Pass fullInit: true to run the complete lifecycle init (research → clarification → artefacts)
+  const { agentId, projectId, phaseName, phase, fullInit } = body as {
+    agentId?: string; projectId?: string; phaseName?: string; phase?: string; fullInit?: boolean;
+    deploymentId?: string;
   };
+  const deploymentId = (body as any).deploymentId as string | undefined;
   const resolvedPhase = phaseName || phase;
 
+  // fullInit mode: run the complete lifecycle init for a new deployment
+  if (fullInit && deploymentId) {
+    try {
+      const { runLifecycleInit } = await import("@/lib/agents/lifecycle-init");
+      const dep = await db.agentDeployment.findUnique({ where: { id: deploymentId } });
+      if (!dep) return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
+      await runLifecycleInit(dep.agentId, deploymentId);
+      return NextResponse.json({ data: { ok: true, mode: "full_init", agentId: dep.agentId, deploymentId } });
+    } catch (e: any) {
+      console.error("[internal/generate-artefacts] full_init failed:", e);
+      return NextResponse.json({ error: e.message }, { status: 500 });
+    }
+  }
+
   if (!projectId) {
-    return NextResponse.json({ error: "projectId required" }, { status: 400 });
+    return NextResponse.json({ error: "projectId required", v: 2 }, { status: 400 });
   }
 
   // Find active deployment — prefer agentId if provided, otherwise find by projectId
