@@ -126,6 +126,7 @@ const NAV: NavGroup[] = [
       { label: "Reports",          href: "/reports",          icon: FileBarChart, projectScoped: true },
       { label: "Report Composer",  href: "/report-composer",  icon: Layers,       projectScoped: true },
       { label: "Artefacts",        href: "/artefacts",        icon: FileText,     projectScoped: true },
+      { label: "Documents",        href: "/documents",        icon: FolderOpen,   projectScoped: true },
     ],
   },
 
