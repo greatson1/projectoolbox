@@ -374,10 +374,10 @@ export default function ApprovalsPage() {
                         <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">4. Impact Assessment</p>
                         <div className="grid grid-cols-4 gap-2">
                           {[
-                            { label: "Schedule", value: scores.schedule || 1, desc: ["No delay", "Up to 1 week", "1-4 weeks delay", "Over 1 month"] },
-                            { label: "Cost", value: scores.cost || 1, desc: ["No cost impact", "Under 5% budget", "5-15% budget", "Over 15%"] },
-                            { label: "Scope", value: scores.scope || 1, desc: ["No scope change", "Minor refinement", "Deliverable affected", "Major change"] },
-                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["Internal only", "Team affected", "Client aware", "Board escalation"] },
+                            { label: "Schedule", value: scores.schedule || 1, desc: ["No delay expected", "Minor delay (up to 1 week)", "Significant delay (1-4 weeks)", "Major delay (over 1 month)"] },
+                            { label: "Cost", value: scores.cost || 1, desc: ["No cost impact", "Minor cost (under 5% of budget)", "Moderate cost (5-15% of budget)", "Major cost (over 15% of budget)"] },
+                            { label: "Scope", value: scores.scope || 1, desc: ["No scope change", "Minor scope refinement", "Deliverable change required", "Major scope change"] },
+                            { label: "Stakeholder", value: scores.stakeholder || 1, desc: ["No external impact", "Project team needs to be informed", "Client/sponsor needs to be informed", "Board/programme level escalation needed"] },
                           ].map(dim => {
                             const color = dim.value <= 1 ? "text-emerald-500" : dim.value <= 2 ? "text-blue-500" : dim.value <= 3 ? "text-amber-500" : "text-red-500";
                             const bg = dim.value <= 1 ? "bg-emerald-500/10" : dim.value <= 2 ? "bg-blue-500/10" : dim.value <= 3 ? "bg-amber-500/10" : "bg-red-500/10";
@@ -419,10 +419,10 @@ export default function ApprovalsPage() {
                       <div className="px-4 py-3 rounded-lg border border-red-500/20 bg-red-500/5 text-xs text-muted-foreground leading-relaxed">
                         {item.type === "PHASE_GATE" ? (
                           <ul className="space-y-1 list-disc list-inside">
-                            <li>The project will remain in the current phase</li>
-                            <li>Please provide feedback on what needs to change in the artefacts</li>
-                            <li>The agent will revise the documents and resubmit for approval</li>
-                            <li>This is iteration {item.iteration || 1} of max 3 — after 3 rejections the agent will escalate</li>
+                            <li>The project will remain in the current phase — no advancement</li>
+                            <li>Please use "Request Changes" with specific feedback on what needs fixing</li>
+                            <li>The agent will revise the affected artefacts based on your feedback and resubmit</li>
+                            <li>This is iteration {item.iteration || 1} of 3 — if rejected 3 times, the agent will notify the organisation owner and pause autonomous actions until the issue is resolved manually</li>
                           </ul>
                         ) : item.type === "CHANGE_REQUEST" ? (
                           <ul className="space-y-1 list-disc list-inside">
