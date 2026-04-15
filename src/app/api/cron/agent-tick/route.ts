@@ -63,14 +63,16 @@ export async function GET(req: NextRequest) {
     } catch (e) { console.error("[cron] Report schedule runner failed:", e); }
 
     // 0c. Self-heal: if any active deployment has a currentPhase but zero artefacts,
-    //     generate them now — directly on Vercel, regardless of VPS availability.
-    //     This recovers from VPS stub lifecycle_init and any other init failures.
+    //     generate them now — UNLESS the deployment is still in the onboarding flow
+    //     (researching / awaiting_clarification). Those statuses mean the user hasn't
+    //     completed Research → Review → Clarification yet.
     try {
       const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
       const uninitialised = await db.agentDeployment.findMany({
         where: {
           isActive: true,
           currentPhase: { not: null },
+          phaseStatus: { notIn: ["researching", "awaiting_clarification"] },
           agent: { status: "ACTIVE" },
         },
         select: { id: true, agentId: true, projectId: true, currentPhase: true },

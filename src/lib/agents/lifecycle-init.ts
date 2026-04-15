@@ -72,9 +72,19 @@ export async function generatePhaseArtefacts(
 
   if (toGenerate.length === 0) return { generated: 0, skipped, phase: targetPhaseName };
 
-  // ── Clarification session guard ──────────────────────────────────────────
-  // If a clarification session is active, defer generation — the session-complete
-  // handler will trigger generation once the user has answered all questions.
+  // ── Hard gate: block generation if onboarding flow is incomplete ──────────
+  // phaseStatus must NOT be "researching" or "awaiting_clarification".
+  // These statuses mean the user hasn't completed the Research → Review →
+  // Clarification flow yet. Only the clarification-complete handler or
+  // the research-approve handler can unlock generation.
+  if (deployment) {
+    const blockingStatuses = ["researching", "awaiting_clarification"];
+    if (deployment.phaseStatus && blockingStatuses.includes(deployment.phaseStatus)) {
+      return { generated: 0, skipped, phase: targetPhaseName };
+    }
+  }
+
+  // Also check for active clarification session
   try {
     const { getActiveSession } = await import("@/lib/agents/clarification-session");
     const activeSession = await getActiveSession(agentId, projectId);
@@ -253,14 +263,18 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   }
 
   // ── Step 2: Set current phase ──
+  // phaseStatus = "researching" blocks ALL generation paths (cron, self-heal,
+  // generatePhaseArtefacts) until the user completes the onboarding flow:
+  // Research → Review → Clarification → Generate.
+  // nextCycleAt is set far in the future so the cron doesn't interfere.
   const firstPhase = methodology.phases[0];
   await db.agentDeployment.update({
     where: { id: deploymentId },
     data: {
       currentPhase: firstPhase.name,
-      phaseStatus: "active",
+      phaseStatus: "researching",
       lastCycleAt: new Date(),
-      nextCycleAt: new Date(Date.now() + 10 * 60_000),
+      nextCycleAt: new Date(Date.now() + 24 * 60 * 60_000), // 24h — no cron interference
     },
   });
 
@@ -294,42 +308,79 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     if (artefactNames.length > 0) {
       // ── 3a: Feasibility research via Perplexity AI ──
       let researchSummary = "";
+      let researchFacts = 0;
       try {
         const { runFeasibilityResearch } = await import("@/lib/agents/feasibility-research");
         const research = await runFeasibilityResearch(agentId, project.id, agent.orgId);
         researchSummary = research.summary;
+        researchFacts = research.factsDiscovered;
+      } catch (e) {
+        console.error("[runLifecycleInit] feasibility research failed:", e);
+        await db.agentActivity.create({
+          data: { agentId, type: "chat", summary: "Feasibility research unavailable — proceeding with clarification questions" },
+        }).catch(() => {});
+      }
+
+      // ── 3b: Present research findings to user ──
+      // Post the research as a detailed message the user can review.
+      // Also post the KB items so the user sees what the agent "knows".
+      if (researchFacts > 0) {
+        // Fetch the stored research KB items to show the user
+        const researchItems = await db.knowledgeBaseItem.findMany({
+          where: { agentId, projectId: project.id, tags: { has: "research" } },
+          orderBy: { createdAt: "desc" },
+          take: 30,
+          select: { title: true, content: true },
+        });
+
+        const factsList = researchItems
+          .map(item => `- **${item.title}**: ${item.content.replace(/^\[Research.*?\]\s*/i, "").slice(0, 200)}`)
+          .join("\n");
+
         await db.chatMessage.create({
           data: {
             agentId,
             role: "agent",
-            content: `I've completed my initial research on your project. I found **${research.factsDiscovered} relevant facts** that will help me create accurate project documents. I have a few questions before I begin — your answers will make the artefacts much more specific to your situation.`,
+            content: [
+              `## Research Complete`,
+              ``,
+              `I've researched your project **"${project.name}"** and gathered **${researchFacts} key facts**. Please review what I found — this will inform the documents I generate for you.`,
+              ``,
+              `### What I discovered:`,
+              factsList,
+              ``,
+              `> Review the above and let me know if anything needs correcting. I'll now ask you some specific questions to fill in the gaps before generating your project documents.`,
+            ].join("\n"),
           },
-        }).catch(() => {});
-      } catch (e) {
-        console.error("[runLifecycleInit] feasibility research failed:", e);
-        await db.agentActivity.create({
-          data: { agentId, type: "chat", summary: "Feasibility research skipped (API unavailable) — proceeding with clarification questions" },
         }).catch(() => {});
       }
 
-      // ── 3b: Start clarification session (informed by research) ──
-      // Artefact generation is deferred until the session completes (the session-complete
-      // handler in clarification-session.ts auto-generates artefacts).
+      // ── 3c: Update status to awaiting_clarification ──
+      await db.agentDeployment.update({
+        where: { id: deploymentId },
+        data: { phaseStatus: "awaiting_clarification" },
+      });
+
+      // ── 3d: Start clarification session (informed by research) ──
       let sessionStarted = false;
       try {
         const { startClarificationSession } = await import("@/lib/agents/clarification-session");
         sessionStarted = await startClarificationSession(agentId, project.id, agent.orgId, artefactNames, researchSummary);
         if (sessionStarted) {
           await db.agentActivity.create({
-            data: { agentId, type: "chat", summary: `Clarification questions posted — artefacts will be generated once you've answered` },
+            data: { agentId, type: "chat", summary: `Research complete (${researchFacts} facts). Clarification questions posted — artefacts will generate after you answer.` },
           }).catch(() => {});
         }
       } catch (e) {
         console.error("[runLifecycleInit] clarification session failed:", e);
       }
 
-      // ── 3c: If clarification didn't start (no questions needed or failed), generate now ──
+      // ── 3e: If clarification didn't start (no questions needed or failed), unlock and generate now ──
       if (!sessionStarted) {
+      await db.agentDeployment.update({
+        where: { id: deploymentId },
+        data: { phaseStatus: "active", nextCycleAt: new Date(Date.now() + 10 * 60_000) },
+      });
       const { getProjectKnowledgeContext } = await import("@/lib/agents/artefact-learning");
       const knowledgeContext = await getProjectKnowledgeContext(agentId, project.id, agent.orgId);
       // Resolve the first phase row ID so artefacts are correctly linked to the Phase record.

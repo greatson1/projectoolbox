@@ -510,9 +510,18 @@ export async function answerQuestionInSession(
       try {
         const deployment = await db.agentDeployment.findFirst({
           where: { agentId, isActive: true },
-          select: { projectId: true, currentPhase: true },
+          select: { id: true, projectId: true, currentPhase: true },
         });
         if (deployment?.projectId) {
+          // Unlock generation — set phaseStatus from "awaiting_clarification" to "active"
+          await db.agentDeployment.update({
+            where: { id: deployment.id },
+            data: {
+              phaseStatus: "active",
+              nextCycleAt: new Date(Date.now() + 10 * 60_000), // Resume normal cycle
+            },
+          });
+
           // Delete existing DRAFT artefacts for this phase so they get regenerated
           const targetNames = session.artefactNames.map(n => n.toLowerCase());
           const drafts = await db.agentArtefact.findMany({
