@@ -411,6 +411,65 @@ export async function checkGateCriteria(
 }
 
 /**
+ * Build a human-readable executive summary for an action proposal.
+ * Answers "What will the agent actually do?" in plain language.
+ */
+function buildExecutiveSummary(action: PlaybookAction, methodology: string, phaseName: string | null): string {
+  const phase = phaseName || "initial";
+  switch (action.type) {
+    case "DOCUMENT_GENERATION": {
+      // Extract the document names from the description (everything before any colon)
+      const docPart = action.description.split(":")[0].replace(/^Generate |^Produce |^Create |^Draft /i, "").trim();
+      return `The agent will generate the following document(s) for the ${phase} phase:\n\n• ${docPart}\n\nOnce generated, the document(s) will appear in your Documents tab as DRAFT. You can review, edit, and approve them before they are used to drive further project decisions.`;
+    }
+    case "RISK_RESPONSE":
+      return `The agent will perform a risk assessment for the ${phase} phase and create or update risk register entries. It will identify threats, assess probability and impact, and propose mitigation strategies based on the project context and sector benchmarks.`;
+    case "TASK_ASSIGNMENT":
+      return `The agent will create or update tasks in the ${phase} phase, assigning priorities and owners based on the project plan and available team resources. New tasks will appear in the Tasks tab awaiting your review.`;
+    case "STAKEHOLDER_COMMUNICATION":
+      return `The agent will draft a stakeholder communication relevant to the ${phase} phase. The draft will be presented for your review before any message is sent — no communication goes out without your explicit approval.`;
+    case "BUDGET_ACTION":
+      return `The agent is proposing a budget-related action for the ${phase} phase: ${action.description.split(":")[0]}. No financial commitments are made without your explicit sign-off.`;
+    case "PHASE_ADVANCEMENT":
+      return `The agent has determined that all gate criteria for the ${phase} phase have been met and is requesting approval to advance the project to the next phase. Approving this will mark ${phase} as complete and activate the next phase.`;
+    default:
+      return `The agent is proposing the following action as part of the ${phase} phase (${methodology} methodology):\n\n${action.description}`;
+  }
+}
+
+/**
+ * Build a specific business rationale for an action — WHY this action is needed now.
+ */
+function buildRationale(action: PlaybookAction, methodology: string, phaseName: string | null, trigger: string): string {
+  const phase = phaseName || "initial";
+  const triggerLabel = trigger === "on_entry" ? `entry into the ${phase} phase`
+    : trigger === "on_gate_ready" ? `completion of the ${phase} gate criteria`
+    : trigger === "daily" ? "the daily autonomous cycle"
+    : "the weekly project review";
+
+  const riskNote = action.riskLevel === "LOW"
+    ? "This is a low-risk action that is standard practice at this stage."
+    : action.riskLevel === "MEDIUM"
+    ? "This action has moderate complexity — human review is required before proceeding."
+    : "This action carries elevated risk and requires explicit human approval.";
+
+  switch (action.type) {
+    case "DOCUMENT_GENERATION":
+      return `Triggered by: ${triggerLabel}.\n\n${methodology} methodology requires this document at the ${phase} phase. Without it, the project lacks a formal record of decisions and deliverables for this stage, which blocks gate progression and leaves the team without a shared reference point.\n\n${riskNote}`;
+    case "RISK_RESPONSE":
+      return `Triggered by: ${triggerLabel}.\n\nProactive risk identification at the ${phase} phase is a core ${methodology} discipline. Early identification of threats allows mitigation strategies to be put in place before they impact schedule, cost, or quality. Unlogged risks cannot be tracked or escalated.\n\n${riskNote}`;
+    case "TASK_ASSIGNMENT":
+      return `Triggered by: ${triggerLabel}.\n\nThe ${phase} phase requires a structured task breakdown to make work visible and assignable. Without tasks, the team has no actionable to-do list and project progress cannot be measured or reported.\n\n${riskNote}`;
+    case "STAKEHOLDER_COMMUNICATION":
+      return `Triggered by: ${triggerLabel}.\n\nRegular stakeholder communication at the ${phase} phase maintains trust and ensures decision-makers have the information they need. Missed communications increase the risk of scope creep, misaligned expectations, and delayed approvals.\n\n${riskNote}`;
+    case "BUDGET_ACTION":
+      return `Triggered by: ${triggerLabel}.\n\nBudget management at the ${phase} phase ensures financial health is tracked from the outset. Early budget actions establish baselines and flag variances before they compound.\n\n${riskNote}`;
+    default:
+      return `Triggered by: ${triggerLabel}.\n\n${action.description} is a standard ${methodology} action for the ${phase} phase.\n\n${riskNote}`;
+  }
+}
+
+/**
  * Generate action proposals from the playbook for the current phase and trigger.
  * These proposals feed into the standard classify → execute pipeline.
  */
@@ -425,7 +484,8 @@ export function generatePlaybookProposals(
   return actions.map(action => ({
     type: action.type as any,
     description: action.description,
-    reasoning: `Methodology playbook (${methodology}): ${currentPhaseName || "Initial"} phase, ${trigger} trigger. This action is part of the standard ${methodology} lifecycle execution.`,
+    summary: buildExecutiveSummary(action, methodology, currentPhaseName),
+    reasoning: buildRationale(action, methodology, currentPhaseName, trigger),
     confidence: 0.9,
     scheduleImpact: 1,
     costImpact: 1,

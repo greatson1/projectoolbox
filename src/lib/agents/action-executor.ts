@@ -230,13 +230,16 @@ async function routeToApproval(
   const expiresAt = new Date(Date.now() + timeoutHours * 60 * 60 * 1000);
 
   // Create the approval with enriched data
+  // description = Executive Summary (WHAT the agent will do — shown to human first)
+  // reasoningChain = Business Rationale (WHY this action is needed now)
+  const executiveSummary = proposal.summary || proposal.description;
   const approval = await db.approval.create({
     data: {
       projectId: context.projectId,
       requestedById: context.agentId,
       type: classification.approvalType as any,
       title: proposal.description,
-      description: proposal.reasoning,
+      description: executiveSummary,
       impact: { creditCost, riskScore: classification.riskScore },
       status: "PENDING",
       urgency: classification.urgency,

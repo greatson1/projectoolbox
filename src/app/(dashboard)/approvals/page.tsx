@@ -403,12 +403,14 @@ export default function ApprovalsPage() {
                         <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs mb-1">Agent recommends: Approve</p>
                         <p className="text-xs text-muted-foreground">
                           {item.type === "PHASE_GATE"
-                            ? "All phase artefacts have been reviewed and approved. The agent has completed all required deliverables for this phase and is ready to advance."
+                            ? `All gate criteria for this phase have been met. Approving advances the project to the next phase. Use "Request Changes" if any artefacts need revision first.`
                             : item.type === "CHANGE_REQUEST"
-                            ? "The proposed changes are based on new information and will improve project accuracy. The impact is within acceptable thresholds."
+                            ? `The proposed change has been assessed as ${riskTier.toLowerCase()} risk (score ${riskScore}/16). Approving applies the change to the project baseline. Rejecting leaves the baseline unchanged.`
                             : item.type === "RISK_RESPONSE"
-                            ? "The identified risk requires a decision on response strategy. The agent has provided recommended approaches above."
-                            : "This action is within the project's governance framework and aligns with the approved methodology."}
+                            ? `A risk has been identified that requires a response decision. Approving instructs the agent to implement the recommended mitigation. The risk will be logged to the register regardless.`
+                            : item.type === "BUDGET"
+                            ? `This budget action has been assessed as ${riskTier.toLowerCase()} risk. Approving authorises the agent to proceed. No financial commitment is made without this approval.`
+                            : `Approving allows the agent to proceed with: "${item.title}". The output will be created as a DRAFT for your review — nothing is finalised without a second approval from you. If the result isn't right, use "Request Changes" with specific feedback.`}
                         </p>
                       </div>
                     </div>

@@ -6,10 +6,10 @@
  * must route to the HITL approval queue.
  *
  * Risk Score = Schedule + Cost + Scope + Stakeholder (range 4–16)
- *   LOW:      4–6   → auto-execute at L3+
- *   MEDIUM:   7–9   → auto-execute at L4+
- *   HIGH:    10–12  → auto-execute at L5 only
- *   CRITICAL: 13–16 → ALWAYS requires human approval
+ *   LOW:      4–8   → auto-execute at L2+
+ *   MEDIUM:   9–12  → auto-execute at L3
+ *   HIGH:    13–14  → auto-execute at L3
+ *   CRITICAL: 15–16 → ALWAYS requires human approval
  */
 
 // ─── Types ───
@@ -20,6 +20,8 @@ export interface ActionProposal {
   type: DecisionType;
   description: string;
   reasoning: string;
+  /** Executive summary shown to the human — WHAT the agent will do, in plain language. */
+  summary?: string;
   confidence: number; // 0-1
 
   // Impact dimensions (1–4 each)
@@ -117,18 +119,12 @@ function getRiskTier(score: number): RiskTier {
 // Maps autonomy level → maximum risk tier that can be auto-executed
 
 const AUTO_EXECUTE_THRESHOLDS: Record<number, { maxTier: RiskTier; allowedTypes?: DecisionType[] }> = {
-  // L1-L2: DOCUMENT_GENERATION requires approval — the agent must research,
-  // present assumptions, and get user sign-off before generating artefacts.
-  // L3+: docs auto-execute (user opted into autonomy), but still go to DRAFT status.
+  // 3-tier autonomy model: L1 Advisor, L2 Co-pilot, L3 Autonomous
   1: { maxTier: "LOW", allowedTypes: [] }, // L1: everything requires approval
   2: { maxTier: "LOW", allowedTypes: [    // L2: basic task/risk management only
     "TASK_ASSIGNMENT", "RISK_RESPONSE", "RESOURCE_ALLOCATION",
   ]},
-  3: { maxTier: "MEDIUM", allowedTypes: [ // L3: + schedule, comms, budget, docs
-    "TASK_ASSIGNMENT", "RISK_RESPONSE", "SCHEDULE_CHANGE", "RESOURCE_ALLOCATION",
-    "COMMUNICATION", "DOCUMENT_GENERATION", "BUDGET_CHANGE",
-  ]},
-  4: { maxTier: "HIGH", allowedTypes: [   // L4: + scope, escalation
+  3: { maxTier: "HIGH", allowedTypes: [   // L3: full autonomy within governance bounds
     "TASK_ASSIGNMENT", "RISK_RESPONSE", "SCHEDULE_CHANGE", "RESOURCE_ALLOCATION",
     "COMMUNICATION", "DOCUMENT_GENERATION", "BUDGET_CHANGE", "SCOPE_CHANGE", "ESCALATION",
   ]},
@@ -265,8 +261,8 @@ export const PLAN_AUTONOMY_LIMITS: Record<string, { maxLevel: number; maxAgents:
   FREE: { maxLevel: 1, maxAgents: 1 },
   STARTER: { maxLevel: 2, maxAgents: 3 },
   PROFESSIONAL: { maxLevel: 3, maxAgents: 10 },
-  BUSINESS: { maxLevel: 4, maxAgents: 25 },
-  ENTERPRISE: { maxLevel: 4, maxAgents: 999 },
+  BUSINESS: { maxLevel: 3, maxAgents: 25 },
+  ENTERPRISE: { maxLevel: 3, maxAgents: 999 },
 };
 
 /**
