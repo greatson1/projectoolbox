@@ -839,6 +839,19 @@ These are handled by the platform automatically. Just write normal text.
       },
     },
     {
+      name: "create_artefact",
+      description: "Create a new project document/artefact. Use when the user asks you to write ANY document — reports, briefs, comparisons, minutes, plans, or custom documents not in the standard methodology. The document is saved as DRAFT for user review, editing, and export as Word/PDF/Excel.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          name: { type: "string", description: "Document name (e.g., 'Vendor Comparison Report', 'Site Survey Brief')" },
+          content: { type: "string", description: "Full document content in Markdown. Be comprehensive — headings, tables, analysis, recommendations." },
+          format: { type: "string", enum: ["markdown", "csv"], description: "Use 'markdown' for prose, 'csv' for spreadsheets" },
+        },
+        required: ["name", "content"],
+      },
+    },
+    {
       name: "record_assumption",
       description: "Record an assumption you are making. Use EVERY TIME you generate content or make a recommendation that is not backed by confirmed user input. This creates a trackable assumption that the user can later confirm or change.",
       input_schema: {
@@ -1321,6 +1334,40 @@ These are handled by the platform automatically. Just write normal text.
                   phase: deployment?.currentPhase,
                   budget: project?.budget,
                   generatedAt: new Date().toISOString(),
+                }) });
+              } catch (err: any) {
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else if (toolBlock.name === "create_artefact") {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: "\n\n*Creating document…*\n\n" })}\n\n`));
+              fullContent += "\n\n*Creating document…*\n\n";
+              try {
+                const depForArt = await db.agentDeployment.findFirst({ where: { agentId, isActive: true }, select: { projectId: true, currentPhase: true } });
+                const artName = toolBlock.input.name || "Custom Document";
+                const artContent = toolBlock.input.content || "";
+                const artFormat = toolBlock.input.format || "markdown";
+
+                const artefact = await db.agentArtefact.create({
+                  data: {
+                    agentId,
+                    projectId: depForArt?.projectId || "",
+                    name: artName,
+                    content: artContent,
+                    format: artFormat,
+                    status: "DRAFT",
+                    version: 1,
+                    phaseId: depForArt?.currentPhase || null,
+                  },
+                });
+
+                await db.agentActivity.create({
+                  data: { agentId, type: "document", summary: `Created custom artefact: "${artName}" (${artContent.length} chars)` },
+                }).catch(() => {});
+
+                toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({
+                  success: true, artefactId: artefact.id, name: artName, format: artFormat,
+                  message: `Document "${artName}" created as DRAFT. User can review at /agents/${agentId}?tab=artefacts`,
                 }) });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
