@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DocumentEditor } from "@/components/documents/DocumentEditor";
+import { PMProgressTracker } from "@/components/agents/PMProgressTracker";
+import { usePMTasks } from "@/hooks/use-api";
 import { SpreadsheetViewer } from "@/components/documents/SpreadsheetViewer";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 import { marked } from "marked";
@@ -67,11 +69,11 @@ const METHOD_LABEL: Record<string, string> = {
 };
 
 const INTEGRATIONS = [
-  { name: "Jira", status: "connected", icon: "🔗" },
-  { name: "Slack", status: "connected", icon: "💬" },
+  { name: "Jira", status: "disconnected", icon: "🔗" },
+  { name: "Slack", status: "disconnected", icon: "💬" },
   { name: "MS Teams", status: "disconnected", icon: "📺" },
-  { name: "Confluence", status: "connected", icon: "📝" },
-  { name: "GitHub", status: "connected", icon: "🐙" },
+  { name: "Confluence", status: "disconnected", icon: "📝" },
+  { name: "GitHub", status: "disconnected", icon: "🐙" },
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -142,6 +144,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const initialTab = searchParams.get("tab") || "overview";
   const { data: apiAgent, isLoading } = useAgent(agentId);
 
+  const projectId = apiAgent?.deployments?.[0]?.projectId || null;
+  const { data: pmTasks } = usePMTasks(projectId);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   // Initialise from real agent data once loaded (not hardcoded defaults)
@@ -748,6 +752,13 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               </div>
             </div>
           </Card>
+
+          {/* PM Progress Tracker — agent's overhead tasks as a checklist */}
+          {pmTasks && pmTasks.length > 0 && (
+            <Card className="p-4">
+              <PMProgressTracker tasks={pmTasks} agentColor={AGENT_RESOLVED.color} />
+            </Card>
+          )}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 items-start">
             {/* Recent activity queue */}

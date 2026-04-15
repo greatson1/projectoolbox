@@ -177,6 +177,18 @@ export function useProjectTasks(projectId: string | null) {
   });
 }
 
+/** PM overhead tasks only (scaffolded) — used by the agent progress tracker */
+export function usePMTasks(projectId: string | null) {
+  return useQuery({
+    queryKey: ["pm-tasks", projectId],
+    queryFn: () => api<any[]>(`/api/projects/${projectId}/tasks?include=all`).then(
+      tasks => (tasks || []).filter((t: any) => t.description?.includes("[scaffolded]"))
+    ),
+    enabled: !!projectId,
+    refetchInterval: 60000,
+  });
+}
+
 export function useProjectRisks(projectId: string | null) {
   return useQuery({
     queryKey: ["risks", projectId],

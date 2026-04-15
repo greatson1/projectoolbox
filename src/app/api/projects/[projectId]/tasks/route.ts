@@ -10,8 +10,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { projectId } = await params;
+  const { searchParams } = new URL(req.url);
+  const includeAll = searchParams.get("include") === "all";
+
   const tasks = await db.task.findMany({
-    where: { projectId },
+    where: {
+      projectId,
+      // By default, exclude scaffolded PM overhead tasks from delivery views.
+      // Pass ?include=all to get everything (used by PM progress tracker).
+      ...(!includeAll ? {
+        NOT: { description: { contains: "[scaffolded]" } },
+      } : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
 
