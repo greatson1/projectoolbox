@@ -22,7 +22,7 @@ export function useDashboard() {
   return useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<any>("/api/dashboard"),
-    refetchInterval: 60000,
+    refetchInterval: 120000, // 2 min — main overview needs reasonable freshness
   });
 }
 
@@ -32,7 +32,7 @@ export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
     queryFn: () => api<any[]>("/api/projects"),
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -50,7 +50,7 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api<any>("/api/agents"),
-    refetchInterval: 60000,
+    refetchInterval: 60000, // 1 min — fleet status needs freshness
   });
 }
 
@@ -59,7 +59,7 @@ export function useAgent(id: string | null) {
     queryKey: ["agent", id],
     queryFn: () => api<any>(`/api/agents/${id}`),
     enabled: !!id,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -68,7 +68,7 @@ export function useAgentMetrics(id: string | null) {
     queryKey: ["agent-metrics", id],
     queryFn: () => api<any>(`/api/agents/${id}/metrics`),
     enabled: !!id,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
     staleTime: 30000,
   });
 }
@@ -99,7 +99,7 @@ export function useApprovals(status = "PENDING") {
   return useQuery({
     queryKey: ["approvals", status],
     queryFn: () => api<any[]>(`/api/approvals?status=${status}`),
-    refetchInterval: 60000, // Poll every 30s
+    refetchInterval: 120000, // 2 min — approval queue needs freshness
   });
 }
 
@@ -118,7 +118,7 @@ export function useNotifications() {
   return useQuery({
     queryKey: ["notifications"],
     queryFn: () => api<any[]>("/api/notifications"),
-    refetchInterval: 60000, // Poll every 15s
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -136,7 +136,7 @@ export function useCredits() {
   return useQuery({
     queryKey: ["credits"],
     queryFn: () => api<any>("/api/credits"),
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -144,7 +144,7 @@ export function useCreditUsage() {
   return useQuery({
     queryKey: ["credits", "usage"],
     queryFn: () => api<any>("/api/credits/usage"),
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -164,7 +164,7 @@ export function useProject(id: string | null) {
     queryKey: ["project", id],
     queryFn: () => api<any>(`/api/projects/${id}`),
     enabled: !!id,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -173,7 +173,7 @@ export function useProjectTasks(projectId: string | null) {
     queryKey: ["tasks", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/tasks`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -185,7 +185,7 @@ export function usePMTasks(projectId: string | null) {
       tasks => (tasks || []).filter((t: any) => t.description?.includes("[scaffolded]"))
     ),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -194,7 +194,7 @@ export function useProjectRisks(projectId: string | null) {
     queryKey: ["risks", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/risks`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -203,7 +203,7 @@ export function useProjectIssues(projectId: string | null) {
     queryKey: ["issues", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/issues`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -212,7 +212,7 @@ export function useProjectArtefacts(projectId: string | null) {
     queryKey: ["project-artefacts", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/artefacts`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -221,7 +221,7 @@ export function useProjectMetrics(projectId: string | null) {
     queryKey: ["project-metrics", projectId],
     queryFn: () => api<any>(`/api/projects/${projectId}/metrics`),
     enabled: !!projectId,
-    refetchInterval: 15000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -230,7 +230,7 @@ export function useProjectStakeholders(projectId: string | null) {
     queryKey: ["stakeholders", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/stakeholders`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -239,7 +239,7 @@ export function useProjectChangeRequests(projectId: string | null) {
     queryKey: ["change-requests", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/change-requests`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -248,7 +248,7 @@ export function useProjectResources(projectId: string | null) {
     queryKey: ["resources", projectId],
     queryFn: () => api<any>(`/api/projects/${projectId}/resources`),
     enabled: !!projectId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
@@ -412,7 +412,7 @@ export function useAgentInbox(agentId: string | null) {
     queryKey: ["agent-inbox", agentId],
     queryFn: () => api<any>(`/api/agents/${agentId}/inbox`),
     enabled: !!agentId,
-    refetchInterval: 60000,
+    // no polling — uses staleTime from QueryClient defaults
   });
 }
 
