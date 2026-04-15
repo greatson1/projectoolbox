@@ -74,8 +74,9 @@ const NAV: NavGroup[] = [
     title: "PLAN",
     projectScoped: true,
     items: [
-      { label: "Scope & WBS", href: "/scope",    icon: Target,   projectScoped: true },
-      { label: "Schedule",    href: "/schedule", icon: Calendar, projectScoped: true },
+      { label: "PM Tracker",  href: "/pm-tracker", icon: CheckSquare, projectScoped: true },
+      { label: "Scope & WBS", href: "/scope",      icon: Target,      projectScoped: true },
+      { label: "Schedule",    href: "/schedule",    icon: Calendar,    projectScoped: true },
     ],
   },
 

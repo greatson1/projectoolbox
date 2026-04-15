@@ -239,7 +239,12 @@ export async function scaffoldProjectTasks(
 
   let totalCreated = 0;
 
-  for (const phase of phases) {
+  // Only scaffold the FIRST phase (current active phase) — not all phases upfront.
+  // When a phase advances, scaffoldNextPhase() is called to create the next batch.
+  const currentPhase = phases.find(p => p.order === 0) || phases[0];
+  const phasesToScaffold = currentPhase ? [currentPhase] : [];
+
+  for (const phase of phasesToScaffold) {
     const phaseKey = phase.name.toLowerCase();
 
     // Build artefact tasks dynamically from methodology definition
@@ -429,6 +434,21 @@ export async function onPhaseAdvanced(
       },
       data: { progress: 100, status: "DONE" },
     });
+
+    // Scaffold the NEW phase's PM tasks (just-in-time, not upfront)
+    const phaseRow = await db.phase.findFirst({
+      where: { projectId, name: newPhase },
+      select: { id: true, name: true, order: true },
+    });
+    if (phaseRow) {
+      const project = await db.project.findUnique({
+        where: { id: projectId },
+        select: { startDate: true, endDate: true, methodology: true },
+      });
+      if (project) {
+        await scaffoldProjectTasks(agentId, projectId, [phaseRow], project);
+      }
+    }
 
     // Set new phase parent tasks to IN_PROGRESS
     await db.task.updateMany({
