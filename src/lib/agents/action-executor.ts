@@ -566,7 +566,7 @@ async function performMutation(
       });
       if (closeMatch) return { artefactId: closeMatch.id, action: "document_already_exists" };
 
-      // Generate actual content via Claude — same quality as lifecycle-init
+      // Generate actual content via Claude — enriched with KB research context
       const project = await db.project.findUnique({
         where: { id: context.projectId },
         select: { name: true, description: true, budget: true, methodology: true, category: true, startDate: true, endDate: true },
@@ -580,6 +580,21 @@ async function performMutation(
           const budget = (project.budget || 0).toLocaleString();
           const startDate = project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD";
           const endDate = project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD";
+
+          // Fetch KB facts so the document is grounded in researched information
+          let knowledgeSection = "";
+          try {
+            const kbItems = await db.knowledgeBaseItem.findMany({
+              where: { agentId: context.agentId, projectId: context.projectId, NOT: { title: { startsWith: "__" } } },
+              orderBy: [{ trustLevel: "desc" }, { updatedAt: "desc" }],
+              select: { title: true, content: true, trustLevel: true },
+              take: 20,
+            });
+            if (kbItems.length > 0) {
+              knowledgeSection = "\nKNOWLEDGE BASE (verified research — use these facts, do NOT invent alternatives):\n" +
+                kbItems.map(i => `- [${i.trustLevel}] ${i.title}: ${i.content.slice(0, 300)}`).join("\n") + "\n";
+            }
+          } catch { /* non-fatal — generate without KB */ }
 
           const res = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -604,7 +619,7 @@ PROJECT DETAILS
 - Methodology: ${project.methodology || "PRINCE2"}
 - Category: ${project.category || "general"}
 - Timeline: ${startDate} → ${endDate}
-
+${knowledgeSection}
 CONTEXT: ${proposal.reasoning}
 
 RULES:
@@ -614,6 +629,8 @@ RULES:
 4. British English throughout (colour, organisation, prioritise)
 5. End with an "Agent Progress Tracking Protocol" section
 6. No preamble — start the document content immediately
+7. ONLY use facts from the Knowledge Base and Project Details above — use [TBC] for anything not provided
+8. NEVER fabricate names, contacts, vendors, or specific details not in the data above
 
 Produce the full, complete document. Do not truncate or use placeholders.`,
               }],

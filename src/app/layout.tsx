@@ -20,10 +20,11 @@ export const metadata: Metadata = {
   description: "Deploy autonomous AI project managers that plan, track, and deliver. Built for PMOs that demand governance.",
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/pt-logo.png", type: "image/png", sizes: "512x512" },
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/pt-logo.png?v=2", type: "image/png", sizes: "512x512" },
     ],
-    apple: "/pt-logo.png",
+    apple: "/pt-logo.png?v=2",
+    shortcut: "/pt-logo.png?v=2",
   },
   metadataBase: new URL("https://www.projectoolbox.com"),
   alternates: { canonical: "/" },

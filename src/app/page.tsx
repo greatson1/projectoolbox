@@ -135,19 +135,19 @@ export default function LandingPage() {
             </p>
 
             <h1 className="text-5xl md:text-7xl font-extrabold leading-[1.05] mb-6">
-              Your Projects. Delivered with AI.{" "}
+              Your Projects.{" "}
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary via-purple-500 to-cyan-400">
-                You Stay in Control.
+                Delivered with AI.
               </span>
             </h1>
 
             <p className="text-lg text-muted-foreground leading-relaxed mb-4 max-w-[620px] mx-auto">
-              Projectoolbox deploys a sector-tailored AI project manager that plans, tracks, and delivers your projects —
-              while you stay in control of every decision that matters.
+              Projectoolbox deploys a sector-tailored AI project manager that plans, tracks, and delivers —
+              so you focus on the decisions that move things forward.
               This is the new SaaS: <em className="text-foreground not-italic font-medium">software that does the service.</em>
             </p>
             <p className="text-sm text-muted-foreground mb-8 max-w-[500px] mx-auto">
-              From the team behind the UK&apos;s leading <strong className="text-foreground">AI in Project Management</strong> training programme.
+              From the team behind the <strong className="text-foreground">AI-Enabled Project Manager (AIPM)</strong>.
             </p>
 
             <div className="flex items-center justify-center gap-4 flex-wrap">
@@ -167,54 +167,157 @@ export default function LandingPage() {
           </div>
 
           {/* Dashboard preview */}
-          <div className="mt-16 max-w-[900px] mx-auto rounded-2xl overflow-hidden border border-border shadow-2xl shadow-black/20 bg-card">
-            <div className="p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="flex gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-red-400" />
-                  <div className="w-3 h-3 rounded-full bg-amber-400" />
-                  <div className="w-3 h-3 rounded-full bg-green-400" />
-                </div>
-                <div className="flex-1 h-6 rounded-md mx-12 bg-muted" />
+          <div className="mt-16 max-w-[960px] mx-auto rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-black/40" style={{ background: "#0f1117" }}>
+            {/* Browser chrome */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10" style={{ background: "#0a0c10" }}>
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                <div className="w-3 h-3 rounded-full bg-green-500/80" />
               </div>
-              <div className="flex gap-3" style={{ height: 280 }}>
-                <div className="w-[180px] rounded-xl p-3 flex-shrink-0 space-y-2 bg-muted/50">
-                  {["Dashboard", "Agent Chat", "Approvals", "Schedule", "Agent Fleet"].map((item, i) => (
-                    <div key={item} className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium ${i === 0 ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}>
-                      <div className={`w-3 h-3 rounded ${i === 0 ? "bg-primary" : "bg-border"}`} />
-                      {item}
-                    </div>
-                  ))}
+              <div className="flex-1 mx-6 h-5 rounded-md text-[10px] flex items-center px-3 text-white/20" style={{ background: "#1a1d24" }}>
+                app.projectoolbox.com/dashboard
+              </div>
+            </div>
+
+            <div className="flex" style={{ height: 340 }}>
+              {/* Sidebar */}
+              <div className="flex-shrink-0 flex flex-col border-r border-white/10" style={{ width: 200, background: "#0a0c10" }}>
+                {/* Logo */}
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+                  <img src="/pt-logo.png" alt="Projectoolbox" className="w-6 h-6 object-contain" />
+                  <span className="text-[11px] font-bold text-white">Projectoolbox</span>
                 </div>
-                <div className="flex-1 space-y-3">
-                  <div className="rounded-xl p-3 flex items-center gap-3 bg-primary/5 border border-primary/20">
-                    <img src="/pt-logo.png" alt="Agent" className="w-10 h-10 object-contain" />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-semibold text-muted-foreground">Agent Alpha — PRINCE2 · Defence</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                        <Badge variant="outline" className="text-[8px] bg-green-500/10 text-green-500 border-green-500/20">Active</Badge>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">Generating Risk Register v3 for Project Atlas — 2 items need your approval</p>
+                {/* Nav */}
+                <div className="flex-1 overflow-hidden px-2 py-2 space-y-3">
+                  {/* top */}
+                  <div>
+                    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md" style={{ background: "rgba(99,102,241,0.15)" }}>
+                      <div className="w-3 h-3 rounded-sm" style={{ background: "#6366f1" }} />
+                      <span className="text-[10px] font-semibold text-indigo-400">Dashboard</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[{ l: "Projects", v: "8", c: "text-primary" }, { l: "Artefacts", v: "342", c: "text-green-500" }, { l: "Pending", v: "5", c: "text-amber-500" }, { l: "Credits", v: "847", c: "text-cyan-400" }].map(s => (
-                      <div key={s.l} className="rounded-lg p-2 bg-muted/50 border border-border/30">
-                        <p className="text-[8px] uppercase tracking-wider text-muted-foreground">{s.l}</p>
-                        <p className={`text-lg font-bold ${s.c}`}>{s.v}</p>
+                  {/* AI AGENTS */}
+                  <div>
+                    <p className="text-[8px] font-bold tracking-widest px-2 mb-1" style={{ color: "#ffffff30" }}>AI AGENTS</p>
+                    {[["Fleet Overview", "#6366f1"], ["Chat with Agent", "#8b5cf6"], ["Approvals", "#f59e0b"]].map(([label, color]) => (
+                      <div key={label} className="flex items-center gap-2 px-2 py-1 rounded-md">
+                        <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color + "60" }} />
+                        <span className="text-[10px] font-medium" style={{ color: "#ffffff60" }}>{label}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="rounded-xl flex-1 flex items-end gap-1 px-4 pb-3 pt-2 bg-muted/50" style={{ minHeight: 100 }}>
-                    {[35, 42, 38, 55, 48, 62, 58, 72, 65, 80, 74, 85].map((h, i) => (
-                      <div key={i} className="flex-1 rounded-t-sm transition-all" style={{ height: `${h}%`, background: i >= 10 ? "var(--chart-3)" : `hsl(var(--primary) / ${0.4 + i * 0.05})` }} />
+                  {/* WORKSPACE */}
+                  <div>
+                    <p className="text-[8px] font-bold tracking-widest px-2 mb-1" style={{ color: "#ffffff30" }}>WORKSPACE</p>
+                    {[["Portfolio", "#10b981"], ["Projects", "#3b82f6"], ["Meetings", "#ec4899"]].map(([label, color]) => (
+                      <div key={label} className="flex items-center gap-2 px-2 py-1 rounded-md">
+                        <div className="w-2.5 h-2.5 rounded-sm" style={{ background: color + "60" }} />
+                        <span className="text-[10px] font-medium" style={{ color: "#ffffff60" }}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Bottom credits */}
+                <div className="px-3 py-2 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px]" style={{ color: "#ffffff40" }}>Credits</span>
+                    <span className="text-[10px] font-bold text-cyan-400">847</span>
+                  </div>
+                  <div className="mt-1 h-1 rounded-full" style={{ background: "#ffffff15" }}>
+                    <div className="h-1 rounded-full" style={{ width: "68%", background: "linear-gradient(to right, #6366f1, #06b6d4)" }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Main content */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3 border-b border-white/10" style={{ background: "#0d0f16" }}>
+                  <div>
+                    <p className="text-[13px] font-bold text-white">Dashboard</p>
+                    <p className="text-[9px]" style={{ color: "#ffffff50" }}>Tuesday, 14 April 2026</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10" style={{ background: "#1a1d24" }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      <span className="text-[9px] text-green-400 font-medium">3 agents active</span>
+                    </div>
+                    <div className="w-6 h-6 rounded-full bg-indigo-500/30 flex items-center justify-center">
+                      <span className="text-[9px] text-indigo-400 font-bold">PM</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div className="grid grid-cols-4 gap-2 px-4 pt-3">
+                  {[
+                    { l: "Projects", v: "8", sub: "2 at risk", c: "#6366f1" },
+                    { l: "Pending Approvals", v: "5", sub: "action needed", c: "#f59e0b" },
+                    { l: "Artefacts", v: "342", sub: "this month", c: "#10b981" },
+                    { l: "Schedule Health", v: "87%", sub: "SPI 0.94", c: "#06b6d4" },
+                  ].map(s => (
+                    <div key={s.l} className="rounded-lg p-2.5 border border-white/10" style={{ background: "#1a1d24" }}>
+                      <p className="text-[8px] uppercase tracking-wider mb-1" style={{ color: "#ffffff50" }}>{s.l}</p>
+                      <p className="text-base font-bold" style={{ color: s.c }}>{s.v}</p>
+                      <p className="text-[8px]" style={{ color: "#ffffff30" }}>{s.sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Agent activity + project list */}
+                <div className="flex gap-3 px-4 pt-3 flex-1 overflow-hidden">
+                  {/* Agent card */}
+                  <div className="flex-1 rounded-xl p-3 border border-indigo-500/20 flex flex-col gap-2" style={{ background: "rgba(99,102,241,0.06)" }}>
+                    <div className="flex items-center gap-2">
+                      <img src="/pt-logo.png" alt="Agent" className="w-7 h-7 object-contain" />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-white">Agent Alpha</span>
+                          <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">Active</span>
+                        </div>
+                        <p className="text-[8px]" style={{ color: "#ffffff50" }}>PRINCE2 · Defence</p>
+                      </div>
+                    </div>
+                    {[
+                      { text: "Risk Register v3 generated for Project Atlas", time: "2m ago", dot: "#10b981" },
+                      { text: "2 approvals waiting — Scope Change CR-041", time: "8m ago", dot: "#f59e0b" },
+                      { text: "Stakeholder report drafted — ready to send", time: "15m ago", dot: "#6366f1" },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0" style={{ background: item.dot }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[9px] text-white/70 leading-tight">{item.text}</p>
+                          <p className="text-[8px]" style={{ color: "#ffffff30" }}>{item.time}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Projects mini-table */}
+                  <div className="w-[230px] rounded-xl border border-white/10 flex flex-col overflow-hidden" style={{ background: "#1a1d24" }}>
+                    <div className="px-3 py-2 border-b border-white/10">
+                      <p className="text-[10px] font-bold text-white">Active Projects</p>
+                    </div>
+                    {[
+                      { name: "Project Atlas", phase: "Execution", status: "On Track", sc: "#10b981" },
+                      { name: "Pharma Suite", phase: "Planning", status: "At Risk", sc: "#f59e0b" },
+                      { name: "InfraX Build", phase: "Closure", status: "Delayed", sc: "#ef4444" },
+                      { name: "GovDigital", phase: "Initiation", status: "On Track", sc: "#10b981" },
+                    ].map((p) => (
+                      <div key={p.name} className="flex items-center justify-between px-3 py-1.5 border-b border-white/5">
+                        <div>
+                          <p className="text-[9px] font-semibold text-white/80">{p.name}</p>
+                          <p className="text-[8px]" style={{ color: "#ffffff30" }}>{p.phase}</p>
+                        </div>
+                        <span className="text-[8px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: p.sc + "20", color: p.sc }}>{p.status}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
-            <div className="h-16 bg-gradient-to-t from-background to-transparent" />
+            <div className="h-12 bg-gradient-to-t from-background to-transparent" />
           </div>
         </div>
       </section>

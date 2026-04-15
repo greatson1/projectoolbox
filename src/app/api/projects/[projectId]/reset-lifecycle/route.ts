@@ -93,19 +93,41 @@ export async function POST(
       });
     }
 
+    // ── Step 5: Set deployment to awaiting_clarification — defer generation until user approves ──
+    // Instead of auto-generating, the agent will present assumptions and wait for approval.
     await db.agentDeployment.update({
       where: { id: deployment.id },
       data: {
         currentPhase: firstPhase.name,
-        phaseStatus: "active",
+        phaseStatus: "awaiting_clarification",
         lastCycleAt: new Date(),
-        nextCycleAt: new Date(Date.now() + 10 * 60_000),
+        nextCycleAt: new Date(Date.now() + 24 * 60 * 60_000), // 24h — no cron interference
       },
     });
 
-    // ── Step 5: Generate artefacts (idempotent — skips any already created) ──
-    const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
-    const result = await generatePhaseArtefacts(deployment.agentId, projectId, firstPhase.name);
+    // Post a message telling the user to review and approve generation
+    const artefactNames = firstPhase.artefacts
+      .filter((a: any) => a.aiGeneratable)
+      .map((a: any) => a.name);
+
+    await db.chatMessage.create({
+      data: {
+        agentId: deployment.agentId,
+        role: "agent",
+        content: [
+          `## Lifecycle Reset Complete`,
+          ``,
+          `I've reset the project lifecycle${methodology ? ` and switched methodology to **${effectiveMethodology}**` : ""}.`,
+          ``,
+          `**Cleared:** ${deletedArtefacts.count} artefacts, ${deletedPhases.count} phases, ${deletedApprovals.count} approvals`,
+          ``,
+          `I'm ready to generate the following **${firstPhase.name}** phase artefacts:`,
+          artefactNames.map((n: string) => `- ${n}`).join("\n"),
+          ``,
+          `> Reply **"Go ahead"** or **"Generate"** when you're ready, or ask me any questions first.`,
+        ].join("\n"),
+      },
+    }).catch(() => {});
 
     return NextResponse.json({
       data: {
@@ -118,11 +140,8 @@ export async function POST(
           before: previousMethodology,
           after: methodology || previousMethodology,
         },
-        artefacts: {
-          generated: result.generated,
-          skipped: result.skipped,
-          phase: result.phase,
-        },
+        status: "awaiting_approval",
+        message: "Lifecycle reset complete. Review the chat and approve to generate artefacts.",
       },
     });
   } catch (e: any) {

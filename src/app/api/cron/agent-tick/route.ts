@@ -83,6 +83,15 @@ export async function GET(req: NextRequest) {
           where: { projectId: dep.projectId, agentId: dep.agentId },
         });
         if (artCount === 0) {
+          // Skip if an active clarification session exists — user hasn't finished the Q&A flow
+          try {
+            const { getActiveSession } = await import("@/lib/agents/clarification-session");
+            const hasActiveSession = await getActiveSession(dep.agentId, dep.projectId);
+            if (hasActiveSession) {
+              console.log(`[self-heal] skipping ${dep.agentId} — active clarification session in progress`);
+              continue;
+            }
+          } catch {}
           generatePhaseArtefacts(dep.agentId, dep.projectId, dep.currentPhase ?? undefined)
             .catch(e => console.error(`[self-heal] artefact generation failed for ${dep.agentId}:`, e));
         }

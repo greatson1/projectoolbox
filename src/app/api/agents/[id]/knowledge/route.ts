@@ -16,10 +16,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const type = searchParams.get("type");
   const search = searchParams.get("q");
 
+  // Resolve the agent's active project so we can include project-scoped items
+  const deployment = await db.agentDeployment.findFirst({
+    where: { agentId, isActive: true },
+    select: { projectId: true },
+  });
+  const projectId = deployment?.projectId;
+
   const items = await db.knowledgeBaseItem.findMany({
     where: {
       orgId,
-      ...(layer ? { layer } : { OR: [{ agentId }, { agentId: null, layer: "WORKSPACE" }] }),
+      ...(layer
+        ? { layer }
+        : {
+            OR: [
+              { agentId },
+              ...(projectId ? [{ projectId }] : []),
+              { layer: "WORKSPACE" },
+            ],
+          }),
       ...(type && { type }),
       ...(search && {
         OR: [
@@ -31,8 +46,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     orderBy: { createdAt: "desc" },
     take: 50,
     select: {
-      id: true, title: true, type: true, layer: true, trustLevel: true,
-      confidential: true, tags: true, createdAt: true, fileUrl: true,
+      id: true, title: true, content: true, type: true, layer: true, trustLevel: true,
+      confidential: true, tags: true, createdAt: true, updatedAt: true, fileUrl: true,
       sourceUrl: true, fileSize: true, mimeType: true,
     },
   });

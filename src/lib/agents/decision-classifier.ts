@@ -117,14 +117,14 @@ function getRiskTier(score: number): RiskTier {
 // Maps autonomy level → maximum risk tier that can be auto-executed
 
 const AUTO_EXECUTE_THRESHOLDS: Record<number, { maxTier: RiskTier; allowedTypes?: DecisionType[] }> = {
-  // DOCUMENT_GENERATION always auto-executes at every level — docs go to DRAFT,
-  // user reviews on the Artefacts tab. The governance is the approval of the
-  // document, not the decision to generate it.
-  1: { maxTier: "LOW", allowedTypes: ["DOCUMENT_GENERATION"] }, // L1: only docs auto-execute
-  2: { maxTier: "LOW", allowedTypes: [    // L2: docs + basic task/risk management
-    "TASK_ASSIGNMENT", "RISK_RESPONSE", "RESOURCE_ALLOCATION", "DOCUMENT_GENERATION",
+  // L1-L2: DOCUMENT_GENERATION requires approval — the agent must research,
+  // present assumptions, and get user sign-off before generating artefacts.
+  // L3+: docs auto-execute (user opted into autonomy), but still go to DRAFT status.
+  1: { maxTier: "LOW", allowedTypes: [] }, // L1: everything requires approval
+  2: { maxTier: "LOW", allowedTypes: [    // L2: basic task/risk management only
+    "TASK_ASSIGNMENT", "RISK_RESPONSE", "RESOURCE_ALLOCATION",
   ]},
-  3: { maxTier: "MEDIUM", allowedTypes: [ // L3: + schedule, comms, budget
+  3: { maxTier: "MEDIUM", allowedTypes: [ // L3: + schedule, comms, budget, docs
     "TASK_ASSIGNMENT", "RISK_RESPONSE", "SCHEDULE_CHANGE", "RESOURCE_ALLOCATION",
     "COMMUNICATION", "DOCUMENT_GENERATION", "BUDGET_CHANGE",
   ]},

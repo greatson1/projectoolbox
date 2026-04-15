@@ -27,7 +27,7 @@ import { METHODOLOGIES as METHODOLOGY_DEFS, type MethodologyId } from "@/lib/met
 
 const STEP_LABELS = ["Project Details", "Methodology", "Phase Gates", "Team", "Agent Config", "Review & Deploy"];
 type Priority = "high" | "medium" | "low";
-type Category = "construction" | "software" | "marketing" | "operations" | "research" | "events" | "travel" | "personal" | "other";
+type Category = "construction" | "software" | "marketing" | "operations" | "research" | "events" | "travel" | "training" | "personal" | "other";
 
 interface TeamMember { name: string; email: string; role: string; }
 interface Stakeholder { name: string; role: string; org: string; power: number; interest: number; }
@@ -82,6 +82,7 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
   { id: "research", label: "Research", icon: "🔬" },
   { id: "events", label: "Events", icon: "🎉" },
   { id: "travel", label: "Travel", icon: "✈️" },
+  { id: "training", label: "Training", icon: "🎓" },
   { id: "personal", label: "Personal", icon: "🧑" },
   { id: "other", label: "Other", icon: "📁" },
 ];
@@ -351,7 +352,7 @@ export default function ProjectWizardPage() {
     if (step === 0) return data.projectName.length > 2;
     if (step === 1) return !!data.methodology;
     if (step === 2) return data.phases.length > 0;
-    if (step === 3) return data.team.length > 0 || data.category === "personal" || data.category === "travel" || data.category === "other";
+    if (step === 3) return true; // Team is always optional — all project types can proceed without team members
     if (step === 4) return data.agentName.length > 0;
     return true;
   }, [step, data]);
@@ -435,8 +436,8 @@ export default function ProjectWizardPage() {
       setDeployed(true);
       setDeploying(false);
 
-      // Redirect to fleet page after a moment
-      setTimeout(() => router.push("/agents"), 2000);
+      // Redirect directly to the new agent so the user can start chatting immediately
+      setTimeout(() => router.push(`/agents/${createdAgentId}`), 2000);
     } catch (err: any) {
       console.error("Deploy failed:", err);
 

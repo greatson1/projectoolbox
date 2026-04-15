@@ -59,6 +59,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No active deployment" }, { status: 404 });
   }
 
+  // Block generation if the deployment is still in research/clarification flow
+  if (deployment.phaseStatus === "researching" || deployment.phaseStatus === "awaiting_clarification") {
+    return NextResponse.json({
+      error: "Generation blocked — deployment is in research/clarification mode. User must approve before artefacts can be generated.",
+      phaseStatus: deployment.phaseStatus,
+    }, { status: 409 });
+  }
+
   try {
     const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
     const result = await generatePhaseArtefacts(deployment.agentId, projectId, resolvedPhase);

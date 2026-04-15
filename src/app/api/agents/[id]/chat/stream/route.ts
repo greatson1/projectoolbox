@@ -65,6 +65,56 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // message flow through to the normal Claude stream so the agent can
   // acknowledge, provide context, and ask the next question naturally.
 
+  // ── Approval-to-generate guard ──────────────────────────────────────────────
+  // When the agent has presented assumptions and is awaiting user approval
+  // (phaseStatus = "awaiting_clarification" but NO active clarification session),
+  // detect approval phrases and trigger artefact generation.
+  if (!isClarificationAnswer) {
+    try {
+      const dep0 = await db.agentDeployment.findFirst({
+        where: { agentId, isActive: true },
+        select: { id: true, projectId: true, currentPhase: true, phaseStatus: true },
+      });
+      if (dep0?.projectId && dep0.phaseStatus === "awaiting_clarification") {
+        const { getActiveSession } = await import("@/lib/agents/clarification-session");
+        const activeSession = await getActiveSession(agentId, dep0.projectId);
+        // No active Q&A session → agent is waiting for user to approve generation
+        if (!activeSession) {
+          const msgLower = message.toLowerCase().trim();
+          // Strict approval phrases — require explicit intent to generate
+          const exactApprovals = ["go ahead", "generate", "yes", "approve", "do it", "ok", "okay", "sure", "confirmed", "let's go", "go for it"];
+          const phraseApprovals = ["start generating", "create the documents", "create the artefacts", "generate the documents", "generate the artefacts", "proceed with generation", "go ahead and generate"];
+          // Match: either the entire message is an exact approval, or it contains a multi-word phrase approval
+          const isExactMatch = exactApprovals.includes(msgLower.replace(/[.!,\s]+$/, ""));
+          const isPhraseMatch = phraseApprovals.some(p => msgLower.includes(p));
+          const isApproval = isExactMatch || isPhraseMatch;
+          if (isApproval) {
+            // Trigger generation in background
+            (async () => {
+              try {
+                await db.agentDeployment.update({
+                  where: { id: dep0.id },
+                  data: { phaseStatus: "active", nextCycleAt: new Date(Date.now() + 10 * 60_000) },
+                });
+                const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+                await generatePhaseArtefacts(agentId, dep0.projectId, dep0.currentPhase ?? undefined);
+                await db.chatMessage.create({
+                  data: {
+                    agentId,
+                    role: "agent",
+                    content: `Your documents have been generated! Head to the **Artefacts** tab to review them. Any fields marked [TBC] can be updated there once you have the details.\n\n[Review Artefacts](/agents/${agentId}?tab=artefacts)`,
+                  },
+                }).catch(() => {});
+              } catch (e) {
+                console.error("[chat/stream] approval-triggered generation failed:", e);
+              }
+            })();
+          }
+        }
+      }
+    } catch {}
+  }
+
   // Get agent config + full project context
   const agent = await db.agent.findUnique({
     where: { id: agentId },
@@ -448,7 +498,7 @@ ${(() => {
   if (latestMetrics?.cpi && latestMetrics.cpi < 0.85) flags.push(`📉 Cost performance poor (CPI ${latestMetrics.cpi?.toFixed(2)})`);
 
   if (recentArtefacts.length === 0 && phases.length > 0) {
-    return `🎯 ARTEFACTS NOT YET GENERATED. You are in the ${currentPhase?.name || "first"} phase. Your job is to generate the phase artefacts. If the user hasn't answered your clarification questions yet, ask them ONE question at a time. Once you have enough context, generate the artefacts. Tell the user exactly what you need from them to proceed.`;
+    return `🎯 ARTEFACTS NOT YET GENERATED. You are in the ${currentPhase?.name || "first"} phase. Follow the Research-First Workflow:\n1. Review what you know from the Knowledge Base and project data\n2. Present your key assumptions and findings to the user for review\n3. Ask clarification questions using <ASK> tags — ONE question at a time\n4. Once the user has reviewed your assumptions and answered your questions, ask for explicit approval: "Shall I go ahead and generate the documents?"\n5. ONLY generate artefacts after the user approves\nNEVER skip straight to generation. Tell the user exactly what you know, what you assume, and what you need from them.`;
   }
   if (draftArts.length > 0) {
     return `🎯 ${draftArts.length} ARTEFACT(S) AWAITING REVIEW: ${draftArts.map(a => a.name).join(", ")}. Direct the user to [Review Artefacts](/agents/${agentId}?tab=artefacts) to approve them. Summarise what each document contains and why it matters. Once all are approved, you can advance to the next phase.${flags.length > 0 ? `\n\nAlso flag these issues:\n${flags.map(f => `- ${f}`).join("\n")}` : ""}`;
