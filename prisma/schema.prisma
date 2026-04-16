@@ -146,6 +146,8 @@ model Organisation {
   meetings         Meeting[]
   calendarEvents   CalendarEvent[]
   agentInbox       AgentInboxMessage[]
+  integrations     Integration[]
+  automationRules  AutomationRule[]
   globalHitlPolicy Json?               // org-level HITL governance overrides
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
@@ -492,6 +494,48 @@ model WebhookEndpoint {
   createdAt DateTime     @default(now())
 
   @@index([orgId])
+}
+
+// ─── Integrations ───
+
+model Integration {
+  id           String   @id @default(cuid())
+  orgId        String
+  org          Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type         String   // slack, teams, jira, asana, monday, google_calendar, discord, email, webhook, n8n
+  name         String   // User-friendly label e.g. "Slack — #project-alpha"
+  config       Json     @default("{}") // channel IDs, webhook URLs, API keys (encrypted at rest)
+  status       String   @default("disconnected") // connected, disconnected, error
+  lastSyncAt   DateTime?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  automationRules AutomationRule[]
+
+  @@index([orgId])
+  @@index([orgId, type])
+}
+
+model AutomationRule {
+  id            String   @id @default(cuid())
+  orgId         String
+  org           Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name          String   // "Slack alert on high risk"
+  trigger       String   // risk_high, task_overdue, phase_gate_approved, budget_threshold, sprint_completed, artefact_generated, agent_needs_input, approval_pending
+  action        String   // send_slack, send_teams, send_email, create_jira_ticket, create_calendar_event, call_webhook, send_discord
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  config        Json     @default("{}") // channel, recipients, template, conditions
+  projectId     String?  // null = all projects
+  isActive      Boolean  @default(true)
+  lastFiredAt   DateTime?
+  fireCount     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, trigger])
 }
 
 // ─── Notifications ───

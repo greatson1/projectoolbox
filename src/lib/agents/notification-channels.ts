@@ -83,6 +83,10 @@ export async function dispatchNotification(
         console.error("[notification-channels] telegram failed:", e)
       );
     }
+    // 6. Automation Rules — fire matching rules via connected integrations / N8N
+    fireAutomationRules(orgId, payload).catch(e =>
+      console.error("[notification-channels] automation rules failed:", e)
+    );
   } catch (e) {
     console.error("[notification-channels] dispatch failed:", e);
   }
@@ -198,5 +202,175 @@ async function sendTelegram(botToken: string, chatId: string, payload: Notificat
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
+  });
+}
+
+// ─── Automation Rules Engine ────────────────────────────────────────────────
+
+/** Map notification urgency to automation rule triggers */
+const URGENCY_TO_TRIGGER: Record<string, string[]> = {
+  critical: ["risk_high", "budget_threshold"],
+  high: ["risk_high", "approval_pending", "agent_needs_input"],
+  medium: ["task_overdue", "approval_pending"],
+  low: ["artefact_generated", "sprint_completed", "phase_gate_approved"],
+};
+
+/**
+ * Fire all matching automation rules for this notification.
+ * Checks the payload title/urgency against rule triggers and dispatches
+ * via the connected integration (Slack, Teams, webhook, N8N, etc).
+ */
+async function fireAutomationRules(orgId: string, payload: NotificationPayload): Promise<void> {
+  // Determine which triggers this notification matches
+  const matchingTriggers = new Set<string>();
+  const urgency = payload.urgency || "low";
+  const titleLower = (payload.title || "").toLowerCase();
+
+  // Map urgency to triggers
+  for (const t of URGENCY_TO_TRIGGER[urgency] || []) matchingTriggers.add(t);
+
+  // Also detect triggers from title keywords
+  if (titleLower.includes("overdue")) matchingTriggers.add("task_overdue");
+  if (titleLower.includes("risk") && (urgency === "high" || urgency === "critical")) matchingTriggers.add("risk_high");
+  if (titleLower.includes("phase gate") || titleLower.includes("phase_gate")) matchingTriggers.add("phase_gate_approved");
+  if (titleLower.includes("budget")) matchingTriggers.add("budget_threshold");
+  if (titleLower.includes("sprint") && titleLower.includes("complet")) matchingTriggers.add("sprint_completed");
+  if (titleLower.includes("artefact") || titleLower.includes("generated")) matchingTriggers.add("artefact_generated");
+  if (titleLower.includes("approval") || titleLower.includes("approve")) matchingTriggers.add("approval_pending");
+  if (titleLower.includes("input") || titleLower.includes("clarif")) matchingTriggers.add("agent_needs_input");
+
+  if (matchingTriggers.size === 0) return;
+
+  // Fetch active rules that match any of these triggers
+  const rules = await db.automationRule.findMany({
+    where: {
+      orgId,
+      isActive: true,
+      trigger: { in: Array.from(matchingTriggers) },
+    },
+    include: { integration: true },
+  });
+
+  for (const rule of rules) {
+    try {
+      const config = (rule.config as any) || {};
+      const integration = rule.integration;
+      const integrationConfig = (integration?.config as any) || {};
+
+      // Build the event payload for external dispatch
+      const eventPayload = {
+        event: rule.trigger,
+        rule: rule.name,
+        agent: payload.agentName,
+        project: payload.projectName,
+        title: payload.title,
+        body: payload.body,
+        urgency: payload.urgency,
+        actionUrl: payload.actionUrl
+          ? `${process.env.NEXTAUTH_URL || "https://projectoolbox.com"}${payload.actionUrl}`
+          : undefined,
+        timestamp: new Date().toISOString(),
+      };
+
+      switch (rule.action) {
+        case "send_slack": {
+          const url = integrationConfig.webhookUrl || config.webhookUrl;
+          if (url) await sendSlack(url, payload);
+          break;
+        }
+        case "send_teams": {
+          const url = integrationConfig.webhookUrl || config.webhookUrl;
+          if (url) await sendTeamsWebhook(url, payload);
+          break;
+        }
+        case "send_discord": {
+          const url = integrationConfig.webhookUrl || config.webhookUrl;
+          if (url) await sendDiscordWebhook(url, payload);
+          break;
+        }
+        case "send_email": {
+          const recipients = (config.recipients || "").split(",").map((e: string) => e.trim()).filter(Boolean);
+          if (recipients.length > 0) await sendEmail(recipients, payload);
+          break;
+        }
+        case "call_webhook":
+        case "create_jira_ticket":
+        case "create_calendar_event": {
+          // For N8N and generic webhooks — POST the event payload
+          const url = integrationConfig.webhookUrl || config.url || config.webhookUrl;
+          if (url) {
+            await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(eventPayload),
+            });
+          }
+          break;
+        }
+      }
+
+      // Update fire count and last fired time
+      await db.automationRule.update({
+        where: { id: rule.id },
+        data: { fireCount: { increment: 1 }, lastFiredAt: new Date() },
+      }).catch(() => {});
+    } catch (e) {
+      console.error(`[automation-rule] ${rule.name} (${rule.trigger} → ${rule.action}) failed:`, e);
+    }
+  }
+}
+
+// ─── Teams via Webhook ──────────────────────────────────────────────────────
+
+async function sendTeamsWebhook(webhookUrl: string, payload: NotificationPayload): Promise<void> {
+  const urgencyColor = payload.urgency === "critical" ? "FF0000"
+    : payload.urgency === "high" ? "FF8C00"
+    : payload.urgency === "medium" ? "FFD700"
+    : "4F46E5";
+
+  await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      "@type": "MessageCard",
+      themeColor: urgencyColor,
+      summary: payload.title,
+      sections: [{
+        activityTitle: payload.title,
+        activitySubtitle: `${payload.agentName}${payload.projectName ? ` · ${payload.projectName}` : ""}`,
+        text: payload.body,
+      }],
+      potentialAction: payload.actionUrl ? [{
+        "@type": "OpenUri",
+        name: "View in Projectoolbox",
+        targets: [{ os: "default", uri: `${process.env.NEXTAUTH_URL || "https://projectoolbox.com"}${payload.actionUrl}` }],
+      }] : [],
+    }),
+  });
+}
+
+// ─── Discord via Webhook ────────────────────────────────────────────────────
+
+async function sendDiscordWebhook(webhookUrl: string, payload: NotificationPayload): Promise<void> {
+  const urgencyColor = payload.urgency === "critical" ? 0xFF0000
+    : payload.urgency === "high" ? 0xFF8C00
+    : payload.urgency === "medium" ? 0xFFD700
+    : 0x4F46E5;
+
+  await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [{
+        title: payload.title,
+        description: payload.body,
+        color: urgencyColor,
+        footer: { text: `${payload.agentName}${payload.projectName ? ` · ${payload.projectName}` : ""}` },
+        url: payload.actionUrl
+          ? `${process.env.NEXTAUTH_URL || "https://projectoolbox.com"}${payload.actionUrl}`
+          : undefined,
+        timestamp: new Date().toISOString(),
+      }],
+    }),
   });
 }
