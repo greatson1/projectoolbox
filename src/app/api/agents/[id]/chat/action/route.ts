@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         deploymentId: deployment.id,
         projectId: deployment.projectId,
         orgId,
-        autonomyLevel: 4, // User approval overrides autonomy — treat as max level
+        autonomyLevel: 3, // User approval overrides autonomy — treat as max level
       },
     );
 

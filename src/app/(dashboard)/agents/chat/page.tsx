@@ -761,9 +761,7 @@ function AgentChatPage() {
               }
               // Surface server-side errors (e.g. Anthropic API failure, credit exhaustion)
               if (data.error && !fullContent) {
-                const errMsg = data.error === "LLM stream failed"
-                  ? "I'm having trouble connecting to the AI right now. Please try again in a moment."
-                  : data.error;
+                const errMsg = data.error;
                 setMessagesByAgent(prev => ({
                   ...prev,
                   [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
@@ -1108,7 +1106,7 @@ function AgentChatPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                {[1, 2, 3, 4].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= activeAgent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />)}
+                {[1, 2, 3].map(i => <div key={i} className="w-2 h-2 rounded-full" style={{ background: i <= activeAgent.autonomyLevel ? "var(--primary)" : "var(--border)" }} />)}
                 <span className="text-[9px] ml-1 text-muted-foreground">Level {activeAgent.autonomyLevel}</span>
               </div>
             </CardContent>

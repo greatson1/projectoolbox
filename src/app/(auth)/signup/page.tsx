@@ -40,9 +40,9 @@ const GRADIENTS = [
 ];
 
 const AUTONOMY = [
-  { level: 2, name: "Guided", icon: "🛡️", tag: "You approve everything", desc: "Agent drafts, you execute. Perfect for getting comfortable." },
-  { level: 3, name: "Balanced", icon: "⚖️", tag: "Routine is automated", desc: "Handles status reports, risk scans auto. Escalates big decisions.", rec: true },
-  { level: 4, name: "Autonomous", icon: "🚀", tag: "AI runs the project", desc: "Most decisions independent. You get weekly summaries." },
+  { level: 1, name: "Advisor", icon: "🛡️", tag: "You approve everything", desc: "Agent suggests, you decide. Perfect for getting comfortable." },
+  { level: 2, name: "Co-pilot", icon: "⚖️", tag: "Routine is automated", desc: "Handles tasks, risks, and resources. Escalates big decisions.", rec: true },
+  { level: 3, name: "Autonomous", icon: "🚀", tag: "AI runs the project", desc: "Full autonomy within governance bounds. You handle exceptions." },
 ];
 
 function SignupPageInner() {
@@ -84,7 +84,7 @@ function SignupPageInner() {
   // Step 4 — Agent
   const [agentName, setAgentName] = useState(AGENT_NAMES[Math.floor(Math.random() * AGENT_NAMES.length)]);
   const [agentGradient, setAgentGradient] = useState(0);
-  const [autonomy, setAutonomy] = useState(3);
+  const [autonomy, setAutonomy] = useState(2);
 
   // Deploy state
   const [deploying, setDeploying] = useState(false);

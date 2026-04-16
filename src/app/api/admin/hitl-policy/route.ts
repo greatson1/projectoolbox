@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest) {
   // Validate policy structure
   const policy = {
     requireApprovalAbove: body.requireApprovalAbove || "MEDIUM",
-    maxAutonomyLevel: Math.min(4, Math.max(1, body.maxAutonomyLevel || 4)),
+    maxAutonomyLevel: Math.min(3, Math.max(1, body.maxAutonomyLevel || 3)),
     budgetChangeAlwaysHitl: body.budgetChangeAlwaysHitl ?? true,
     scopeChangeAlwaysHitl: body.scopeChangeAlwaysHitl ?? true,
     phaseGateAlwaysHitl: body.phaseGateAlwaysHitl ?? true,

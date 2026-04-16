@@ -268,7 +268,21 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       autonomyLevel: apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel,
       autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
       performanceScore: apiAgent.performanceScore || 0,
-      currentTask: apiAgent.activities?.[0]?.summary || "",
+      currentTask: (() => {
+        const dep = apiAgent.deployments?.find((d: any) => d.isActive) || apiAgent.deployments?.[0];
+        const phase = dep?.currentPhase;
+        const status = dep?.phaseStatus;
+        if (status === "researching") return `Researching project context for ${phase || "first"} phase`;
+        if (status === "awaiting_clarification") return `Awaiting your review — assumptions presented for ${phase || "current"} phase`;
+        // Use latest non-stale activity (within last 24h)
+        const latestActivity = apiAgent.activities?.[0];
+        if (latestActivity) {
+          const age = Date.now() - new Date(latestActivity.createdAt).getTime();
+          if (age < 24 * 60 * 60 * 1000) return latestActivity.summary;
+        }
+        if (phase) return `Monitoring ${phase} phase — watching tasks, risks, and deadlines`;
+        return "";
+      })(),
       deployedDate: apiAgent.createdAt ? new Date(apiAgent.createdAt).toISOString().split("T")[0] : "",
       uptimeDays: apiAgent.createdAt ? Math.floor((Date.now() - new Date(apiAgent.createdAt).getTime()) / 86400000) : 0,
     };
@@ -371,74 +385,65 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       </div>
 
       {/* ═══ 1. AGENT HEADER BANNER ═══ */}
-      <div
-        className="overflow-hidden rounded-[14px] border"
-        style={{ borderColor: AGENT_RESOLVED.color + "33" }}
-      >
-        {/* Gradient banner */}
-        <div className="relative h-20" style={{ background: AGENT_RESOLVED.gradient }}>
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.4))" }}
-          />
+      <div className="overflow-hidden rounded-2xl border border-border/40" style={{ background: "var(--card)" }}>
+        {/* Gradient banner with pattern overlay */}
+        <div className="relative h-24" style={{ background: AGENT_RESOLVED.gradient }}>
+          <div className="absolute inset-0" style={{
+            background: "linear-gradient(180deg, transparent 30%, rgba(0,0,0,0.5))",
+          }} />
+          <div className="absolute inset-0 opacity-10" style={{
+            backgroundImage: "radial-gradient(circle at 25% 50%, white 1px, transparent 1px), radial-gradient(circle at 75% 30%, white 1px, transparent 1px)",
+            backgroundSize: "40px 40px, 60px 60px",
+          }} />
         </div>
         {/* Content */}
-        <div className="relative z-10 -mt-8 bg-card px-6 pb-5">
-          <div className="mb-4 flex items-end gap-4">
-            {/* Avatar */}
+        <div className="relative z-10 -mt-7 px-6 pb-5">
+          <div className="mb-4 flex items-end gap-5">
             <div
-              className="flex size-16 flex-shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white ring-4 ring-card"
+              className="flex size-14 flex-shrink-0 items-center justify-center rounded-xl text-xl font-bold text-white shadow-lg"
               style={{
                 background: AGENT_RESOLVED.gradient,
-                boxShadow: `0 0 20px ${AGENT_RESOLVED.color}44`,
+                boxShadow: `0 4px 20px ${AGENT_RESOLVED.color}35`,
               }}
             >
               {AGENT_RESOLVED.initials}
             </div>
             <div className="min-w-0 flex-1 pb-1">
-              <div className="flex items-center gap-2">
-                <h1 className="text-[22px] font-bold text-foreground">
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-bold text-foreground tracking-tight">
                   Agent {AGENT_RESOLVED.name}
                 </h1>
-                <span className="size-2.5 animate-pulse rounded-full bg-emerald-500" />
-                <Badge variant="secondary" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600">
-                  Active
-                </Badge>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                  <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  <span className="text-[10px] font-semibold text-emerald-600">Active</span>
+                </div>
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">{AGENT_RESOLVED.project}</span>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground/80">{AGENT_RESOLVED.project}</span>
                 {AGENT_RESOLVED.methodology && (
-                  <Badge variant="secondary" className="border-blue-500/30 bg-blue-500/10 text-blue-600">
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/8 text-blue-500 border border-blue-500/15">
                     {METHOD_LABEL[AGENT_RESOLVED.methodology] || AGENT_RESOLVED.methodology}
-                  </Badge>
+                  </span>
                 )}
-                {AGENT_RESOLVED.deployedDate && <span>Deployed {AGENT_RESOLVED.deployedDate}</span>}
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-violet-500/8 text-violet-500 border border-violet-500/15">
+                  L{AGENT_RESOLVED.autonomyLevel} {AGENT_RESOLVED.autonomyLabel}
+                </span>
                 {AGENT_RESOLVED.uptimeDays > 0 && (
-                  <>
-                    <span>·</span>
-                    <span>{AGENT_RESOLVED.uptimeDays} days uptime</span>
-                  </>
+                  <span className="text-muted-foreground/60">{AGENT_RESOLVED.uptimeDays}d uptime</span>
                 )}
-                <span>·</span>
-                <span>Level {AGENT_RESOLVED.autonomyLevel} — {AGENT_RESOLVED.autonomyLabel}</span>
               </div>
             </div>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}>
-                <Pause className="mr-1 size-3.5" /> Pause
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <Button variant="ghost" size="sm" className="text-xs h-8" onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}>
+                <Pause className="mr-1 size-3" /> Pause
               </Button>
               <Link href={`/agents/chat?agent=${agentId}`}>
-                <Button variant="ghost" size="sm">
-                  <MessageSquare className="mr-1 size-3.5" /> Chat with Agent
+                <Button size="sm" className="text-xs h-8 bg-primary/90 hover:bg-primary">
+                  <MessageSquare className="mr-1 size-3" /> Chat
                 </Button>
               </Link>
-              <Link href="/agents/deploy">
-                <Button variant="ghost" size="sm">
-                  <RefreshCw className="mr-1 size-3.5" /> Reassign
-                </Button>
-              </Link>
-              <Button variant="default" size="sm" onClick={() => { const el = document.querySelector('[value="configuration"]'); if (el) (el as HTMLElement).click(); }}>
-                <Settings className="mr-1 size-3.5" /> Configure
+              <Button variant="outline" size="sm" className="text-xs h-8" onClick={() => { const el = document.querySelector('[value="configuration"]'); if (el) (el as HTMLElement).click(); }}>
+                <Settings className="mr-1 size-3" /> Configure
               </Button>
             </div>
           </div>
@@ -446,55 +451,59 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       </div>
 
       {/* ═══ 2. STATS ROW ═══ */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
         {resolvedStats.map((s) => (
-          <Card key={s.label} className="p-3">
-            <div className="mb-1 flex items-start justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+          <div key={s.label} className="group relative overflow-hidden rounded-xl border border-border/30 p-3.5 transition-all hover:border-border/60 hover:shadow-sm" style={{ background: "var(--card)" }}>
+            <div className="absolute top-0 right-0 w-16 h-16 opacity-[0.04] rounded-bl-full" style={{ background: s.color }} />
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-xs">{s.icon}</span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
                 {s.label}
               </span>
-              <span className="text-sm">{s.icon}</span>
             </div>
-            <p className="text-[22px] font-bold" style={{ color: s.color }}>
+            <p className="text-2xl font-bold tracking-tight" style={{ color: s.color }}>
               {s.value}
             </p>
             {s.sub && (
-              <p className="mt-0.5 text-[10px] text-muted-foreground">{s.sub}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">{s.sub}</p>
             )}
-          </Card>
+          </div>
         ))}
       </div>
 
-      {/* ═══ 2b. COMMAND CENTRE — Agent drives from here ═══ */}
+      {/* ═══ 2b. COMMAND CENTRE ═══ */}
       {(agentPendingApprovals.length > 0 || recentArtefactsReal.length > 0 || AGENT_RESOLVED.currentTask) && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
 
           {/* What the agent is doing RIGHT NOW */}
-          <div className="lg:col-span-2 rounded-[14px] border border-border/30 p-4" style={{ background: "var(--card)" }}>
+          <div className="lg:col-span-2 rounded-xl border border-border/30 p-5 relative overflow-hidden" style={{ background: "var(--card)" }}>
+            <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: `linear-gradient(90deg, ${AGENT_RESOLVED.color}, transparent)` }} />
             <div className="flex items-center gap-2 mb-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Agent is working on</p>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/8 border border-emerald-500/15">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">Currently Working On</span>
+              </div>
             </div>
             {AGENT_RESOLVED.currentTask ? (
-              <p className="text-sm text-foreground leading-relaxed">{AGENT_RESOLVED.currentTask}</p>
+              <p className="text-sm text-foreground leading-relaxed font-medium">{AGENT_RESOLVED.currentTask}</p>
             ) : (
-              <p className="text-sm text-muted-foreground">Monitoring project — no active task.</p>
+              <p className="text-sm text-muted-foreground italic">Monitoring project — no active task.</p>
             )}
 
-            {/* Recent artefacts generated */}
+            {/* Recent artefacts */}
             {recentArtefactsReal.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-border/20">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Documents Generated</p>
-                <div className="space-y-1.5">
+              <div className="mt-4 pt-3 border-t border-border/15">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2.5">Recent Documents</p>
+                <div className="space-y-1">
                   {recentArtefactsReal.map((a: any) => (
-                    <div key={a.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-3 h-3 text-muted-foreground" />
-                        <span className="text-xs text-foreground">{a.name}</span>
-                        <Badge variant="outline" className="text-[9px]">{a.status}</Badge>
+                    <div key={a.id} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <FileText className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="text-xs text-foreground truncate">{a.name}</span>
+                        <span className={cn("text-[9px] font-medium px-1.5 py-0.5 rounded-full", a.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-600" : a.status === "REJECTED" ? "bg-red-500/10 text-red-500" : "bg-amber-500/10 text-amber-600")}>{a.status}</span>
                       </div>
                       <Link href={`/projects/${projectId}/artefacts`}>
-                        <button className="text-[10px] text-primary hover:underline">Review →</button>
+                        <span className="text-[10px] text-primary hover:underline cursor-pointer whitespace-nowrap">Review →</span>
                       </Link>
                     </div>
                   ))}
@@ -504,40 +513,39 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           </div>
 
           {/* HITL — awaiting user response */}
-          <div className="rounded-[14px] border p-4" style={{
-            background: agentPendingApprovals.length > 0 ? "color-mix(in srgb, #F59E0B 5%, var(--card))" : "var(--card)",
-            borderColor: agentPendingApprovals.length > 0 ? "#F59E0B44" : "var(--border)",
+          <div className="rounded-xl border p-5 relative overflow-hidden" style={{
+            background: agentPendingApprovals.length > 0 ? "color-mix(in srgb, #F59E0B 4%, var(--card))" : "var(--card)",
+            borderColor: agentPendingApprovals.length > 0 ? "#F59E0B33" : "var(--border)",
           }}>
+            {agentPendingApprovals.length > 0 && <div className="absolute top-0 left-0 w-full h-[2px] bg-amber-500/60" />}
             <div className="flex items-center gap-2 mb-3">
               {agentPendingApprovals.length > 0 ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-amber-500">Awaiting Your Decision</p>
-                </>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Needs Your Decision</span>
+                </div>
               ) : (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-green-400" />
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">No Pending Approvals</p>
-                </>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/8 border border-emerald-500/15">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">All Clear</span>
+                </div>
               )}
             </div>
 
             {agentPendingApprovals.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {agentPendingApprovals.map((a: any) => (
-                  <div key={a.id} className="p-2.5 rounded-[8px] bg-amber-500/5 border border-amber-500/20">
+                  <div key={a.id} className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/15">
                     <p className="text-xs font-semibold text-foreground mb-1">{a.title}</p>
-                    <p className="text-[10px] text-muted-foreground mb-2">{a.description?.slice(0, 80)}{(a.description?.length ?? 0) > 80 ? "…" : ""}</p>
-                    <div className="flex gap-1.5">
-                      <Link href="/approvals">
-                        <button className="px-2 py-1 rounded-[5px] text-[10px] font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors">Review & Approve</button>
-                      </Link>
-                    </div>
+                    <p className="text-[10px] text-muted-foreground mb-2.5 leading-relaxed">{a.description?.slice(0, 100)}{(a.description?.length ?? 0) > 100 ? "…" : ""}</p>
+                    <Link href="/approvals">
+                      <button className="px-3 py-1.5 rounded-lg text-[10px] font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-sm">Review & Approve</button>
+                    </Link>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">The agent is managing everything within its autonomy bounds. You'll be notified when a decision is required.</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">Agent is managing everything within its autonomy bounds. You'll be notified when a decision is needed.</p>
             )}
           </div>
         </div>

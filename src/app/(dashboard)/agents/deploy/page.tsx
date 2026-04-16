@@ -219,15 +219,9 @@ const AUTONOMY_CARDS: Array<{ level: number; name: string; tagline: string; desc
     doesnt: ["Generate or approve documents without review", "Change project schedule without approval", "Modify budget without approval", "Send stakeholder communications"],
   },
   {
-    level: 3, name: "Autonomous", tagline: "I run the project, you review outcomes", rec: false,
-    desc: "Agent runs the project day-to-day — generates documents, adjusts schedule, manages budget within thresholds, communicates with stakeholders. You review HIGH risk items.",
-    does: ["Everything in L2", "Auto-execute LOW + MEDIUM risk actions", "Generate and update documents autonomously", "Adjust schedule and manage budget", "Send routine stakeholder updates"],
-    doesnt: ["Change project scope without approval", "Exceed budget threshold", "Handle HIGH risk decisions alone", "Override phase gate approvals"],
-  },
-  {
-    level: 4, name: "Strategic", tagline: "End-to-end, minimal oversight", rec: false,
-    desc: "Full autonomy within governance bounds. Agent self-manages everything including scope adjustments. You're only involved at phase gates and CRITICAL items.",
-    does: ["Everything in L3", "Auto-execute up to HIGH risk actions", "Manage scope changes", "Self-escalate and self-correct", "Full stakeholder management"],
+    level: 3, name: "Autonomous", tagline: "End-to-end, you handle exceptions", rec: false,
+    desc: "Full autonomy within governance bounds. Agent runs the project end-to-end — generates documents, adjusts schedule, manages budget, scope changes, and stakeholder comms. You're only involved at phase gates and CRITICAL items.",
+    does: ["Everything in L2", "Auto-execute LOW, MEDIUM, and HIGH risk actions", "Generate and update documents autonomously", "Adjust schedule, budget, and scope", "Full stakeholder management", "Self-escalate and self-correct"],
     doesnt: ["Override phase gate approvals (if ON)", "Handle CRITICAL risk items (score 15-16)", "Exceed org-level governance policy"],
   },
 ];
@@ -477,7 +471,7 @@ export default function ProjectWizardPage() {
 
     // Autonomous cycles: depends on autonomy level and project duration
     // Higher autonomy = more actions per cycle = more credits
-    const cyclesPerMonth = level === 1 ? 10 : level === 2 ? 30 : level === 3 ? 60 : 90;
+    const cyclesPerMonth = level === 1 ? 10 : level === 2 ? 30 : 90;
     const cycleCost = cyclesPerMonth * (level === 1 ? 2 : CREDIT_COSTS.autonomousCycle);
 
     // Risk analysis: runs every cycle at L2+
@@ -1202,7 +1196,7 @@ export default function ProjectWizardPage() {
                       }}>
                       <div className="flex items-center gap-2 mb-1">
                         <div className="flex gap-0.5">
-                          {[1, 2, 3, 4].map(d => (
+                          {[1, 2, 3].map(d => (
                             <div key={d} className="w-2 h-2 rounded-full" style={{ background: d <= al.level ? g.color : `${"var(--border)"}44` }} />
                           ))}
                         </div>

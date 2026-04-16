@@ -20,7 +20,7 @@ interface CalibrationAdjustment {
   actionType: string;
   direction: "increase_caution" | "maintain" | "increase_confidence";
   reason: string;
-  newThreshold?: string; // e.g. "Route COMMUNICATION to HITL even at L4"
+  newThreshold?: string; // e.g. "Route COMMUNICATION to HITL even at L3"
 }
 
 /**

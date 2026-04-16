@@ -13,7 +13,7 @@ import {
   GitBranch, Dice5, Calculator, Table2, ChevronLeft, ChevronRight,
   Brain, Video, Package, ClipboardList, FileBarChart, Award,
   MessageSquare, Activity, Rocket, Shield, BarChart3, Layers,
-  ChevronsUpDown, X, FolderOpen, Plug, Zap,
+  ChevronsUpDown, X, FolderOpen, Plug, Zap, Microscope,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -66,6 +66,7 @@ const NAV: NavGroup[] = [
       { label: "Meetings",      href: "/meetings",  icon: Video },
       { label: "Calendar",      href: "/calendar",  icon: Calendar },
       { label: "Knowledge Base",href: "/knowledge", icon: Brain },
+      { label: "Research Audit",href: "/research",  icon: Microscope },
     ],
   },
 

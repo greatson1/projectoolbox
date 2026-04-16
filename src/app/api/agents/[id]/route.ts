@@ -71,8 +71,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Validate autonomyLevel if provided
   if (body.autonomyLevel !== undefined) {
     const level = Number(body.autonomyLevel);
-    if (!Number.isInteger(level) || level < 1 || level > 4) {
-      return NextResponse.json({ error: "autonomyLevel must be an integer between 1 and 4" }, { status: 400 });
+    if (!Number.isInteger(level) || level < 1 || level > 3) {
+      return NextResponse.json({ error: "autonomyLevel must be an integer between 1 and 3" }, { status: 400 });
     }
     body.autonomyLevel = level;
   }

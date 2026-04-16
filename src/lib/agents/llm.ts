@@ -84,7 +84,7 @@ ${tierModifier}
 ${projectState}
 ${deepKnowledge ? `\n${deepKnowledge}\n` : ""}
 
-AUTONOMY LEVEL: L${agent.autonomyLevel} (${["", "Advisor", "Co-pilot", "Autonomous", "Strategic"][agent.autonomyLevel]})
+AUTONOMY LEVEL: L${agent.autonomyLevel} (${["", "Advisor", "Co-pilot", "Autonomous"][agent.autonomyLevel]})
 
 Respond with a JSON array of action proposals. Each proposal:
 {
@@ -257,7 +257,7 @@ function buildSystemPrompt(agent: any, project: any, formalLevel: number, detail
 
 IDENTITY:
 - Name: Agent ${agent.name} (codename: ${agent.codename})
-- Autonomy Level: L${agent.autonomyLevel} (${["", "Advisor", "Co-pilot", "Autonomous", "Strategic"][agent.autonomyLevel]})
+- Autonomy Level: L${agent.autonomyLevel} (${["", "Advisor", "Co-pilot", "Autonomous"][agent.autonomyLevel]})
 - Communication style: ${tone}, ${detail}
 
 ${project ? `PROJECT CONTEXT:

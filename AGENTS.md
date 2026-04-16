@@ -34,14 +34,13 @@ AI agents in Projectoolbox must NEVER fabricate, invent, or hallucinate informat
 - **Use [TBC]** when the information is supplementary and the document is still useful without it
 - **Never silently invent** — if you cannot ask and cannot use [TBC], state explicitly what is missing
 
-## Autonomy Levels (4 levels)
+## Autonomy Levels (3 levels)
 
 | Level | Name | Auto-executes | Requires approval |
 |-------|------|---------------|-------------------|
 | L1 | Advisor | Nothing | Everything |
 | L2 | Co-pilot | Tasks, risks, resources | Documents, schedule, budget, comms |
-| L3 | Autonomous | Most actions incl. documents | Scope changes, high-risk items |
-| L4 | Strategic | Almost everything | Critical items + phase gates |
+| L3 | Autonomous | Everything within governance bounds | Only CRITICAL items + phase gates |
 
 ## Content Awareness
 
