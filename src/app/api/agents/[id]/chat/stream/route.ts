@@ -236,9 +236,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const autonomyDesc = [
     "Advisor — everything goes to approval queue, no autonomous actions",
     "Co-pilot — handle routine tasks and risks autonomously, documents and schedule need approval",
-    "Autonomous — run the project day-to-day including documents, HITL only for scope and high-risk items",
-    "Strategic — full autonomy within governance bounds, minimal check-ins",
-  ][Math.min((agent.autonomyLevel ?? 2) - 1, 3)];
+    "Autonomous — full autonomy within governance bounds, HITL only for CRITICAL items and phase gates",
+  ][Math.min((agent.autonomyLevel ?? 2) - 1, 2)];
 
   const hitlConfig = (deployment as any)?.config ?? {};
   const budgetThreshold = hitlConfig.hitleBudgetThreshold || hitlConfig.budgetThreshold || "500";
@@ -781,6 +780,26 @@ These are handled by the platform automatically. Just write normal text.
     }));
   }
 
+  // Sanitise: Anthropic requires strictly alternating user/assistant roles.
+  // Consecutive same-role messages occur when a stream fails and no assistant
+  // response is saved — collapsing them prevents permanent 400 error loops.
+  messages = messages.reduce<typeof messages>((acc, msg) => {
+    const prev = acc[acc.length - 1];
+    if (prev && prev.role === msg.role) {
+      // Same role: keep the LATER message (most recent context wins)
+      acc[acc.length - 1] = msg;
+    } else {
+      acc.push(msg);
+    }
+    return acc;
+  }, []);
+
+  // Anthropic requires the array to end on a user turn (or be empty)
+  // Strip trailing assistant messages so the current user turn is always last
+  while (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+    messages.pop();
+  }
+
   // Inject greeting context for first-ever interaction
   const isFirstContact = historyFiltered.length === 0;
   if (isFirstContact && greeting) {
@@ -1189,7 +1208,12 @@ These are handled by the platform automatically. Just write normal text.
         if (!phase1Response.ok || !phase1Response.body) {
           const errBody = await phase1Response.text().catch(() => "no body");
           console.error(`[chat/stream] Anthropic API error: ${phase1Response.status} — ${errBody}`);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "LLM stream failed" })}\n\n`));
+          const status = phase1Response.status;
+          const userMsg = status === 401 ? "API key is invalid or expired. Please check your ANTHROPIC_API_KEY."
+            : status === 429 ? "Rate limited by Anthropic — please wait a moment and try again."
+            : status === 529 ? "Anthropic API is temporarily overloaded. Please try again shortly."
+            : `AI service error (${status}). Please try again.`;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: userMsg })}\n\n`));
           controller.close();
           return;
         }
