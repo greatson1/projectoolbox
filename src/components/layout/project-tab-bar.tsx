@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 import { cn } from "@/lib/utils";
 import {
@@ -10,17 +10,25 @@ import {
   ShieldAlert, AlertTriangle, GitPullRequest, TestTube2, ShieldCheck,
   Package, DollarSign, Calculator, TrendingUp, Award, BarChart3,
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
-  ChevronDown, LayoutDashboard, ChevronsUpDown, X,
+  ChevronDown, LayoutDashboard,
 } from "lucide-react";
 
-// ─── Tab definitions ────────────────────────────────────────────────────────
+interface TabItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+}
 
-interface TabItem { label: string; href: string; icon: React.ElementType }
-interface TabGroup { label: string; color: string; items: TabItem[] }
+interface TabGroup {
+  label: string;
+  color: string;
+  items: TabItem[];
+}
 
 const PROJECT_TABS: TabGroup[] = [
   {
-    label: "Plan", color: "#6366F1",
+    label: "Plan",
+    color: "#6366F1",
     items: [
       { label: "PM Tracker", href: "/pm-tracker", icon: CheckSquare },
       { label: "Scope & WBS", href: "/scope", icon: Target },
@@ -28,7 +36,8 @@ const PROJECT_TABS: TabGroup[] = [
     ],
   },
   {
-    label: "Execute", color: "#10B981",
+    label: "Execute",
+    color: "#10B981",
     items: [
       { label: "Agile Board", href: "/agile", icon: Columns3 },
       { label: "Sprint Planning", href: "/sprint-planning", icon: Target },
@@ -37,7 +46,8 @@ const PROJECT_TABS: TabGroup[] = [
     ],
   },
   {
-    label: "Control", color: "#F59E0B",
+    label: "Control",
+    color: "#F59E0B",
     items: [
       { label: "Risk Register", href: "/risk", icon: ShieldAlert },
       { label: "Issues", href: "/issues", icon: AlertTriangle },
@@ -48,7 +58,8 @@ const PROJECT_TABS: TabGroup[] = [
     ],
   },
   {
-    label: "Cost", color: "#8B5CF6",
+    label: "Cost",
+    color: "#8B5CF6",
     items: [
       { label: "Cost", href: "/cost", icon: DollarSign },
       { label: "Estimate", href: "/estimate", icon: Calculator },
@@ -58,7 +69,8 @@ const PROJECT_TABS: TabGroup[] = [
     ],
   },
   {
-    label: "Reports", color: "#EC4899",
+    label: "Reports",
+    color: "#EC4899",
     items: [
       { label: "Reports", href: "/reports", icon: FileBarChart },
       { label: "Composer", href: "/report-composer", icon: Layers },
@@ -67,7 +79,8 @@ const PROJECT_TABS: TabGroup[] = [
     ],
   },
   {
-    label: "People", color: "#22D3EE",
+    label: "People",
+    color: "#22D3EE",
     items: [
       { label: "Stakeholders", href: "/stakeholders", icon: Users },
       { label: "Resources", href: "/resources", icon: UserCog },
@@ -75,11 +88,10 @@ const PROJECT_TABS: TabGroup[] = [
   },
 ];
 
-// ─── Dropdown Tab ───────────────────────────────────────────────────────────
-
 function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projectBase: string; pathname: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
   const activeItem = group.items.find((item) => pathname.startsWith(`${projectBase}${item.href}`));
 
   useEffect(() => {
@@ -116,16 +128,23 @@ function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projec
             const isActive = pathname.startsWith(fullHref);
             const Icon = item.icon;
             return (
-              <Link key={item.href} href={fullHref} onClick={() => setOpen(false)}
+              <Link
+                key={item.href}
+                href={fullHref}
+                onClick={() => setOpen(false)}
                 className={cn(
                   "flex items-center gap-2.5 px-3 py-2 mx-1 rounded-lg text-xs font-medium transition-colors",
-                  isActive ? "font-semibold" : "text-foreground hover:bg-muted/50"
+                  isActive
+                    ? "font-semibold"
+                    : "text-foreground hover:bg-muted/50"
                 )}
                 style={isActive ? { background: `${group.color}15`, color: group.color } : undefined}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color: group.color } : undefined} />
                 {item.label}
-                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: group.color }} />}
+                {isActive && (
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: group.color }} />
+                )}
               </Link>
             );
           })}
@@ -135,121 +154,24 @@ function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projec
   );
 }
 
-// ─── Project Switcher (embedded in tab bar) ─────────────────────────────────
-
-interface ProjectSummary { id: string; name: string; status?: string }
-
-function ProjectSwitcher() {
-  const router = useRouter();
-  const { activeProjectId, activeProjectName, setActiveProject } = useAppStore();
-  const [open, setOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((json) => {
-        if (Array.isArray(json?.data)) {
-          setProjects(json.data.map((p: any) => ({ id: p.id, name: p.name, status: p.status })));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-muted/50 transition-colors group"
-      >
-        <FolderOpen className="w-4 h-4 text-primary flex-shrink-0" />
-        <span className="text-xs font-bold text-foreground truncate max-w-[180px]">
-          {activeProjectName || "Project"}
-        </span>
-        <ChevronsUpDown className="w-3 h-3 text-muted-foreground" />
-        <button
-          onClick={(e) => { e.stopPropagation(); setActiveProject(null, null); router.push("/projects"); }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-destructive"
-          title="Exit project"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      </button>
-
-      {open && (
-        <div className="absolute top-full left-0 mt-1.5 py-1 rounded-xl border border-border bg-card shadow-2xl min-w-[240px]" style={{ zIndex: 9999 }}>
-          <p className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border mb-1">
-            Switch project
-          </p>
-          <div className="max-h-60 overflow-y-auto">
-            {projects.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-muted-foreground text-center">No projects found</p>
-            ) : (
-              projects.map((p) => (
-                <button key={p.id}
-                  onClick={() => {
-                    setActiveProject(p.id, p.name);
-                    setOpen(false);
-                    router.push(`/projects/${p.id}`);
-                  }}
-                  className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors hover:bg-muted/50",
-                    p.id === activeProjectId && "bg-primary/5 font-semibold"
-                  )}
-                >
-                  <span className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: p.id === activeProjectId ? "#6366F1" : "hsl(var(--muted-foreground) / 0.3)" }} />
-                  <span className="flex-1 truncate">{p.name}</span>
-                  {p.id === activeProjectId && (
-                    <span className="text-[9px] text-primary font-medium">active</span>
-                  )}
-                </button>
-              ))
-            )}
-          </div>
-          <div className="border-t border-border px-3 py-1.5">
-            <Link href="/projects" onClick={() => setOpen(false)}
-              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-              View all projects →
-            </Link>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Tab Bar ───────────────────────────────────────────────────────────
-
 export function ProjectTabBar() {
   const pathname = usePathname();
-  const { activeProjectId } = useAppStore();
+  const { activeProjectId, activeProjectName } = useAppStore();
 
   if (!activeProjectId) return null;
   if (!pathname.startsWith(`/projects/${activeProjectId}`)) return null;
 
   const projectBase = `/projects/${activeProjectId}`;
+
+  // Is user on the project overview page (not a sub-page)?
   const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
 
   return (
     <div className="sticky top-16 z-30 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="flex items-center gap-2 px-6 py-2 flex-wrap">
-        {/* Project name + switcher */}
-        <ProjectSwitcher />
-
-        <div className="w-px h-6 bg-border flex-shrink-0" />
-
         {/* Overview tab */}
-        <Link href={projectBase}
+        <Link
+          href={projectBase}
           className={cn(
             "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all border",
             isOverview
