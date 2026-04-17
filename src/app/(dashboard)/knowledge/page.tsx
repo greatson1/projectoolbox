@@ -539,18 +539,20 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
   const [query, setQuery]   = useState("");
   const [name, setName]     = useState("");
   const [procItems, setProcItems] = useState("");
+  const [roleItems, setRoleItems] = useState("");
   const [createArtefact, setCreateArtefact] = useState(true);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError]   = useState("");
 
   const TYPES = [
-    { id: "pestle",      label: "PESTLE Scan",       cost: 8, desc: "Full 6-dimension environmental scan" },
-    { id: "search",      label: "Web Search",        cost: 3, desc: "Targeted research query" },
-    { id: "stakeholder", label: "Stakeholder Intel", cost: 5, desc: "Professional background research" },
-    { id: "vendor",      label: "Vendor Research",   cost: 5, desc: "Vendor risk assessment" },
-    { id: "news",        label: "News Monitor",      cost: 3, desc: "Latest industry developments" },
-    { id: "procurement", label: "Market Pricing",    cost: 5, desc: "Compare prices across suppliers for materials/items" },
+    { id: "pestle",         label: "PESTLE Scan",       cost: 8, desc: "Full 6-dimension environmental scan" },
+    { id: "search",         label: "Web Search",        cost: 3, desc: "Targeted research query" },
+    { id: "stakeholder",    label: "Stakeholder Intel", cost: 5, desc: "Professional background research" },
+    { id: "vendor",         label: "Vendor Research",   cost: 5, desc: "Vendor risk assessment" },
+    { id: "news",           label: "News Monitor",      cost: 3, desc: "Latest industry developments" },
+    { id: "procurement",    label: "Market Research",   cost: 5, desc: "Compare prices for materials, equipment, services, or labour" },
+    { id: "resource_rates", label: "Resource Rates",    cost: 5, desc: "Current day rates and salaries by role, location, and seniority" },
   ];
 
   const runResearch = async () => {
@@ -566,6 +568,12 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
           return { name: parts[0], quantity: parts[1] || "", specs: parts[2] || "" };
         });
         body.createArtefact = createArtefact;
+      }
+      if (type === "resource_rates") {
+        body.roles = roleItems.split("\n").filter(Boolean).map(line => {
+          const parts = line.split(",").map(p => p.trim());
+          return { title: parts[0], seniority: parts[1] || "", location: parts[2] || "", type: parts[3] || "" };
+        });
       }
 
       const r = await fetch(`/api/agents/${agentId}/research`, {
@@ -592,7 +600,7 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
           </div>
 
           {/* Research type selector */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-4">
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 mb-4">
             {TYPES.map(t => (
               <button key={t.id} onClick={() => setType(t.id)}
                 className={`p-2 rounded-lg text-center transition-all ${type === t.id ? "bg-primary/10 border border-primary/20" : "bg-muted/50 hover:bg-muted"}`}>
@@ -617,7 +625,7 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
           {type === "procurement" && (
             <div className="space-y-2 mb-3">
               <textarea value={procItems} onChange={e => setProcItems(e.target.value)} rows={4}
-                placeholder={"One item per line. Format: name, quantity, specs\nExample:\nPortland cement, 500 tonnes\nRebar 12mm, 200 tonnes\nPPE safety helmets, 50 units"}
+                placeholder={"One item per line. Format: name, quantity, specs\nExample:\nPortland cement, 500 tonnes\nRebar 12mm, 200 tonnes\nSenior developer, 2, contract\nProject manager, 1, permanent"}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
               <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
                 <input type="checkbox" checked={createArtefact} onChange={e => setCreateArtefact(e.target.checked)}
@@ -626,9 +634,16 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
               </label>
             </div>
           )}
+          {type === "resource_rates" && (
+            <div className="space-y-2 mb-3">
+              <textarea value={roleItems} onChange={e => setRoleItems(e.target.value)} rows={4}
+                placeholder={"One role per line. Format: title, seniority, location, type\nExample:\nJava Developer, Senior, London, contract\nProject Manager, Mid, Manchester, permanent\nBusiness Analyst, Senior, Remote, contract\nDevOps Engineer, Lead, UK, contract"}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
+            </div>
+          )}
 
           <Button onClick={runResearch} className="w-full"
-            disabled={running || (type === "search" && !query) || ((type === "stakeholder" || type === "vendor") && !name) || (type === "procurement" && !procItems.trim())}>
+            disabled={running || (type === "search" && !query) || ((type === "stakeholder" || type === "vendor") && !name) || (type === "procurement" && !procItems.trim()) || (type === "resource_rates" && !roleItems.trim())}>
             {running
               ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Researching...</>
               : <><Microscope className="w-4 h-4 mr-1" />Run Research</>}
@@ -690,6 +705,48 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
                             <td className="px-2 py-1.5 text-muted-foreground">{item.unit}</td>
                             <td className="px-2 py-1.5 text-muted-foreground">{item.moq}</td>
                             <td className="px-2 py-1.5 text-muted-foreground">{item.leadTime}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {result.summary && (
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">{result.summary}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Resource rates table */}
+              {result.rates && result.rates.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold">{result.rates.length} rate entries from {new Set(result.rates.map((r: any) => r.source)).size} sources</p>
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full text-[10px]">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-semibold">Role</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Seniority</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Day Rate</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Annual Salary</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Location</th>
+                          <th className="px-2 py-1.5 text-center font-semibold">Demand</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.rates.map((rate: any, i: number) => (
+                          <tr key={i} className="border-t border-border/50 hover:bg-muted/30">
+                            <td className="px-2 py-1.5 font-medium">{rate.role}</td>
+                            <td className="px-2 py-1.5">{rate.seniority}</td>
+                            <td className="px-2 py-1.5 text-right font-mono">{rate.dayRate}</td>
+                            <td className="px-2 py-1.5 text-right font-mono">{rate.annualSalary}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{rate.location}</td>
+                            <td className="px-2 py-1.5 text-center">
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${rate.demand?.toLowerCase().includes("high") ? "bg-red-500/10 text-red-500" : rate.demand?.toLowerCase().includes("medium") ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"}`}>
+                                {rate.demand}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-muted-foreground text-[9px]">{rate.source}</td>
                           </tr>
                         ))}
                       </tbody>

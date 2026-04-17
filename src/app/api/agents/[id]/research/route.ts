@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const orgId = caller.orgId;
   const { id: agentId } = await params;
   const body = await req.json();
-  const { type, query, stakeholder, vendor, items, createArtefact } = body;
+  const { type, query, stakeholder, vendor, items, roles, createArtefact } = body;
 
   if (!type) return NextResponse.json({ error: "Research type required" }, { status: 400 });
 
@@ -36,6 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     vendor: CREDIT_COSTS.PERPLEXITY_RESEARCH,
     news: CREDIT_COSTS.PERPLEXITY_RESEARCH,
     procurement: CREDIT_COSTS.PERPLEXITY_RESEARCH,
+    resource_rates: CREDIT_COSTS.PERPLEXITY_RESEARCH,
   };
   const cost = costs[type] || CREDIT_COSTS.PERPLEXITY_RESEARCH;
 
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const {
       targetedSearch, pestleScan, stakeholderResearch, vendorResearch, newsMonitor, pestleToRisks,
-      procurementResearch, procurementToArtefact,
+      procurementResearch, procurementToArtefact, resourceRatesResearch,
     } = await import("@/lib/agents/web-research");
 
     let result: any;
@@ -94,6 +95,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       case "news":
         result = await newsMonitor({
           name: deployment?.project?.name || "Project",
+          industry: deployment?.project?.category || undefined,
+        }, context);
+        break;
+
+      case "resource_rates":
+        if (!roles || !Array.isArray(roles) || roles.length === 0) {
+          return NextResponse.json({ error: "Roles list required (array of { title, location?, type?, seniority? })" }, { status: 400 });
+        }
+        result = await resourceRatesResearch(roles, {
+          name: deployment?.project?.name || "Project",
+          region: "UK",
           industry: deployment?.project?.category || undefined,
         }, context);
         break;
