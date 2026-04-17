@@ -62,7 +62,46 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) { console.error("[cron] Report schedule runner failed:", e); }
 
-    // 0c. Self-heal: if any active deployment has a currentPhase but zero artefacts,
+    // 0c. Self-heal stuck deployments: if deployment has been in awaiting_clarification
+    //     for over 1 hour with zero artefacts and no active clarification session,
+    //     the lifecycle init likely failed silently. Reset to "active" so self-heal or
+    //     the user clicking "Generate Artefacts" can proceed.
+    try {
+      const stuckDeployments = await db.agentDeployment.findMany({
+        where: {
+          isActive: true,
+          phaseStatus: { in: ["researching", "awaiting_clarification"] },
+          lastCycleAt: { lt: new Date(Date.now() - 60 * 60_000) }, // stuck > 1 hour
+        },
+        select: { id: true, agentId: true, projectId: true, currentPhase: true, phaseStatus: true },
+      });
+      for (const dep of stuckDeployments) {
+        if (!dep.projectId) continue;
+        const artCount = await db.agentArtefact.count({ where: { projectId: dep.projectId, agentId: dep.agentId } });
+        if (artCount === 0) {
+          // Check if there's a real clarification session active
+          let hasSession = false;
+          try {
+            const { getActiveSession } = await import("@/lib/agents/clarification-session");
+            hasSession = !!(await getActiveSession(dep.agentId, dep.projectId));
+          } catch {}
+          if (!hasSession) {
+            // Unstick — set to "active" so Generate Artefacts button works
+            await db.agentDeployment.update({
+              where: { id: dep.id },
+              data: { phaseStatus: "active", lastCycleAt: new Date() },
+            });
+            await db.agentActivity.create({
+              data: { agentId: dep.agentId, type: "system", summary: `Self-heal: deployment was stuck in "${dep.phaseStatus}" for over 1 hour with no artefacts. Reset to active.` },
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Self-heal stuck deployment check failed:", e);
+    }
+
+    // 0d. Self-heal: if any active deployment has a currentPhase but zero artefacts,
     //     generate them now — UNLESS the deployment is still in the onboarding flow
     //     (researching / awaiting_clarification). Those statuses mean the user hasn't
     //     completed Research → Review → Clarification yet.
