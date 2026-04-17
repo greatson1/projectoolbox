@@ -155,7 +155,11 @@ function buildWBSTasks(rows: Record<string, string>[]): ParsedTask[] {
   const seenIds = new Set<string>();
 
   for (const row of rows) {
-    const deliverable = col(row, ["Deliverable", "Work Package", "Task", "Activity", "Name"]);
+    // Work Package is the actual task name; Deliverable is the parent group.
+    // Use Work Package if present, otherwise Deliverable as fallback.
+    const workPackage = col(row, ["Work Package", "Task", "Activity"]);
+    const deliverableGroup = col(row, ["Deliverable", "Phase", "Category"]);
+    const deliverable = workPackage || deliverableGroup || col(row, ["Name"]);
     if (!deliverable) continue;
 
     const sourceId    = col(row, ["WBS ID", "ID", "Task ID"]).trim();
@@ -178,7 +182,7 @@ function buildWBSTasks(rows: Record<string, string>[]): ParsedTask[] {
     tasks.push({
       title: deliverable,
       description: description || undefined,
-      phase: undefined,
+      phase: deliverableGroup || undefined,
       assigneeLabel: ownerRaw || undefined,
       startDate: parseDate(startRaw),
       endDate: parseDate(endRaw),
@@ -192,6 +196,51 @@ function buildWBSTasks(rows: Record<string, string>[]): ParsedTask[] {
       parentSourceId: parentSourceId || undefined,
     });
   }
+
+  // If WBS IDs don't use dot-notation (e.g. WBS-001, WBS-002), there's no
+  // natural hierarchy. Synthesise parents from the Deliverable/Phase column
+  // so tasks group logically on the Schedule and Scope pages.
+  const hasDotNotation = tasks.some(t => t.sourceId?.includes("."));
+  if (!hasDotNotation && tasks.length > 0) {
+    const groups = new Map<string, ParsedTask[]>();
+    for (const t of tasks) {
+      const group = t.phase || "Ungrouped";
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(t);
+    }
+    // Only create parent groups if there are multiple groups
+    if (groups.size > 1) {
+      const parentTasks: ParsedTask[] = [];
+      let groupIdx = 0;
+      for (const [groupName, children] of groups) {
+        groupIdx++;
+        const parentId = `group-${groupIdx}`;
+        // Compute parent dates from children
+        const starts = children.map(c => c.startDate).filter(Boolean) as Date[];
+        const ends = children.map(c => c.endDate).filter(Boolean) as Date[];
+        const avgProgress = children.length > 0 ? Math.round(children.reduce((s, c) => s + c.progress, 0) / children.length) : 0;
+        parentTasks.push({
+          title: groupName,
+          phase: undefined,
+          progress: avgProgress,
+          status: children.every(c => c.status === "DONE") ? "DONE" : children.some(c => c.status === "IN_PROGRESS") ? "IN_PROGRESS" : "TODO",
+          isCriticalPath: false,
+          isMilestone: false,
+          dependencies: [],
+          sourceId: parentId,
+          isSyntheticParent: true,
+          startDate: starts.length > 0 ? new Date(Math.min(...starts.map(d => d.getTime()))) : undefined,
+          endDate: ends.length > 0 ? new Date(Math.max(...ends.map(d => d.getTime()))) : undefined,
+        });
+        // Point children at this parent
+        for (const child of children) {
+          child.parentSourceId = parentId;
+        }
+      }
+      tasks.unshift(...parentTasks);
+    }
+  }
+
   return tasks;
 }
 
