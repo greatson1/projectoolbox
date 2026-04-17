@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAgents } from "@/hooks/use-api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 import {
   Search, Plus, FileText, Globe, Mail, MessageSquare, Brain,
   Upload, Link2, Trash2, Shield, X, Loader2, Microscope, Eye, Edit3,
@@ -419,24 +420,63 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
   const [tags, setTags]           = useState("");
   const [confidential, setConfidential] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const handleSubmit = async () => {
-    if (!title.trim()) return;
     setSubmitting(true);
-    await fetch(`/api/agents/${agentId}/knowledge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: title.trim(),
-        content: content.trim(),
-        type: tab === "url" ? "URL" : "TEXT",
-        layer,
-        sourceUrl: sourceUrl || undefined,
-        trustLevel,
-        confidential,
-        tags: tags.split(",").map(t => t.trim()).filter(Boolean),
-      }),
-    });
+    try {
+      if (tab === "url" && sourceUrl.trim()) {
+        // URL ingestion — fetch, extract, AI summarise via ingest endpoint
+        const res = await fetch(`/api/agents/${agentId}/ingest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "url",
+            title: title.trim() || new URL(sourceUrl).hostname,
+            sourceUrl: sourceUrl.trim(),
+            content: content.trim() || undefined, // optional user notes
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to ingest URL");
+        toast.success(`Imported and summarised: ${title || sourceUrl}`);
+      } else if (tab === "file") {
+        // File upload via ingest endpoint (multipart)
+        if (!selectedFile) { setSubmitting(false); return; }
+        const form = new FormData();
+        form.append("file", selectedFile);
+        form.append("type", "document");
+        form.append("title", title.trim() || selectedFile.name);
+        const res = await fetch(`/api/agents/${agentId}/ingest`, {
+          method: "POST",
+          body: form,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to ingest file");
+        toast.success(`Imported: ${title || selectedFile.name}`);
+      } else {
+        // Text — direct KB save
+        if (!title.trim()) { setSubmitting(false); return; }
+        await fetch(`/api/agents/${agentId}/knowledge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim(),
+            type: "TEXT",
+            layer,
+            sourceUrl: sourceUrl || undefined,
+            trustLevel,
+            confidential,
+            tags: tags.split(",").map(t => t.trim()).filter(Boolean),
+          }),
+        });
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to add knowledge");
+      setSubmitting(false);
+      return;
+    }
     setSubmitting(false);
     onClose();
   };
@@ -475,21 +515,32 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
 
             {tab === "file" ? (
               <div className="relative border-2 border-dashed border-border rounded-lg p-8 text-center">
-                <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground">Drag & drop or click to upload</p>
+                {selectedFile ? (
+                  <div>
+                    <FileText className="w-8 h-8 text-primary mx-auto mb-2" />
+                    <p className="text-xs font-medium">{selectedFile.name}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{(selectedFile.size / 1024).toFixed(0)} KB · {selectedFile.type || "unknown"}</p>
+                    <button onClick={() => setSelectedFile(null)} className="text-[10px] text-destructive mt-2 hover:underline">Remove</button>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground">Drag & drop or click to upload</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">PDF, Word, Excel, CSV, Text, Markdown</p>
+                  </>
+                )}
                 <input type="file" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  onChange={async (e) => {
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                  onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    setTitle(title || file.name);
-                    const text = await file.text();
-                    setContent(text.slice(0, 50000));
-                    setTab("text");
+                    setSelectedFile(file);
+                    setTitle(title || file.name.replace(/\.[^.]+$/, ""));
                   }} />
               </div>
             ) : (
               <textarea value={content} onChange={e => setContent(e.target.value)} rows={7}
-                placeholder={tab === "url" ? "Optional summary or notes..." : "Write in Markdown..."}
+                placeholder={tab === "url" ? "Optional notes to add alongside the AI summary..." : "Write in Markdown..."}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
             )}
 
@@ -521,9 +572,9 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
 
           <div className="flex gap-2 justify-end mt-5">
             <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" onClick={handleSubmit} disabled={submitting || !title.trim()}>
+            <Button size="sm" onClick={handleSubmit} disabled={submitting || (tab === "text" && !title.trim()) || (tab === "url" && !sourceUrl.trim()) || (tab === "file" && !selectedFile)}>
               {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
-              {submitting ? "Adding..." : "Add to KB"}
+              {submitting ? (tab === "url" ? "Fetching & summarising..." : "Adding...") : (tab === "url" ? "Fetch & Summarise" : tab === "file" ? "Upload & Import" : "Add to KB")}
             </Button>
           </div>
         </CardContent>
