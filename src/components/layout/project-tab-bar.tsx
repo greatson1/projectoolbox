@@ -10,7 +10,7 @@ import {
   ShieldAlert, AlertTriangle, GitPullRequest, TestTube2, ShieldCheck,
   Package, DollarSign, Calculator, TrendingUp, Award, BarChart3,
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
-  ChevronDown,
+  ChevronDown, LayoutDashboard,
 } from "lucide-react";
 
 interface TabItem {
@@ -21,12 +21,14 @@ interface TabItem {
 
 interface TabGroup {
   label: string;
+  color: string;
   items: TabItem[];
 }
 
 const PROJECT_TABS: TabGroup[] = [
   {
     label: "Plan",
+    color: "#6366F1",
     items: [
       { label: "PM Tracker", href: "/pm-tracker", icon: CheckSquare },
       { label: "Scope & WBS", href: "/scope", icon: Target },
@@ -35,6 +37,7 @@ const PROJECT_TABS: TabGroup[] = [
   },
   {
     label: "Execute",
+    color: "#10B981",
     items: [
       { label: "Agile Board", href: "/agile", icon: Columns3 },
       { label: "Sprint Planning", href: "/sprint-planning", icon: Target },
@@ -44,6 +47,7 @@ const PROJECT_TABS: TabGroup[] = [
   },
   {
     label: "Control",
+    color: "#F59E0B",
     items: [
       { label: "Risk Register", href: "/risk", icon: ShieldAlert },
       { label: "Issues", href: "/issues", icon: AlertTriangle },
@@ -55,6 +59,7 @@ const PROJECT_TABS: TabGroup[] = [
   },
   {
     label: "Cost",
+    color: "#8B5CF6",
     items: [
       { label: "Cost", href: "/cost", icon: DollarSign },
       { label: "Estimate", href: "/estimate", icon: Calculator },
@@ -65,6 +70,7 @@ const PROJECT_TABS: TabGroup[] = [
   },
   {
     label: "Reports",
+    color: "#EC4899",
     items: [
       { label: "Reports", href: "/reports", icon: FileBarChart },
       { label: "Composer", href: "/report-composer", icon: Layers },
@@ -74,6 +80,7 @@ const PROJECT_TABS: TabGroup[] = [
   },
   {
     label: "People",
+    color: "#22D3EE",
     items: [
       { label: "Stakeholders", href: "/stakeholders", icon: Users },
       { label: "Resources", href: "/resources", icon: UserCog },
@@ -81,11 +88,10 @@ const PROJECT_TABS: TabGroup[] = [
   },
 ];
 
-function DropdownGroup({ group, projectBase, pathname }: { group: TabGroup; projectBase: string; pathname: string }) {
+function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projectBase: string; pathname: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Is any item in this group active?
   const activeItem = group.items.find((item) => pathname.startsWith(`${projectBase}${item.href}`));
 
   useEffect(() => {
@@ -101,18 +107,22 @@ function DropdownGroup({ group, projectBase, pathname }: { group: TabGroup; proj
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap",
+          "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all border",
           activeItem
-            ? "bg-primary/10 text-primary font-semibold"
-            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            ? "text-white border-transparent shadow-sm"
+            : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/20 hover:shadow-sm"
         )}
+        style={activeItem ? { background: group.color } : undefined}
       >
         {activeItem ? activeItem.label : group.label}
         <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 py-1 rounded-lg border border-border bg-card shadow-xl z-50 min-w-[180px]">
+        <div className="absolute top-full left-0 mt-1.5 py-1.5 rounded-xl border border-border bg-card shadow-2xl z-50 min-w-[200px] animate-in fade-in slide-in-from-top-1 duration-150">
+          <p className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border mb-1 pb-1.5">
+            {group.label}
+          </p>
           {group.items.map((item) => {
             const fullHref = `${projectBase}${item.href}`;
             const isActive = pathname.startsWith(fullHref);
@@ -123,14 +133,18 @@ function DropdownGroup({ group, projectBase, pathname }: { group: TabGroup; proj
                 href={fullHref}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors",
+                  "flex items-center gap-2.5 px-3 py-2 mx-1 rounded-lg text-xs font-medium transition-colors",
                   isActive
-                    ? "bg-primary/10 text-primary"
+                    ? "font-semibold"
                     : "text-foreground hover:bg-muted/50"
                 )}
+                style={isActive ? { background: `${group.color}15`, color: group.color } : undefined}
               >
-                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <Icon className="w-4 h-4 flex-shrink-0" style={isActive ? { color: group.color } : undefined} />
                 {item.label}
+                {isActive && (
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: group.color }} />
+                )}
               </Link>
             );
           })}
@@ -144,24 +158,36 @@ export function ProjectTabBar() {
   const pathname = usePathname();
   const { activeProjectId, activeProjectName } = useAppStore();
 
-  // Only show when a project is active and we're on a project page
   if (!activeProjectId) return null;
   if (!pathname.startsWith(`/projects/${activeProjectId}`)) return null;
 
   const projectBase = `/projects/${activeProjectId}`;
 
+  // Is user on the project overview page (not a sub-page)?
+  const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
+
   return (
     <div className="sticky top-16 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
-      <div className="flex items-center gap-1 px-6 py-1.5 overflow-x-auto scrollbar-hide">
-        {/* Project name chip */}
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-2 flex-shrink-0">
-          {(activeProjectName || "Project").slice(0, 20)}
-        </span>
-        <div className="w-px h-5 bg-border mr-1 flex-shrink-0" />
+      <div className="flex items-center gap-2 px-6 py-2 overflow-x-auto">
+        {/* Overview tab */}
+        <Link
+          href={projectBase}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all border",
+            isOverview
+              ? "bg-primary text-primary-foreground border-transparent shadow-sm"
+              : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/20"
+          )}
+        >
+          <LayoutDashboard className="w-3.5 h-3.5" />
+          Overview
+        </Link>
+
+        <div className="w-px h-6 bg-border flex-shrink-0" />
 
         {/* Tab groups */}
         {PROJECT_TABS.map((group) => (
-          <DropdownGroup key={group.label} group={group} projectBase={projectBase} pathname={pathname} />
+          <DropdownTab key={group.label} group={group} projectBase={projectBase} pathname={pathname} />
         ))}
       </div>
     </div>
