@@ -13,7 +13,7 @@ import {
   GitBranch, Dice5, Calculator, Table2, ChevronLeft, ChevronRight,
   Brain, Video, Package, ClipboardList, FileBarChart, Award,
   MessageSquare, Activity, Rocket, Shield, BarChart3, Layers,
-  ChevronsUpDown, X, FolderOpen, Plug, Zap, Microscope,
+  ChevronsUpDown, X, FolderOpen, Plug, Zap, Microscope, Star, ChevronDown as ChevronDownIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -49,10 +49,11 @@ const NAV: NavGroup[] = [
   {
     title: "AI AGENTS",
     items: [
-      { label: "Fleet Overview",   href: "/agents",        icon: Bot },
-      { label: "Chat with Agent",  href: "/agents/chat",   icon: MessageSquare },
-      { label: "Activity Log",     href: "/activity",      icon: Activity },
-      { label: "Deploy Agent",     href: "/agents/deploy", icon: Rocket },
+      { label: "Fleet Overview",   href: "/agents",            icon: Bot },
+      { label: "Chat with Agent",  href: "/agents/chat",      icon: MessageSquare },
+      { label: "Process Pipeline", href: "/agents/pipeline",  icon: Activity },
+      { label: "Activity Log",     href: "/activity",         icon: BarChart3 },
+      { label: "Deploy Agent",     href: "/agents/deploy",    icon: Rocket },
     ],
   },
 
@@ -170,7 +171,7 @@ const NAV: NavGroup[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeProjectId, activeProjectName, setActiveProject, sidebarCollapsed, toggleSidebar, pendingApprovals, unreadNotifications } = useAppStore();
+  const { activeProjectId, activeProjectName, setActiveProject, sidebarCollapsed, toggleSidebar, pendingApprovals, unreadNotifications, collapsedGroups, toggleGroup, pinnedPages, togglePin, setCommandPaletteOpen } = useAppStore();
 
   // Project switcher state
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -335,47 +336,109 @@ export function Sidebar() {
           </div>
         )}
 
+        {/* ── Pinned favourites ─────────────────────────────────── */}
+        {pinnedPages.length > 0 && !sidebarCollapsed && (
+          <div>
+            <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-amber-500/70">
+              <Star className="w-3 h-3 inline mr-0.5 fill-amber-500 text-amber-500" /> Favourites
+            </p>
+            {pinnedPages.map((href) => {
+              // Find the nav item matching this href
+              const navItem = NAV.flatMap((g) => g.items).find((i) => i.href === href);
+              if (!navItem) return null;
+              if (navItem.projectScoped && !activeProjectId) return null;
+              const active = isActive(navItem);
+              const Icon = navItem.icon;
+              return (
+                <div key={href} className="group relative">
+                  <Link
+                    href={resolvePath(navItem)}
+                    className={cn(
+                      "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200",
+                      active
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="flex-1 truncate">{navItem.label}</span>
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(href); }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
+                      title="Unpin"
+                    >
+                      <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                    </button>
+                  </Link>
+                </div>
+              );
+            })}
+            <div className="mx-3 my-1 h-px bg-sidebar-border" />
+          </div>
+        )}
+
         {NAV.map((group, gi) => {
           // Hide project-scoped groups if no project is selected
           if (group.projectScoped && !activeProjectId) return null;
 
+          const isCollapsed = group.title ? collapsedGroups.includes(group.title) : false;
+
           return (
             <div key={gi}>
               {group.title && !sidebarCollapsed && (
-                <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {group.title}
-                </p>
+                <button
+                  onClick={() => toggleGroup(group.title!)}
+                  className="w-full flex items-center justify-between px-3 pt-4 pb-1 group"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    {group.title}
+                  </span>
+                  <ChevronDownIcon className={cn(
+                    "w-3 h-3 text-muted-foreground/50 transition-transform",
+                    isCollapsed && "-rotate-90"
+                  )} />
+                </button>
               )}
-              {group.items.map((item) => {
+              {!isCollapsed && group.items.map((item) => {
                 if (item.projectScoped && !activeProjectId) return null;
                 const active = isActive(item);
                 const badge = getBadge(item.label);
                 const Icon = item.icon;
 
                 return (
-                  <Link
-                    key={item.label}
-                    href={resolvePath(item)}
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200",
-                      active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground sidebar-link-active font-semibold"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
-                    )}
-                    title={sidebarCollapsed ? item.label : undefined}
-                  >
-                    <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-                    {!sidebarCollapsed && (
-                      <>
-                        <span className="flex-1 truncate">{item.label}</span>
-                        {badge !== undefined && (
-                          <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-[10px]">
-                            {badge}
-                          </Badge>
-                        )}
-                      </>
-                    )}
-                  </Link>
+                  <div key={item.label} className="group/item relative">
+                    <Link
+                      href={resolvePath(item)}
+                      className={cn(
+                        "flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200",
+                        active
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground sidebar-link-active font-semibold"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground hover:translate-x-0.5"
+                      )}
+                      title={sidebarCollapsed ? item.label : undefined}
+                    >
+                      <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                      {!sidebarCollapsed && (
+                        <>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          {badge !== undefined && (
+                            <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-[10px]">
+                              {badge}
+                            </Badge>
+                          )}
+                          {!pinnedPages.includes(item.href) && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(item.href); }}
+                              className="opacity-0 group-hover/item:opacity-100 transition-opacity p-0.5"
+                              title="Pin to favourites"
+                            >
+                              <Star className="w-3 h-3 text-muted-foreground hover:text-amber-500" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </Link>
+                  </div>
                 );
               })}
             </div>

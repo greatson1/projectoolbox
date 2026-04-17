@@ -1057,8 +1057,7 @@ function AgentChatPage() {
                 </div>
               </div>
             );
-          })()
-          )}
+          })()}
         </div>
 
         {/* Quick actions row */}

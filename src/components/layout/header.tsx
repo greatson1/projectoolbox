@@ -11,7 +11,7 @@ import Link from "next/link";
 
 export function Header() {
   const { setTheme, resolvedTheme } = useTheme();
-  const { unreadNotifications, sidebarCollapsed } = useAppStore();
+  const { unreadNotifications, sidebarCollapsed, setCommandPaletteOpen } = useAppStore();
   const [mounted, setMounted] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -25,14 +25,14 @@ export function Header() {
         <OrgSwitcher />
       </div>
       <div className="flex items-center gap-2 flex-1 max-w-md">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border w-full">
+        <button
+          onClick={() => setCommandPaletteOpen(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border w-full text-left hover:bg-muted/70 transition-colors"
+        >
           <Search className="w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search projects, agents, tasks... ⌘K"
-            className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
-          />
-        </div>
+          <span className="text-sm text-muted-foreground flex-1">Search pages, projects, tools...</span>
+          <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-muted-foreground">Ctrl+K</kbd>
+        </button>
       </div>
 
       {/* Right actions */}

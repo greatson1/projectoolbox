@@ -13,6 +13,18 @@ interface AppState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
 
+  // Collapsible sidebar groups (persisted)
+  collapsedGroups: string[];
+  toggleGroup: (group: string) => void;
+
+  // Pinned / favourite pages (persisted)
+  pinnedPages: string[]; // href values e.g. "/risk", "/schedule"
+  togglePin: (href: string) => void;
+
+  // Command palette
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+
   // Counts for badges
   pendingApprovals: number;
   unreadNotifications: number;
@@ -34,6 +46,25 @@ export const useAppStore = create<AppState>()(
       sidebarCollapsed: false,
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
+      collapsedGroups: [],
+      toggleGroup: (group) =>
+        set((s) => ({
+          collapsedGroups: s.collapsedGroups.includes(group)
+            ? s.collapsedGroups.filter((g) => g !== group)
+            : [...s.collapsedGroups, group],
+        })),
+
+      pinnedPages: [],
+      togglePin: (href) =>
+        set((s) => ({
+          pinnedPages: s.pinnedPages.includes(href)
+            ? s.pinnedPages.filter((p) => p !== href)
+            : [...s.pinnedPages, href],
+        })),
+
+      commandPaletteOpen: false,
+      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+
       pendingApprovals: 0,
       unreadNotifications: 0,
       setPendingApprovals: (n) => set({ pendingApprovals: n }),
@@ -44,11 +75,11 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "projectoolbox-app",
-      // Do NOT persist active project context — it becomes stale after data resets / org switches.
-      // The sidebar validates and restores it from the live project list on mount.
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         accentTheme: state.accentTheme,
+        collapsedGroups: state.collapsedGroups,
+        pinnedPages: state.pinnedPages,
       }),
     }
   )
