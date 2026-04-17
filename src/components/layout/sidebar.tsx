@@ -218,7 +218,7 @@ export function Sidebar() {
     const resolved = resolvePath(item);
     // Exact match for top-level pages that are prefixes of other routes
     // e.g. /agents should not highlight when on /agents/chat or /agents/deploy
-    const exactMatchRoutes = ["/dashboard", "/agents", "/projects", "/settings"];
+    const exactMatchRoutes = ["/dashboard", "/agents", "/projects", "/settings", "/activity"];
     if (exactMatchRoutes.includes(resolved)) return pathname === resolved;
     return pathname.startsWith(resolved);
   };
