@@ -113,7 +113,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
 
     const project = await db.project.findUnique({
       where: { id: projectId },
-      select: { name: true, orgId: true },
+      select: { name: true, orgId: true, budget: true },
     });
 
     // Find the deployed agent for this project

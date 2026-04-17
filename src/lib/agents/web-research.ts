@@ -414,11 +414,11 @@ export async function procurementToArtefact(
           data: {
             projectId,
             category: "MATERIALS",
-            description: `${item.item} — ${item.supplier}`,
+            description: `${item.item} — ${item.supplier}. Unit: ${item.unit || "each"}. MOQ: ${item.moq || "N/A"}. Lead time: ${item.leadTime || "N/A"}. Source: Procurement research.`,
             amount: price,
             currency: "GBP",
-            type: "ESTIMATED",
-            notes: `Unit: ${item.unit || "each"}. MOQ: ${item.moq || "N/A"}. Lead time: ${item.leadTime || "N/A"}. Source: Procurement research.`,
+            entryType: "ESTIMATE",
+            vendorName: item.supplier || null,
           },
         });
         costEntries++;

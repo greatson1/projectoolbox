@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       orgId,
       type,
       name,
-      config: config ?? {},
+      config: (config ?? {}) as any,
       status,
       errorMessage,
     },

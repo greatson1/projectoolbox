@@ -51,7 +51,7 @@ const ACTION_STATUS_STYLE: Record<string, string> = {
 
 type ResponseAction = {
   id: string;
-  type?: "ACTION" | "ESCALATION";
+  type?: "ACTION" | "ESCALATION" | "STAKEHOLDER_RESPONSE";
   strategy?: Strategy;
   action?: string;
   owner?: string | null;
@@ -67,6 +67,11 @@ type ResponseAction = {
   failedRecipients?: string[];
   subject?: string;
   emailPreview?: string;
+  // Stakeholder response-specific
+  respondedAt?: string;
+  respondedBy?: string;
+  comment?: string | null;
+  source?: string;
 };
 
 type Risk = {
@@ -774,7 +779,7 @@ export default function RiskRegisterPage() {
                                         {new Date(entry.escalatedAt!).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                                       </span>
                                     </div>
-                                    <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" title="Escalation records cannot be deleted" />
+                                    <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" aria-label="Escalation records cannot be deleted" />
                                   </div>
                                   <p className="text-[10px] font-semibold text-foreground truncate">{entry.subject}</p>
                                   {entry.emailPreview && (
@@ -807,7 +812,7 @@ export default function RiskRegisterPage() {
                                         {entry.respondedAt ? new Date(entry.respondedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}
                                       </span>
                                     </div>
-                                    <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" title="External responses cannot be edited" />
+                                    <Lock className="w-3 h-3 text-muted-foreground flex-shrink-0" aria-label="External responses cannot be edited" />
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-semibold">Decision: {entry.action || entry.strategy || "—"}</span>

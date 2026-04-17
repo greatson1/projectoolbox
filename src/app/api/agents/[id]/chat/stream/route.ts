@@ -684,7 +684,7 @@ ${(() => {
 
   // --- Relevance scoring: boost items whose title/tags overlap with the current message ---
   const msgWords = new Set(
-    message.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 3)
+    message.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w: string) => w.length > 3)
   );
   const scored = knowledgeItems.map(k => {
     const titleWords = (k.title || "").toLowerCase().split(/\s+/);
@@ -1704,9 +1704,9 @@ These are handled by the platform automatically. Just write normal text.
                   data: {
                     status: "APPROVED",
                     metadata: {
-                      approvedBy: (session?.user as any)?.id || "chat",
+                      approvedBy: caller.userId || "chat",
                       approvedAt: new Date().toISOString(),
-                      approvedByName: (session?.user as any)?.name || (session?.user as any)?.email || "User (via chat)",
+                      approvedByName: "User (via chat)",
                       approvedVia: "chat",
                     },
                   },
@@ -1719,7 +1719,7 @@ These are handled by the platform automatically. Just write normal text.
                   agentId,
                   conversationId,
                   role: "agent",
-                  content: `✅ **${approved.length} artefact${approved.length !== 1 ? "s" : ""} approved:**\n${approved.map(n => `- ${n}`).join("\n")}\n\nApproved by ${(session?.user as any)?.name || (session?.user as any)?.email || "you"} via chat.`,
+                  content: `✅ **${approved.length} artefact${approved.length !== 1 ? "s" : ""} approved:**\n${approved.map(n => `- ${n}`).join("\n")}\n\nApproved via chat.`,
                 },
               }).catch(() => {});
 

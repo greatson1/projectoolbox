@@ -244,7 +244,7 @@ export async function runFeasibilityResearch(
     where: { id: projectId },
     select: { id: true, name: true, description: true, category: true, budget: true, startDate: true, endDate: true, methodology: true },
   });
-  if (!project) return { factsDiscovered: 0, queries: [], summary: "Project not found" };
+  if (!project) return { factsDiscovered: 0, queries: [], summary: "Project not found", sections: [], facts: [] };
 
   const queries = buildResearchQueries(project as ProjectContext);
   const queryLabels = ["Core feasibility", "Domain-specific research", "Regulatory & compliance"];

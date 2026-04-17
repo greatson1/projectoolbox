@@ -699,25 +699,15 @@ async function seedBenefits(artefact: ArtefactInput, agentId: string): Promise<v
     where: { projectId: artefact.projectId, createdBy: `agent:${agentId}` },
   });
 
-  const headers = rows[0].map(h => h.toLowerCase().trim());
-  const nameIdx = headers.findIndex(h => h.includes("benefit") || h.includes("name") || h.includes("title"));
-  const categoryIdx = headers.findIndex(h => h.includes("category") || h.includes("type"));
-  const targetIdx = headers.findIndex(h => h.includes("target") && (h.includes("value") || h.includes("£") || h.includes("amount")));
-  const realisedIdx = headers.findIndex(h => h.includes("realised") || h.includes("actual") || h.includes("achieved"));
-  const statusIdx = headers.findIndex(h => h.includes("status"));
-  const ownerIdx = headers.findIndex(h => h.includes("owner") || h.includes("responsible") || h.includes("lead"));
-  const dateIdx = headers.findIndex(h => h.includes("date") || h.includes("target date") || h.includes("deadline"));
-  const descIdx = headers.findIndex(h => h.includes("description") || h.includes("detail") || h.includes("notes"));
-  const measureIdx = headers.findIndex(h => h.includes("measure") || h.includes("kpi") || h.includes("metric"));
-
-  for (let i = 1; i < rows.length; i++) {
+  // parseCSV returns Record<string,string>[] — use col() helper for resilient column lookup
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const name = nameIdx >= 0 ? row[nameIdx]?.trim() : null;
+    const name = col(row, ["benefit", "benefit name", "name", "title"]);
     if (!name || name.toLowerCase().startsWith("tbc")) continue;
 
-    const rawTarget = targetIdx >= 0 ? row[targetIdx]?.replace(/[£$,\s]/g, "") : "0";
-    const rawRealised = realisedIdx >= 0 ? row[realisedIdx]?.replace(/[£$,\s]/g, "") : "0";
-    const rawStatus = statusIdx >= 0 ? row[statusIdx]?.trim().toUpperCase().replace(/\s+/g, "_") : "NOT_STARTED";
+    const rawTarget = col(row, ["target value", "target £", "target amount", "value"]).replace(/[£$,\s]/g, "");
+    const rawRealised = col(row, ["realised", "realised value", "actual", "achieved"]).replace(/[£$,\s]/g, "");
+    const rawStatus = col(row, ["status"]).trim().toUpperCase().replace(/\s+/g, "_");
     const status = ["ON_TRACK", "AT_RISK", "REALISED", "NOT_STARTED"].includes(rawStatus) ? rawStatus : "NOT_STARTED";
 
     try {
@@ -725,14 +715,14 @@ async function seedBenefits(artefact: ArtefactInput, agentId: string): Promise<v
         data: {
           projectId: artefact.projectId,
           name,
-          description: descIdx >= 0 ? row[descIdx]?.trim() || null : null,
-          category: categoryIdx >= 0 ? row[categoryIdx]?.trim() || "Strategic" : "Strategic",
+          description: col(row, ["description", "detail", "notes"]) || null,
+          category: col(row, ["category", "type"]) || "Strategic",
           status,
           targetValue: parseFloat(rawTarget) || 0,
           realisedValue: parseFloat(rawRealised) || 0,
-          owner: ownerIdx >= 0 ? row[ownerIdx]?.trim() || null : null,
-          targetDate: dateIdx >= 0 ? parseDate(row[dateIdx]) || null : null,
-          measures: measureIdx >= 0 ? row[measureIdx]?.trim() || null : null,
+          owner: col(row, ["owner", "responsible", "lead"]) || null,
+          targetDate: parseDate(col(row, ["target date", "date", "deadline"])) || null,
+          measures: col(row, ["measure", "kpi", "metric"]) || null,
           createdBy: `agent:${agentId}`,
         },
       });

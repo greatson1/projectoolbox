@@ -237,7 +237,7 @@ export async function updateArtefactRow(
  * When a source artefact changes, flag its dependents as potentially stale.
  * Sets a "staleReason" in the artefact's metadata JSON.
  */
-async function flagDependentsStale(projectId: string, changedArtefactName: string): Promise<void> {
+export async function flagDependentsStale(projectId: string, changedArtefactName: string): Promise<void> {
   const dependents = DEPENDENCY_MAP[changedArtefactName];
   if (!dependents || dependents.length === 0) return;
 
