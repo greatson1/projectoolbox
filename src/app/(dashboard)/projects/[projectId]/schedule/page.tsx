@@ -48,6 +48,15 @@ function diffDays(a: Date, b: Date) { return Math.round((b.getTime() - a.getTime
 function formatDate(d: Date) { return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); }
 function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
+/** Format a date as T-minus relative to a target date. T-0 = target. Negative = past target. */
+function tMinusLabel(date: Date | string, targetDate: Date): string {
+  const d = typeof date === "string" ? parseDate(date) : date;
+  const days = diffDays(d, targetDate);
+  if (days === 0) return "T-0";
+  if (days > 0) return `T-${days}`;
+  return `T+${Math.abs(days)}`;
+}
+
 function getMonths(start: Date, end: Date) {
   const months: { label: string; start: Date; days: number }[] = [];
   const cur = new Date(start.getFullYear(), start.getMonth(), 1);
@@ -120,6 +129,7 @@ export default function SchedulePage() {
   const [zoom, setZoom] = useState<ZoomLevel>("month");
   const [view, setView] = useState<ViewMode>("gantt");
   const [showCriticalPath, setShowCriticalPath] = useState(true);
+  const [tMinusMode, setTMinusMode] = useState(false);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set<string>());
   const [selectedTask, setSelectedTask] = useState<ScheduleTask | null>(null);
   const [editProgress, setEditProgress] = useState<number | null>(null);
@@ -222,6 +232,19 @@ export default function SchedulePage() {
     return phases;
   }, [tasksByPhase]);
 
+  // T-Minus target date (project end date or latest task end)
+  const tMinusTarget = useMemo(() => {
+    const projEnd = (project as any)?.endDate;
+    if (projEnd) return parseDate(projEnd.slice(0, 10));
+    if (TASKS_DATA.length > 0) {
+      const latest = new Date(Math.max(...TASKS_DATA.map(t => parseDate(t.end).getTime())));
+      return latest;
+    }
+    return addDays(new Date(), 90);
+  }, [project, TASKS_DATA]);
+
+  const daysToTarget = diffDays(new Date(), tMinusTarget);
+
   // Stats
   const totalTasks = TASKS_DATA.length;
   const completedTasks = TASKS_DATA.filter(t => t.status === "done").length;
@@ -273,6 +296,7 @@ export default function SchedulePage() {
       <div className="space-y-6 max-w-[1400px]">
         <Header view={view} setView={setView} zoom={zoom} setZoom={setZoom}
           showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
+          tMinusMode={tMinusMode} setTMinusMode={setTMinusMode} daysToTarget={daysToTarget} tMinusTarget={tMinusTarget}
           stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} project={project}
           onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} />
 
@@ -303,8 +327,12 @@ export default function SchedulePage() {
                         {t.name}
                       </td>
                       <td className="py-2 px-3"><Badge variant={t.phase === "Execution" ? "outline" : t.phase === "Planning" ? "secondary" : "outline"}>{t.phase}</Badge></td>
-                      <td className="py-2 px-3" style={{ color: "var(--muted-foreground)" }}>{formatDate(parseDate(t.start))}</td>
-                      <td className="py-2 px-3" style={{ color: "var(--muted-foreground)" }}>{formatDate(parseDate(t.end))}</td>
+                      <td className="py-2 px-3" style={{ color: "var(--muted-foreground)" }}>
+                        {tMinusMode ? <span className="font-mono text-[11px]">{tMinusLabel(t.start, tMinusTarget)}</span> : formatDate(parseDate(t.start))}
+                      </td>
+                      <td className="py-2 px-3" style={{ color: "var(--muted-foreground)" }}>
+                        {tMinusMode ? <span className="font-mono text-[11px]">{tMinusLabel(t.end, tMinusTarget)}</span> : formatDate(parseDate(t.end))}
+                      </td>
                       <td className="py-2 px-3" style={{ color: "var(--muted-foreground)" }}>{t.isMilestone ? "—" : `${dur}d`}</td>
                       <td className="py-2 px-3 w-[120px]">
                         <div className="flex items-center gap-2">
@@ -337,6 +365,7 @@ export default function SchedulePage() {
     <div className="space-y-6 max-w-[1600px]">
       <Header view={view} setView={setView} zoom={zoom} setZoom={setZoom}
         showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
+        tMinusMode={tMinusMode} setTMinusMode={setTMinusMode} daysToTarget={daysToTarget} tMinusTarget={tMinusTarget}
         stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }}
         onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} />
 
@@ -520,8 +549,8 @@ export default function SchedulePage() {
             {[
               { label: "Phase", value: selectedTask.phase },
               { label: "Status", value: selectedTask.status },
-              { label: "Start", value: formatDate(parseDate(selectedTask.start)) },
-              { label: "End", value: formatDate(parseDate(selectedTask.end)) },
+              { label: "Start", value: tMinusMode ? tMinusLabel(selectedTask.start, tMinusTarget) : formatDate(parseDate(selectedTask.start)) },
+              { label: "End", value: tMinusMode ? tMinusLabel(selectedTask.end, tMinusTarget) : formatDate(parseDate(selectedTask.end)) },
               { label: "Duration", value: selectedTask.isMilestone ? "Milestone" : `${diffDays(parseDate(selectedTask.start), parseDate(selectedTask.end)) + 1}d` },
               { label: "Assignee", value: selectedTask.assignee || "Unassigned" },
             ].map(f => (
@@ -598,9 +627,38 @@ export default function SchedulePage() {
 }
 
 // ── Header with stats + controls ──
-function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, stats, project, onDownloadCSV }: any) {
+function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, tMinusMode, setTMinusMode, daysToTarget, tMinusTarget, stats, project, onDownloadCSV }: any) {
   return (
     <div className="space-y-4">
+      {/* T-Minus countdown banner */}
+      {tMinusMode && (
+        <div className="flex items-center gap-4 px-5 py-3 rounded-xl" style={{ background: daysToTarget <= 7 ? "rgba(239,68,68,0.1)" : daysToTarget <= 30 ? "rgba(245,158,11,0.1)" : "rgba(99,102,241,0.1)", border: `1px solid ${daysToTarget <= 7 ? "rgba(239,68,68,0.2)" : daysToTarget <= 30 ? "rgba(245,158,11,0.2)" : "rgba(99,102,241,0.2)"}` }}>
+          <div className="text-center min-w-[80px]">
+            <p className="text-[28px] font-black font-mono" style={{ color: daysToTarget <= 7 ? "#EF4444" : daysToTarget <= 30 ? "#F59E0B" : "var(--primary)" }}>
+              T-{Math.max(0, daysToTarget)}
+            </p>
+            <p className="text-[10px] font-medium" style={{ color: "var(--muted-foreground)" }}>days to go</p>
+          </div>
+          <div className="flex-1">
+            <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>
+              Target: {tMinusTarget.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+              {daysToTarget <= 0 ? "Target date has passed" : daysToTarget <= 7 ? "Final week — all tasks should be wrapping up" : daysToTarget <= 14 ? "Two weeks remaining — focus on critical path" : daysToTarget <= 30 ? "One month to go — monitor blockers closely" : `${Math.round(daysToTarget / 7)} weeks remaining`}
+            </p>
+          </div>
+          <div className="flex-shrink-0 w-[200px]">
+            <div className="flex justify-between text-[9px] mb-1" style={{ color: "var(--muted-foreground)" }}>
+              <span>Progress</span>
+              <span>{stats.overallProgress}%</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${stats.overallProgress}%`, background: daysToTarget <= 7 ? "#EF4444" : daysToTarget <= 30 ? "#F59E0B" : "var(--primary)" }} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Title row */}
       <div className="flex items-center justify-between">
         <div>
@@ -608,6 +666,19 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
           {project && <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>{project.name}{project.methodology ? ` — ${project.methodology}` : ""}</p>}
         </div>
         <div className="flex items-center gap-2">
+          {/* T-Minus toggle */}
+          <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid var(--border)` }}>
+            <button className="px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={{ background: !tMinusMode ? "var(--primary)" : "transparent", color: !tMinusMode ? "#FFF" : "var(--muted-foreground)" }}
+              onClick={() => setTMinusMode(false)}>
+              Calendar
+            </button>
+            <button className="px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={{ background: tMinusMode ? "var(--primary)" : "transparent", color: tMinusMode ? "#FFF" : "var(--muted-foreground)" }}
+              onClick={() => setTMinusMode(true)}>
+              T-Minus
+            </button>
+          </div>
           {onDownloadCSV && (
             <Button variant="outline" size="sm" onClick={onDownloadCSV}>
               <Download className="w-3.5 h-3.5 mr-1" />
