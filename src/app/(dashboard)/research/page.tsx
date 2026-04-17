@@ -21,6 +21,7 @@ interface ResearchSession {
   agentId: string;
   agentName: string;
   agentGradient: string | null;
+  projectId: string | null;
   projectName: string;
   factsCount: number;
   sections: Array<{ label: string; content: string }>;
@@ -56,7 +57,8 @@ interface AuditData {
   sessions: ResearchSession[];
   kbItems: KBFact[];
   activities: AuditActivity[];
-  agents: Array<{ id: string; name: string; gradient: string | null }>;
+  agents: Array<{ id: string; name: string; gradient: string | null; projectId: string | null; projectName: string | null }>;
+  projects: Array<{ id: string; name: string; status: string | null }>;
   stats: {
     totalFacts: number;
     totalSessions: number;
@@ -131,6 +133,7 @@ export default function ResearchAuditPage() {
 
   const [range, setRange] = useState("30d");
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [viewTab, setViewTab] = useState<ViewTab>("timeline");
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
@@ -139,10 +142,11 @@ export default function ResearchAuditPage() {
   const [factCategoryFilter, setFactCategoryFilter] = useState<string | null>(null);
 
   const { data, isLoading, refetch, isFetching } = useQuery<AuditData>({
-    queryKey: ["research-audit", range, agentFilter],
+    queryKey: ["research-audit", range, agentFilter, projectFilter],
     queryFn: async () => {
       const params = new URLSearchParams({ range });
       if (agentFilter) params.set("agent", agentFilter);
+      if (projectFilter) params.set("project", projectFilter);
       const res = await fetch(`/api/research-audit?${params}`);
       const json = await res.json();
       return json.data;
@@ -154,6 +158,7 @@ export default function ResearchAuditPage() {
   const kbItems = data?.kbItems || [];
   const activities = data?.activities || [];
   const agents = data?.agents || [];
+  const projects = data?.projects || [];
   const stats = data?.stats;
 
   // Merge + sort timeline (sessions + activities)
@@ -251,13 +256,28 @@ export default function ResearchAuditPage() {
         </div>
         <div className="flex items-center gap-2">
           <select
+            value={projectFilter || ""}
+            onChange={(e) => { setProjectFilter(e.target.value || null); setAgentFilter(null); }}
+            className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs outline-none"
+          >
+            <option value="">All Projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <select
             value={agentFilter || ""}
             onChange={(e) => setAgentFilter(e.target.value || null)}
             className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs outline-none"
           >
             <option value="">All Agents</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
+            {(projectFilter
+              ? agents.filter((a) => a.projectId === projectFilter)
+              : agents
+            ).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}{a.projectName ? ` (${a.projectName})` : ""}
+              </option>
             ))}
           </select>
           <button

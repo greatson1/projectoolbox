@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const agentFilter = searchParams.get("agent");
+  const projectFilter = searchParams.get("project");
   const range = searchParams.get("range") || "30d";
 
   let since = new Date();
@@ -22,7 +23,21 @@ export async function GET(req: NextRequest) {
   else if (range === "90d") since.setDate(since.getDate() - 90);
   else since.setDate(since.getDate() - 30);
 
-  const agentWhere = agentFilter ? { agentId: agentFilter } : {};
+  // If filtering by project, resolve which agents are deployed to that project
+  let agentIdsForProject: string[] | null = null;
+  if (projectFilter) {
+    const deployments = await db.agentDeployment.findMany({
+      where: { projectId: projectFilter, agent: { orgId } },
+      select: { agentId: true },
+    });
+    agentIdsForProject = deployments.map((d) => d.agentId);
+  }
+
+  const agentWhere = agentFilter
+    ? { agentId: agentFilter }
+    : agentIdsForProject
+      ? { agentId: { in: agentIdsForProject } }
+      : {};
 
   // 1. Research-tagged KB items (facts stored from Perplexity research)
   const kbItems = await db.knowledgeBaseItem.findMany({
@@ -37,7 +52,7 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, title: true, content: true, type: true, layer: true,
       trustLevel: true, tags: true, createdAt: true, agentId: true,
-      sourceUrl: true, metadata: true,
+      projectId: true, sourceUrl: true, metadata: true,
     },
   });
 
@@ -73,21 +88,46 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  // 4. Agents list for filter dropdown
+  // 4. Agents list for filter dropdown (include their active project)
   const agents = await db.agent.findMany({
     where: { orgId, status: { not: "DECOMMISSIONED" } },
-    select: { id: true, name: true, gradient: true },
+    select: {
+      id: true, name: true, gradient: true,
+      deployments: {
+        where: { isActive: true },
+        select: { projectId: true, project: { select: { id: true, name: true } } },
+        take: 1,
+      },
+    },
   });
 
-  // 5. Build research sessions by grouping chat messages (each represents one research run)
+  // 5. Projects list for filter dropdown
+  const projects = await db.project.findMany({
+    where: { orgId },
+    select: { id: true, name: true, status: true },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  // 6. Build research sessions by grouping chat messages (each represents one research run)
+  // Look up agent→project mapping for each session
+  const agentProjectMap = new Map<string, { projectId: string; projectName: string }>();
+  agents.forEach((a) => {
+    const dep = a.deployments?.[0];
+    if (dep?.project) {
+      agentProjectMap.set(a.id, { projectId: dep.project.id, projectName: dep.project.name });
+    }
+  });
+
   const sessions = chatMessages.map((msg) => {
     const meta = msg.metadata as any;
+    const agentProject = agentProjectMap.get(msg.agentId);
     return {
       id: msg.id,
       agentId: msg.agentId,
       agentName: (msg.agent as any).name,
       agentGradient: (msg.agent as any).gradient,
-      projectName: meta?.projectName || "Unknown",
+      projectId: agentProject?.projectId || null,
+      projectName: meta?.projectName || agentProject?.projectName || "Unknown",
       factsCount: meta?.factsCount || 0,
       sections: meta?.sections || [],
       facts: meta?.facts || [],
@@ -129,7 +169,14 @@ export async function GET(req: NextRequest) {
         metadata: a.metadata,
         createdAt: a.createdAt,
       })),
-      agents,
+      agents: agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        gradient: a.gradient,
+        projectId: a.deployments?.[0]?.project?.id || null,
+        projectName: a.deployments?.[0]?.project?.name || null,
+      })),
+      projects,
       stats: {
         totalFacts,
         totalSessions,
