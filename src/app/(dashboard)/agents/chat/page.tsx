@@ -1020,16 +1020,44 @@ function AgentChatPage() {
             .map(msg => (
             <RichMessage key={msg.id} msg={msg} agentGradient={activeAgent?.gradient} agentName={activeAgent?.name} />
           ))}
-          {sending && (
-            <div className="flex gap-2">
-              <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
-                style={{ background: activeAgent?.gradient || "#6366F1" }}>{activeAgent?.name?.[0] || "A"}</div>
-              <div className="bg-muted px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
+          {/* Working indicator — shows during streaming OR when agent's last message implies ongoing work */}
+          {(() => {
+            const lastAgentMsg = [...messages].reverse().find(m => m.role === "agent" && m.content);
+            const lastContent = (lastAgentMsg?.content || "").toLowerCase();
+            const isWorking = sending || (
+              !sending && lastAgentMsg && (
+                lastContent.includes("let me search") ||
+                lastContent.includes("let me check") ||
+                lastContent.includes("let me run") ||
+                lastContent.includes("i'll research") ||
+                lastContent.includes("i'll search") ||
+                lastContent.includes("conducting research") ||
+                lastContent.includes("searching the knowledge") ||
+                lastContent.includes("generating") ||
+                lastContent.includes("looking into") ||
+                lastContent.includes("analysing") ||
+                lastContent.includes("working on")
+              ) &&
+              // Only show for 60 seconds after the last message
+              lastAgentMsg.timestamp && (Date.now() - new Date(lastAgentMsg.timestamp).getTime()) < 60_000
+            );
+            if (!isWorking) return null;
+            const workingLabel = sending ? "Thinking..." : "Working on it...";
+            return (
+              <div className="flex gap-2">
+                <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
+                  style={{ background: activeAgent?.gradient || "#6366F1" }}>{activeAgent?.name?.[0] || "A"}</div>
+                <div className="bg-muted px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-2">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{workingLabel}</span>
+                </div>
               </div>
-            </div>
+            );
+          })()
           )}
         </div>
 
