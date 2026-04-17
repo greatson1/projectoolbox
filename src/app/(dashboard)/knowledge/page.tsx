@@ -37,12 +37,8 @@ const TRUST_COLORS: Record<string, string> = {
   REFERENCE_ONLY: "text-amber-500",
 };
 
-const LAYERS = [
-  { id: null,        label: "All" },
-  { id: "PROJECT",   label: "Project" },
-  { id: "WORKSPACE", label: "Workspace" },
-  { id: "AGENT",     label: "Agent" },
-];
+// Layer tabs removed — KB is now purely agent-scoped.
+// Each agent is deployed to one project, so agent = project context.
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -53,7 +49,6 @@ export default function KnowledgeBasePage() {
   const [loading, setLoading]       = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
-  const [filterLayer, setFilterLayer] = useState<string | null>(null);
   const [filterTag, setFilterTag]   = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing]       = useState(false);
@@ -78,14 +73,13 @@ export default function KnowledgeBasePage() {
     const params = new URLSearchParams();
     if (searchQuery) params.set("q", searchQuery);
     if (filterType)  params.set("type", filterType);
-    if (filterLayer) params.set("layer", filterLayer);
     fetch(`/api/agents/${selectedAgent}/knowledge?${params}`)
       .then(r => r.json())
       .then(d => { setItems(d.data || []); setLoading(false); })
       .catch(() => setLoading(false));
   };
 
-  useEffect(() => { fetchItems(); }, [selectedAgent, searchQuery, filterType, filterLayer]);
+  useEffect(() => { fetchItems(); }, [selectedAgent, searchQuery, filterType]);
 
   const selectedItem = useMemo(() => items.find(i => i.id === selectedId), [items, selectedId]);
 
@@ -134,6 +128,39 @@ export default function KnowledgeBasePage() {
     if (selectedId === id) setSelectedId(null);
   };
 
+  // ── No agents deployed yet — show onboarding ──
+  if (!loading && agents.length === 0) return (
+    <div className="h-[calc(100vh-120px)] flex flex-col">
+      <div className="flex items-center gap-3 mb-6">
+        <Brain className="w-5 h-5 text-primary" />
+        <h1 className="text-lg font-bold">Knowledge Base</h1>
+      </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-5">
+            <Brain className="w-8 h-8 text-primary/40" />
+          </div>
+          <h2 className="text-base font-bold mb-2">No agents deployed yet</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+            The Knowledge Base stores everything your AI agent learns about your project — research facts, stakeholder intel, cost data, and decisions. It&apos;s the agent&apos;s memory.
+          </p>
+          <div className="rounded-xl border border-border bg-muted/20 p-4 text-left mb-5">
+            <p className="text-xs font-bold mb-2">How it gets populated:</p>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <div className="flex gap-2"><span className="text-primary font-bold">1.</span> <span><strong>Deploy an agent</strong> to a project — it runs Perplexity AI research automatically</span></div>
+              <div className="flex gap-2"><span className="text-primary font-bold">2.</span> <span><strong>Answer clarification questions</strong> — your answers are stored as high-trust facts</span></div>
+              <div className="flex gap-2"><span className="text-primary font-bold">3.</span> <span><strong>Add knowledge manually</strong> — paste text, import URLs, upload files</span></div>
+              <div className="flex gap-2"><span className="text-primary font-bold">4.</span> <span><strong>Run research on demand</strong> — PESTLE scans, stakeholder intel, vendor assessments, market pricing</span></div>
+            </div>
+          </div>
+          <a href="/agents/deploy">
+            <Button size="sm" className="text-xs">Deploy Your First Agent</Button>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) return (
     <div className="space-y-4">
       <Skeleton className="h-8 w-48" />
@@ -173,16 +200,6 @@ export default function KnowledgeBasePage() {
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Knowledge
           </Button>
         </div>
-      </div>
-
-      {/* ── Layer tabs ── */}
-      <div className="flex gap-1 p-1 rounded-lg bg-muted/40 mb-3 flex-shrink-0">
-        {LAYERS.map(l => (
-          <button key={String(l.id)} onClick={() => setFilterLayer(l.id)}
-            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${filterLayer === l.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-            {l.label}
-          </button>
-        ))}
       </div>
 
       {/* ── Graph view ── */}
@@ -270,9 +287,6 @@ export default function KnowledgeBasePage() {
                       <p className="text-[10px] text-muted-foreground truncate flex-1">
                         {(item.content || "").slice(0, 55)}
                       </p>
-                      {item.layer && (
-                        <Badge variant="secondary" className="text-[8px] px-1 flex-shrink-0">{item.layer}</Badge>
-                      )}
                     </div>
                   </button>
                 );
@@ -285,19 +299,58 @@ export default function KnowledgeBasePage() {
         <div className="flex-1 flex flex-col overflow-hidden bg-background">
           {!selectedItem ? (
             <div className="flex-1 flex items-center justify-center text-center p-8">
-              <div>
-                <Brain className="w-12 h-12 text-muted-foreground/20 mx-auto mb-3" />
-                <p className="text-sm font-medium text-muted-foreground">Select an item to view</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">{filtered.length} of {items.length} items shown</p>
-                <div className="flex gap-2 justify-center mt-4">
-                  <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowAdd(true)}>
-                    <Plus className="w-3 h-3 mr-1" /> Add Knowledge
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowResearch(true)}>
-                    <Microscope className="w-3 h-3 mr-1" /> Run Research
-                  </Button>
+              {items.length === 0 ? (
+                /* KB is empty — onboarding guidance */
+                <div className="max-w-sm">
+                  <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <Brain className="w-7 h-7 text-primary/40" />
+                  </div>
+                  <h3 className="text-sm font-bold mb-1.5">This agent&apos;s KB is empty</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+                    Knowledge gets added automatically when the agent runs research during deployment,
+                    or you can add it manually right now.
+                  </p>
+                  <div className="space-y-2 text-left mb-5">
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-muted/30">
+                      <Microscope className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-[11px] font-semibold">Run Internet Research</p>
+                        <p className="text-[10px] text-muted-foreground">PESTLE scans, web search, vendor intel, market pricing — results stored here automatically</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-muted/30">
+                      <Plus className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-[11px] font-semibold">Add Manually</p>
+                        <p className="text-[10px] text-muted-foreground">Paste text, import a URL (AI-summarised), or upload a document</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-center">
+                    <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowResearch(true)}>
+                      <Microscope className="w-3 h-3 mr-1" /> Run Research
+                    </Button>
+                    <Button size="sm" className="text-xs" onClick={() => setShowAdd(true)}>
+                      <Plus className="w-3 h-3 mr-1" /> Add Knowledge
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* KB has items, just none selected */
+                <div>
+                  <Brain className="w-12 h-12 text-muted-foreground/20 mx-auto mb-3" />
+                  <p className="text-sm font-medium text-muted-foreground">Select an item to view</p>
+                  <p className="text-xs text-muted-foreground/50 mt-1">{filtered.length} of {items.length} items shown</p>
+                  <div className="flex gap-2 justify-center mt-4">
+                    <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowAdd(true)}>
+                      <Plus className="w-3 h-3 mr-1" /> Add Knowledge
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-xs" onClick={() => setShowResearch(true)}>
+                      <Microscope className="w-3 h-3 mr-1" /> Run Research
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -311,7 +364,6 @@ export default function KnowledgeBasePage() {
                     <h2 className="text-sm font-bold truncate">{selectedItem.title}</h2>
                   )}
                   <Badge variant="secondary" className="text-[9px] flex-shrink-0">{selectedItem.type}</Badge>
-                  <Badge variant="secondary" className="text-[9px] flex-shrink-0">{selectedItem.layer}</Badge>
                   {selectedItem.confidential && (
                     <Badge variant="destructive" className="text-[9px] flex-shrink-0">
                       <Shield className="w-2.5 h-2.5 mr-0.5" />Confidential
@@ -415,7 +467,6 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
   const [title, setTitle]         = useState("");
   const [content, setContent]     = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
-  const [layer, setLayer]         = useState("PROJECT");
   const [trustLevel, setTrustLevel] = useState("STANDARD");
   const [tags, setTags]           = useState("");
   const [confidential, setConfidential] = useState(false);
@@ -464,7 +515,6 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
             title: title.trim(),
             content: content.trim(),
             type: "TEXT",
-            layer,
             sourceUrl: sourceUrl || undefined,
             trustLevel,
             confidential,
@@ -544,20 +594,12 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <select value={layer} onChange={e => setLayer(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none">
-                <option value="PROJECT">Project Memory</option>
-                <option value="WORKSPACE">Workspace Memory</option>
-                <option value="AGENT">Agent Memory</option>
-              </select>
-              <select value={trustLevel} onChange={e => setTrustLevel(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none">
-                <option value="HIGH_TRUST">High Trust</option>
-                <option value="STANDARD">Standard</option>
-                <option value="REFERENCE_ONLY">Reference Only</option>
-              </select>
-            </div>
+            <select value={trustLevel} onChange={e => setTrustLevel(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none">
+              <option value="HIGH_TRUST">High Trust — verified by you</option>
+              <option value="STANDARD">Standard — general knowledge</option>
+              <option value="REFERENCE_ONLY">Reference Only — external source, unverified</option>
+            </select>
 
             <input value={tags} onChange={e => setTags(e.target.value)} placeholder="Tags (comma-separated)"
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none" />
