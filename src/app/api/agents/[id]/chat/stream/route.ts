@@ -560,6 +560,15 @@ Example of RIGHT: "Setup phase planning is complete — 3 documents approved. Ho
 - When producing documents or boards, ALL items start as "Not Started" or "Planned" unless the project description or artefact data explicitly confirms otherwise.
 - Use [TBC] for any specific fact not provided in the project context above. An honest [TBC] is better than a plausible-sounding invention.
 
+## ARTEFACT APPROVAL STATUS — STRICT RULES
+- You CANNOT approve artefacts. Only the human user can approve them by clicking the Approve button or by asking you to approve in chat.
+- The ONLY source of truth for artefact approval status is the GENERATED ARTEFACTS section above. Check the [STATUS] tag next to each artefact name.
+- If an artefact shows [DRAFT] or [PENDING_REVIEW], it is NOT approved — do not say or imply it is approved.
+- If an artefact shows [APPROVED] with ✅, it IS approved — you may reference this.
+- NEVER say "all artefacts are approved" unless EVERY artefact in the list above shows [APPROVED].
+- When the user asks about approval status, read the GENERATED ARTEFACTS list and report the EXACT status of each one.
+- If artefacts need approval, direct the user to review them: [Review Artefacts](/agents/${agentId}?tab=artefacts)
+
 ## PM LIFECYCLE RESPONSIBILITIES
 You drive the project through every phase. You know exactly what must be produced at each stage — you do not wait to be asked.
 
@@ -1651,6 +1660,64 @@ These are handled by the platform automatically. Just write normal text.
                 } as any,
               },
             }).catch(() => {});
+          } catch {}
+        }
+
+        // ── Chat-based artefact approval ───────────────────────────────
+        const approvalMatch = /\b(approve|sign.?off|accept)\b.*\b(all|every|artefact|document|charter|brief|register|schedule|budget|wbs|plan|report|business case|stakeholder)/i.test(message)
+          || /\b(all|every)?\s*(artefact|document)s?\b.*\b(approve|sign.?off|accept)\b/i.test(message);
+        if (approvalMatch && deployment?.projectId) {
+          try {
+            const isApproveAll = /\ball\b|\bevery\b/i.test(message);
+            // Find artefacts to approve
+            const candidates = await db.agentArtefact.findMany({
+              where: {
+                agentId,
+                projectId: deployment.projectId,
+                status: { in: ["DRAFT", "PENDING_REVIEW"] },
+              },
+              select: { id: true, name: true, status: true },
+            });
+
+            // If not "approve all", try to match specific artefact name
+            let toApprove = candidates;
+            if (!isApproveAll && candidates.length > 0) {
+              const msgLower = message.toLowerCase();
+              const matched = candidates.filter(a => msgLower.includes(a.name.toLowerCase()));
+              if (matched.length > 0) toApprove = matched;
+            }
+
+            if (toApprove.length > 0) {
+              const approved: string[] = [];
+              for (const art of toApprove) {
+                await db.agentArtefact.update({
+                  where: { id: art.id },
+                  data: {
+                    status: "APPROVED",
+                    metadata: {
+                      approvedBy: (session?.user as any)?.id || "chat",
+                      approvedAt: new Date().toISOString(),
+                      approvedByName: (session?.user as any)?.name || (session?.user as any)?.email || "User (via chat)",
+                      approvedVia: "chat",
+                    },
+                  },
+                });
+                approved.push(art.name);
+              }
+              // Post a confirmation message
+              await db.chatMessage.create({
+                data: {
+                  agentId,
+                  conversationId,
+                  role: "agent",
+                  content: `✅ **${approved.length} artefact${approved.length !== 1 ? "s" : ""} approved:**\n${approved.map(n => `- ${n}`).join("\n")}\n\nApproved by ${(session?.user as any)?.name || (session?.user as any)?.email || "you"} via chat.`,
+                },
+              }).catch(() => {});
+
+              await db.agentActivity.create({
+                data: { agentId, type: "approval", summary: `${approved.length} artefact(s) approved via chat: ${approved.join(", ")}` },
+              }).catch(() => {});
+            }
           } catch {}
         }
 

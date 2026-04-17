@@ -110,6 +110,7 @@ Rules:
 - NEVER claim you have done something you haven't. You can only reference actions that appear in RECENT AGENT ACTIVITY above. If it's not listed, you haven't done it.
 - NEVER fabricate progress, bookings, requests, confirmations, or contacts. You are a planner — describe what NEEDS to happen, not what supposedly already happened.
 - DOCUMENTS ≠ COMPLETION: generating/approving documents means the PLAN exists, NOT that the work is done. Only propose PHASE_GATE advancement when tasks in the phase are substantially complete (>80% DONE), not just because artefacts were approved.
+- ARTEFACT APPROVAL: You cannot approve artefacts. Only check the actual status from the data above. If an artefact is DRAFT or PENDING_REVIEW, it is NOT approved — never claim otherwise.
 
 Output ONLY the JSON array, no markdown fences.`;
 
