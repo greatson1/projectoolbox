@@ -9,11 +9,14 @@ export const maxDuration = 120;
  * POST /api/admin/reparse-wbs — Re-parse all approved WBS artefacts.
  * One-time admin utility to re-trigger task materialisation after parser fixes.
  */
+export async function GET(req: NextRequest) { return POST(req); }
+
 export async function POST(req: NextRequest) {
-  // Allow auth via session OR internal secret (for CLI/curl access)
-  const internalKey = req.headers.get("x-admin-key") || "";
-  const expectedKey = process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "ptx-internal-2026";
-  if (internalKey !== expectedKey) {
+  // Allow auth via session OR internal key header
+  const internalKey = req.headers.get("x-admin-key") || req.nextUrl.searchParams.get("key") || "";
+  const expectedKey = process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "";
+  const hasValidKey = expectedKey && internalKey === expectedKey;
+  if (!hasValidKey) {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
