@@ -1721,6 +1721,103 @@ These are handled by the platform automatically. Just write normal text.
           } catch {}
         }
 
+        // ── Chat-based artefact editing ──────────────────────────────
+        const editMatch = /\b(update|edit|change|modify|revise|add|remove|include|amend|rewrite|fix|correct)\b/i.test(message)
+          && !approvalMatch; // don't fire on approval messages
+        if (editMatch && deployment?.projectId) {
+          try {
+            // Find all artefacts for this project to match against
+            const allArtefacts = await db.agentArtefact.findMany({
+              where: { agentId, projectId: deployment.projectId },
+              select: { id: true, name: true, content: true, format: true, status: true, version: true },
+            });
+
+            if (allArtefacts.length > 0) {
+              const msgLower = message.toLowerCase();
+              // Try to match an artefact name in the message
+              const matched = allArtefacts.filter(a => msgLower.includes(a.name.toLowerCase()));
+              // Also try partial matches for common short names
+              const partialMatches = matched.length === 0
+                ? allArtefacts.filter(a => {
+                    const words = a.name.toLowerCase().split(/\s+/);
+                    return words.some(w => w.length > 3 && msgLower.includes(w));
+                  })
+                : [];
+              const target = matched[0] || partialMatches[0];
+
+              if (target && process.env.ANTHROPIC_API_KEY) {
+                // Call Claude to revise the artefact
+                const editPrompt = `You are editing a project management document. Apply the user's requested change to the existing document content.
+
+DOCUMENT NAME: ${target.name}
+FORMAT: ${target.format}
+CURRENT CONTENT:
+${target.content.slice(0, 30000)}
+
+USER'S EDIT REQUEST:
+${message}
+
+RULES:
+- Apply ONLY the specific change the user requested. Do not rewrite unrelated sections.
+- Preserve the existing format (${target.format}) — if it's CSV keep it CSV, if HTML keep HTML, if markdown keep markdown.
+- If adding new items, place them in the logical location within the document.
+- If removing items, remove them cleanly without leaving gaps.
+- Return ONLY the updated document content, no explanations or preamble.
+- If the requested change doesn't make sense for this document, return the original content unchanged.`;
+
+                const editRes = await fetch("https://api.anthropic.com/v1/messages", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": process.env.ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                  },
+                  body: JSON.stringify({
+                    model: "claude-sonnet-4-20250514",
+                    max_tokens: 8192,
+                    messages: [{ role: "user", content: editPrompt }],
+                  }),
+                });
+
+                if (editRes.ok) {
+                  const editData = await editRes.json();
+                  const newContent = editData.content?.[0]?.text?.trim();
+
+                  if (newContent && newContent !== target.content.trim()) {
+                    const newVersion = target.version + 1;
+                    await db.agentArtefact.update({
+                      where: { id: target.id },
+                      data: {
+                        content: newContent,
+                        version: newVersion,
+                        status: "DRAFT", // reset to draft for re-approval
+                        feedback: `Edited via chat: "${message.slice(0, 200)}"`,
+                      },
+                    });
+
+                    // Post confirmation
+                    await db.chatMessage.create({
+                      data: {
+                        agentId,
+                        conversationId,
+                        role: "agent",
+                        content: `📝 **${target.name}** updated to v${newVersion}\n\nEdit: "${message.slice(0, 150)}"\n\nStatus reset to **DRAFT** for your review. [Review Artefacts](/agents/${agentId}?tab=artefacts)`,
+                      },
+                    }).catch(() => {});
+
+                    await db.agentActivity.create({
+                      data: { agentId, type: "document", summary: `Artefact edited via chat: "${target.name}" → v${newVersion}` },
+                    }).catch(() => {});
+
+                    // Deduct credits for the edit
+                    await CreditService.deduct(orgId, 3, `Artefact edit: ${target.name}`, agentId).catch(() => {});
+                  }
+                }
+              }
+            }
+          } catch {}
+        }
+
         await db.agentActivity.create({
           data: { agentId, type: "chat", summary: `Chat response: ${message.slice(0, 80)}${message.length > 80 ? "…" : ""}` },
         }).catch(() => {});
