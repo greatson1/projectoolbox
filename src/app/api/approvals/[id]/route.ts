@@ -183,6 +183,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             }
 
             if (nextPhase) {
+              // Verify ALL current-phase artefacts are approved before advancing.
+              // If any are still DRAFT/PENDING, block advancement and notify the user.
+              const currentPhaseArtefacts = await db.agentArtefact.findMany({
+                where: { agentId: deployment.agentId, projectId: deployment.projectId!, phaseId: currentPhase ?? undefined },
+              });
+              const unapproved = currentPhaseArtefacts.filter(a => a.status !== "APPROVED");
+              if (unapproved.length > 0) {
+                // Also check by phase row ID in case phaseId is stored differently
+                const phaseRow = await db.phase.findFirst({
+                  where: { projectId: deployment.projectId!, name: currentPhase ?? undefined },
+                  select: { id: true },
+                });
+                const byId = phaseRow ? await db.agentArtefact.count({
+                  where: { agentId: deployment.agentId, projectId: deployment.projectId!, phaseId: phaseRow.id, status: { not: "APPROVED" } },
+                }) : 0;
+
+                if (unapproved.length > 0 && byId > 0) {
+                  // Block advancement — there are genuinely unapproved artefacts
+                  await db.agentActivity.create({
+                    data: {
+                      agentId: deployment.agentId,
+                      type: "approval",
+                      summary: `Phase gate approved but ${unapproved.length} artefact(s) in "${currentPhase}" are not yet approved: ${unapproved.slice(0, 3).map(a => a.name).join(", ")}. Approve all artefacts before the phase can advance.`,
+                    },
+                  });
+                  // Keep deployment in current phase with active status so user can approve docs
+                  await db.agentDeployment.update({
+                    where: { id: deployment.id },
+                    data: { phaseStatus: "active" },
+                  });
+                  // Don't advance — exit early
+                  return NextResponse.json({ data: updated });
+                }
+              }
+
               // 1. Advance the phase in DB
               await db.agentDeployment.update({
                 where: { id: deployment.id },
