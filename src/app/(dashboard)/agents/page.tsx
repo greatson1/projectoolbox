@@ -661,6 +661,10 @@ function AgentCard({ agent }: { agent: Agent }) {
           <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
             title="Chat" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}>💬</button>
         </Link>
+        <Link href={`/agents/${agent.id}/pipeline`} onClick={e => e.stopPropagation()}>
+          <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
+            title="Process Pipeline" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}>📊</button>
+        </Link>
         <Link href={`/agents/${agent.id}`} onClick={e => e.stopPropagation()}>
           <button className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[12px] hover:opacity-80 transition-all"
             title="Settings" style={{ background: `${"var(--border)"}22`, color: "var(--muted-foreground)" }}>⚙</button>
