@@ -25,16 +25,21 @@ export default function AgentPipelineIndex() {
   useEffect(() => {
     fetch("/api/agents")
       .then(r => r.json())
-      .then(data => {
-        const list = (data?.agents || data?.data || []).map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          gradient: a.gradient || "#6366F1",
-          projectName: a.projectName || a.project?.name || "—",
-          currentPhase: a.currentPhase || a.deployment?.currentPhase || "—",
-          phaseStatus: a.phaseStatus || a.deployment?.phaseStatus || "—",
-          status: a.status || "ACTIVE",
-        }));
+      .then(json => {
+        // API returns { data: { agents: [...] } }
+        const raw = json?.data?.agents || json?.agents || json?.data || [];
+        const list = raw.map((a: any) => {
+          const dep = a.deployments?.[0] || {};
+          return {
+            id: a.id,
+            name: a.name,
+            gradient: a.gradient || "#6366F1",
+            projectName: a.project?.name || dep.project?.name || "—",
+            currentPhase: dep.currentPhase || "—",
+            phaseStatus: dep.phaseStatus || "—",
+            status: a.status || "ACTIVE",
+          };
+        });
         setAgents(list);
         setLoading(false);
       })
