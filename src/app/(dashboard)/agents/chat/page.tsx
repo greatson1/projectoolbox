@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
 import { toast } from "sonner";
-import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink } from "lucide-react";
+import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
 import { AgentQuestionCard, ProjectStatusCard } from "@/components/agents/AgentResponseCards";
@@ -401,6 +401,8 @@ function AgentChatPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<{ stage: string; detail: string } | null>(null);
+  const [agentStuck, setAgentStuck] = useState(false);
   const [clarificationSubmitting, setClarificationSubmitting] = useState(false);
   const [generatingDocs, setGeneratingDocs] = useState(false);
   const [agentQuestionSubmitting, setAgentQuestionSubmitting] = useState(false);
@@ -719,12 +721,22 @@ function AgentChatPage() {
     setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), userMsg] }));
     setInput("");
     setSending(true);
+    setAgentStatus(null);
+    setAgentStuck(false);
     scrollToBottom();
 
     // Create a placeholder streaming message
     const streamId = `stream-${Date.now()}`;
     const streamMsg: Message = { id: streamId, role: "agent", type: "text", content: "", timestamp: new Date() };
     setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), streamMsg] }));
+
+    // Stuck detection: if no events for 45s, show retry
+    let lastEventTime = Date.now();
+    const stuckTimer = setInterval(() => {
+      if (Date.now() - lastEventTime > 45_000) {
+        setAgentStuck(true);
+      }
+    }, 5_000);
 
     try {
       // Try SSE streaming first
@@ -743,14 +755,25 @@ function AgentChatPage() {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          lastEventTime = Date.now();
+          setAgentStuck(false);
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split("\n");
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             try {
               const data = JSON.parse(line.slice(6));
+              // Progress status events
+              if (data.status) {
+                setAgentStatus(data.status);
+                if (data.status.stage === "error") {
+                  setAgentStuck(true);
+                }
+                scrollToBottom();
+              }
               if (data.token) {
                 fullContent += data.token;
+                setAgentStatus(null); // clear status once tokens flow
                 setMessagesByAgent(prev => ({
                   ...prev,
                   [activeAgentId!]: (prev[activeAgentId!] || []).map(m =>
@@ -769,12 +792,18 @@ function AgentChatPage() {
                   ),
                 }));
                 setSending(false);
+                setAgentStatus(null);
+                clearInterval(stuckTimer);
                 scrollToBottom();
                 return; // don't fall through to the empty-stream throw
               }
             } catch {}
           }
         }
+
+        clearInterval(stuckTimer);
+        setAgentStatus(null);
+        setAgentStuck(false);
 
         // If streaming produced no content, parse the final message
         if (!fullContent) throw new Error("Empty stream");
@@ -886,6 +915,8 @@ function AgentChatPage() {
     }
 
     setSending(false);
+    setAgentStatus(null);
+    setAgentStuck(false);
     scrollToBottom();
   };
 
@@ -1020,44 +1051,71 @@ function AgentChatPage() {
             .map(msg => (
             <RichMessage key={msg.id} msg={msg} agentGradient={activeAgent?.gradient} agentName={activeAgent?.name} />
           ))}
-          {/* Working indicator — shows during streaming OR when agent's last message implies ongoing work */}
-          {(() => {
-            const lastAgentMsg = [...messages].reverse().find(m => m.role === "agent" && m.content);
-            const lastContent = (lastAgentMsg?.content || "").toLowerCase();
-            const isWorking = sending || (
-              !sending && lastAgentMsg && (
-                lastContent.includes("let me search") ||
-                lastContent.includes("let me check") ||
-                lastContent.includes("let me run") ||
-                lastContent.includes("i'll research") ||
-                lastContent.includes("i'll search") ||
-                lastContent.includes("conducting research") ||
-                lastContent.includes("searching the knowledge") ||
-                lastContent.includes("generating") ||
-                lastContent.includes("looking into") ||
-                lastContent.includes("analysing") ||
-                lastContent.includes("working on")
-              ) &&
-              // Only show for 60 seconds after the last message
-              lastAgentMsg.timestamp && (Date.now() - new Date(lastAgentMsg.timestamp).getTime()) < 60_000
-            );
-            if (!isWorking) return null;
-            const workingLabel = sending ? "Thinking..." : "Working on it...";
-            return (
-              <div className="flex gap-2">
-                <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
-                  style={{ background: activeAgent?.gradient || "#6366F1" }}>{activeAgent?.name?.[0] || "A"}</div>
-                <div className="bg-muted px-4 py-3 rounded-2xl rounded-bl-md flex items-center gap-2">
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">{workingLabel}</span>
+          {/* Working indicator with live status + stuck detection */}
+          {sending && (
+            <div className="flex gap-2">
+              <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-1"
+                style={{ background: activeAgent?.gradient || "#6366F1" }}>{activeAgent?.name?.[0] || "A"}</div>
+              <div className="space-y-1.5">
+                {/* Status card */}
+                <div className={`px-4 py-2.5 rounded-2xl rounded-bl-md flex items-center gap-2.5 ${agentStuck ? "bg-amber-500/10 border border-amber-500/20" : "bg-muted"}`}>
+                  {!agentStuck ? (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </span>
+                      <span className="text-[11px] font-medium text-foreground">
+                        {agentStatus?.detail || "Thinking..."}
+                      </span>
+                      {agentStatus?.stage && agentStatus.stage !== "thinking" && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium uppercase">
+                          {agentStatus.stage}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] font-medium text-amber-600">
+                        {agentStatus?.stage === "error" ? agentStatus.detail : "Agent seems to be taking longer than expected..."}
+                      </span>
+                    </>
+                  )}
                 </div>
+                {/* Retry button when stuck */}
+                {agentStuck && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setSending(false); setAgentStuck(false); setAgentStatus(null); }}
+                      className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSending(false);
+                        setAgentStuck(false);
+                        setAgentStatus(null);
+                        // Remove the empty stream message and retry
+                        setMessagesByAgent(prev => ({
+                          ...prev,
+                          [activeAgentId!]: (prev[activeAgentId!] || []).filter(m => m.content),
+                        }));
+                        const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+                        if (lastUserMsg?.content) {
+                          setTimeout(() => sendMessage(lastUserMsg.content), 100);
+                        }
+                      }}
+                      className="text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Retry
+                    </button>
+                  </div>
+                )}
               </div>
-            );
-          })()}
+            </div>
+          )}
         </div>
 
         {/* Quick actions row */}

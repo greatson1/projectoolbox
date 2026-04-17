@@ -1195,7 +1195,14 @@ These are handled by the platform automatically. Just write normal text.
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Helper: emit a structured progress event to the client
+      const emitStatus = (stage: string, detail: string) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: { stage, detail, ts: Date.now() } })}\n\n`));
+      };
+
       try {
+        emitStatus("thinking", "Analysing your message...");
+
         // ── Phase 1: initial streaming call ───────────────────────────────
         const phase1Response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -1308,6 +1315,7 @@ These are handled by the platform automatically. Just write normal text.
 
         // ── Phase 2: tool execution + follow-up if needed ─────────────────
         if (p1StopReason === "tool_use" && p1ToolBlocks.length > 0) {
+          emitStatus("executing", `Running ${p1ToolBlocks.length} action${p1ToolBlocks.length > 1 ? "s" : ""}...`);
           // Execute each tool call and collect results
           const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
 
@@ -1667,6 +1675,7 @@ These are handled by the platform automatically. Just write normal text.
         const approvalMatch = /\b(approve|sign.?off|accept)\b.*\b(all|every|artefact|document|charter|brief|register|schedule|budget|wbs|plan|report|business case|stakeholder)/i.test(message)
           || /\b(all|every)?\s*(artefact|document)s?\b.*\b(approve|sign.?off|accept)\b/i.test(message);
         if (approvalMatch && deployment?.projectId) {
+          emitStatus("approving", "Processing artefact approvals...");
           try {
             const isApproveAll = /\ball\b|\bevery\b/i.test(message);
             // Find artefacts to approve
@@ -1725,6 +1734,7 @@ These are handled by the platform automatically. Just write normal text.
         const editMatch = /\b(update|edit|change|modify|revise|add|remove|include|amend|rewrite|fix|correct)\b/i.test(message)
           && !approvalMatch; // don't fire on approval messages
         if (editMatch && deployment?.projectId) {
+          emitStatus("editing", "Looking for matching artefact...");
           try {
             // Find all artefacts for this project to match against
             const allArtefacts = await db.agentArtefact.findMany({
@@ -1746,6 +1756,7 @@ These are handled by the platform automatically. Just write normal text.
               const target = matched[0] || partialMatches[0];
 
               if (target && process.env.ANTHROPIC_API_KEY) {
+                emitStatus("editing", `Revising "${target.name}"...`);
                 // Call Claude to revise the artefact
                 const editPrompt = `You are editing a project management document. Apply the user's requested change to the existing document content.
 
@@ -1827,8 +1838,15 @@ RULES:
 
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
         controller.close();
-      } catch (e) {
-        controller.error(e);
+      } catch (e: any) {
+        // Emit error status so client can show retry UI
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: { stage: "error", detail: e?.message || "Something went wrong" }, error: e?.message || "Unknown error" })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
+          controller.close();
+        } catch {
+          controller.error(e);
+        }
       }
     },
   });
