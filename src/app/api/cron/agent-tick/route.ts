@@ -174,6 +174,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // 2b. Process timed-out proactive questions for all due deployments — runs
+    //     regardless of whether the VPS handles the cycle, so the onboarding
+    //     flow always advances when users don't respond within the timeout.
+    try {
+      const { processTimedOutQuestions } = await import("@/lib/agents/proactive-outreach");
+      for (const dep of dueDeployments) {
+        await processTimedOutQuestions(dep.agentId).catch(() => {});
+      }
+    } catch {}
+
     // 3. Try VPS first, fall back to inline processing
     const nudge = await nudgeJobProcessor();
 

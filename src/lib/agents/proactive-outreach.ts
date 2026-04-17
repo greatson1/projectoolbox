@@ -230,6 +230,32 @@ export async function processTimedOutQuestions(agentId: string): Promise<number>
         },
       });
 
+      // If the deployment is still in "researching" or "awaiting_clarification",
+      // advance it now so artefact generation can proceed.
+      try {
+        const deployment = await db.agentDeployment.findFirst({
+          where: { agentId, isActive: true },
+          select: { id: true, phaseStatus: true, projectId: true, currentPhase: true },
+        });
+        if (deployment && ["researching", "awaiting_clarification"].includes(deployment.phaseStatus ?? "")) {
+          await db.agentDeployment.update({
+            where: { id: deployment.id },
+            data: {
+              phaseStatus: "active",
+              nextCycleAt: new Date(), // trigger a cycle immediately
+            },
+          });
+          // Kick off artefact generation in the background
+          if (deployment.projectId) {
+            const { generatePhaseArtefacts } = await import("./lifecycle-init");
+            generatePhaseArtefacts(agentId, deployment.projectId, deployment.currentPhase ?? undefined)
+              .catch(e => console.error("[timeout-proceed] artefact generation failed:", e));
+          }
+        }
+      } catch (e) {
+        console.error("[processTimedOutQuestions] phase transition failed:", e);
+      }
+
       processed++;
     }
   }
