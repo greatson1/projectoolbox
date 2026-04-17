@@ -119,7 +119,7 @@ function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projec
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 py-1.5 rounded-xl border border-border bg-card shadow-2xl z-50 min-w-[200px] animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute top-full left-0 mt-1.5 py-1.5 rounded-xl border border-border bg-card shadow-2xl min-w-[200px]" style={{ zIndex: 9999 }}>
           <p className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border mb-1 pb-1.5">
             {group.label}
           </p>
@@ -167,8 +167,8 @@ export function ProjectTabBar() {
   const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
 
   return (
-    <div className="sticky top-16 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
-      <div className="flex items-center gap-2 px-6 py-2 overflow-x-auto">
+    <div className="sticky top-16 z-30 border-b border-border bg-background/95 backdrop-blur-sm">
+      <div className="flex items-center gap-2 px-6 py-2 flex-wrap">
         {/* Overview tab */}
         <Link
           href={projectBase}
