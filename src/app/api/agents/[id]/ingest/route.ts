@@ -149,6 +149,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // URL ingestion — fetch and extract text
     if (type === "url" && sourceUrl && !content) {
+      // Auto-prefix https:// if user typed a bare domain like "pmi.org"
+      if (!/^https?:\/\//i.test(sourceUrl)) {
+        sourceUrl = `https://${sourceUrl}`;
+      }
       try {
         const res = await fetch(sourceUrl, {
           headers: { "User-Agent": "Projectoolbox-Agent/1.0" },

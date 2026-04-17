@@ -478,13 +478,19 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
     try {
       if (tab === "url" && sourceUrl.trim()) {
         // URL ingestion — fetch, extract, AI summarise via ingest endpoint
+        // Normalize URL — auto-prefix https:// if user typed a bare domain
+        let normalizedUrl = sourceUrl.trim();
+        if (!/^https?:\/\//i.test(normalizedUrl)) normalizedUrl = `https://${normalizedUrl}`;
+        let hostname = normalizedUrl;
+        try { hostname = new URL(normalizedUrl).hostname; } catch {}
+
         const res = await fetch(`/api/agents/${agentId}/ingest`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: "url",
-            title: title.trim() || new URL(sourceUrl).hostname,
-            sourceUrl: sourceUrl.trim(),
+            title: title.trim() || hostname,
+            sourceUrl: normalizedUrl,
             content: content.trim() || undefined, // optional user notes
           }),
         });
