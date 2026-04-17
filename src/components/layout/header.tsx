@@ -4,9 +4,7 @@ import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useAppStore } from "@/stores/app";
 import { Bell, Moon, Sun, Search, User } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { OrgSwitcher } from "./org-switcher";
 import Link from "next/link";
 
 export function Header() {
@@ -20,11 +18,8 @@ export function Header() {
     <header
       className="sticky top-0 z-30 flex items-center justify-between h-16 px-6 border-b border-border bg-background/80 backdrop-blur-md"
     >
-      {/* Org Switcher + Search */}
-      <div className="flex items-center gap-3 flex-1 max-w-lg">
-        <OrgSwitcher />
-      </div>
-      <div className="flex items-center gap-2 flex-1 max-w-md">
+      {/* Search */}
+      <div className="flex items-center gap-2 flex-1 max-w-lg">
         <button
           onClick={() => setCommandPaletteOpen(true)}
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border w-full text-left hover:bg-muted/70 transition-colors"
