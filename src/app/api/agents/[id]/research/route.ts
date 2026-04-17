@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const orgId = caller.orgId;
   const { id: agentId } = await params;
   const body = await req.json();
-  const { type, query, stakeholder, vendor } = body;
+  const { type, query, stakeholder, vendor, items, createArtefact } = body;
 
   if (!type) return NextResponse.json({ error: "Research type required" }, { status: 400 });
 
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     stakeholder: CREDIT_COSTS.PERPLEXITY_RESEARCH,
     vendor: CREDIT_COSTS.PERPLEXITY_RESEARCH,
     news: CREDIT_COSTS.PERPLEXITY_RESEARCH,
+    procurement: CREDIT_COSTS.PERPLEXITY_RESEARCH,
   };
   const cost = costs[type] || CREDIT_COSTS.PERPLEXITY_RESEARCH;
 
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const {
       targetedSearch, pestleScan, stakeholderResearch, vendorResearch, newsMonitor, pestleToRisks,
+      procurementResearch, procurementToArtefact,
     } = await import("@/lib/agents/web-research");
 
     let result: any;
@@ -94,6 +96,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           name: deployment?.project?.name || "Project",
           industry: deployment?.project?.category || undefined,
         }, context);
+        break;
+
+      case "procurement":
+        if (!items || !Array.isArray(items) || items.length === 0) {
+          return NextResponse.json({ error: "Items list required (array of { name, quantity?, specs? })" }, { status: 400 });
+        }
+        const procResult = await procurementResearch(items, {
+          name: deployment?.project?.name || "Project",
+          region: "UK",
+          industry: deployment?.project?.category || undefined,
+        }, context);
+
+        // Optionally create artefact and cost entries
+        if (createArtefact && deployment?.projectId && procResult.items.length > 0) {
+          const artefactResult = await procurementToArtefact(
+            procResult.items, procResult.csv, deployment.projectId, agentId,
+          );
+          result = { ...procResult, artefactId: artefactResult.artefactId, costEntriesCreated: artefactResult.costEntriesCreated };
+        } else {
+          result = procResult;
+        }
         break;
 
       default:

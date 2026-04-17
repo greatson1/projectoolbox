@@ -538,6 +538,8 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
   const [type, setType]     = useState("pestle");
   const [query, setQuery]   = useState("");
   const [name, setName]     = useState("");
+  const [procItems, setProcItems] = useState("");
+  const [createArtefact, setCreateArtefact] = useState(true);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError]   = useState("");
@@ -548,6 +550,7 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
     { id: "stakeholder", label: "Stakeholder Intel", cost: 5, desc: "Professional background research" },
     { id: "vendor",      label: "Vendor Research",   cost: 5, desc: "Vendor risk assessment" },
     { id: "news",        label: "News Monitor",      cost: 3, desc: "Latest industry developments" },
+    { id: "procurement", label: "Market Pricing",    cost: 5, desc: "Compare prices across suppliers for materials/items" },
   ];
 
   const runResearch = async () => {
@@ -557,6 +560,13 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
       if (type === "search")      body.query = query;
       if (type === "stakeholder") body.stakeholder = { name };
       if (type === "vendor")      body.vendor = { name };
+      if (type === "procurement") {
+        body.items = procItems.split("\n").filter(Boolean).map(line => {
+          const parts = line.split(",").map(p => p.trim());
+          return { name: parts[0], quantity: parts[1] || "", specs: parts[2] || "" };
+        });
+        body.createArtefact = createArtefact;
+      }
 
       const r = await fetch(`/api/agents/${agentId}/research`, {
         method: "POST",
@@ -582,7 +592,7 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
           </div>
 
           {/* Research type selector */}
-          <div className="grid grid-cols-5 gap-1.5 mb-4">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-4">
             {TYPES.map(t => (
               <button key={t.id} onClick={() => setType(t.id)}
                 className={`p-2 rounded-lg text-center transition-all ${type === t.id ? "bg-primary/10 border border-primary/20" : "bg-muted/50 hover:bg-muted"}`}>
@@ -604,9 +614,21 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
               placeholder={type === "stakeholder" ? "Stakeholder name" : "Vendor / technology name"}
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none mb-3" />
           )}
+          {type === "procurement" && (
+            <div className="space-y-2 mb-3">
+              <textarea value={procItems} onChange={e => setProcItems(e.target.value)} rows={4}
+                placeholder={"One item per line. Format: name, quantity, specs\nExample:\nPortland cement, 500 tonnes\nRebar 12mm, 200 tonnes\nPPE safety helmets, 50 units"}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
+              <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                <input type="checkbox" checked={createArtefact} onChange={e => setCreateArtefact(e.target.checked)}
+                  className="rounded border-border" />
+                Auto-create pricing artefact and cost entries
+              </label>
+            </div>
+          )}
 
           <Button onClick={runResearch} className="w-full"
-            disabled={running || (type === "search" && !query) || ((type === "stakeholder" || type === "vendor") && !name)}>
+            disabled={running || (type === "search" && !query) || ((type === "stakeholder" || type === "vendor") && !name) || (type === "procurement" && !procItems.trim())}>
             {running
               ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Researching...</>
               : <><Microscope className="w-4 h-4 mr-1" />Run Research</>}
@@ -637,6 +659,45 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Procurement pricing table */}
+              {result.items && result.items.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold">{result.items.length} prices from {new Set(result.items.map((i: any) => i.supplier)).size} suppliers</p>
+                  {result.artefactId && (
+                    <p className="text-[10px] text-emerald-500">Artefact created · {result.costEntriesCreated || 0} cost entries added</p>
+                  )}
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full text-[10px]">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-semibold">Item</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Supplier</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Unit Price</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Unit</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">MOQ</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Lead Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.items.map((item: any, i: number) => (
+                          <tr key={i} className="border-t border-border/50 hover:bg-muted/30">
+                            <td className="px-2 py-1.5 font-medium">{item.item}</td>
+                            <td className="px-2 py-1.5">{item.supplier}</td>
+                            <td className="px-2 py-1.5 text-right font-mono">{item.unitPrice}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{item.unit}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{item.moq}</td>
+                            <td className="px-2 py-1.5 text-muted-foreground">{item.leadTime}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {result.summary && (
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">{result.summary}</p>
+                  )}
                 </div>
               )}
 

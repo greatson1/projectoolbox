@@ -285,6 +285,162 @@ export async function newsMonitor(
   return { title: `News Monitor: ${project.name}`, content: result.content, sources: result.sources, cached: false, creditCost: 3 };
 }
 
+/**
+ * Procurement / Market Pricing research — 5 credits.
+ * Searches for current market prices for a list of materials/items
+ * from multiple suppliers. Returns structured CSV data.
+ */
+export async function procurementResearch(
+  items: { name: string; quantity?: string; specs?: string }[],
+  projectContext: { name: string; region?: string; industry?: string },
+  context: { orgId: string; agentId?: string; projectId?: string },
+): Promise<{ csv: string; summary: string; items: ProcurementItem[]; sources: string[]; cached: boolean; creditCost: number }> {
+  const itemList = items.map(i => `${i.name}${i.quantity ? ` (qty: ${i.quantity})` : ""}${i.specs ? ` — ${i.specs}` : ""}`).join("\n");
+  const cacheKey = `procurement:${items.map(i => i.name).join(",").toLowerCase().slice(0, 80)}:${new Date().toISOString().slice(0, 10)}`;
+
+  const cached = await getCachedResult(context.orgId, cacheKey);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached.content);
+      return { csv: parsed.csv || "", summary: parsed.summary || "", items: parsed.items || [], sources: cached.sources || [], cached: true, creditCost: 1 };
+    } catch {
+      return { csv: cached.content, summary: "", items: [], sources: [], cached: true, creditCost: 1 };
+    }
+  }
+
+  const region = projectContext.region || "UK";
+  const query = `Current market prices for the following materials/items in ${region}:\n${itemList}\n\nFor each item, find prices from at least 2-3 different suppliers/vendors. Include: supplier name, unit price, unit of measure, minimum order quantity if known, lead time if available, and source URL.`;
+
+  const result = await perplexitySearch(query,
+    `You are a procurement pricing analyst. Research current market prices for the requested items. Return your findings as a structured table with these exact columns:
+Item,Supplier,Unit Price,Unit,MOQ,Lead Time,Notes
+Use actual supplier names and real current pricing. If exact prices aren't available, provide typical market ranges. Include GBP pricing for ${region}. After the table, provide a brief market summary noting any price trends, supply constraints, or bulk discount opportunities.`);
+
+  // Parse the response into structured items
+  const parsedItems: ProcurementItem[] = [];
+  const lines = result.content.split("\n");
+  let inTable = false;
+  const csvLines: string[] = ["Item,Supplier,Unit Price,Unit,MOQ,Lead Time,Notes"];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Detect CSV/table rows (contains multiple commas or pipes)
+    if (trimmed.includes(",") && (trimmed.split(",").length >= 3 || inTable)) {
+      inTable = true;
+      if (trimmed.toLowerCase().startsWith("item,") || trimmed.startsWith("---")) continue;
+      const parts = trimmed.split(",").map(p => p.trim());
+      if (parts.length >= 3 && parts[0] && parts[1]) {
+        parsedItems.push({
+          item: parts[0],
+          supplier: parts[1],
+          unitPrice: parts[2] || "",
+          unit: parts[3] || "",
+          moq: parts[4] || "",
+          leadTime: parts[5] || "",
+          notes: parts.slice(6).join(", ") || "",
+        });
+        csvLines.push(trimmed);
+      }
+    }
+    // Also handle pipe-separated tables (markdown)
+    if (trimmed.includes("|") && trimmed.split("|").length >= 4) {
+      const parts = trimmed.split("|").map(p => p.trim()).filter(Boolean);
+      if (parts.length >= 3 && !parts[0].includes("---") && !parts[0].toLowerCase().startsWith("item")) {
+        parsedItems.push({
+          item: parts[0],
+          supplier: parts[1],
+          unitPrice: parts[2] || "",
+          unit: parts[3] || "",
+          moq: parts[4] || "",
+          leadTime: parts[5] || "",
+          notes: parts.slice(6).join(", ") || "",
+        });
+        csvLines.push(parts.join(","));
+      }
+    }
+  }
+
+  // Extract summary (text after the table)
+  const summaryStart = result.content.lastIndexOf("\n\n");
+  const summary = summaryStart > 0 ? result.content.slice(summaryStart).trim() : `Found pricing for ${parsedItems.length} item/supplier combinations from ${new Set(parsedItems.map(i => i.supplier)).size} suppliers.`;
+
+  const csv = csvLines.join("\n");
+
+  // Cache the result
+  await cacheResult(context.orgId, context.agentId || null, context.projectId || null, cacheKey,
+    JSON.stringify({ csv, summary, items: parsedItems }), result.sources, "procurement_research");
+
+  return { csv, summary, items: parsedItems, sources: result.sources, cached: false, creditCost: 5 };
+}
+
+/**
+ * Convert procurement research results into a Cost Estimate artefact
+ * and optionally create CostEntry records.
+ */
+export async function procurementToArtefact(
+  items: ProcurementItem[],
+  csv: string,
+  projectId: string,
+  agentId: string,
+): Promise<{ artefactId: string; costEntriesCreated: number }> {
+  let costEntries = 0;
+
+  // Create a procurement comparison artefact
+  const artefact = await db.agentArtefact.create({
+    data: {
+      agentId,
+      projectId,
+      name: "Market Pricing Research",
+      format: "csv",
+      content: csv,
+      status: "DRAFT",
+    },
+  });
+
+  // Create cost entries from the pricing data
+  for (const item of items) {
+    const price = parseFloat(item.unitPrice.replace(/[^0-9.]/g, ""));
+    if (!isNaN(price) && price > 0) {
+      try {
+        await db.costEntry.create({
+          data: {
+            projectId,
+            category: "MATERIALS",
+            description: `${item.item} — ${item.supplier}`,
+            amount: price,
+            currency: "GBP",
+            type: "ESTIMATED",
+            notes: `Unit: ${item.unit || "each"}. MOQ: ${item.moq || "N/A"}. Lead time: ${item.leadTime || "N/A"}. Source: Procurement research.`,
+          },
+        });
+        costEntries++;
+      } catch { /* CostEntry model may not have all fields — skip gracefully */ }
+    }
+  }
+
+  // Log activity
+  await db.agentActivity.create({
+    data: {
+      agentId,
+      type: "proactive_alert",
+      summary: `Market pricing research: ${items.length} item/supplier combinations found, ${costEntries} cost entries created, artefact generated`,
+      metadata: { type: "procurement_research", items: items.length, costEntries, artefactId: artefact.id },
+    },
+  });
+
+  return { artefactId: artefact.id, costEntriesCreated: costEntries };
+}
+
+export interface ProcurementItem {
+  item: string;
+  supplier: string;
+  unitPrice: string;
+  unit: string;
+  moq: string;
+  leadTime: string;
+  notes: string;
+}
+
 // ─── Types ───
 
 export interface PestleFinding {
