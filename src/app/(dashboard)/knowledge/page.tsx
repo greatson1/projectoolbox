@@ -585,6 +585,36 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
 
 // ─── Research Modal ───────────────────────────────────────────────────────────
 
+function ImportButton({ url, agentId }: { url: string; agentId: string }) {
+  const [status, setStatus] = useState<"idle" | "importing" | "done" | "error">("idle");
+  const doImport = async () => {
+    setStatus("importing");
+    try {
+      let hostname = url;
+      try { hostname = new URL(url).hostname; } catch {}
+      const res = await fetch(`/api/agents/${agentId}/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "url", title: hostname, sourceUrl: url }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setStatus("done");
+      toast.success(`Imported: ${hostname}`);
+    } catch {
+      setStatus("error");
+      toast.error("Failed to import this page");
+    }
+  };
+  if (status === "done") return <span className="text-[9px] text-emerald-500 font-medium">Imported</span>;
+  if (status === "error") return <span className="text-[9px] text-destructive font-medium">Failed</span>;
+  return (
+    <button onClick={doImport} disabled={status === "importing"}
+      className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 flex-shrink-0">
+      {status === "importing" ? "Importing..." : "Import to KB"}
+    </button>
+  );
+}
+
 function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => void }) {
   const [type, setType]     = useState("pestle");
   const [query, setQuery]   = useState("");
@@ -816,14 +846,19 @@ function ResearchModal({ agentId, onClose }: { agentId: string; onClose: () => v
                 </div>
               )}
 
-              {/* Sources */}
+              {/* Sources with Import buttons */}
               {result.sources?.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Sources</p>
-                  {result.sources.slice(0, 5).map((s: string, i: number) => (
-                    <a key={i} href={s} target="_blank" rel="noopener noreferrer"
-                      className="block text-[10px] text-primary truncate hover:underline">{s}</a>
-                  ))}
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1.5">Sources — click Import to fetch & summarise into KB</p>
+                  <div className="space-y-1">
+                    {result.sources.slice(0, 8).map((s: string, i: number) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <a href={s} target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] text-primary truncate hover:underline flex-1 min-w-0">{s}</a>
+                        <ImportButton url={s} agentId={agentId} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
