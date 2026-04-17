@@ -358,6 +358,9 @@ function buildScheduleTasks(rows: Record<string, string>[]): ParsedTask[] {
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
+/** Debug export — returns parsed CSV rows for inspection */
+export function debugParseCSV(raw: string): Record<string, string>[] { return parseCSV(raw); }
+
 function parseCSV(raw: string): Record<string, string>[] {
   const cleaned = raw.replace(/^```[a-z]*\n?/im, "").replace(/```\s*$/im, "").trim();
   const lines = splitCSVLines(cleaned);
