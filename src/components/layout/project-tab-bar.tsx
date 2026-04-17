@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 import { cn } from "@/lib/utils";
 import {
@@ -10,7 +10,7 @@ import {
   ShieldAlert, AlertTriangle, GitPullRequest, TestTube2, ShieldCheck,
   Package, DollarSign, Calculator, TrendingUp, Award, BarChart3,
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
-  ChevronDown, LayoutDashboard,
+  ChevronDown, LayoutDashboard, ChevronsUpDown, X,
 } from "lucide-react";
 
 interface TabItem {
@@ -154,21 +154,106 @@ function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projec
   );
 }
 
+interface ProjectSummary { id: string; name: string }
+
+function ProjectSwitcherChip() {
+  const router = useRouter();
+  const { activeProjectId, activeProjectName, setActiveProject } = useAppStore();
+  const [open, setOpen] = useState(false);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((json) => {
+        if (Array.isArray(json?.data)) {
+          setProjects(json.data.map((p: any) => ({ id: p.id, name: p.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 transition-colors group"
+      >
+        <FolderOpen className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+        <span className="text-xs font-bold text-foreground truncate max-w-[160px]">
+          {activeProjectName || "Project"}
+        </span>
+        <ChevronsUpDown className="w-3 h-3 text-muted-foreground" />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 py-1 rounded-xl border border-border bg-card shadow-2xl min-w-[220px]" style={{ zIndex: 9999 }}>
+          <p className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border mb-1">
+            Switch project
+          </p>
+          <div className="max-h-60 overflow-y-auto">
+            {projects.map((p) => (
+              <button key={p.id}
+                onClick={() => { setActiveProject(p.id, p.name); setOpen(false); router.push(`/projects/${p.id}`); }}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors hover:bg-muted/50",
+                  p.id === activeProjectId && "bg-primary/5 font-semibold"
+                )}
+              >
+                <span className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ background: p.id === activeProjectId ? "#6366F1" : "hsl(var(--muted-foreground) / 0.3)" }} />
+                <span className="flex-1 truncate">{p.name}</span>
+                {p.id === activeProjectId && <span className="text-[9px] text-primary font-medium">active</span>}
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-border">
+            <button
+              onClick={() => { setActiveProject(null, null); setOpen(false); router.push("/projects"); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-3 h-3" /> Exit project
+            </button>
+          </div>
+          <div className="border-t border-border px-3 py-1.5">
+            <Link href="/projects" onClick={() => setOpen(false)}
+              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              View all projects →
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProjectTabBar() {
   const pathname = usePathname();
-  const { activeProjectId, activeProjectName } = useAppStore();
+  const { activeProjectId } = useAppStore();
 
   if (!activeProjectId) return null;
   if (!pathname.startsWith(`/projects/${activeProjectId}`)) return null;
 
   const projectBase = `/projects/${activeProjectId}`;
-
-  // Is user on the project overview page (not a sub-page)?
   const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
 
   return (
     <div className="sticky top-16 z-30 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="flex items-center gap-2 px-6 py-2 flex-wrap">
+        {/* Project switcher */}
+        <ProjectSwitcherChip />
+
+        <div className="w-px h-6 bg-border flex-shrink-0" />
+
         {/* Overview tab */}
         <Link
           href={projectBase}
