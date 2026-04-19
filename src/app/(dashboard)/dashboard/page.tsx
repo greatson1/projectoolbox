@@ -77,8 +77,59 @@ export default function DashboardPage() {
   const activeAgent = agents.find((a: any) => a.status === "ACTIVE");
   const latestActivity = activities[0];
 
+  // Detect stuck or action-needed agents
+  const stuckAgents = agents.filter((a: any) => {
+    const dep = a.deployments?.[0] || a.deployment || {};
+    const ps = dep.phaseStatus || a.phaseStatus || "";
+    return a.status === "ACTIVE" && (
+      ps === "researching" || ps === "awaiting_clarification" || ps === "pending_approval" || ps === "waiting_approval"
+    );
+  });
+
   return (
     <div className="space-y-6 max-w-[1400px]">
+
+      {/* ── Stuck Agent Alerts ── */}
+      {stuckAgents.length > 0 && (
+        <div className="space-y-2">
+          {stuckAgents.map((a: any) => {
+            const dep = a.deployments?.[0] || a.deployment || {};
+            const ps = dep.phaseStatus || a.phaseStatus || "";
+            const phase = dep.currentPhase || "—";
+            const isWaiting = ps === "awaiting_clarification" || ps === "researching";
+            const isGate = ps === "pending_approval" || ps === "waiting_approval";
+
+            return (
+              <div key={a.id} className="flex items-center gap-4 px-5 py-3 rounded-xl border border-amber-500/30 bg-amber-500/5">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                  style={{ background: a.gradient || "#6366F1" }}>
+                  {a.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                    {a.name} needs your attention
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {isWaiting && `Agent is waiting for your input before generating ${phase} artefacts. Open Chat to respond.`}
+                    {isGate && `Phase gate for "${phase}" is awaiting your approval. Review on the Approvals page.`}
+                  </p>
+                </div>
+                <Link href={isWaiting ? `/agents/chat?agent=${a.id}` : "/approvals"}>
+                  <Button size="sm" variant="outline" className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10 flex-shrink-0">
+                    {isWaiting ? "Open Chat" : "Review"}
+                  </Button>
+                </Link>
+                <Link href={`/agents/${a.id}/pipeline`}>
+                  <Button size="sm" variant="ghost" className="text-xs text-muted-foreground flex-shrink-0">
+                    View Pipeline
+                  </Button>
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Welcome + Agent Status Banner ── */}
       <div className="rounded-2xl overflow-hidden border border-primary/20">
         {/* Greeting bar */}
