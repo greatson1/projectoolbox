@@ -95,13 +95,9 @@ export async function planSprints(
 
   if (!project) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
 
-  // Skip if sprints already exist with tasks assigned (don't re-plan unless forced)
-  const assignedTaskCount = await db.task.count({ where: { projectId, sprintId: { not: null } } });
-  if (!force && existingSprints.length > 0 && assignedTaskCount > 0) {
-    return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
-  }
-
-  // Only plan for unassigned tasks (backlog)
+  // Only plan for unassigned tasks — if everything is already sprint-linked, there's nothing to do.
+  // NOTE: We intentionally do NOT bail just because sprints already exist. When a WBS is approved
+  // after a Backlog (or vice versa), the new tasks need to be slotted into existing sprints.
   const backlogTasks = tasks.filter(t => !t.sprintId);
   if (backlogTasks.length === 0) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
 
