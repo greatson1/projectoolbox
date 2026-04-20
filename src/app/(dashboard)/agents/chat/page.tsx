@@ -926,9 +926,9 @@ function AgentChatPage() {
   if (agentsLoading) return <div className="space-y-4"><Skeleton className="h-10 w-48" /><Skeleton className="h-[500px] rounded-xl" /></div>;
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-140px)] max-w-[1400px]">
-      {/* Left: Conversation list */}
-      <div className="w-[280px] flex-shrink-0 flex flex-col" style={{ borderRight: "1px solid var(--border)" }}>
+    <div className="flex gap-0 lg:gap-4 h-[calc(100vh-120px)] lg:h-[calc(100vh-140px)] max-w-[1400px]">
+      {/* Left: Conversation list — hidden on mobile */}
+      <div className="hidden lg:flex w-[280px] flex-shrink-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
         <div className="p-3">
           <input className="w-full px-3 py-1.5 rounded-lg text-xs bg-muted border border-border" placeholder="Search conversations..." />
         </div>

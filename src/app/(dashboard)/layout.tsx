@@ -15,11 +15,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <Sidebar />
-      <div className={cn("transition-all duration-200", sidebarCollapsed ? "ml-[60px]" : "ml-[240px]")}>
+      <div className={cn("transition-all duration-200 ml-0", sidebarCollapsed ? "lg:ml-[60px]" : "lg:ml-[240px]")}>
         <Header />
         <ProjectTabBar />
         {/* pb-14 so page content never hides behind the status bar */}
-        <main className="p-6 lg:p-8 pb-16 animate-page-enter">{children}</main>
+        <main className="p-3 sm:p-6 lg:p-8 pb-16 animate-page-enter">{children}</main>
       </div>
       {/* Global agent co-pilot bar — visible on every page */}
       <ErrorBoundary>

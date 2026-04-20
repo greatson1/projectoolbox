@@ -13,6 +13,10 @@ interface AppState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
 
+  // Mobile sidebar drawer
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
+
   // Collapsible sidebar groups (persisted)
   collapsedGroups: string[];
   toggleGroup: (group: string) => void;
@@ -45,6 +49,9 @@ export const useAppStore = create<AppState>()(
 
       sidebarCollapsed: false,
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+
+      mobileSidebarOpen: false,
+      setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
 
       collapsedGroups: [],
       toggleGroup: (group) =>

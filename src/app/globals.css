@@ -139,6 +139,15 @@
   }
 }
 
+/* ─── Mobile: hide scrollbar on horizontal scroll ─── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* ─── Enterprise UX: Shimmer Skeleton ─── */
 @keyframes shimmer {
   0% { background-position: -1000px 0; }

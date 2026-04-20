@@ -167,8 +167,8 @@ export function ProjectTabBar() {
   const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
 
   return (
-    <div className="sticky top-16 z-30 border-b border-border bg-background/95 backdrop-blur-sm">
-      <div className="flex items-center gap-2 px-6 py-2 flex-wrap">
+    <div className="sticky top-14 lg:top-16 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
+      <div className="flex items-center gap-2 px-3 lg:px-6 py-1.5 lg:py-2 overflow-x-auto scrollbar-hide">
         {/* Overview tab */}
         <Link
           href={projectBase}
