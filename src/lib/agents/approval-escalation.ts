@@ -1,9 +1,31 @@
 import { db } from "@/lib/db";
+import { isN8nEnabled, forwardToN8n } from "@/lib/n8n";
 
 const REMINDER_HOURS = 4;
 const ESCALATION_HOURS = 24;
 
 export async function checkApprovalTimeouts() {
+  // ── n8n forwarding gate ──────────────────────────────────────────
+  if (isN8nEnabled("approval_escalation")) {
+    const pending = await db.approval.findMany({
+      where: { status: "PENDING" },
+      select: { id: true, title: true, type: true, createdAt: true, projectId: true, project: { select: { orgId: true, name: true } } },
+    });
+    if (pending.length > 0) {
+      const forwarded = await forwardToN8n("approval_escalation", {
+        pendingApprovals: pending.map((a) => ({
+          id: a.id,
+          title: a.title,
+          type: a.type,
+          projectName: a.project?.name,
+          orgId: a.project?.orgId,
+          hoursWaiting: Math.floor((Date.now() - a.createdAt.getTime()) / 3600000),
+        })),
+      });
+      if (forwarded) return { reminders: 0, escalations: 0, overdue: pending.length, forwardedToN8n: true };
+    }
+  }
+
   const now = new Date();
   let reminders = 0, escalations = 0, overdue = 0;
 

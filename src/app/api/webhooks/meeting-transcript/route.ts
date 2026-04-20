@@ -23,11 +23,31 @@ import {
   formatTranscript,
   normaliseBotStatus,
 } from "@/lib/recall-client";
+import { isN8nEnabled, forwardToN8n } from "@/lib/n8n";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
+
+  // ── n8n forwarding gate ──────────────────────────────────────────
+  if (isN8nEnabled("meeting_transcript")) {
+    try {
+      const payload = JSON.parse(body);
+      const forwarded = await forwardToN8n("meeting_transcript", {
+        event: payload.event || payload.data?.event,
+        botId: payload.data?.bot_id || payload.botId,
+        meetingUrl: payload.data?.meeting_url,
+        transcript: payload.transcript,
+        source: req.headers.get("x-ptx-bot-source") || "recall",
+      });
+      if (forwarded) {
+        return NextResponse.json({ status: "forwarded_to_n8n" });
+      }
+    } catch {
+      // If JSON parse fails, fall through to existing logic
+    }
+  }
   const { createHmac } = await import("crypto");
 
   // Determine source: custom bot vs Recall.ai

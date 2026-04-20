@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { isN8nEnabled, forwardToN8n } from "@/lib/n8n";
 
 /**
  * POST /api/webhooks/inbound-email
@@ -35,6 +36,25 @@ export async function POST(req: NextRequest) {
 
     if (!recipientAddress || !subject) {
       return NextResponse.json({ error: "Missing to/subject" }, { status: 400 });
+    }
+
+    // ── n8n forwarding gate ──────────────────────────────────────────
+    // If n8n workflow is configured, forward the full payload and let
+    // n8n handle classification, routing, and callback.
+    if (isN8nEnabled("inbound_email")) {
+      const forwarded = await forwardToN8n("inbound_email", {
+        subject,
+        text,
+        html,
+        senderEmail,
+        recipientAddress,
+        source: _source,
+        attachmentCount: body.attachments?.length || 0,
+      });
+      if (forwarded) {
+        return NextResponse.json({ status: "forwarded_to_n8n" });
+      }
+      // If forwarding failed, fall through to hardcoded logic
     }
 
     // Find agent by email address

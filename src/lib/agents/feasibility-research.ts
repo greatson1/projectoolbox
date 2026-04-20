@@ -12,6 +12,7 @@
  */
 
 import { db } from "@/lib/db";
+import { isN8nEnabled, forwardToN8n } from "@/lib/n8n";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -245,6 +246,37 @@ export async function runFeasibilityResearch(
     select: { id: true, name: true, description: true, category: true, budget: true, startDate: true, endDate: true, methodology: true },
   });
   if (!project) return { factsDiscovered: 0, queries: [], summary: "Project not found", sections: [], facts: [] };
+
+  // ── n8n forwarding gate ──────────────────────────────────────────
+  // If configured, let n8n orchestrate the Perplexity → Claude → KB pipeline.
+  // n8n should call back to /api/webhooks/n8n-callback with store_kb actions.
+  if (isN8nEnabled("feasibility_research")) {
+    const forwarded = await forwardToN8n("feasibility_research", {
+      agentId,
+      projectId,
+      orgId,
+      project: {
+        name: project.name,
+        description: project.description,
+        category: project.category,
+        budget: (project as any).budget,
+        startDate: (project as any).startDate,
+        endDate: (project as any).endDate,
+        methodology: (project as any).methodology,
+      },
+    }, { timeout: 30_000 });
+    if (forwarded) {
+      // n8n will handle research and callback with results.
+      // Return a placeholder — lifecycle-init will proceed to clarification.
+      return {
+        factsDiscovered: 0,
+        queries: [],
+        summary: "Research forwarded to n8n workflow — facts will be stored via callback.",
+        sections: [],
+        facts: [],
+      };
+    }
+  }
 
   const queries = buildResearchQueries(project as ProjectContext);
   const queryLabels = ["Core feasibility", "Domain-specific research", "Regulatory & compliance"];
