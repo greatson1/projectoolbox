@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     // ── n8n forwarding gate ──────────────────────────────────────────
     // If n8n workflow is configured, forward the full payload and let
     // n8n handle classification, routing, and callback.
-    if (isN8nEnabled("inbound_email")) {
+    if (await isN8nEnabled("inbound_email")) {
       const forwarded = await forwardToN8n("inbound_email", {
         subject,
         text,

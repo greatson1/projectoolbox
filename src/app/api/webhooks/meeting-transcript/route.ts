@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const body = await req.text();
 
   // ── n8n forwarding gate ──────────────────────────────────────────
-  if (isN8nEnabled("meeting_transcript")) {
+  if (await isN8nEnabled("meeting_transcript")) {
     try {
       const payload = JSON.parse(body);
       const forwarded = await forwardToN8n("meeting_transcript", {

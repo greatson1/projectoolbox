@@ -77,6 +77,13 @@ export async function POST(req: NextRequest) {
   let status: string = "disconnected";
   let errorMessage: string | null = null;
 
+  // n8n: mark as connected if at least one workflow URL is provided
+  if (type === "n8n" && config?.workflows) {
+    const workflows = config.workflows as Record<string, string>;
+    const hasUrl = Object.values(workflows).some((url) => typeof url === "string" && url.startsWith("http"));
+    status = hasUrl ? "connected" : "disconnected";
+  }
+
   if ((type === "slack" || type === "webhook") && config?.webhookUrl) {
     try {
       const res = await fetch(config.webhookUrl as string, {

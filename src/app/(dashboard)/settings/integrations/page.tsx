@@ -82,8 +82,18 @@ function getFieldsForType(type: IntegrationType) {
     case "discord":
     case "teams":
     case "webhook":
-    case "n8n":
       return [{ key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://..." }];
+    case "n8n":
+      return [
+        { key: "apiKey", label: "API Key (optional)", type: "password", placeholder: "n8n API key for auth header" },
+        { key: "callbackSecret", label: "Callback Secret (optional)", type: "password", placeholder: "Secret for n8n to authenticate callbacks" },
+        { key: "workflows.inbound_email", label: "Inbound Email Webhook", type: "url", placeholder: "https://your-n8n.com/webhook/inbound-email" },
+        { key: "workflows.approval_escalation", label: "Approval Escalation Webhook", type: "url", placeholder: "https://your-n8n.com/webhook/approvals" },
+        { key: "workflows.meeting_transcript", label: "Meeting Transcript Webhook", type: "url", placeholder: "https://your-n8n.com/webhook/transcript" },
+        { key: "workflows.feasibility_research", label: "Feasibility Research Webhook", type: "url", placeholder: "https://your-n8n.com/webhook/research" },
+        { key: "workflows.stripe_event", label: "Stripe Events Webhook", type: "url", placeholder: "https://your-n8n.com/webhook/stripe" },
+        { key: "workflows.report_schedule", label: "Report Schedule Webhook", type: "url", placeholder: "https://your-n8n.com/webhook/reports" },
+      ];
     case "jira":
     case "asana":
     case "monday":
@@ -149,10 +159,24 @@ export default function IntegrationsPage() {
     setSaving(true);
     try {
       const meta = INTEGRATION_TYPES.find((t) => t.type === connectType)!;
+
+      // Build config — expand dotted keys into nested objects (e.g. "workflows.inbound_email" → { workflows: { inbound_email: "..." } })
+      const config: Record<string, any> = {};
+      for (const [key, value] of Object.entries(formValues)) {
+        if (!value) continue;
+        const parts = key.split(".");
+        if (parts.length === 2) {
+          if (!config[parts[0]]) config[parts[0]] = {};
+          config[parts[0]][parts[1]] = value;
+        } else {
+          config[key] = value;
+        }
+      }
+
       const res = await fetch("/api/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: connectType, name: meta.name, config: formValues }),
+        body: JSON.stringify({ type: connectType, name: meta.name, config }),
       });
       if (!res.ok) throw new Error("Failed to connect");
       toast.success(`${meta.name} connected`);

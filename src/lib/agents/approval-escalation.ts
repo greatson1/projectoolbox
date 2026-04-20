@@ -6,7 +6,7 @@ const ESCALATION_HOURS = 24;
 
 export async function checkApprovalTimeouts() {
   // ── n8n forwarding gate ──────────────────────────────────────────
-  if (isN8nEnabled("approval_escalation")) {
+  if (await isN8nEnabled("approval_escalation")) {
     const pending = await db.approval.findMany({
       where: { status: "PENDING" },
       select: { id: true, title: true, type: true, createdAt: true, projectId: true, project: { select: { orgId: true, name: true } } },

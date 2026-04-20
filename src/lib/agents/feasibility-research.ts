@@ -250,7 +250,7 @@ export async function runFeasibilityResearch(
   // ── n8n forwarding gate ──────────────────────────────────────────
   // If configured, let n8n orchestrate the Perplexity → Claude → KB pipeline.
   // n8n should call back to /api/webhooks/n8n-callback with store_kb actions.
-  if (isN8nEnabled("feasibility_research")) {
+  if (await isN8nEnabled("feasibility_research")) {
     const forwarded = await forwardToN8n("feasibility_research", {
       agentId,
       projectId,

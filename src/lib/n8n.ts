@@ -2,23 +2,16 @@
  * n8n Workflow Forwarding Utility
  *
  * Forwards event payloads to n8n webhook URLs for external orchestration.
- * Each workflow type has its own env var for the webhook URL.
- * If the env var is not set, the function returns false and the caller
- * should fall back to hardcoded logic.
+ * URLs are resolved in order of priority:
+ *   1. Integration DB record (type="n8n", config.workflows.{workflowType})
+ *   2. Per-workflow env var (N8N_WEBHOOK_{TYPE})
  *
- * Env vars:
- *   N8N_WEBHOOK_INBOUND_EMAIL    — inbound email routing workflow
- *   N8N_WEBHOOK_APPROVAL_ESCALATION — approval timeout/escalation workflow
- *   N8N_WEBHOOK_MEETING_TRANSCRIPT — meeting transcript processing workflow
- *   N8N_WEBHOOK_FEASIBILITY_RESEARCH — feasibility research pipeline
- *   N8N_WEBHOOK_STRIPE_EVENT     — Stripe payment event routing
- *   N8N_WEBHOOK_REPORT_SCHEDULE  — scheduled report generation
- *   N8N_API_KEY                  — optional auth header for all n8n calls
+ * If neither is set, returns false — caller falls back to hardcoded logic.
  *
- * Callback: n8n workflows can POST results back to
- *   POST /api/webhooks/n8n-callback
- *   with { workflowType, resultData, orgId?, agentId? }
+ * Callback: n8n workflows POST results to /api/webhooks/n8n-callback
  */
+
+import { db } from "@/lib/db";
 
 export type N8nWorkflow =
   | "inbound_email"
@@ -37,43 +30,102 @@ const WORKFLOW_ENV_MAP: Record<N8nWorkflow, string> = {
   report_schedule: "N8N_WEBHOOK_REPORT_SCHEDULE",
 };
 
+// In-memory cache for DB-sourced URLs (refreshed every 60s)
+let _cachedConfig: { urls: Record<string, string>; apiKey?: string; callbackSecret?: string; fetchedAt: number } | null = null;
+const CACHE_TTL = 60_000;
+
 /**
- * Check if an n8n workflow is configured for this type.
+ * Load n8n config from the Integration DB.
+ * Looks for an integration with type="n8n" and reads config.workflows.
  */
-export function isN8nEnabled(workflow: N8nWorkflow): boolean {
+async function getDbConfig(): Promise<{ urls: Record<string, string>; apiKey?: string; callbackSecret?: string }> {
+  if (_cachedConfig && Date.now() - _cachedConfig.fetchedAt < CACHE_TTL) {
+    return _cachedConfig;
+  }
+
+  try {
+    // Find any n8n integration across all orgs (for server-side usage).
+    // In multi-tenant, you'd scope this per orgId — but the forwarding
+    // happens in server context where orgId is already known.
+    const integration = await db.integration.findFirst({
+      where: { type: "n8n", status: "connected" },
+      select: { config: true },
+    });
+
+    const config = (integration?.config || {}) as any;
+    const workflows = config.workflows || {};
+    const urls: Record<string, string> = {};
+
+    for (const [key, url] of Object.entries(workflows)) {
+      if (typeof url === "string" && url.startsWith("http")) {
+        urls[key] = url;
+      }
+    }
+
+    _cachedConfig = {
+      urls,
+      apiKey: config.apiKey || undefined,
+      callbackSecret: config.callbackSecret || undefined,
+      fetchedAt: Date.now(),
+    };
+
+    return _cachedConfig;
+  } catch {
+    return { urls: {} };
+  }
+}
+
+/**
+ * Resolve the webhook URL for a workflow.
+ * Priority: DB config → env var → null.
+ */
+async function resolveWebhookUrl(workflow: N8nWorkflow): Promise<string | null> {
+  // 1. Check DB
+  const dbConfig = await getDbConfig();
+  if (dbConfig.urls[workflow]) return dbConfig.urls[workflow];
+
+  // 2. Check env var
   const envKey = WORKFLOW_ENV_MAP[workflow];
-  return !!process.env[envKey];
+  if (process.env[envKey]) return process.env[envKey]!;
+
+  return null;
+}
+
+/**
+ * Check if an n8n workflow is configured (DB or env var).
+ */
+export async function isN8nEnabled(workflow: N8nWorkflow): Promise<boolean> {
+  const url = await resolveWebhookUrl(workflow);
+  return !!url;
 }
 
 /**
  * Forward a payload to an n8n webhook.
  * Returns true if forwarded successfully, false if not configured or failed.
- *
- * On failure, logs the error but does NOT throw — caller should fall back
- * to hardcoded logic.
  */
 export async function forwardToN8n(
   workflow: N8nWorkflow,
   payload: Record<string, any>,
   options?: { timeout?: number }
 ): Promise<boolean> {
-  const envKey = WORKFLOW_ENV_MAP[workflow];
-  const webhookUrl = process.env[envKey];
+  const url = await resolveWebhookUrl(workflow);
+  if (!url) return false;
 
-  if (!webhookUrl) return false;
+  const dbConfig = await getDbConfig();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Workflow-Type": workflow,
   };
 
-  const apiKey = process.env.N8N_API_KEY;
+  // Auth: DB apiKey → env N8N_API_KEY
+  const apiKey = dbConfig.apiKey || process.env.N8N_API_KEY;
   if (apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
   try {
-    const res = await fetch(webhookUrl, {
+    const res = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -94,4 +146,11 @@ export async function forwardToN8n(
     console.error(`[n8n] ${workflow} webhook error: ${err.message}`);
     return false;
   }
+}
+
+/**
+ * Clear the cached config (call after integration settings change).
+ */
+export function clearN8nCache() {
+  _cachedConfig = null;
 }
