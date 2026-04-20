@@ -334,6 +334,20 @@ ${phases.length > 0 ? `
 **All Phases:** ${phases.map(p => `${p.name} [${p.status}]`).join(" → ")}
 ` : "Lifecycle not yet initialised — phases will be created on first interaction."}
 
+## CURRENT PHASE COMPLETION STATUS
+${await (async () => {
+  if (!currentPhase?.name || !deployment?.projectId) return "No active phase.";
+  try {
+    const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+    const comp = await getPhaseCompletion(deployment.projectId, currentPhase.name, agentId);
+    return `**${comp.phaseName}** — ${comp.overall}% complete ${comp.canAdvance ? "✅ READY TO ADVANCE" : "⛔ NOT READY"}
+  Artefacts: ${comp.artefacts.done}/${comp.artefacts.total} approved (${comp.artefacts.pct}%)
+  PM Tasks: ${comp.pmTasks.done}/${comp.pmTasks.total} done (${comp.pmTasks.pct}%)
+  Delivery Tasks: ${comp.deliveryTasks.done}/${comp.deliveryTasks.total} done (${comp.deliveryTasks.pct}%)
+${comp.blockers.length > 0 ? `  **Blockers:** ${comp.blockers.join("; ")}` : "  No blockers — phase gate can proceed."}`;
+  } catch { return "Phase completion data unavailable."; }
+})()}
+
 ## PENDING APPROVALS (HITL GATES)
 ${pendingApprovals.length > 0
   ? pendingApprovals.map(a => `- **${a.title}** — ${a.description} [${a.type}]`).join("\n")
@@ -553,6 +567,18 @@ When reporting status, NEVER say a phase is "complete" or the project is "ready"
 
 Example of WRONG: "Setup phase complete — all foundational artefacts generated" (when no tasks are done)
 Example of RIGHT: "Setup phase planning is complete — 3 documents approved. However, 0 of 12 project tasks have been started. The actual project work still needs to happen."
+
+## PHASE ADVANCEMENT REQUIREMENTS — ENFORCED BY SYSTEM
+The phase gate system enforces THREE completion layers before any phase can advance:
+1. **Artefacts** — ALL artefacts in the current phase must be APPROVED (100%)
+2. **PM Tasks** — ALL governance/overhead tasks for this phase must be DONE (100%)
+3. **Delivery Tasks** — at least 80% of delivery/project work tasks for this phase must be DONE
+
+If ANY layer is incomplete, the system will BLOCK advancement even if the user approves the gate.
+- Do NOT request or suggest phase advancement unless you can see all three layers are satisfied
+- When reporting phase status, always mention all three layers with counts (e.g., "Artefacts: 6/6, PM Tasks: 4/5, Delivery: 8/12")
+- If tasks are incomplete, tell the user what remains and link to: [Task Board](/projects/${project?.id || ""}/agile), [Schedule](/projects/${project?.id || ""}/schedule), [PM Tracker](/projects/${project?.id || ""}/pm-tracker)
+- The phase gate will show "BLOCKED" status until all requirements are met
 
 ## EVIDENCE-BASED OUTPUT — CRITICAL
 - NEVER claim you have done something unless it appears in the GENERATED ARTEFACTS or LIFECYCLE STATE above. If you haven't done it, say you WILL do it or PLAN to do it.

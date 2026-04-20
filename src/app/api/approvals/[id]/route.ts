@@ -143,80 +143,52 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         data: { phaseStatus: "active" },
       });
 
-      // ── PHASE_GATE: advance to the next phase and generate artefacts ──
-      // User has explicitly approved the gate, so we advance — but log a warning
-      // if the phase's tasks aren't substantially complete.
+      // ── PHASE_GATE: check 3-layer completion before advancing ──
+      // Artefacts + PM Tasks + Delivery Tasks must all meet thresholds.
       if (approval.type === "PHASE_GATE" && deployment.projectId) {
         try {
           const project = await db.project.findUnique({ where: { id: deployment.projectId } });
           if (project) {
             const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
             const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+            const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
 
             const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
             const currentPhase = deployment.currentPhase;
             const nextPhase = currentPhase ? getNextPhase(methodologyId, currentPhase) : null;
 
-            // Warn if tasks incomplete (but still advance since user explicitly approved)
+            // ── 3-layer completion check ──
             if (currentPhase) {
-              try {
-                const phaseRow = await db.phase.findFirst({
-                  where: { projectId: deployment.projectId, name: currentPhase },
-                  select: { id: true },
+              const completion = await getPhaseCompletion(
+                deployment.projectId,
+                currentPhase,
+                deployment.agentId,
+              );
+
+              if (!completion.canAdvance) {
+                // Gate is APPROVED but advancement is BLOCKED
+                await db.agentActivity.create({
+                  data: {
+                    agentId: deployment.agentId,
+                    type: "approval",
+                    summary: `⛔ Phase gate approved but advancement blocked:\n${completion.blockers.map(b => `• ${b}`).join("\n")}\n\nComplete the outstanding items before the phase can advance.`,
+                    metadata: { completion } as any,
+                  },
                 });
-                if (phaseRow) {
-                  const [total, done] = await Promise.all([
-                    db.task.count({ where: { projectId: deployment.projectId, phaseId: phaseRow.id } }),
-                    db.task.count({ where: { projectId: deployment.projectId, phaseId: phaseRow.id, status: "DONE" } }),
-                  ]);
-                  if (total > 0 && done / total < 0.5) {
-                    await db.agentActivity.create({
-                      data: {
-                        agentId: deployment.agentId,
-                        type: "approval",
-                        summary: `⚠️ Phase gate approved with only ${done}/${total} tasks complete (${Math.round(done / total * 100)}%). Documents are approved but project tasks may still need attention.`,
-                      },
-                    });
-                  }
-                }
-              } catch {}
+                await db.agentDeployment.update({
+                  where: { id: deployment.id },
+                  data: { phaseStatus: "blocked_tasks_incomplete" },
+                });
+                return NextResponse.json({
+                  data: updated,
+                  blocked: true,
+                  completion,
+                  message: `Phase gate approved but advancement blocked: ${completion.blockers.join("; ")}`,
+                });
+              }
             }
 
             if (nextPhase) {
-              // Verify ALL current-phase artefacts are approved before advancing.
-              // If any are still DRAFT/PENDING, block advancement and notify the user.
-              const currentPhaseArtefacts = await db.agentArtefact.findMany({
-                where: { agentId: deployment.agentId, projectId: deployment.projectId!, phaseId: currentPhase ?? undefined },
-              });
-              const unapproved = currentPhaseArtefacts.filter(a => a.status !== "APPROVED");
-              if (unapproved.length > 0) {
-                // Also check by phase row ID in case phaseId is stored differently
-                const phaseRow = await db.phase.findFirst({
-                  where: { projectId: deployment.projectId!, name: currentPhase ?? undefined },
-                  select: { id: true },
-                });
-                const byId = phaseRow ? await db.agentArtefact.count({
-                  where: { agentId: deployment.agentId, projectId: deployment.projectId!, phaseId: phaseRow.id, status: { not: "APPROVED" } },
-                }) : 0;
-
-                if (unapproved.length > 0 && byId > 0) {
-                  // Block advancement — there are genuinely unapproved artefacts
-                  await db.agentActivity.create({
-                    data: {
-                      agentId: deployment.agentId,
-                      type: "approval",
-                      summary: `Phase gate approved but ${unapproved.length} artefact(s) in "${currentPhase}" are not yet approved: ${unapproved.slice(0, 3).map(a => a.name).join(", ")}. Approve all artefacts before the phase can advance.`,
-                    },
-                  });
-                  // Keep deployment in current phase with active status so user can approve docs
-                  await db.agentDeployment.update({
-                    where: { id: deployment.id },
-                    data: { phaseStatus: "active" },
-                  });
-                  // Don't advance — exit early
-                  return NextResponse.json({ data: updated });
-                }
-              }
 
               // 1. Advance the phase in DB
               await db.agentDeployment.update({

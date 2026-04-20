@@ -440,11 +440,31 @@ export async function GET(
       : deployedAt;
 
   // Phases summary
-  const phaseSummary = phases.map((p) => ({
-    name: p.name,
-    status: p.status,
-    order: p.order,
-  }));
+  // Enrich phase data with 3-layer completion status
+  let completionData: any[] = [];
+  try {
+    const { getAllPhasesCompletion } = await import("@/lib/agents/phase-completion");
+    completionData = await getAllPhasesCompletion(deployment.projectId, agentId);
+  } catch {}
+  const completionMap = new Map(completionData.map((c: any) => [c.phaseName, c]));
+
+  const phaseSummary = phases.map((p) => {
+    const comp = completionMap.get(p.name);
+    return {
+      name: p.name,
+      status: p.status,
+      order: p.order,
+      artefactsDone: comp?.artefacts?.done ?? 0,
+      artefactsTotal: comp?.artefacts?.total ?? 0,
+      pmTasksDone: comp?.pmTasks?.done ?? 0,
+      pmTasksTotal: comp?.pmTasks?.total ?? 0,
+      deliveryTasksDone: comp?.deliveryTasks?.done ?? 0,
+      deliveryTasksTotal: comp?.deliveryTasks?.total ?? 0,
+      overallPct: comp?.overall ?? 0,
+      canAdvance: comp?.canAdvance ?? false,
+      blockers: comp?.blockers ?? [],
+    };
+  });
 
   return NextResponse.json({
     data: {

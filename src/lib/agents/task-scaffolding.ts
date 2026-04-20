@@ -48,6 +48,11 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Conduct clarification Q&A with project owner", category: "governance", linkedEvent: "clarification_complete", estimatedHours: 0.5 },
     { title: "Submit Phase 1 gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
     { title: "Obtain approval for all Phase 1 artefacts", category: "governance", linkedEvent: "phase_advanced", estimatedHours: 0.25 },
+    // Delivery activities
+    { title: "Gather and document stakeholder requirements", category: "delivery_activity", estimatedHours: 4 },
+    { title: "Validate requirements with project sponsor", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Confirm project scope and boundaries", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Identify key constraints and assumptions", category: "delivery_activity", estimatedHours: 1 },
   ],
   "pre-project": [
     { title: "Generate Project Brief", category: "artefact", linkedArtefact: "Project Brief", estimatedHours: 0.5 },
@@ -87,6 +92,12 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Generate Change Control Plan", category: "artefact", linkedArtefact: "Change Control Plan", estimatedHours: 0.5 },
     { title: "Submit Phase 2 gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
     { title: "Obtain approval for all baselines", category: "governance", linkedEvent: "phase_advanced", estimatedHours: 0.5 },
+    // Delivery activities
+    { title: "Confirm resource availability and assignments", category: "delivery_activity", estimatedHours: 3 },
+    { title: "Finalise and baseline the project schedule", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Set up project tracking and reporting tools", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Conduct project kick-off meeting", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Establish communication channels and cadence", category: "delivery_activity", estimatedHours: 1 },
   ],
   "initiation": [
     { title: "Generate Project Charter", category: "artefact", linkedArtefact: "Project Charter", estimatedHours: 1 },
@@ -113,6 +124,11 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Generate weekly status reports", category: "delivery", estimatedHours: 1 },
     { title: "Process and evaluate change requests", category: "governance", estimatedHours: 1 },
     { title: "Conduct risk reviews and update register", category: "monitoring", estimatedHours: 1 },
+    // Delivery activities
+    { title: "Execute work packages per schedule", category: "delivery_activity", estimatedHours: 8 },
+    { title: "Track and report deliverable progress", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Resolve blockers and escalate issues", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Conduct quality reviews on deliverables", category: "delivery_activity", estimatedHours: 3 },
   ],
   "execution": [
     { title: "Monitor task progress and update schedule", category: "monitoring", estimatedHours: 2 },
@@ -121,6 +137,12 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Process and evaluate change requests", category: "governance", estimatedHours: 1 },
     { title: "Conduct risk reviews and update register", category: "monitoring", estimatedHours: 1 },
     { title: "Submit Execution gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
+    // Delivery activities
+    { title: "Execute work packages per schedule", category: "delivery_activity", estimatedHours: 8 },
+    { title: "Track and report deliverable progress", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Resolve blockers and escalate issues", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Conduct quality reviews on deliverables", category: "delivery_activity", estimatedHours: 3 },
+    { title: "Manage vendor/supplier delivery milestones", category: "delivery_activity", estimatedHours: 2 },
   ],
   "sprint cadence": [
     { title: "Manage sprint backlog and velocity", category: "delivery", estimatedHours: 1 },
@@ -143,6 +165,10 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Generate Test Results Report", category: "artefact", linkedArtefact: "Test Results Report", estimatedHours: 1 },
     { title: "Track defect resolution", category: "monitoring", estimatedHours: 1 },
     { title: "Submit Test gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
+    // Delivery activities
+    { title: "Execute test cases and record results", category: "delivery_activity", estimatedHours: 4 },
+    { title: "Resolve critical and high-priority defects", category: "delivery_activity", estimatedHours: 4 },
+    { title: "Obtain stakeholder acceptance of test results", category: "delivery_activity", estimatedHours: 2 },
   ],
 
   // ── Phase 5: Deploy / Release ──
@@ -164,6 +190,11 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Generate Project Closure Report", category: "artefact", linkedArtefact: "Project Closure Report", estimatedHours: 1 },
     { title: "Archive all project artefacts", category: "governance", estimatedHours: 0.5 },
     { title: "Submit final sign-off approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
+    // Delivery activities
+    { title: "Obtain formal deliverable acceptance from sponsor", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Complete handover to operations/BAU team", category: "delivery_activity", estimatedHours: 3 },
+    { title: "Close vendor contracts and purchase orders", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Release project resources", category: "delivery_activity", estimatedHours: 1 },
   ],
   "closure": [
     { title: "Generate Lessons Learned Report", category: "artefact", linkedArtefact: "Lessons Learned Report", estimatedHours: 1 },
@@ -190,6 +221,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   monitoring: "Monitoring & Control",
   stakeholder: "Stakeholder Management",
   delivery: "Delivery & Execution",
+  delivery_activity: "Delivery Activities",
 };
 
 // ─── Main scaffolding function ───────────────────────────────────────────────
@@ -302,7 +334,7 @@ export async function scaffoldProjectTasks(
           data: {
             projectId,
             title: template.title,
-            description: `[scaffolded]${template.linkedArtefact ? ` [artefact:${template.linkedArtefact}]` : ""}${template.linkedEvent ? ` [event:${template.linkedEvent}]` : ""}`,
+            description: `[${template.category === "delivery_activity" ? "scaffolded:delivery" : "scaffolded"}]${template.linkedArtefact ? ` [artefact:${template.linkedArtefact}]` : ""}${template.linkedEvent ? ` [event:${template.linkedEvent}]` : ""}`,
             status: phase.order === 0 ? "TODO" : "TODO",
             priority: template.category === "artefact" ? "HIGH" : "MEDIUM",
             phaseId: phase.name,

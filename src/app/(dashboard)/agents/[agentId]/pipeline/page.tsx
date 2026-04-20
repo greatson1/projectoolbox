@@ -51,6 +51,13 @@ interface Phase {
   order: number;
   artefactsDone?: number;
   artefactsTotal?: number;
+  pmTasksDone?: number;
+  pmTasksTotal?: number;
+  deliveryTasksDone?: number;
+  deliveryTasksTotal?: number;
+  overallPct?: number;
+  canAdvance?: boolean;
+  blockers?: string[];
 }
 
 interface PipelineData {
@@ -462,22 +469,64 @@ function PhaseBar({ phases }: { phases: Phase[] }) {
 
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-2">
-      {sorted.map((phase, i) => (
-        <React.Fragment key={phase.name}>
-          <div className="flex flex-col items-center gap-1.5 min-w-[120px]">
-            <span className="text-xs font-medium text-foreground">{phase.name}</span>
-            {phaseBadge(phase.status)}
-            {phase.artefactsTotal != null && (
-              <span className="text-[10px] text-muted-foreground">
-                {phase.artefactsDone ?? 0}/{phase.artefactsTotal} approved
-              </span>
+      {sorted.map((phase, i) => {
+        const hasCompletion = (phase.artefactsTotal ?? 0) > 0 || (phase.pmTasksTotal ?? 0) > 0 || (phase.deliveryTasksTotal ?? 0) > 0;
+        const isBlocked = phase.blockers && phase.blockers.length > 0 && phase.status?.toLowerCase() === "active";
+        return (
+          <React.Fragment key={phase.name}>
+            <div className={`flex flex-col items-center gap-1.5 min-w-[140px] rounded-lg p-2 ${isBlocked ? "bg-amber-500/5 border border-amber-500/20" : ""}`}>
+              <span className="text-xs font-medium text-foreground">{phase.name}</span>
+              {phaseBadge(phase.status)}
+              {hasCompletion && (
+                <div className="w-full space-y-1 mt-1">
+                  {/* Artefacts */}
+                  <div className="flex items-center justify-between text-[9px]">
+                    <span className="text-muted-foreground">Artefacts</span>
+                    <span className="font-medium" style={{ color: (phase.artefactsDone ?? 0) >= (phase.artefactsTotal ?? 1) ? "#10B981" : "#6366F1" }}>
+                      {phase.artefactsDone ?? 0}/{phase.artefactsTotal ?? 0}
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
+                    <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${phase.artefactsTotal ? (phase.artefactsDone! / phase.artefactsTotal) * 100 : 0}%` }} />
+                  </div>
+                  {/* PM Tasks */}
+                  <div className="flex items-center justify-between text-[9px]">
+                    <span className="text-muted-foreground">PM Tasks</span>
+                    <span className="font-medium" style={{ color: (phase.pmTasksDone ?? 0) >= (phase.pmTasksTotal ?? 1) ? "#10B981" : "#8B5CF6" }}>
+                      {phase.pmTasksDone ?? 0}/{phase.pmTasksTotal ?? 0}
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
+                    <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${phase.pmTasksTotal ? (phase.pmTasksDone! / phase.pmTasksTotal) * 100 : 0}%` }} />
+                  </div>
+                  {/* Delivery Tasks */}
+                  <div className="flex items-center justify-between text-[9px]">
+                    <span className="text-muted-foreground">Delivery</span>
+                    <span className="font-medium" style={{ color: (phase.deliveryTasksDone ?? 0) >= (phase.deliveryTasksTotal ?? 1) ? "#10B981" : "#F59E0B" }}>
+                      {phase.deliveryTasksDone ?? 0}/{phase.deliveryTasksTotal ?? 0}
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
+                    <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${phase.deliveryTasksTotal ? (phase.deliveryTasksDone! / phase.deliveryTasksTotal) * 100 : 0}%` }} />
+                  </div>
+                  {/* Overall */}
+                  <div className="text-center mt-1">
+                    <span className="text-[10px] font-bold" style={{ color: (phase.overallPct ?? 0) >= 80 ? "#10B981" : (phase.overallPct ?? 0) >= 50 ? "#F59E0B" : "#EF4444" }}>
+                      {phase.overallPct ?? 0}%
+                    </span>
+                  </div>
+                </div>
+              )}
+              {isBlocked && (
+                <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-medium">BLOCKED</span>
+              )}
+            </div>
+            {i < sorted.length - 1 && (
+              <ChevronRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
             )}
-          </div>
-          {i < sorted.length - 1 && (
-            <ChevronRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
-          )}
-        </React.Fragment>
-      ))}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
