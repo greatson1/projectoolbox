@@ -13,7 +13,7 @@ export function PageHeader({ title, subtitle, actions, className, icon }: PageHe
   return (
     <div
       className={cn(
-        "relative rounded-2xl px-6 py-5 mb-6 overflow-hidden border border-primary/15",
+        "relative rounded-xl sm:rounded-2xl px-4 sm:px-6 py-4 sm:py-5 mb-4 sm:mb-6 overflow-hidden border border-primary/15",
         className
       )}
       style={{
@@ -28,17 +28,17 @@ export function PageHeader({ title, subtitle, actions, className, icon }: PageHe
             "radial-gradient(ellipse 60% 80% at 100% 0%, var(--primary) 0%, transparent 70%)",
         }}
       />
-      <div className="relative flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="relative flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           {icon && (
-            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary flex-shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary flex-shrink-0">
               {icon}
             </div>
           )}
-          <div>
-            <h1 className="text-2xl font-bold text-foreground leading-tight">{title}</h1>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-foreground leading-tight truncate">{title}</h1>
             {subtitle && (
-              <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">{subtitle}</p>
             )}
           </div>
         </div>

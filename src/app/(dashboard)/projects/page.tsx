@@ -48,7 +48,7 @@ export default function ProjectsPage() {
     return (
       <div className="space-y-6 max-w-[1400px]">
         <Skeleton className="h-10 w-48" />
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
           {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-48 rounded-xl" />)}
         </div>
       </div>
@@ -64,7 +64,7 @@ export default function ProjectsPage() {
         actions={<Link href="/agents/deploy"><Button><Plus className="w-4 h-4 mr-1" /> New Project</Button></Link>}
       />
 
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border max-w-md">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border w-full sm:max-w-md">
         <Search className="w-4 h-4 text-muted-foreground" />
         <input className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
           placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -78,7 +78,7 @@ export default function ProjectsPage() {
           {!search && <Link href="/agents/deploy"><Button>Create First Project</Button></Link>}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
           {filtered.map((p: any) => {
             const agent = p.agents?.[0]?.agent;
             return (
