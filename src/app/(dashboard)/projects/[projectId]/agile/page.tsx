@@ -153,6 +153,27 @@ export default function AgileBoardPage() {
   const currentSprintId = selectedSprintId ?? activeSprint?.id ?? null;
   const currentSprint   = sprints.find(s => s.id === currentSprintId) || null;
 
+  // Strip internal seeder tags from description for clean display
+  function cleanDescription(raw: string | null | undefined): string {
+    if (!raw) return "";
+    return raw
+      .replace(/\[source:\w+\]\s*/g, "")
+      .replace(/Sprint:\s*Sprint\s*\d+\s*\|?\s*/g, "")
+      .replace(/Owner:\s*/g, "Assigned to: ")
+      .replace(/^\s*\|\s*/, "")
+      .replace(/\s*\|\s*$/, "")
+      .trim();
+  }
+
+  // Strip internal goal prefixes from sprint names/goals
+  function cleanSprintGoal(raw: string | null | undefined): string {
+    if (!raw) return "";
+    return raw
+      .replace(/^\[source:artefact\]\s*/i, "")
+      .replace(/^\[auto-planned\]\s*/i, "")
+      .trim();
+  }
+
   const allIssues: Issue[] = useMemo(() => {
     if (!apiTasks) return [];
     return apiTasks.map((t: any, idx: number) => ({
@@ -168,7 +189,7 @@ export default function AgileBoardPage() {
       dueDate: t.dueDate || t.endDate,
       blocked: t.blocked || false,
       subtasks: t.subtasks,
-      description: t.description,
+      description: cleanDescription(t.description),
       sprintId: t.sprintId || null,
     }));
   }, [apiTasks]);
@@ -399,7 +420,7 @@ export default function AgileBoardPage() {
               <option value="">All issues (no sprint filter)</option>
               {sprints.map(s => (
                 <option key={s.id} value={s.id}>
-                  {s.name} · {new Date(s.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – {new Date(s.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} [{s.status}]
+                  {s.name} · {new Date(s.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – {new Date(s.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} [{s.status}]{cleanSprintGoal(s.goal) ? ` — ${cleanSprintGoal(s.goal).slice(0, 40)}` : ""}
                 </option>
               ))}
             </select>
@@ -453,8 +474,8 @@ export default function AgileBoardPage() {
                 {currentSprint.status}
               </Badge>
             </div>
-            {currentSprint.goal && (
-              <p className="text-[11px] mt-0.5 max-w-[220px] truncate text-muted-foreground">{currentSprint.goal}</p>
+            {currentSprint.goal && cleanSprintGoal(currentSprint.goal) && (
+              <p className="text-[11px] mt-0.5 max-w-[220px] truncate text-muted-foreground">{cleanSprintGoal(currentSprint.goal)}</p>
             )}
             <p className="text-[10px] text-muted-foreground mt-0.5">
               {new Date(currentSprint.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} –{" "}

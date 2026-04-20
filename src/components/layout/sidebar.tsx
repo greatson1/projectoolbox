@@ -171,7 +171,7 @@ const NAV: NavGroup[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeProjectId, activeProjectName, setActiveProject, sidebarCollapsed, toggleSidebar, pendingApprovals, unreadNotifications, collapsedGroups, toggleGroup, pinnedPages, togglePin, setCommandPaletteOpen } = useAppStore();
+  const { activeProjectId, activeProjectName, setActiveProject, sidebarCollapsed, toggleSidebar, pendingApprovals, unreadNotifications, collapsedGroups, toggleGroup, pinnedPages, togglePin, setCommandPaletteOpen, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore();
 
   // Project switcher state
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -229,11 +229,25 @@ export function Sidebar() {
     return undefined;
   };
 
+  // Close mobile drawer on navigation
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [pathname, setMobileSidebarOpen]);
+
   return (
+    <>
+    {/* Mobile backdrop */}
+    {mobileSidebarOpen && (
+      <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />
+    )}
     <aside
       className={cn(
-        "fixed left-0 top-0 bottom-0 z-40 flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200",
-        sidebarCollapsed ? "w-[60px]" : "w-[240px]"
+        "fixed left-0 top-0 bottom-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200",
+        // Desktop: always visible
+        "hidden lg:flex",
+        sidebarCollapsed ? "lg:w-[60px]" : "lg:w-[240px]",
+        // Mobile: drawer overlay
+        mobileSidebarOpen && "flex w-[280px]"
       )}
     >
       {/* Logo */}
@@ -451,8 +465,12 @@ export function Sidebar() {
         onClick={toggleSidebar}
         className="flex items-center justify-center h-10 border-t border-sidebar-border text-muted-foreground hover:text-foreground transition-colors"
       >
-        {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        {sidebarCollapsed
+          ? <ChevronRight className="w-4 h-4" />
+          : <ChevronLeft className="w-4 h-4" />
+        }
       </button>
     </aside>
+    </>
   );
 }
