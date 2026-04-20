@@ -1,7 +1,19 @@
 "use client";
 // @ts-nocheck
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  useDroppable,
+  useDraggable,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+  type DragOverEvent,
+} from "@dnd-kit/core";
 import { useParams } from "next/navigation";
 import {
   useProjectTasks, useUpdateTask, useCreateTask,
@@ -117,6 +129,63 @@ export default function AgileBoardPage() {
   const [swimlane, setSwimlane]             = useState<SwimlaneSetting>("none");
   const [selectedIssue, setSelectedIssue]   = useState<Issue | null>(null);
   const [showAnalytics, setShowAnalytics]   = useState(true);
+
+  // ── Drag-and-drop state ───────────────────────────────────────────
+  const [activeId, setActiveId]       = useState<string | null>(null);
+  const [overColumnId, setOverColumnId] = useState<ColumnId | null>(null);
+  // Optimistic column overrides: issueId → ColumnId
+  const [optimisticColumns, setOptimisticColumns] = useState<Record<string, ColumnId>>({});
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string);
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const overId = event.over?.id as ColumnId | null;
+    setOverColumnId(overId || null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverColumnId(null);
+
+    if (!over) return;
+
+    const taskId     = active.id as string;
+    const newColId   = over.id as ColumnId;
+    const issue      = filteredIssues.find(i => i.id === taskId);
+    const currentCol = (optimisticColumns[taskId] ?? issue?.column) as ColumnId | undefined;
+
+    if (!issue || !newColId || currentCol === newColId) return;
+
+    // Optimistic update
+    setOptimisticColumns(prev => ({ ...prev, [taskId]: newColId }));
+
+    const newStatus = COLUMN_STATUS_MAP[newColId];
+    const colLabel  = COLUMNS.find(c => c.id === newColId)?.label ?? newColId;
+    const toastId   = toast.loading(`Moving to ${colLabel}…`);
+
+    updateTask.mutate(
+      { taskId, status: newStatus },
+      {
+        onSuccess: () => toast.success(`Moved to ${colLabel}`, { id: toastId }),
+        onError: () => {
+          // Roll back optimistic update
+          setOptimisticColumns(prev => {
+            const next = { ...prev };
+            delete next[taskId];
+            return next;
+          });
+          toast.error("Failed to move card", { id: toastId });
+        },
+      }
+    );
+  }
 
   // Filters
   const [filterBlocked, setFilterBlocked]     = useState(false);
@@ -274,6 +343,19 @@ export default function AgileBoardPage() {
     }
     return completed;
   }, [sprints, currentSprint, committedSP, completedSP]);
+
+  // Apply optimistic column overrides to the board for instant feedback
+  const displayIssues = useMemo(
+    () => filteredIssues.map(i =>
+      optimisticColumns[i.id] ? { ...i, column: optimisticColumns[i.id] } : i
+    ),
+    [filteredIssues, optimisticColumns]
+  );
+
+  const activeDragIssue = useMemo(
+    () => activeId ? displayIssues.find(i => i.id === activeId) ?? null : null,
+    [activeId, displayIssues]
+  );
 
   const hasActiveFilters = filterBlocked || filterBugs || filterUnassigned || filterAssignee || filterLabel || searchQuery;
 
@@ -585,7 +667,34 @@ export default function AgileBoardPage() {
       <div className="flex gap-4">
         <div className="flex-1 overflow-x-auto">
           {swimlane === "none"
-            ? <BoardColumns columns={COLUMNS} issues={filteredIssues} onCardClick={setSelectedIssue} getLabelColor={getLabelColor} />
+            ? (
+              <DndContext
+                sensors={dndSensors}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+              >
+                <BoardColumns
+                  columns={COLUMNS}
+                  issues={displayIssues}
+                  onCardClick={setSelectedIssue}
+                  getLabelColor={getLabelColor}
+                  activeId={activeId}
+                  overColumnId={overColumnId}
+                />
+                <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+                  {activeDragIssue ? (
+                    <div style={{ transform: "rotate(2deg)", opacity: 0.95 }}>
+                      <IssueCard
+                        issue={activeDragIssue}
+                        onClick={() => {}}
+                        getLabelColor={getLabelColor}
+                      />
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )
             : <SwimlanedBoard swimlane={swimlane} columns={COLUMNS} issues={filteredIssues} onCardClick={setSelectedIssue} getLabelColor={getLabelColor} />
           }
         </div>
@@ -850,44 +959,87 @@ export default function AgileBoardPage() {
 // BOARD COLUMNS
 // ═══════════════════════════════════════════════════════════════════
 
-function BoardColumns({ columns, issues, onCardClick, getLabelColor }: {
-  columns: typeof COLUMNS; issues: Issue[]; onCardClick: (i: Issue) => void; getLabelColor: (l: string) => string;
+function BoardColumn({ col, colIssues, onCardClick, getLabelColor, isOver, activeId }: {
+  col: typeof COLUMNS[number];
+  colIssues: Issue[];
+  onCardClick: (i: Issue) => void;
+  getLabelColor: (l: string) => string;
+  isOver: boolean;
+  activeId: string | null;
+}) {
+  const { setNodeRef } = useDroppable({ id: col.id });
+
+  const totalSP   = colIssues.reduce((s, i) => s + i.storyPoints, 0);
+  const overLimit = col.wipLimit && colIssues.length > col.wipLimit;
+  const atLimit   = col.wipLimit && colIssues.length >= col.wipLimit;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className="flex-1 min-w-[200px] max-w-[280px] flex flex-col rounded-xl transition-all duration-150"
+      style={{
+        background: isOver ? `${col.color}18` : "var(--muted, rgba(0,0,0,0.04))",
+        boxShadow: isOver ? `0 0 0 2px ${col.color}` : undefined,
+      }}
+    >
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
+          <span className="text-xs font-semibold">{col.label}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+            style={{ background: `${col.color}22`, color: col.color }}>{colIssues.length}</span>
+          {col.wipLimit && (
+            <span className="text-[9px] px-1 py-0.5 rounded font-bold"
+              style={{ background: overLimit ? "rgba(239,68,68,0.15)" : atLimit ? "rgba(245,158,11,0.15)" : "transparent", color: overLimit ? "#EF4444" : atLimit ? "#F59E0B" : "var(--muted-foreground)" }}>
+              WIP {col.wipLimit}
+            </span>
+          )}
+        </div>
+        <span className="text-[10px] text-muted-foreground">{totalSP} SP</span>
+      </div>
+      <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 420px)" }}>
+        {colIssues.map(issue => (
+          <DraggableIssueCard
+            key={issue.id}
+            issue={issue}
+            onClick={() => onCardClick(issue)}
+            getLabelColor={getLabelColor}
+            isDragging={activeId === issue.id}
+          />
+        ))}
+        {colIssues.length === 0 && (
+          <div className="flex items-center justify-center h-16 rounded-lg border border-dashed border-border/40">
+            <span className="text-[10px] text-muted-foreground">{isOver ? "Drop here" : "No issues"}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BoardColumns({ columns, issues, onCardClick, getLabelColor, activeId, overColumnId }: {
+  columns: typeof COLUMNS;
+  issues: Issue[];
+  onCardClick: (i: Issue) => void;
+  getLabelColor: (l: string) => string;
+  activeId?: string | null;
+  overColumnId?: ColumnId | null;
 }) {
   return (
     <div className="flex gap-3" style={{ minHeight: 500 }}>
       {columns.map(col => {
         const colIssues = issues.filter(i => i.column === col.id);
-        const totalSP   = colIssues.reduce((s, i) => s + i.storyPoints, 0);
-        const overLimit = col.wipLimit && colIssues.length > col.wipLimit;
-        const atLimit   = col.wipLimit && colIssues.length >= col.wipLimit;
+        const isOver    = overColumnId === col.id;
         return (
-          <div key={col.id} className="flex-1 min-w-[200px] max-w-[280px] flex flex-col rounded-xl bg-muted/20">
-            <div className="flex items-center justify-between px-3 py-2">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
-                <span className="text-xs font-semibold">{col.label}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
-                  style={{ background: `${col.color}22`, color: col.color }}>{colIssues.length}</span>
-                {col.wipLimit && (
-                  <span className="text-[9px] px-1 py-0.5 rounded font-bold"
-                    style={{ background: overLimit ? "rgba(239,68,68,0.15)" : atLimit ? "rgba(245,158,11,0.15)" : "transparent", color: overLimit ? "#EF4444" : atLimit ? "#F59E0B" : "var(--muted-foreground)" }}>
-                    WIP {col.wipLimit}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] text-muted-foreground">{totalSP} SP</span>
-            </div>
-            <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto" style={{ maxHeight: "calc(100vh - 420px)" }}>
-              {colIssues.map(issue => (
-                <IssueCard key={issue.id} issue={issue} onClick={() => onCardClick(issue)} getLabelColor={getLabelColor} />
-              ))}
-              {colIssues.length === 0 && (
-                <div className="flex items-center justify-center h-16 rounded-lg border border-dashed border-border/40">
-                  <span className="text-[10px] text-muted-foreground">No issues</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <BoardColumn
+            key={col.id}
+            col={col}
+            colIssues={colIssues}
+            onCardClick={onCardClick}
+            getLabelColor={getLabelColor}
+            isOver={isOver}
+            activeId={activeId ?? null}
+          />
         );
       })}
     </div>
@@ -969,20 +1121,64 @@ function SwimlanedBoard({ swimlane, columns, issues, onCardClick, getLabelColor 
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// DRAGGABLE ISSUE CARD WRAPPER
+// ═══════════════════════════════════════════════════════════════════
+
+function DraggableIssueCard({ issue, onClick, getLabelColor, isDragging }: {
+  issue: Issue; onClick: () => void; getLabelColor: (l: string) => string; isDragging?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging: activelydragging } = useDraggable({ id: issue.id });
+  const didDragRef = useRef(false);
+
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+
+  // Track whether a real drag movement occurred so we can suppress the click
+  const handlePointerDown = () => { didDragRef.current = false; };
+  const handlePointerMove = () => { if (transform) didDragRef.current = true; };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onClick={() => {
+        // PointerSensor requires distance: 5 before it activates — if a drag
+        // was activated the overlay takes over and this element's click is
+        // suppressed by dnd-kit automatically. Safe to forward unconditionally.
+        if (!didDragRef.current) onClick();
+      }}
+    >
+      <IssueCard
+        issue={issue}
+        onClick={() => {}}
+        getLabelColor={getLabelColor}
+        isDragging={isDragging}
+      />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ISSUE CARD
 // ═══════════════════════════════════════════════════════════════════
 
-function IssueCard({ issue, compact, onClick, getLabelColor }: {
-  issue: Issue; compact?: boolean; onClick: () => void; getLabelColor: (l: string) => string;
+function IssueCard({ issue, compact, onClick, getLabelColor, isDragging }: {
+  issue: Issue; compact?: boolean; onClick: () => void; getLabelColor: (l: string) => string; isDragging?: boolean;
 }) {
   const isDue = issue.dueDate && new Date(issue.dueDate) <= new Date(Date.now() + 2 * 86400000);
   return (
-    <div className="rounded-xl p-2.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md"
+    <div className="rounded-xl p-2.5 cursor-grab transition-all hover:-translate-y-0.5 hover:shadow-md"
       onClick={onClick}
       style={{
         background: "var(--card)",
         border: "1px solid var(--border)",
         borderLeft: `3px solid ${PRIORITY_COLORS[issue.priority]}`,
+        opacity: isDragging ? 0.35 : 1,
       }}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5">
