@@ -663,6 +663,37 @@ export default function AgileBoardPage() {
         )}
       </div>
 
+      {/* ── Empty state ── */}
+      {allIssues.length === 0 && !tasksLoading && (
+        <div className="rounded-xl border border-border bg-card p-8 text-center mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <Columns3 className="w-7 h-7 text-primary/40" />
+          </div>
+          <h3 className="text-sm font-bold mb-1.5">No tasks on the board yet</h3>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed mb-4">
+            Tasks appear here when you create them manually or when your AI agent generates and you approve a Schedule, WBS, or Sprint Plan artefact.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
+            <button onClick={() => setShowCreateIssue(true)}
+              className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
+              + Create Issue
+            </button>
+            <a href="/agents/chat" className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Chat with Agent
+            </a>
+          </div>
+          <div className="mt-5 rounded-lg bg-muted/30 p-3 text-left max-w-sm mx-auto">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">How tasks get populated:</p>
+            <div className="space-y-1 text-[11px] text-muted-foreground">
+              <div className="flex gap-2"><span className="text-primary font-bold">1.</span> Agent generates Schedule/WBS artefact</div>
+              <div className="flex gap-2"><span className="text-primary font-bold">2.</span> You approve it (click Approve in chat or artefacts tab)</div>
+              <div className="flex gap-2"><span className="text-primary font-bold">3.</span> Tasks are automatically created from the artefact</div>
+              <div className="flex gap-2"><span className="text-primary font-bold">4.</span> Approve Sprint Plans to assign tasks to sprints</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Board + Analytics ── */}
       <div className="flex gap-4">
         <div className="flex-1 overflow-x-auto">
