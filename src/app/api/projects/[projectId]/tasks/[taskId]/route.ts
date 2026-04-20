@@ -33,9 +33,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     title, description, status, priority,
     startDate, endDate, progress,
     estimatedHours, actualHours,
-    storyPoints, assigneeId, phaseId,
+    storyPoints, assigneeId, assigneeName, phaseId,
     isCriticalPath, dependencies,
-    parentId,
+    parentId, sprintId,
+    type, epic, labels, blocked,
   } = body;
 
   const data: Record<string, any> = {};
@@ -50,10 +51,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (actualHours    !== undefined) data.actualHours    = actualHours;
   if (storyPoints    !== undefined) data.storyPoints    = storyPoints;
   if (assigneeId     !== undefined) data.assigneeId     = assigneeId;
+  if (assigneeName   !== undefined) data.assigneeName   = assigneeName;
   if (phaseId        !== undefined) data.phaseId        = phaseId;
   if (isCriticalPath !== undefined) data.isCriticalPath = isCriticalPath;
   if (dependencies   !== undefined) data.dependencies   = dependencies;
   if (parentId       !== undefined) data.parentId       = parentId;
+  if (sprintId       !== undefined) data.sprintId       = sprintId || null;
+  if (type           !== undefined) data.type           = type;
+  if (epic           !== undefined) data.epic           = epic;
+  if (labels         !== undefined) data.labels         = labels;
+  if (blocked        !== undefined) data.blocked        = blocked;
 
   data.lastEditedBy = (session.user as any).id || "user";
 
