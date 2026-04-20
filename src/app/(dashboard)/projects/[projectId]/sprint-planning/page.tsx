@@ -7,8 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Plus, Calendar, Target, Users, TrendingUp, ChevronRight, GripVertical, ArrowRight, Clock, Zap } from "lucide-react";
+import { Plus, Calendar, Target, Users, TrendingUp, ChevronRight, GripVertical, ArrowRight, Clock, Zap, RefreshCw } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +47,9 @@ export default function SprintPlanningPage() {
   const deleteSprint = useDeleteSprint(projectId);
 
   const [showCreateSprint, setShowCreateSprint] = useState(false);
+  const [showReplan, setShowReplan] = useState(false);
+  const [replanOptions, setReplanOptions] = useState({ resetAll: false, sprintDurationDays: 14, velocityOverride: "" });
+  const [replanLoading, setReplanLoading] = useState(false);
   const [newSprint, setNewSprint] = useState({ name: "", goal: "", startDate: "", endDate: "" });
   const [expandedSprint, setExpandedSprint] = useState<string | null>(null);
 
@@ -112,6 +118,32 @@ export default function SprintPlanningPage() {
     } catch { toast.error("Failed to complete sprint"); }
   };
 
+  const handleReplan = async () => {
+    setReplanLoading(true);
+    try {
+      const body: Record<string, unknown> = { resetAll: replanOptions.resetAll };
+      if (replanOptions.sprintDurationDays !== 14) body.sprintDurationDays = replanOptions.sprintDurationDays;
+      if (replanOptions.velocityOverride) body.velocityOverride = parseInt(replanOptions.velocityOverride, 10);
+
+      const res = await fetch(`/api/projects/${projectId}/sprints/replan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Replan failed");
+
+      toast.success(data.message || "Sprints replanned successfully");
+      setShowReplan(false);
+      // Refresh data
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to replan sprints");
+    } finally {
+      setReplanLoading(false);
+    }
+  };
+
   // ─── Loading ───────────────────────────────────────────────────────────────
 
   if (tasksLoading || sprintsLoading) return (
@@ -130,9 +162,14 @@ export default function SprintPlanningPage() {
           <h1 className="text-xl font-bold">Sprint Planning</h1>
           <p className="text-xs text-muted-foreground mt-0.5">Plan sprints, assign tasks, track capacity and velocity</p>
         </div>
-        <Button size="sm" onClick={() => setShowCreateSprint(true)}>
-          <Plus className="w-3.5 h-3.5 mr-1" /> New Sprint
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setShowReplan(true)}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1" /> Replan
+          </Button>
+          <Button size="sm" onClick={() => setShowCreateSprint(true)}>
+            <Plus className="w-3.5 h-3.5 mr-1" /> New Sprint
+          </Button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -384,6 +421,76 @@ export default function SprintPlanningPage() {
           </Card>
         </div>
       </div>
+
+      {/* Replan Sprints Dialog */}
+      <Dialog open={showReplan} onOpenChange={setShowReplan}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Replan Sprints</DialogTitle>
+            <DialogDescription>
+              The agent will clear auto-planned sprint assignments and redistribute all backlog tasks
+              across new sprints based on priority, story points, and team velocity.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="sprintDuration" className="text-xs">Sprint Length (days)</Label>
+                <Input
+                  id="sprintDuration"
+                  type="number"
+                  min={7} max={42}
+                  value={replanOptions.sprintDurationDays}
+                  onChange={e => setReplanOptions(p => ({ ...p, sprintDurationDays: parseInt(e.target.value, 10) || 14 }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="velocity" className="text-xs">Velocity Override (pts/sprint)</Label>
+                <Input
+                  id="velocity"
+                  type="number"
+                  min={1}
+                  placeholder="Auto"
+                  value={replanOptions.velocityOverride}
+                  onChange={e => setReplanOptions(p => ({ ...p, velocityOverride: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+              <input
+                type="checkbox"
+                id="resetAll"
+                className="mt-0.5 accent-amber-500"
+                checked={replanOptions.resetAll}
+                onChange={e => setReplanOptions(p => ({ ...p, resetAll: e.target.checked }))}
+              />
+              <div>
+                <label htmlFor="resetAll" className="text-xs font-medium cursor-pointer">Reset all sprint assignments</label>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Also clears tasks you manually assigned to sprints, not just auto-planned ones. Use with care.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowReplan(false)} disabled={replanLoading}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleReplan} disabled={replanLoading}>
+              {replanLoading ? (
+                <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Replanning…</>
+              ) : (
+                <><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Replan Sprints</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Sprint Modal */}
       {showCreateSprint && (

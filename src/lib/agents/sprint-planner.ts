@@ -23,10 +23,61 @@ const HOURS_PER_POINT = 4; // rough estimate: 1 SP ≈ 4 hours of effort
 
 // ─── Main entry point ────────────────────────────────────────────────────────
 
+export interface PlanSprintsOptions {
+  /** When true, clears existing auto-planned sprint assignments and re-plans from scratch.
+   *  User-set sprint assignments (sprintId on tasks) are preserved unless `resetAll` is also true. */
+  force?: boolean;
+  /** When true alongside force, also clears user-set sprint assignments (full replan). */
+  resetAll?: boolean;
+  /** Override sprint duration in days (default: 14). */
+  sprintDurationDays?: number;
+  /** Override team velocity in story points per sprint (default: auto-calculated). */
+  velocityOverride?: number;
+}
+
 export async function planSprints(
   agentId: string,
   projectId: string,
-): Promise<{ sprints: number; tasksAssigned: number; pointsPlanned: number }> {
+  opts: PlanSprintsOptions = {},
+): Promise<{ sprints: number; tasksAssigned: number; pointsPlanned: number; cleared: number }> {
+  const { force = false, resetAll = false, sprintDurationDays, velocityOverride } = opts;
+
+  // ── Force replan: clear existing auto-planned sprint links ──────────────────
+  let cleared = 0;
+  if (force) {
+    // Remove sprint assignment from tasks whose sprint was auto-planned
+    // (goal contains "[auto-planned]" or "[source:artefact]")
+    const autoSprints = await db.sprint.findMany({
+      where: {
+        projectId,
+        OR: [
+          { goal: { contains: "[auto-planned]" } },
+          { goal: { contains: "[source:artefact]" } },
+        ],
+      },
+      select: { id: true },
+    });
+    const autoSprintIds = autoSprints.map(s => s.id);
+
+    if (autoSprintIds.length > 0 || resetAll) {
+      const unassignWhere = resetAll
+        ? { projectId }                                           // every task
+        : { projectId, sprintId: { in: autoSprintIds } };        // only auto-sprint tasks
+      const unassigned = await db.task.updateMany({
+        where: unassignWhere,
+        data: { sprintId: null },
+      });
+      cleared = unassigned.count;
+
+      // Delete the now-empty auto-planned sprints
+      if (autoSprintIds.length > 0) {
+        await db.sprint.deleteMany({
+          where: { id: { in: autoSprintIds } },
+        }).catch(() => {});
+      }
+    }
+  }
+
   // Load project, tasks, existing sprints, stakeholders, and project members
   const [project, tasks, existingSprints, stakeholders, projectMembers] = await Promise.all([
     db.project.findUnique({ where: { id: projectId } }),
@@ -42,17 +93,17 @@ export async function planSprints(
     }),
   ]);
 
-  if (!project) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0 };
+  if (!project) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
 
-  // Skip if sprints already exist with tasks assigned (don't re-plan)
+  // Skip if sprints already exist with tasks assigned (don't re-plan unless forced)
   const assignedTaskCount = await db.task.count({ where: { projectId, sprintId: { not: null } } });
-  if (existingSprints.length > 0 && assignedTaskCount > 0) {
-    return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0 };
+  if (!force && existingSprints.length > 0 && assignedTaskCount > 0) {
+    return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
   }
 
   // Only plan for unassigned tasks (backlog)
   const backlogTasks = tasks.filter(t => !t.sprintId);
-  if (backlogTasks.length === 0) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0 };
+  if (backlogTasks.length === 0) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
 
   // ── Step 1: Estimate story points using Claude Haiku ──
   await estimateStoryPoints(backlogTasks, project);
@@ -77,12 +128,13 @@ export async function planSprints(
   }
 
   // ── Step 3: Calculate sprint parameters ──
+  const effectiveSprintDuration = sprintDurationDays ?? DEFAULT_SPRINT_DURATION_DAYS;
   const startDate = project.startDate || new Date();
   const endDate = project.endDate || new Date(startDate.getTime() + 90 * 86_400_000);
   const projectDays = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000);
-  const sprintCount = Math.max(1, Math.ceil(projectDays / DEFAULT_SPRINT_DURATION_DAYS));
+  const sprintCount = Math.max(1, Math.ceil(projectDays / effectiveSprintDuration));
   const totalPoints = updatedTasks.reduce((s, t) => s + (t.storyPoints || 1), 0);
-  const velocity = Math.max(10, Math.ceil(totalPoints / sprintCount));
+  const velocity = velocityOverride ?? Math.max(10, Math.ceil(totalPoints / sprintCount));
 
   // ── Step 4: Create sprints and assign tasks ──
   const orgId = project.orgId;
@@ -99,8 +151,8 @@ export async function planSprints(
   });
 
   for (let i = 0; i < sprintCount && taskQueue.length > 0; i++) {
-    const sprintStart = new Date(new Date(startDate).getTime() + i * DEFAULT_SPRINT_DURATION_DAYS * 86_400_000);
-    const sprintEnd = new Date(sprintStart.getTime() + DEFAULT_SPRINT_DURATION_DAYS * 86_400_000);
+    const sprintStart = new Date(new Date(startDate).getTime() + i * effectiveSprintDuration * 86_400_000);
+    const sprintEnd = new Date(sprintStart.getTime() + effectiveSprintDuration * 86_400_000);
     const sprintName = `Sprint ${existingSprints.length + i + 1}`;
 
     // Check if sprint with this name already exists
@@ -176,7 +228,7 @@ export async function planSprints(
     await syncSprintsToArtefact(projectId);
   } catch {}
 
-  return { sprints: sprintsCreated, tasksAssigned, pointsPlanned };
+  return { sprints: sprintsCreated, tasksAssigned, pointsPlanned, cleared };
 }
 
 // ─── Story point estimation ──────────────────────────────────────────────────
