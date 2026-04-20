@@ -520,6 +520,24 @@ function PhaseBar({ phases }: { phases: Phase[] }) {
               {isBlocked && (
                 <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-medium">BLOCKED</span>
               )}
+              {/* Per-phase step indicators */}
+              <div className="flex items-center gap-1 mt-1.5">
+                {[
+                  { label: "Research", done: (phase.artefactsTotal ?? 0) > 0 || phase.status === "COMPLETED" },
+                  { label: "Generate", done: (phase.artefactsTotal ?? 0) > 0 },
+                  { label: "Review", done: (phase.artefactsDone ?? 0) >= (phase.artefactsTotal ?? 1) && (phase.artefactsTotal ?? 0) > 0 },
+                  { label: "Deliver", done: (phase.deliveryTasksDone ?? 0) >= ((phase.deliveryTasksTotal ?? 1) * 0.8) && (phase.deliveryTasksTotal ?? 0) > 0 },
+                  { label: "Gate", done: phase.status === "COMPLETED" },
+                ].map((step, si) => (
+                  <div key={si} className="flex items-center gap-0.5" title={step.label}>
+                    <div className={`w-2 h-2 rounded-full ${step.done ? "bg-emerald-500" : "bg-muted-foreground/20"}`} />
+                    {si < 4 && <div className={`w-2 h-px ${step.done ? "bg-emerald-500/50" : "bg-muted-foreground/10"}`} />}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-1 text-[7px] text-muted-foreground/50">
+                <span>Rsch</span><span>Gen</span><span>Rev</span><span>Del</span><span>Gate</span>
+              </div>
             </div>
             {i < sorted.length - 1 && (
               <ChevronRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />

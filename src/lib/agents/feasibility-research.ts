@@ -345,3 +345,130 @@ export async function runFeasibilityResearch(
 
   return { factsDiscovered: totalFacts, queries, summary, sections, facts };
 }
+
+// ─── Phase-Specific Research ────────────────────────────────────────────────
+
+/**
+ * Phase-specific research queries — what's relevant at each stage.
+ * Called when advancing to a new phase to capture latest context.
+ */
+const PHASE_RESEARCH_QUERIES: Record<string, (project: ProjectContext) => string[]> = {
+  "requirements": (p) => [
+    `Latest requirements gathering best practices for "${p.name}": stakeholder analysis techniques, requirements elicitation methods, tools and frameworks. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "design": (p) => [
+    `Current best practices for project planning and design for "${p.name}": WBS techniques, scheduling methods, resource planning approaches, cost estimation methods for ${p.category || "general"} projects. Budget: ${p.budget ? `£${p.budget}` : "TBC"}.`,
+    `Current market rates and availability for resources and materials needed for: "${p.name}". ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "initiation": (p) => [
+    `Project initiation best practices for "${p.name}": charter development, stakeholder engagement strategies, governance frameworks for ${p.category || "general"} projects.`,
+  ],
+  "planning": (p) => [
+    `Current cost benchmarks and schedule norms for "${p.name}": typical durations, cost ranges, critical path considerations for ${p.category || "general"} projects. Budget: ${p.budget ? `£${p.budget}` : "TBC"}.`,
+    `Resource availability and market rates for: "${p.name}". ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "build": (p) => [
+    `Current risks, common issues, and mitigation strategies during execution phase for projects like "${p.name}": quality assurance approaches, vendor management, progress tracking methods.`,
+    `Latest regulatory or compliance updates that may affect: "${p.name}". ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "execution": (p) => [
+    `Current risks, common issues, and mitigation strategies during execution for "${p.name}": deliverable tracking, scope creep prevention, stakeholder communication. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "test": (p) => [
+    `Testing and quality assurance best practices for "${p.name}": acceptance criteria frameworks, defect management, UAT approaches for ${p.category || "general"} projects.`,
+  ],
+  "deploy": (p) => [
+    `Deployment and go-live best practices for "${p.name}": rollback strategies, cutover planning, training and handover approaches.`,
+  ],
+  "closing": (p) => [
+    `Project closure best practices: lessons learned frameworks, benefits realisation tracking, handover checklists, contract closure requirements for ${p.category || "general"} projects.`,
+  ],
+};
+
+/**
+ * Run phase-specific research when advancing to a new phase.
+ * Lighter than full feasibility research — 1-2 targeted queries.
+ */
+export async function runPhaseResearch(
+  agentId: string,
+  projectId: string,
+  orgId: string,
+  phaseName: string,
+): Promise<ResearchResult> {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, name: true, description: true, category: true, budget: true, startDate: true, endDate: true, methodology: true },
+  });
+  if (!project) return { factsDiscovered: 0, queries: [], summary: "", sections: [], facts: [] };
+
+  // Find phase-specific queries
+  const normalised = phaseName.toLowerCase().replace(/[^a-z0-9]/g, " ").trim().split(/\s+/).join(" ");
+  const queryBuilder = PHASE_RESEARCH_QUERIES[normalised]
+    || PHASE_RESEARCH_QUERIES[normalised.split(" ")[0]]
+    || null;
+
+  if (!queryBuilder) {
+    // No specific queries for this phase — skip research
+    return { factsDiscovered: 0, queries: [], summary: `No phase-specific research defined for "${phaseName}".`, sections: [], facts: [] };
+  }
+
+  const queries = queryBuilder(project as ProjectContext);
+  const queryLabels = queries.map((_, i) => `${phaseName} research ${i + 1}`);
+
+  let totalFacts = 0;
+  const allResearch: string[] = [];
+
+  for (let i = 0; i < queries.length; i++) {
+    try {
+      const result = await queryPerplexity(queries[i]);
+      if (result) {
+        allResearch.push(result);
+
+        await db.knowledgeBaseItem.create({
+          data: {
+            orgId, agentId, projectId,
+            layer: "PROJECT", type: "TEXT",
+            title: `Phase Research (${phaseName}): ${queryLabels[i]}`,
+            content: result.slice(0, 5000),
+            trustLevel: "STANDARD",
+            tags: ["research", "phase_research", "perplexity", phaseName.toLowerCase()],
+            metadata: { source: "perplexity", phase: phaseName, query: queries[i].slice(0, 200), researchedAt: new Date().toISOString() } as any,
+          },
+        }).catch(() => {});
+
+        const facts = await extractAndStoreFacts(agentId, projectId, orgId, result, queryLabels[i]);
+        totalFacts += facts;
+      }
+    } catch (e) {
+      console.error(`[phase-research] ${phaseName} query ${i} failed:`, e);
+    }
+  }
+
+  const summary = allResearch.length > 0
+    ? allResearch.map((r, i) => `### ${queryLabels[i]}\n${r}`).join("\n\n").slice(0, 6000)
+    : "";
+
+  await db.agentActivity.create({
+    data: {
+      agentId,
+      type: "document",
+      summary: `Phase research for "${phaseName}" complete — ${totalFacts} new facts from ${allResearch.length} queries.`,
+    },
+  }).catch(() => {});
+
+  const sections: ResearchSection[] = allResearch.map((r, i) => ({ label: queryLabels[i], content: r }));
+  const storedFacts = await db.knowledgeBaseItem.findMany({
+    where: { agentId, projectId, tags: { has: phaseName.toLowerCase() }, NOT: { tags: { has: "raw_research" } } },
+    select: { title: true, content: true },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
+  return {
+    factsDiscovered: totalFacts,
+    queries,
+    summary,
+    sections,
+    facts: storedFacts.map((f) => ({ title: f.title, content: f.content.slice(0, 300) })),
+  };
+}

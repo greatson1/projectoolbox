@@ -216,44 +216,85 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 data: {
                   agentId: deployment.agentId,
                   type: "approval",
-                  summary: `Phase gate approved: "${currentPhase}" → "${nextPhase}". Generating ${nextPhase} artefacts...`,
+                  summary: `Phase gate approved: "${currentPhase}" → "${nextPhase}". Running phase research before generating artefacts...`,
                 },
               });
 
-              // 4. Generate next-phase artefacts inline (non-blocking — fire & forget)
-              generatePhaseArtefacts(deployment.agentId, deployment.projectId, nextPhase)
-                .then(async (result) => {
-                  if (result.generated > 0) {
-                    // 5. Create the next phase gate approval
-                    const orgOwner = await db.user.findFirst({
-                      where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
-                      select: { id: true },
-                    });
-                    await db.approval.create({
-                      data: {
-                        projectId: deployment.projectId!,
-                        requestedById: orgOwner?.id || (session.user as any).id,
-                        title: `${nextPhase} Gate: Review and approve to advance`,
-                        description: `The agent has completed the ${nextPhase} phase and generated ${result.generated} artefact(s). Review them and approve to advance to the next phase.`,
-                        type: "PHASE_GATE",
-                        status: "PENDING",
-                        impact: { level: "MEDIUM", description: "Phase gate approval" },
-                      },
-                    });
-                    await db.agentActivity.create({
+              // 4. Run phase-specific research, then generate artefacts (fire & forget)
+              (async () => {
+                // 4a. Phase research — capture latest context before generating docs
+                try {
+                  await db.agentDeployment.update({
+                    where: { id: deployment.id },
+                    data: { phaseStatus: "researching" },
+                  });
+
+                  const { runPhaseResearch } = await import("@/lib/agents/feasibility-research");
+                  const research = await runPhaseResearch(
+                    deployment.agentId,
+                    deployment.projectId!,
+                    orgId,
+                    nextPhase,
+                  );
+
+                  if (research.factsDiscovered > 0) {
+                    await db.chatMessage.create({
                       data: {
                         agentId: deployment.agentId,
-                        type: "approval",
-                        summary: `${nextPhase} gate approval requested — ${result.generated} artefact(s) ready for review`,
+                        role: "agent",
+                        content: "__RESEARCH_FINDINGS__",
+                        metadata: {
+                          type: "research_findings",
+                          projectName: project.name,
+                          factsCount: research.factsDiscovered,
+                          sections: research.sections,
+                          facts: research.facts,
+                          phase: nextPhase,
+                        } as any,
                       },
-                    });
-                    // Pause deployment until next gate is approved
-                    await db.agentDeployment.update({
-                      where: { id: deployment.id },
-                      data: { phaseStatus: "waiting_approval" },
-                    });
+                    }).catch(() => {});
                   }
-                })
+                } catch (e) {
+                  console.error(`[phase-advance] Phase research failed for ${nextPhase}:`, e);
+                }
+
+                // 4b. Generate artefacts with enriched KB
+                await db.agentDeployment.update({
+                  where: { id: deployment.id },
+                  data: { phaseStatus: "active" },
+                }).catch(() => {});
+
+                const result = await generatePhaseArtefacts(deployment.agentId, deployment.projectId!, nextPhase);
+                if (result.generated > 0) {
+                  // 5. Create the next phase gate approval
+                  const orgOwner = await db.user.findFirst({
+                    where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
+                    select: { id: true },
+                  });
+                  await db.approval.create({
+                    data: {
+                      projectId: deployment.projectId!,
+                      requestedById: orgOwner?.id || (session.user as any).id,
+                      title: `${nextPhase} Gate: Review and approve to advance`,
+                      description: `The agent has completed the ${nextPhase} phase and generated ${result.generated} artefact(s). Review them and approve to advance to the next phase.`,
+                      type: "PHASE_GATE",
+                      status: "PENDING",
+                      impact: { level: "MEDIUM", description: "Phase gate approval" },
+                    },
+                  });
+                  await db.agentActivity.create({
+                    data: {
+                      agentId: deployment.agentId,
+                      type: "approval",
+                      summary: `${nextPhase} gate approval requested — ${result.generated} artefact(s) ready for review`,
+                    },
+                  });
+                  await db.agentDeployment.update({
+                    where: { id: deployment.id },
+                    data: { phaseStatus: "waiting_approval" },
+                  });
+                }
+              })()
                 .catch((e) => console.error(`[phase-advance] artefact generation failed:`, e));
             } else {
               // No next phase — project complete!
