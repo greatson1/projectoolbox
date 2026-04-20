@@ -139,9 +139,49 @@ export async function getPhaseCompletion(
     return !t.title.includes(":") || t.title.split(":").length <= 2;
   });
 
+  // Use actual progress field for delivery — not just binary done/not-done
   const deliveryDone = uniqueDelivery.filter((t) => t.status === "DONE" || t.status === "COMPLETE" || (t.progress || 0) >= 100).length;
   const deliveryTotal = uniqueDelivery.length;
-  const deliveryPct = deliveryTotal > 0 ? Math.round((deliveryDone / deliveryTotal) * 100) : 100;
+  // Progress-based percentage: average of individual task progress values
+  const deliveryPct = deliveryTotal > 0
+    ? Math.round(uniqueDelivery.reduce((sum, t) => {
+        if (t.status === "DONE" || t.status === "COMPLETE") return sum + 100;
+        return sum + (t.progress || 0);
+      }, 0) / deliveryTotal)
+    : 100;
+
+  // ── 4. KB-informed gate check — scan for unresolved risks/blockers ────
+
+  let kbBlockers: string[] = [];
+  try {
+    const recentKBItems = await db.knowledgeBaseItem.findMany({
+      where: {
+        projectId,
+        OR: [
+          { tags: { hasSome: ["risk", "blocker", "issue", "concern"] } },
+          { title: { contains: "risk", mode: "insensitive" } },
+          { title: { contains: "blocker", mode: "insensitive" } },
+          { title: { contains: "issue", mode: "insensitive" } },
+        ],
+        trustLevel: { in: ["HIGH_TRUST", "STANDARD"] },
+        createdAt: { gte: new Date(Date.now() - 30 * 86400000) }, // last 30 days
+      },
+      select: { title: true, content: true, tags: true },
+      take: 10,
+      orderBy: { createdAt: "desc" },
+    });
+    // Check for unresolved items that mention the current phase
+    const phaseLC = phaseName.toLowerCase();
+    for (const item of recentKBItems) {
+      const contentLC = (item.content || "").toLowerCase();
+      const titleLC = (item.title || "").toLowerCase();
+      if (titleLC.includes(phaseLC) || contentLC.includes(phaseLC) || (item.tags || []).includes(phaseLC)) {
+        if (contentLC.includes("unresolved") || contentLC.includes("outstanding") || contentLC.includes("blocker") || contentLC.includes("critical")) {
+          kbBlockers.push(`KB flag: "${item.title}"`);
+        }
+      }
+    }
+  } catch {}
 
   // ── Compute overall + blockers ────────────────────────────────────────
 
@@ -159,11 +199,13 @@ export async function getPhaseCompletion(
     blockers.push(`${remaining} PM task${remaining !== 1 ? "s" : ""} incomplete`);
   }
 
-  // Delivery task check
-  if (deliveryTotal > 0 && deliveryDone / deliveryTotal < cfg.deliveryThreshold) {
-    const pctDone = Math.round((deliveryDone / deliveryTotal) * 100);
-    blockers.push(`Delivery tasks at ${pctDone}% (${deliveryDone}/${deliveryTotal}) — need ${Math.round(cfg.deliveryThreshold * 100)}%`);
+  // Delivery task check — uses progress-based percentage
+  if (deliveryTotal > 0 && deliveryPct / 100 < cfg.deliveryThreshold) {
+    blockers.push(`Delivery tasks at ${deliveryPct}% progress (${deliveryDone}/${deliveryTotal} complete) — need ${Math.round(cfg.deliveryThreshold * 100)}%`);
   }
+
+  // KB-informed blockers
+  blockers.push(...kbBlockers);
 
   const canAdvance = blockers.length === 0;
 

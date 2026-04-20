@@ -412,7 +412,34 @@ export async function runPhaseResearch(
     return { factsDiscovered: 0, queries: [], summary: `No phase-specific research defined for "${phaseName}".`, sections: [], facts: [] };
   }
 
-  const queries = queryBuilder(project as ProjectContext);
+  // Check existing KB to avoid re-researching covered topics
+  const existingKB = await db.knowledgeBaseItem.findMany({
+    where: {
+      projectId, agentId,
+      tags: { hasSome: ["research", "feasibility", "phase_research"] },
+    },
+    select: { title: true, content: true, tags: true },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+  });
+  const existingTopics = existingKB.map((k) => k.title.toLowerCase()).join(" ");
+
+  const rawQueries = queryBuilder(project as ProjectContext);
+  // Filter out queries already covered by existing KB
+  const queries = rawQueries.filter((q) => {
+    const keywords = q.toLowerCase().split(/\s+/).filter((w) => w.length > 4).slice(0, 5);
+    const alreadyCovered = keywords.filter((k) => existingTopics.includes(k)).length;
+    // Skip if >60% of keywords are already in KB topics
+    return keywords.length === 0 || alreadyCovered / keywords.length < 0.6;
+  });
+
+  if (queries.length === 0) {
+    return {
+      factsDiscovered: 0, queries: [], summary: `KB already covers topics for "${phaseName}" — skipping redundant research.`,
+      sections: [], facts: existingKB.filter((k) => (k.tags || []).includes(phaseName.toLowerCase())).map((k) => ({ title: k.title, content: k.content.slice(0, 300) })),
+    };
+  }
+
   const queryLabels = queries.map((_, i) => `${phaseName} research ${i + 1}`);
 
   let totalFacts = 0;
