@@ -975,6 +975,23 @@ function AgentChatPage() {
 
       {/* Middle: Chat */}
       <div className="flex-1 flex flex-col">
+        {/* Mobile agent selector — only visible on small screens */}
+        {agents.length > 1 && (
+          <div className="flex lg:hidden items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+            <Bot className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <select
+              value={activeAgentId || ""}
+              onChange={(e) => setActiveAgentId(e.target.value || null)}
+              className="flex-1 px-2 py-1 rounded-lg border border-border bg-background text-xs font-medium outline-none"
+            >
+              {agents.map((a: any) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} — {a.deployments?.[0]?.project?.name || "No project"}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
           {activeAgent ? (

@@ -778,6 +778,56 @@ export default function AgentPipelinePage() {
           </Card>
         )}
 
+        {/* ========== Blocked Phase Banner ========== */}
+        {data.phaseStatus === "blocked_tasks_incomplete" && (
+          <div className="rounded-xl border-2 border-amber-500/30 bg-amber-500/5 px-5 py-4">
+            <div className="flex items-start gap-3">
+              <Shield className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-amber-600">Phase advancement blocked</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The phase gate has been approved, but outstanding tasks or KB blockers prevent advancement.
+                  Complete the remaining items and click re-check.
+                </p>
+                {/* Show blockers from current phase */}
+                {(() => {
+                  const currentPhaseData = data.phases.find((p: Phase) => p.status === "ACTIVE");
+                  if (!currentPhaseData?.blockers?.length) return null;
+                  return (
+                    <ul className="mt-2 space-y-1">
+                      {currentPhaseData.blockers.map((b: string, i: number) => (
+                        <li key={i} className="text-xs text-amber-600 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/agents/${data.agentId}/phase-completion`, { method: "POST" });
+                    const json = await res.json();
+                    if (json.data?.advanced) {
+                      window.location.reload();
+                    } else {
+                      alert(json.message || "Still blocked — complete outstanding items first.");
+                    }
+                  } catch {
+                    alert("Failed to re-check. Please try again.");
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors flex items-center gap-1.5 flex-shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Re-check & Advance
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ========== Stuck Warning ========== */}
         {data.stuckAt && (
           <div className="flex items-center gap-3 rounded-xl border-2 border-amber-500/40 bg-amber-500/5 px-4 py-3">

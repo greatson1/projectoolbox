@@ -258,7 +258,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                   console.error(`[phase-advance] Phase research failed for ${nextPhase}:`, e);
                 }
 
-                // 4b. Generate artefacts with enriched KB
+                // 4b. Clarification — ask user phase-specific questions based on research + KB gaps
+                try {
+                  const nextPhaseRow = await db.phase.findFirst({
+                    where: { projectId: deployment.projectId!, name: nextPhase },
+                    select: { artefacts: true },
+                  });
+                  const artefactNames = Array.isArray(nextPhaseRow?.artefacts) ? (nextPhaseRow.artefacts as string[]) : [];
+                  if (artefactNames.length > 0) {
+                    await db.agentDeployment.update({
+                      where: { id: deployment.id },
+                      data: { phaseStatus: "awaiting_clarification" },
+                    });
+                    const { startClarificationSession } = await import("@/lib/agents/clarification-session");
+                    await startClarificationSession(
+                      deployment.agentId,
+                      deployment.projectId!,
+                      orgId,
+                      artefactNames,
+                    );
+                    // Clarification session will post questions in chat.
+                    // When user answers all questions, the session handler triggers generation.
+                    // So we return here — don't generate artefacts yet.
+                    return;
+                  }
+                } catch (e) {
+                  console.error(`[phase-advance] Clarification for ${nextPhase} failed:`, e);
+                }
+
+                // 4c. Generate artefacts with enriched KB (if no clarification needed)
                 await db.agentDeployment.update({
                   where: { id: deployment.id },
                   data: { phaseStatus: "active" },
