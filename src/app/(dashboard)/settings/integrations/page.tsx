@@ -226,6 +226,9 @@ export default function IntegrationsPage() {
         </p>
       </div>
 
+      {/* AI Services Health */}
+      <PerplexityHealthCard />
+
       {/* Stats bar */}
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span>
@@ -367,6 +370,66 @@ export default function IntegrationsPage() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AI Services Health Check (Perplexity diagnostic)
+// ═══════════════════════════════════════════════════════════════════
+
+function PerplexityHealthCard() {
+  const [status, setStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
+  const [result, setResult] = useState<any>(null);
+
+  const test = async () => {
+    setStatus("checking");
+    setResult(null);
+    try {
+      const res = await fetch("/api/debug/perplexity");
+      const data = await res.json();
+      setResult(data);
+      setStatus(data.status === "working" ? "ok" : "error");
+    } catch (e: any) {
+      setResult({ message: e.message });
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-bold mb-0.5">Perplexity AI (Research)</h3>
+          <p className="text-xs text-muted-foreground">
+            Used for phase-specific research. Required for agents to gather real-world context.
+          </p>
+        </div>
+        <button
+          onClick={test}
+          disabled={status === "checking"}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          {status === "checking" ? "Testing..." : "Test Connection"}
+        </button>
+      </div>
+      {result && (
+        <div className={`mt-3 p-3 rounded-lg text-xs ${
+          status === "ok" ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+          : "bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400"
+        }`}>
+          <p className="font-semibold mb-1">{result.message}</p>
+          {result.keyPrefix && (
+            <p className="text-[11px] opacity-80">Key prefix: {result.keyPrefix}</p>
+          )}
+          {result.latencyMs && (
+            <p className="text-[11px] opacity-80">Latency: {result.latencyMs}ms</p>
+          )}
+          {result.testReply && (
+            <p className="text-[11px] opacity-80 mt-1">Test reply: "{result.testReply}"</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
