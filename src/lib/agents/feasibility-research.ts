@@ -409,6 +409,45 @@ const PHASE_RESEARCH_QUERIES: Record<string, (project: ProjectContext) => string
   "pre-project": (p) => [
     `Pre-project feasibility best practices for "${p.name}": business case development, risk scanning, stakeholder identification. ${p.description?.slice(0, 200) || ""}`,
   ],
+  // ── Agile / Scrum phases ───────────────────────────────────────────────
+  "sprint cadence": (p) => [
+    `Scrum sprint cadence best practices for "${p.name}": sprint length selection, velocity stabilisation, daily stand-up patterns, retrospective approaches. ${p.description?.slice(0, 200) || ""}`,
+    `Current norms for sprint planning and backlog refinement in ${p.category || "enterprise"} projects: typical story point estimation, sprint goal framing, definition-of-done evolution.`,
+  ],
+  // ── Kanban phases ──────────────────────────────────────────────────────
+  "setup": (p) => [
+    `Kanban setup best practices for "${p.name}": board column design, WIP limit determination, definition of done, service level expectations. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "continuous delivery": (p) => [
+    `Continuous delivery and Kanban flow management best practices for "${p.name}": cycle time optimisation, WIP limit tuning, bottleneck identification, lean metrics. ${p.description?.slice(0, 200) || ""}`,
+    `Current DevOps patterns for ${p.category || "enterprise"} projects: deployment pipeline automation, feature flags, canary releases, observability practices.`,
+  ],
+  "review": (p) => [
+    `Project review and continuous improvement best practices for "${p.name}": retrospective techniques, metrics analysis, kaizen approaches for ${p.category || "enterprise"} projects.`,
+  ],
+  // ── Disciplined Agile / Hybrid phases ──────────────────────────────────
+  "iterative delivery": (p) => [
+    `Iterative delivery best practices for "${p.name}": iteration planning, incremental feature release, feedback loop design, MVP approaches. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "closure": (p) => [
+    `Project closure best practices for "${p.name}": benefit realisation tracking, lessons learned frameworks, handover to BAU teams, contract closure, team transition. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  // ── PRINCE2-specific phase aliases (PRINCE2 uses these names) ──────────
+  "directing": (p) => [
+    `PRINCE2 "Directing a Project" process best practices for "${p.name}": Project Board governance, stage boundary decisions, exception management, senior user/supplier engagement. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "starting up": (p) => [
+    `PRINCE2 "Starting Up a Project" (SU) best practices for "${p.name}": Project Brief development, Executive and Project Manager appointments, project approach selection. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "controlling a stage": (p) => [
+    `PRINCE2 "Controlling a Stage" best practices for "${p.name}": work package authorisation, stage progress reporting, issue and risk management, exception handling. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "managing product delivery": (p) => [
+    `PRINCE2 "Managing Product Delivery" best practices for "${p.name}": work package acceptance, product quality review, team management across suppliers. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "managing a stage boundary": (p) => [
+    `PRINCE2 "Managing a Stage Boundary" best practices for "${p.name}": stage plan preparation, lessons report, next stage authorisation, business case update. ${p.description?.slice(0, 200) || ""}`,
+  ],
 };
 
 /**
