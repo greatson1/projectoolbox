@@ -89,14 +89,23 @@ export async function GET(
     ? artefacts.filter((a) => a.phaseId === currentPhaseObj.id)
     : artefacts;
 
-  // Research KB items — tags containing "research" or "feasibility"
-  const researchItems = kbItems.filter((item) =>
-    item.tags.some(
-      (t) =>
-        t.toLowerCase().includes("research") ||
-        t.toLowerCase().includes("feasibility")
-    )
-  );
+  // Research KB items — scope to CURRENT phase only (not ALL research ever)
+  // Matches items tagged with:
+  //   - "phase_research" (from runPhaseResearch)
+  //   - current phase name lowercased (tagged by phase research + feasibility extraction)
+  // Feasibility research from deployment day is also valid for the first phase only.
+  const currentPhaseLC = (currentPhase || "").toLowerCase();
+  const isFirstPhase = currentPhaseObj?.order === 0 || !currentPhase;
+  const researchItems = kbItems.filter((item) => {
+    const tags = item.tags.map((t) => t.toLowerCase());
+    // Phase-specific research always counts
+    if (tags.includes("phase_research") && tags.includes(currentPhaseLC)) return true;
+    // Current-phase-tagged facts (from phase-specific research extraction)
+    if (tags.includes(currentPhaseLC)) return true;
+    // Initial feasibility research only counts for the FIRST phase
+    if (isFirstPhase && tags.includes("feasibility")) return true;
+    return false;
+  });
 
   // Clarification messages
   const clarificationMessages = chatMessages.filter((msg) => {
@@ -442,14 +451,35 @@ export async function GET(
     });
   }
 
+  // --- Phase completion data (used for both overall progress + phase summary) ---
+  let completionData: any[] = [];
+  try {
+    const { getAllPhasesCompletion } = await import("@/lib/agents/phase-completion");
+    completionData = await getAllPhasesCompletion(deployment.projectId, agentId);
+  } catch {}
+
   // --- Overall progress ---
-  const doneSteps = steps.filter((s) => s.status === "done").length;
-  const skippedSteps = steps.filter((s) => s.status === "skipped").length;
-  const effectiveTotal = steps.length - skippedSteps;
-  const overallProgress =
-    effectiveTotal > 0
-      ? Math.round((doneSteps / effectiveTotal) * 100)
-      : 0;
+  // Use the same 3-layer completion calc as the phase bars, averaged across
+  // all phases, so the top bar matches what users see below.
+  // Completed phases = 100%, current phase = its overall %, future phases = 0%.
+  let overallProgress = 0;
+  if (completionData.length > 0) {
+    const completedCount = phases.filter((p) => p.status === "COMPLETED").length;
+    const totalPhases = phases.length;
+    const currentComp = completionData.find((c: any) => c.phaseName === currentPhase);
+    const currentPhasePct = currentComp?.overall ?? 0;
+    // Each phase is 1/totalPhases of overall. Completed phases contribute 100%,
+    // current phase contributes its own overall %.
+    const completedContribution = totalPhases > 0 ? (completedCount / totalPhases) * 100 : 0;
+    const currentContribution = totalPhases > 0 ? (currentPhasePct / totalPhases) : 0;
+    overallProgress = Math.round(completedContribution + currentContribution);
+  } else {
+    // Fallback to step-based calc if completion data unavailable
+    const doneSteps = steps.filter((s) => s.status === "done").length;
+    const skippedSteps = steps.filter((s) => s.status === "skipped").length;
+    const effectiveTotal = steps.length - skippedSteps;
+    overallProgress = effectiveTotal > 0 ? Math.round((doneSteps / effectiveTotal) * 100) : 0;
+  }
 
   // Determine if pipeline is stuck
   let stuckAt: string | undefined;
@@ -481,13 +511,7 @@ export async function GET(
       ? activities[0].createdAt.toISOString()
       : deployedAt;
 
-  // Phases summary
-  // Enrich phase data with 3-layer completion status
-  let completionData: any[] = [];
-  try {
-    const { getAllPhasesCompletion } = await import("@/lib/agents/phase-completion");
-    completionData = await getAllPhasesCompletion(deployment.projectId, agentId);
-  } catch {}
+  // Phases summary — reuse completionData fetched earlier for overall progress
   const completionMap = new Map(completionData.map((c: any) => [c.phaseName, c]));
 
   const phaseSummary = phases.map((p) => {

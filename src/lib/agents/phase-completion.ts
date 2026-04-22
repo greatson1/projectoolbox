@@ -154,14 +154,15 @@ export async function getPhaseCompletion(
 
   let kbBlockers: string[] = [];
   try {
+    const phaseLC = phaseName.toLowerCase();
+    // Only consider KB items EXPLICITLY tagged with this phase — not text-matched
     const recentKBItems = await db.knowledgeBaseItem.findMany({
       where: {
         projectId,
-        OR: [
+        tags: { hasEvery: [phaseLC] }, // must be explicitly tagged with the phase
+        // AND at least one risk-related tag
+        AND: [
           { tags: { hasSome: ["risk", "blocker", "issue", "concern"] } },
-          { title: { contains: "risk", mode: "insensitive" } },
-          { title: { contains: "blocker", mode: "insensitive" } },
-          { title: { contains: "issue", mode: "insensitive" } },
         ],
         trustLevel: { in: ["HIGH_TRUST", "STANDARD"] },
         createdAt: { gte: new Date(Date.now() - 30 * 86400000) }, // last 30 days
@@ -170,15 +171,16 @@ export async function getPhaseCompletion(
       take: 10,
       orderBy: { createdAt: "desc" },
     });
-    // Check for unresolved items that mention the current phase
-    const phaseLC = phaseName.toLowerCase();
+
+    const UNRESOLVED_KEYWORDS = [
+      "unresolved", "outstanding", "blocker", "critical",
+      "pending resolution", "tbd", "tbc", "open issue",
+      "awaiting", "blocked by", "stuck",
+    ];
     for (const item of recentKBItems) {
       const contentLC = (item.content || "").toLowerCase();
-      const titleLC = (item.title || "").toLowerCase();
-      if (titleLC.includes(phaseLC) || contentLC.includes(phaseLC) || (item.tags || []).includes(phaseLC)) {
-        if (contentLC.includes("unresolved") || contentLC.includes("outstanding") || contentLC.includes("blocker") || contentLC.includes("critical")) {
-          kbBlockers.push(`KB flag: "${item.title}"`);
-        }
+      if (UNRESOLVED_KEYWORDS.some((k) => contentLC.includes(k))) {
+        kbBlockers.push(`KB flag: "${item.title}"`);
       }
     }
   } catch {}
