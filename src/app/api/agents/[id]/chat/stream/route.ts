@@ -569,12 +569,18 @@ Example of WRONG: "Setup phase complete — all foundational artefacts generated
 Example of RIGHT: "Setup phase planning is complete — 3 documents approved. However, 0 of 12 project tasks have been started. The actual project work still needs to happen."
 
 ## RESEARCH IS A REAL ACTION — NOT JUST TALK
-NEVER say "I'm researching", "Let me research", "I'll research" without actually calling the **run_phase_research** tool.
-- If the user asks what research you've done and you haven't called the tool for this phase → answer honestly: "I haven't run research yet for this phase."
-- If the KB has no facts tagged with the current phase → CALL run_phase_research BEFORE claiming you've done any research.
-- The tool returns a report with facts count. Only claim research once you see that report.
-- When asked about research, check the KNOWLEDGE BASE section above — if items are missing, say so and call the tool.
-- Research is PHASE-SPECIFIC: each phase has different queries. Running research for Requirements does NOT cover Planning.
+Research is performed by calling the **run_phase_research** tool — NOT by claiming it in text.
+
+MANDATORY FIRST ACTION: If the KNOWLEDGE BASE section above shows no research for the current phase, your FIRST action MUST be to call run_phase_research. Do not ask the user for permission. Do not outline what you WILL research. Just call the tool. The tool returns real facts from Perplexity which you can then reference.
+
+STRICT RULES:
+- NEVER write "I'm researching", "Let me research", "I'll research", "I need to research" without IMMEDIATELY calling run_phase_research in the same turn.
+- NEVER claim research findings you haven't received from the tool.
+- If the user asks what research you've done and you haven't called the tool for this phase → answer honestly: "I haven't run research yet — calling it now" and then CALL THE TOOL.
+- Research is phase-specific. Requirements research ≠ PI Planning research. If the phase changed, call the tool again.
+- If the tool returns "PERPLEXITY_API_KEY not configured", tell the user the API key needs to be added in Vercel settings — don't pretend research succeeded.
+
+STOP ASKING AND START DOING: If you catch yourself asking "Shall I research?" or "Would you like me to research?" — STOP. Just call the tool. Users expect research to be automatic, not opt-in.
 
 ## PHASE ADVANCEMENT REQUIREMENTS — ENFORCED BY SYSTEM
 The phase gate system enforces THREE completion layers before any phase can advance:
@@ -1361,21 +1367,34 @@ These are handled by the platform automatically. Just write normal text.
               if (event.type === "content_block_delta") {
                 if (event.delta?.type === "text_delta" && event.delta.text) {
                   p1AssistantTextContent += event.delta.text;
+                  // Track whether we're inside a <FACTS> block based on what we've
+                  // seen so far (excluding this token). This prevents leaking the
+                  // close tag's trailing content.
+                  const wasInsideFacts = (fullContent.match(/<FACTS>/gi)?.length || 0) > (fullContent.match(/<\/FACTS>/gi)?.length || 0);
                   fullContent += event.delta.text;
+                  const nowInsideFacts = (fullContent.match(/<FACTS>/gi)?.length || 0) > (fullContent.match(/<\/FACTS>/gi)?.length || 0);
+
                   // Strip sentinel strings from live stream (they're post-processed into cards)
                   let cleanToken = event.delta.text
                     .replace(/\b(PROJECT_STATUS|AGENT_QUESTION|__PROJECT_STATUS__|__AGENT_QUESTION__|__CLARIFICATION_SESSION__|__CLARIFICATION_COMPLETE__|__CHANGE_PROPOSAL__)\b/g, "");
-                  // Suppress <FACTS> block from live stream — it's extracted post-stream for KB storage
-                  if (fullContent.includes("<FACTS>") && !fullContent.includes("</FACTS>")) {
-                    // We're inside a <FACTS> block — suppress entirely
-                    cleanToken = cleanToken.replace(/<FACTS>/gi, "");
+
+                  // FACTS suppression — 4 cases:
+                  if (wasInsideFacts && nowInsideFacts) {
+                    // Still inside — suppress entirely
                     cleanToken = "";
-                  } else if (cleanToken.includes("<FACTS>")) {
-                    // Token contains the start of <FACTS> — suppress from here
-                    cleanToken = cleanToken.replace(/<FACTS>[\s\S]*/gi, "");
+                  } else if (wasInsideFacts && !nowInsideFacts) {
+                    // Close tag arrived in this token — strip everything up to and including </FACTS>
+                    cleanToken = cleanToken.replace(/^[\s\S]*?<\/FACTS>/i, "");
+                  } else if (!wasInsideFacts && nowInsideFacts) {
+                    // Open tag arrived in this token — keep content before, strip from <FACTS> onwards
+                    cleanToken = cleanToken.replace(/<FACTS>[\s\S]*$/i, "");
+                  } else {
+                    // Self-contained FACTS block inside single token
+                    cleanToken = cleanToken.replace(/<FACTS>[\s\S]*?<\/FACTS>/gi, "");
                   }
-                  // Also strip closing tag if it appears
+                  // Belt-and-braces: strip any stray tag markers
                   cleanToken = cleanToken.replace(/<\/?FACTS>/gi, "");
+
                   if (cleanToken.trim()) {
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: cleanToken })}\n\n`));
                   }

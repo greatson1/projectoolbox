@@ -383,6 +383,32 @@ const PHASE_RESEARCH_QUERIES: Record<string, (project: ProjectContext) => string
   "closing": (p) => [
     `Project closure best practices: lessons learned frameworks, benefits realisation tracking, handover checklists, contract closure requirements for ${p.category || "general"} projects.`,
   ],
+  // ── SAFe methodology phases ────────────────────────────────────────────
+  "pi planning": (p) => [
+    `SAFe Program Increment (PI) Planning best practices for "${p.name}": typical PI objectives structure, feature decomposition approaches, team capacity planning, risk ROAMing techniques. ${p.description?.slice(0, 200) || ""}`,
+    `Current PI planning benchmarks and resource allocation norms for ${p.category || "enterprise"} projects: typical sprint velocity, team sizes, capacity buffers, dependency management. Budget: ${p.budget ? `£${p.budget}` : "TBC"}.`,
+  ],
+  "iteration cadence": (p) => [
+    `SAFe iteration cadence best practices for "${p.name}": sprint duration choices, iteration goals, continuous delivery patterns, DevOps integration. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "inspect and adapt": (p) => [
+    `SAFe Inspect & Adapt ceremony best practices: retrospective structures, improvement backlog management, metrics review approaches for ${p.category || "enterprise"} projects.`,
+  ],
+  "inspect & adapt": (p) => [
+    `SAFe Inspect & Adapt ceremony best practices: retrospective structures, improvement backlog management, metrics review approaches for ${p.category || "enterprise"} projects.`,
+  ],
+  "release": (p) => [
+    `Release management best practices for "${p.name}": deployment strategies, release notes, rollback planning, stakeholder communication. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "sprint zero": (p) => [
+    `Sprint Zero best practices for "${p.name}": initial team setup, tooling, definition of done, architectural runway establishment.`,
+  ],
+  "foundation": (p) => [
+    `Project foundation phase best practices for "${p.name}": initial charter, stakeholder identification, tooling setup, team onboarding. ${p.description?.slice(0, 200) || ""}`,
+  ],
+  "pre-project": (p) => [
+    `Pre-project feasibility best practices for "${p.name}": business case development, risk scanning, stakeholder identification. ${p.description?.slice(0, 200) || ""}`,
+  ],
 };
 
 /**
@@ -395,6 +421,17 @@ export async function runPhaseResearch(
   orgId: string,
   phaseName: string,
 ): Promise<ResearchResult> {
+  // Explicit check for missing API key — otherwise research silently fails
+  if (!process.env.PERPLEXITY_API_KEY) {
+    return {
+      factsDiscovered: 0,
+      queries: [],
+      summary: `Research unavailable: PERPLEXITY_API_KEY is not configured in the server environment. Add it in Vercel → Settings → Environment Variables to enable phase research.`,
+      sections: [],
+      facts: [],
+    };
+  }
+
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: { id: true, name: true, description: true, category: true, budget: true, startDate: true, endDate: true, methodology: true },
@@ -407,10 +444,11 @@ export async function runPhaseResearch(
     || PHASE_RESEARCH_QUERIES[normalised.split(" ")[0]]
     || null;
 
-  if (!queryBuilder) {
-    // No specific queries for this phase — skip research
-    return { factsDiscovered: 0, queries: [], summary: `No phase-specific research defined for "${phaseName}".`, sections: [], facts: [] };
-  }
+  // Fallback: generic query for unknown phase names (e.g. custom methodologies)
+  const effectiveBuilder = queryBuilder || ((p: ProjectContext) => [
+    `Best practices and current considerations for the "${phaseName}" phase of project "${p.name}": deliverables typically produced, common risks, resource needs, and success criteria. ${p.description?.slice(0, 200) || ""}`,
+    `Industry benchmarks and real-world examples for "${phaseName}" phase of ${p.category || "general"} projects. Budget context: ${p.budget ? `£${p.budget}` : "TBC"}.`,
+  ]);
 
   // Check existing KB to avoid re-researching covered topics
   const existingKB = await db.knowledgeBaseItem.findMany({
@@ -424,7 +462,7 @@ export async function runPhaseResearch(
   });
   const existingTopics = existingKB.map((k) => k.title.toLowerCase()).join(" ");
 
-  const rawQueries = queryBuilder(project as ProjectContext);
+  const rawQueries = effectiveBuilder(project as ProjectContext);
   // Filter out queries already covered by existing KB
   const queries = rawQueries.filter((q) => {
     const keywords = q.toLowerCase().split(/\s+/).filter((w) => w.length > 4).slice(0, 5);

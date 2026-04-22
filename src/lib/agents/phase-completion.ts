@@ -207,14 +207,28 @@ export async function getPhaseCompletion(
   // KB-informed blockers
   blockers.push(...kbBlockers);
 
+  // If no artefacts AND no tasks exist at all, phase hasn't started — can't advance
+  const hasAnyWork = artefactsTotal > 0 || pmTasksTotal > 0 || deliveryTotal > 0;
+  if (!hasAnyWork) {
+    blockers.push("Phase has no artefacts, PM tasks, or delivery tasks yet — work must be generated before advancement");
+  }
+
   const canAdvance = blockers.length === 0;
 
-  // Weighted overall: artefacts 30%, PM tasks 30%, delivery 40%
-  const overall = Math.round(
-    (artefactsTotal > 0 ? artefactsPct * 0.3 : 30) +
-    (pmTasksTotal > 0 ? pmTasksPct * 0.3 : 30) +
-    (deliveryTotal > 0 ? deliveryPct * 0.4 : 40)
-  );
+  // Weighted overall: only include layers that have content.
+  // If ALL layers are empty (0/0/0), overall is 0% — don't claim a phase is
+  // complete just because it has no work yet.
+  const layers: Array<{ pct: number; weight: number }> = [];
+  if (artefactsTotal > 0) layers.push({ pct: artefactsPct, weight: 0.3 });
+  if (pmTasksTotal > 0) layers.push({ pct: pmTasksPct, weight: 0.3 });
+  if (deliveryTotal > 0) layers.push({ pct: deliveryPct, weight: 0.4 });
+
+  let overall = 0;
+  if (layers.length > 0) {
+    const totalWeight = layers.reduce((s, l) => s + l.weight, 0);
+    overall = Math.round(layers.reduce((s, l) => s + l.pct * (l.weight / totalWeight), 0));
+  }
+  // If nothing exists yet, overall stays 0 (correct — phase hasn't started)
 
   return {
     phaseName,
