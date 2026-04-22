@@ -27,6 +27,7 @@ import {
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
   BookOpen, Upload, Link as LinkIcon, FileAudio, Trash2 as TrashIcon, Star, X,
   Video, Mic, MicOff, Calendar, ExternalLink, Download,
+  ListChecks, FileEdit, Zap, BarChart3 as BarChartIcon,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -300,12 +301,12 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
     const dataCount = Array.isArray(agentArtefactsData) ? agentArtefactsData.length : 0;
     const docCount = Math.max(apiCount, dataCount);
     return [
-      { label: "Tasks Completed", value: String(actionCount), icon: "✅", color: "#6366F1", sub: undefined as string | undefined },
-      { label: "Documents Generated", value: String(docCount), icon: "📄", color: "#22D3EE", sub: undefined as string | undefined },
-      { label: "Decisions Made", value: String(counts.decisions), icon: "✓", color: "#10B981", sub: undefined as string | undefined },
-      { label: "Chat Messages", value: String(counts.chatMessages), icon: "💬", color: "#F59E0B", sub: undefined as string | undefined },
-      { label: "Activities Logged", value: String(counts.activities), icon: "📊", color: "#EF4444", sub: undefined as string | undefined },
-      { label: "Credits Consumed", value: creditsUsed.toLocaleString(), icon: "⚡", color: "#8B5CF6", sub: undefined as string | undefined },
+      { label: "Tasks Completed", value: String(actionCount), Icon: ListChecks, color: "#6366F1", sub: undefined as string | undefined },
+      { label: "Documents Generated", value: String(docCount), Icon: FileEdit, color: "#22D3EE", sub: undefined as string | undefined },
+      { label: "Decisions Made", value: String(counts.decisions), Icon: CheckCircle2, color: "#10B981", sub: undefined as string | undefined },
+      { label: "Chat Messages", value: String(counts.chatMessages), Icon: MessageSquare, color: "#F59E0B", sub: undefined as string | undefined },
+      { label: "Activities Logged", value: String(counts.activities), Icon: BarChartIcon, color: "#EF4444", sub: undefined as string | undefined },
+      { label: "Credits Consumed", value: creditsUsed.toLocaleString(), Icon: Zap, color: "#8B5CF6", sub: undefined as string | undefined },
     ];
   }, [apiAgent, agentArtefactsData]);
 
@@ -385,65 +386,89 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       </div>
 
       {/* ═══ 1. AGENT HEADER BANNER ═══ */}
-      <div className="overflow-hidden rounded-2xl border border-border/40" style={{ background: "var(--card)" }}>
-        {/* Gradient banner with pattern overlay */}
-        <div className="relative h-24" style={{ background: AGENT_RESOLVED.gradient }}>
-          <div className="absolute inset-0" style={{
-            background: "linear-gradient(180deg, transparent 30%, rgba(0,0,0,0.5))",
-          }} />
-          <div className="absolute inset-0 opacity-10" style={{
-            backgroundImage: "radial-gradient(circle at 25% 50%, white 1px, transparent 1px), radial-gradient(circle at 75% 30%, white 1px, transparent 1px)",
-            backgroundSize: "40px 40px, 60px 60px",
-          }} />
-        </div>
+      <div
+        className="relative overflow-hidden rounded-2xl border border-border/40"
+        style={{ background: "var(--card)" }}
+      >
+        {/* Soft gradient accent bar */}
+        <div
+          className="absolute top-0 left-0 right-0 h-1"
+          style={{ background: AGENT_RESOLVED.gradient }}
+        />
+        {/* Subtle background flourish */}
+        <div
+          className="absolute top-0 right-0 w-[400px] h-[200px] opacity-[0.06] blur-3xl pointer-events-none"
+          style={{ background: AGENT_RESOLVED.gradient }}
+        />
         {/* Content */}
-        <div className="relative z-10 -mt-7 px-6 pb-5">
-          <div className="mb-4 flex items-end gap-5">
+        <div className="relative p-5 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            {/* Avatar */}
             <div
-              className="flex size-14 flex-shrink-0 items-center justify-center rounded-xl text-xl font-bold text-white shadow-lg"
+              className="flex size-16 flex-shrink-0 items-center justify-center rounded-2xl text-2xl font-bold text-white"
               style={{
                 background: AGENT_RESOLVED.gradient,
-                boxShadow: `0 4px 20px ${AGENT_RESOLVED.color}35`,
+                boxShadow: `0 8px 24px ${AGENT_RESOLVED.color}40, inset 0 -2px 4px rgba(0,0,0,0.15)`,
               }}
             >
               {AGENT_RESOLVED.initials}
             </div>
-            <div className="min-w-0 flex-1 pb-1">
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-bold text-foreground tracking-tight">
-                  Agent {AGENT_RESOLVED.name}
+            {/* Name + metadata */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">
+                  {AGENT_RESOLVED.name}
                 </h1>
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                   <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-                  <span className="text-[10px] font-semibold text-emerald-600">Active</span>
+                  <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider">Active</span>
                 </div>
               </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground/80">{AGENT_RESOLVED.project}</span>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">
+                  <span className="font-medium text-foreground">{AGENT_RESOLVED.project}</span>
+                </span>
+                <span className="text-muted-foreground/40">•</span>
                 {AGENT_RESOLVED.methodology && (
-                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/8 text-blue-500 border border-blue-500/15">
-                    {METHOD_LABEL[AGENT_RESOLVED.methodology] || AGENT_RESOLVED.methodology}
-                  </span>
+                  <>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                      {METHOD_LABEL[AGENT_RESOLVED.methodology] || AGENT_RESOLVED.methodology}
+                    </span>
+                  </>
                 )}
-                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-violet-500/8 text-violet-500 border border-violet-500/15">
-                  L{AGENT_RESOLVED.autonomyLevel} {AGENT_RESOLVED.autonomyLabel}
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-violet-500/10 text-violet-600 border border-violet-500/20">
+                  L{AGENT_RESOLVED.autonomyLevel} · {AGENT_RESOLVED.autonomyLabel}
                 </span>
                 {AGENT_RESOLVED.uptimeDays > 0 && (
-                  <span className="text-muted-foreground/60">{AGENT_RESOLVED.uptimeDays}d uptime</span>
+                  <>
+                    <span className="text-muted-foreground/40">•</span>
+                    <span className="text-muted-foreground">{AGENT_RESOLVED.uptimeDays}d uptime</span>
+                  </>
                 )}
               </div>
             </div>
-            <div className="flex flex-shrink-0 items-center gap-1.5">
-              <Button variant="ghost" size="sm" className="text-xs h-8" onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}>
-                <Pause className="mr-1 size-3" /> Pause
+            {/* Actions */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-9 gap-1.5"
+                onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}
+              >
+                <Pause className="size-3.5" /> Pause
               </Button>
               <Link href={`/agents/chat?agent=${agentId}`}>
-                <Button size="sm" className="text-xs h-8 bg-primary/90 hover:bg-primary">
-                  <MessageSquare className="mr-1 size-3" /> Chat
+                <Button size="sm" className="text-xs h-9 gap-1.5 bg-primary hover:bg-primary/90">
+                  <MessageSquare className="size-3.5" /> Chat
                 </Button>
               </Link>
-              <Button variant="outline" size="sm" className="text-xs h-8" onClick={() => { const el = document.querySelector('[value="configuration"]'); if (el) (el as HTMLElement).click(); }}>
-                <Settings className="mr-1 size-3" /> Configure
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-9 gap-1.5"
+                onClick={() => { const el = document.querySelector('[value="configuration"]'); if (el) (el as HTMLElement).click(); }}
+              >
+                <Settings className="size-3.5" /> Configure
               </Button>
             </div>
           </div>
@@ -452,23 +477,42 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
       {/* ═══ 2. STATS ROW ═══ */}
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6">
-        {resolvedStats.map((s) => (
-          <div key={s.label} className="group relative overflow-hidden rounded-xl border border-border/30 p-3.5 transition-all hover:border-border/60 hover:shadow-sm" style={{ background: "var(--card)" }}>
-            <div className="absolute top-0 right-0 w-16 h-16 opacity-[0.04] rounded-bl-full" style={{ background: s.color }} />
-            <div className="flex items-center gap-1.5 mb-2">
-              <span className="text-xs">{s.icon}</span>
-              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                {s.label}
-              </span>
+        {resolvedStats.map((s) => {
+          const StatIcon = s.Icon;
+          return (
+            <div
+              key={s.label}
+              className="group relative overflow-hidden rounded-xl border border-border/40 p-4 transition-all hover:border-border/80 hover:shadow-md hover:-translate-y-0.5"
+              style={{ background: "var(--card)" }}
+            >
+              {/* Subtle gradient accent background */}
+              <div
+                className="absolute inset-0 opacity-[0.03] transition-opacity group-hover:opacity-[0.06]"
+                style={{ background: `linear-gradient(135deg, ${s.color} 0%, transparent 50%)` }}
+              />
+              {/* Content */}
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div
+                    className="flex items-center justify-center w-8 h-8 rounded-lg"
+                    style={{ background: `${s.color}15`, color: s.color }}
+                  >
+                    <StatIcon className="w-4 h-4" />
+                  </div>
+                </div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  {s.label}
+                </p>
+                <p className="text-2xl font-bold tracking-tight" style={{ color: s.color }}>
+                  {s.value}
+                </p>
+                {s.sub && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">{s.sub}</p>
+                )}
+              </div>
             </div>
-            <p className="text-2xl font-bold tracking-tight" style={{ color: s.color }}>
-              {s.value}
-            </p>
-            {s.sub && (
-              <p className="mt-1 text-[10px] text-muted-foreground">{s.sub}</p>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ═══ 2b. COMMAND CENTRE ═══ */}
