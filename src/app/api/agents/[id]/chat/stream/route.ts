@@ -492,10 +492,9 @@ ${recentActivity.length > 0
   ? recentActivity.map((a: any) => `- [${a.type}] ${a.summary} (${new Date(a.createdAt).toLocaleDateString("en-GB")})`).join("\n")
   : "No recent activity."}
 
-## YOUR IMMEDIATE PRIORITY RIGHT NOW
+## ALERTS
 ${(() => {
   const draftArts   = recentArtefacts.filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW");
-  const approvedArts= recentArtefacts.filter(a => a.status === "APPROVED");
   const hasPendingGate = pendingApprovals.some((a: any) => a.type === "PHASE_GATE");
   const overdueTaskCount = tasks.filter(t => t.endDate && new Date(t.endDate) < new Date() && t.status !== "DONE" && t.status !== "COMPLETE").length;
   const criticalIssues = issues.filter((i: any) => i.priority === "CRITICAL" || i.priority === "HIGH");
@@ -503,32 +502,20 @@ ${(() => {
   const totalAct = costEntries.filter((c: any) => c.entryType === "ACTUAL").reduce((s: number, c: any) => s + c.amount, 0);
   const overBudget = budget > 0 && totalAct > budget;
 
-  const flags: string[] = [];
-  if (overBudget) flags.push(`💰 OVER BUDGET — £${(totalAct - budget).toLocaleString()} overspend`);
-  if (criticalIssues.length > 0) flags.push(`🔴 ${criticalIssues.length} CRITICAL/HIGH issue(s): ${criticalIssues.slice(0, 3).map((i: any) => i.title).join(", ")}`);
-  if (overdueTaskCount > 0) flags.push(`⏰ ${overdueTaskCount} overdue task(s)`);
-  if (latestMetrics?.spi && latestMetrics.spi < 0.85) flags.push(`📉 Schedule is significantly behind (SPI ${latestMetrics.spi?.toFixed(2)})`);
-  if (latestMetrics?.cpi && latestMetrics.cpi < 0.85) flags.push(`📉 Cost performance poor (CPI ${latestMetrics.cpi?.toFixed(2)})`);
+  // Only list items that need attention — nothing else. No workflow re-explanation.
+  // The agent already knows the workflow from the main prompt rules.
+  const alerts: string[] = [];
+  if (recentArtefacts.length === 0 && phases.length > 0) alerts.push(`No artefacts generated yet for ${currentPhase?.name || "current phase"}`);
+  if (draftArts.length > 0) alerts.push(`${draftArts.length} artefact(s) pending review: ${draftArts.slice(0, 3).map(a => a.name).join(", ")}`);
+  if (hasPendingGate) alerts.push(`Phase gate pending approval for ${currentPhase?.name}`);
+  if (overBudget) alerts.push(`Over budget by £${(totalAct - budget).toLocaleString()}`);
+  if (criticalIssues.length > 0) alerts.push(`${criticalIssues.length} critical/high issue(s)`);
+  if (overdueTaskCount > 0) alerts.push(`${overdueTaskCount} overdue task(s)`);
+  if (latestMetrics?.spi && latestMetrics.spi < 0.85) alerts.push(`Schedule behind (SPI ${latestMetrics.spi?.toFixed(2)})`);
+  if (latestMetrics?.cpi && latestMetrics.cpi < 0.85) alerts.push(`Cost overrun (CPI ${latestMetrics.cpi?.toFixed(2)})`);
 
-  if (recentArtefacts.length === 0 && phases.length > 0) {
-    return `🎯 ARTEFACTS NOT YET GENERATED. You are in the ${currentPhase?.name || "first"} phase. Follow the Research-First Workflow:\n1. Review what you know from the Knowledge Base and project data\n2. Present your key assumptions and findings to the user for review\n3. Ask clarification questions using <ASK> tags — ONE question at a time\n4. Once the user has reviewed your assumptions and answered your questions, ask for explicit approval: "Shall I go ahead and generate the documents?"\n5. ONLY generate artefacts after the user approves\nNEVER skip straight to generation. Tell the user exactly what you know, what you assume, and what you need from them.`;
-  }
-  if (draftArts.length > 0) {
-    return `🎯 ${draftArts.length} ARTEFACT(S) AWAITING REVIEW: ${draftArts.map(a => a.name).join(", ")}. Direct the user to [Review Artefacts](/agents/${agentId}?tab=artefacts) to approve them. Summarise what each document contains and why it matters. Once all are approved, you can advance to the next phase.${flags.length > 0 ? `\n\nAlso flag these issues:\n${flags.map(f => `- ${f}`).join("\n")}` : ""}`;
-  }
-  if (hasPendingGate) {
-    return `🎯 PHASE GATE AWAITING APPROVAL. The ${currentPhase?.name} phase is complete. Direct the user to [Pending Approvals](/approvals) to approve the phase gate and advance to ${nextPhase?.name || "the next phase"}.`;
-  }
-  if (flags.length > 0) {
-    return `🎯 ATTENTION REQUIRED:\n${flags.map(f => `- ${f}`).join("\n")}\n\nAddress these proactively — brief the user on each issue and recommend action.`;
-  }
-  if (approvedArts.length > 0 && !nextPhase) {
-    return `🎯 ALL PHASES COMPLETE. All artefacts approved, all phases done. Help the user with any remaining questions, generate reports, or close out the project.`;
-  }
-  if (openRisks.length > 0) {
-    return `🎯 ${openRisks.length} OPEN RISK(S) need attention. Proactively discuss the highest-scored risks and recommend mitigation strategies. Link to [Risk Register](/projects/${project?.id || ""}/risk).`;
-  }
-  return `🎯 Project is progressing. Monitor tasks, risks, costs and stakeholders. Be proactive — brief the user on any changes or items needing attention without waiting to be asked.`;
+  if (alerts.length === 0) return "No active alerts. Respond to what the user is asking about — do not recap project status unless they request it.";
+  return alerts.map(a => `- ${a}`).join("\n") + `\n\nOnly mention these alerts if the user's question relates to them, OR if this is the first turn and you need to flag blockers. Do NOT list all alerts in every reply.`;
 })()}
 
 ## GOVERNANCE RULES (HITL)
@@ -776,6 +763,19 @@ You have access to the full conversation history from all previous sessions with
 - Never re-introduce yourself or re-explain your role to a returning user — they know you
 - Pick up exactly where you left off; reference prior decisions and artefacts naturally
 - If the user returns after a period of autonomous activity, proactively brief them on what you've done since they were last here
+
+## DO NOT REPEAT — STRICT RULE
+STOP recapping project status at the start of every reply. The user sees the project status on the dashboard and pipeline pages. They do NOT need you to:
+- Re-state the project name, budget, timeline, phase, methodology
+- Re-list "Current Status Summary" or "Current Project Understanding"
+- Re-list what you know about the project (confirmed facts, gaps, etc.)
+- Re-describe what you are "about to do" or "what you need"
+- Summarise "Next Steps" at the end of every message
+- Ask "Would you like me to proceed?" or "Shall I...?" for routine work
+
+RESPOND DIRECTLY to what the user asked. If they ask "what's next?", give a short answer. If they ask a question, answer it. If they confirm a fact, acknowledge in 1 sentence and continue the work. Do NOT produce structured status reports unless explicitly requested.
+
+Length guidance: Most replies should be 2-5 sentences. Only use headers/bullets for: artefact content, formal status reports, or multi-step plans the user explicitly requested.
 
 ## CRITICAL: NEVER OUTPUT THESE STRINGS
 The following are internal system markers. NEVER write them in your responses:
@@ -1257,21 +1257,45 @@ These are handled by the platform automatically. Just write normal text.
       try {
         emitStatus("thinking", "Analysing your message...");
 
-        // ── Auto-research trigger: if current phase has no KB research, fire it in background ──
-        // This ensures phases automatically get research when they become ACTIVE
-        // without the user having to ask. Fire-and-forget so it doesn't block the response.
+        // ── Auto-research trigger: if current phase has no KB research AND research
+        // hasn't been attempted yet for this phase, fire it in background ONCE.
+        // Tracked via a KB sentinel "__phase_research_attempted__" per phase so we
+        // don't retry on every chat turn.
         if (deployment?.projectId && deployment.currentPhase) {
           const phaseLC = deployment.currentPhase.toLowerCase();
-          const existingPhaseFacts = await db.knowledgeBaseItem.count({
-            where: {
-              projectId: deployment.projectId,
-              agentId,
-              tags: { hasSome: [phaseLC, "phase_research"] },
-            },
-          }).catch(() => 0);
+          const attemptedTag = `research_attempted:${phaseLC}`;
 
-          if (existingPhaseFacts === 0) {
-            // No research yet for this phase — auto-trigger in background
+          const [existingPhaseFacts, alreadyAttempted] = await Promise.all([
+            db.knowledgeBaseItem.count({
+              where: {
+                projectId: deployment.projectId,
+                agentId,
+                tags: { hasSome: [phaseLC, "phase_research"] },
+              },
+            }).catch(() => 0),
+            db.knowledgeBaseItem.count({
+              where: {
+                projectId: deployment.projectId,
+                agentId,
+                tags: { has: attemptedTag },
+              },
+            }).catch(() => 0),
+          ]);
+
+          if (existingPhaseFacts === 0 && alreadyAttempted === 0) {
+            // Mark as attempted IMMEDIATELY so concurrent messages don't re-trigger
+            await db.knowledgeBaseItem.create({
+              data: {
+                orgId, agentId, projectId: deployment.projectId,
+                layer: "PROJECT", type: "TEXT",
+                title: `__phase_research_attempted__:${phaseLC}`,
+                content: `Auto-research triggered for ${deployment.currentPhase} at ${new Date().toISOString()}`,
+                trustLevel: "STANDARD",
+                tags: [attemptedTag, "system"],
+              },
+            }).catch(() => {});
+
+            // Fire-and-forget research
             import("@/lib/agents/feasibility-research").then(async ({ runPhaseResearch }) => {
               try {
                 const research = await runPhaseResearch(agentId, deployment.projectId!, orgId, deployment.currentPhase!);
@@ -2020,9 +2044,11 @@ RULES:
           } catch {}
         }
 
-        await db.agentActivity.create({
-          data: { agentId, type: "chat", summary: `Chat response: ${message.slice(0, 80)}${message.length > 80 ? "…" : ""}` },
-        }).catch(() => {});
+        // Note: We intentionally don't log a chat activity here — every chat turn
+        // already creates two chatMessage rows (user + agent). Adding an activity
+        // entry duplicates the record and clutters the activity feed.
+        // Activity entries are now only written for actual ACTIONS (approvals,
+        // artefact edits, research runs, task changes).
 
         const creditCost = fullContent.length > 2000 ? 8 : fullContent.length > 800 ? 4 : 2;
         await CreditService.deduct(orgId, creditCost, `Agent chat: ${message.slice(0, 40)}`, agentId);
