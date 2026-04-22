@@ -668,6 +668,16 @@ Produce the full, complete document. Do not truncate or use placeholders.`,
         }
       } catch { /* non-fatal — artefact saves without phaseId */ }
 
+      // Dedupe check — prevent creating duplicate artefacts
+      try {
+        const { artefactExists } = await import("@/lib/agents/artefact-dedupe");
+        const dup = await artefactExists(context.projectId, context.agentId, artefactName, autoPhaseId);
+        if (dup.exists) {
+          console.log(`[action-executor] Skipped duplicate artefact: "${artefactName}" (already exists as "${dup.existingName}")`);
+          return { artefactId: dup.existingId, action: "document_skipped_duplicate" };
+        }
+      } catch {}
+
       const artefact = await db.agentArtefact.create({
         data: {
           agentId: context.agentId,

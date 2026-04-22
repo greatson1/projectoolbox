@@ -1465,6 +1465,25 @@ These are handled by the platform automatically. Just write normal text.
                 const artContent = toolBlock.input.content || "";
                 const artFormat = toolBlock.input.format || "markdown";
 
+                // Dedupe check — prevent creating duplicate artefacts
+                const { artefactExists } = await import("@/lib/agents/artefact-dedupe");
+                const dupCheck = depForArt?.projectId
+                  ? await artefactExists(depForArt.projectId, agentId, artName, depForArt.currentPhase)
+                  : { exists: false };
+
+                if (dupCheck.exists) {
+                  toolResults.push({
+                    type: "tool_result",
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify({
+                      error: `Artefact already exists: "${dupCheck.existingName}" (ID: ${dupCheck.existingId}). Edit the existing one instead of creating a duplicate.`,
+                      existingId: dupCheck.existingId,
+                      existingName: dupCheck.existingName,
+                    }),
+                  });
+                  continue;
+                }
+
                 const artefact = await db.agentArtefact.create({
                   data: {
                     agentId,
