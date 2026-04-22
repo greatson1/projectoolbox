@@ -26,5 +26,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     trackStakeholderChange(projectId, body.name || "Stakeholder", `added as ${body.role || "stakeholder"} with ${body.influence || "unknown"} influence`).catch(() => {});
   }).catch(() => {});
 
+  // Reverse sync: update Stakeholder Register artefact CSV
+  import("@/lib/agents/artefact-sync").then(({ syncStakeholdersToArtefact }) =>
+    syncStakeholdersToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
+
   return NextResponse.json({ data: stakeholder }, { status: 201 });
 }

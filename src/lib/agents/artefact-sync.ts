@@ -481,3 +481,165 @@ export async function syncSprintsToArtefact(projectId: string): Promise<void> {
     console.error("[artefact-sync] syncSprintsToArtefact failed:", e);
   }
 }
+
+// ─── 5. Risk reverse sync: rebuild Risk Register artefact from Risk records ──
+
+/**
+ * Rebuilds the Risk Register artefact CSV from current Risk records.
+ * Called after risk CRUD (add, edit probability/impact/mitigation/status).
+ */
+export async function syncRisksToArtefact(projectId: string): Promise<void> {
+  try {
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: "csv",
+        name: { contains: "Risk", mode: "insensitive" as any },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact) return;
+
+    const risks = await db.risk.findMany({
+      where: { projectId },
+      orderBy: [{ score: "desc" }, { createdAt: "asc" }],
+    });
+
+    if (risks.length === 0) return;
+
+    const header = ["Risk ID", "Title", "Description", "Category", "Probability", "Impact", "Score", "Status", "Owner", "Mitigation"];
+    const rows: string[][] = [header];
+
+    for (const r of risks) {
+      rows.push([
+        r.id.slice(-6).toUpperCase(),
+        r.title,
+        r.description || "",
+        r.category || "",
+        String(r.probability),
+        String(r.impact),
+        String(r.score || r.probability * r.impact),
+        r.status || "OPEN",
+        r.owner || "",
+        r.mitigation || "",
+      ]);
+    }
+
+    const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncRisksToArtefact failed:", e);
+  }
+}
+
+// ─── 6. Stakeholder reverse sync: rebuild Stakeholder Register artefact ──────
+
+/**
+ * Rebuilds the Stakeholder Register artefact CSV from current Stakeholder records.
+ * Called after stakeholder CRUD (add, edit power/interest/sentiment).
+ */
+export async function syncStakeholdersToArtefact(projectId: string): Promise<void> {
+  try {
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: "csv",
+        name: { contains: "Stakeholder", mode: "insensitive" as any },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact) return;
+
+    const stakeholders = await db.stakeholder.findMany({
+      where: { projectId },
+      orderBy: { name: "asc" },
+    });
+
+    if (stakeholders.length === 0) return;
+
+    const header = ["Name", "Role", "Organisation", "Email", "Power (1-100)", "Interest (1-100)", "Sentiment"];
+    const rows: string[][] = [header];
+
+    for (const s of stakeholders) {
+      rows.push([
+        s.name,
+        s.role || "",
+        s.organisation || "",
+        s.email || "",
+        String(s.power),
+        String(s.interest),
+        s.sentiment || "",
+      ]);
+    }
+
+    const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncStakeholdersToArtefact failed:", e);
+  }
+}
+
+// ─── 7. Benefits reverse sync: rebuild Benefits Realisation artefact ─────────
+
+/**
+ * Rebuilds the Benefits artefact CSV from current Benefit records.
+ * Called after benefit CRUD (add, edit target/realised/status).
+ */
+export async function syncBenefitsToArtefact(projectId: string): Promise<void> {
+  try {
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: "csv",
+        name: { contains: "Benefit", mode: "insensitive" as any },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact) return;
+
+    const benefits = await db.benefit.findMany({
+      where: { projectId },
+      orderBy: [{ category: "asc" }, { createdAt: "asc" }],
+    });
+
+    if (benefits.length === 0) return;
+
+    const header = ["Benefit", "Description", "Category", "Status", "Target Value", "Realised Value", "Currency", "Owner", "Target Date", "KPI/Measures"];
+    const rows: string[][] = [header];
+
+    for (const b of benefits) {
+      rows.push([
+        b.name,
+        b.description || "",
+        b.category || "",
+        b.status || "NOT_STARTED",
+        String(b.targetValue),
+        String(b.realisedValue),
+        b.currency || "GBP",
+        b.owner || "",
+        b.targetDate ? formatDate(b.targetDate) : "",
+        b.measures || "",
+      ]);
+    }
+
+    const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncBenefitsToArtefact failed:", e);
+  }
+}

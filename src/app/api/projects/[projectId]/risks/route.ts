@@ -32,6 +32,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     data: { ...body, score: (body.probability || 3) * (body.impact || 3), projectId },
   });
 
+  // Reverse sync: update Risk Register artefact to reflect new risk
+  import("@/lib/agents/artefact-sync").then(({ syncRisksToArtefact }) =>
+    syncRisksToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
+
   return NextResponse.json({ data: risk }, { status: 201 });
 }
 
@@ -407,6 +412,11 @@ ${project?.name ?? "Project"} — AI Project Manager`;
       trackRiskChange(projectId, risk.title, changes.join(", ")).catch(() => {});
     }).catch(() => {});
   }
+
+  // Reverse sync: update Risk Register artefact CSV
+  import("@/lib/agents/artefact-sync").then(({ syncRisksToArtefact }) =>
+    syncRisksToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
 
   return NextResponse.json({ data: risk });
 }

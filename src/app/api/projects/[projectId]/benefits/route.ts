@@ -43,6 +43,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     },
   });
 
+  // Reverse sync: update Benefits artefact CSV
+  import("@/lib/agents/artefact-sync").then(({ syncBenefitsToArtefact }) =>
+    syncBenefitsToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
+
   return NextResponse.json({ data: benefit }, { status: 201 });
 }
 
@@ -66,13 +71,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     data: updates,
   });
 
+  const { projectId } = await params;
+
   // Track benefit status changes in KB
   if (updates.status && oldBenefit && updates.status !== oldBenefit.status) {
-    const { projectId } = await params;
     import("@/lib/agents/kb-event-tracker").then(({ trackBenefitUpdate }) => {
       trackBenefitUpdate(projectId, benefit.name, oldBenefit.status, updates.status, updates.realisedValue).catch(() => {});
     }).catch(() => {});
   }
+
+  // Reverse sync: update Benefits artefact CSV
+  import("@/lib/agents/artefact-sync").then(({ syncBenefitsToArtefact }) =>
+    syncBenefitsToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
 
   return NextResponse.json({ data: benefit });
 }
@@ -87,5 +98,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   await db.benefit.delete({ where: { id } });
+
+  // Reverse sync: update Benefits artefact CSV
+  const { projectId } = await params;
+  import("@/lib/agents/artefact-sync").then(({ syncBenefitsToArtefact }) =>
+    syncBenefitsToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
+
   return NextResponse.json({ ok: true });
 }
