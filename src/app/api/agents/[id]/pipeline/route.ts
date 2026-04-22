@@ -107,32 +107,40 @@ export async function GET(
     return false;
   });
 
-  // Clarification messages
+  // Clarification — use explicit message metadata ONLY (no substring matching).
+  // Also check for active ClarificationSession in KB to detect live Q&A flow.
   const clarificationMessages = chatMessages.filter((msg) => {
     const meta = msg.metadata as Record<string, unknown> | null;
-    const hasType =
-      meta?.type === "clarification_question" ||
-      meta?.type === "clarification_answer";
-    const hasContent = msg.content
-      .toLowerCase()
-      .includes("clarification");
-    return hasType || hasContent;
+    return meta?.type === "clarification_question" || meta?.type === "agent_question";
   });
   const clarificationAnswers = chatMessages.filter((msg) => {
     const meta = msg.metadata as Record<string, unknown> | null;
-    return meta?.type === "clarification_answer";
+    return meta?.type === "clarification_answer" || meta?.type === "agent_question_answered";
   });
+  // Active clarification session lives in KB as __clarification_session__
+  const activeClarificationSession = kbItems.find(
+    (k) => k.title === "__clarification_session__" && (k.tags || []).includes("active")
+  );
 
   // Phase gate approvals for current phase
   const phaseGateApprovals = approvals.filter(
     (a) => a.type === "PHASE_GATE"
   );
-  const currentPhaseGate = phaseGateApprovals.find((a) => {
-    const desc = a.description?.toLowerCase() || "";
-    const title = a.title?.toLowerCase() || "";
-    const phaseNameLower = (currentPhase || "").toLowerCase();
-    return desc.includes(phaseNameLower) || title.includes(phaseNameLower);
-  });
+  // Find the CURRENT phase's gate — use exact prefix match on title ("{phase} Gate:")
+  // and always prefer the most recently created to handle resubmission cycles.
+  const currentPhaseGate = (() => {
+    if (!currentPhase) return undefined;
+    const phaseLC = currentPhase.toLowerCase();
+    const matches = phaseGateApprovals
+      .filter((a) => {
+        const title = (a.title || "").toLowerCase();
+        // Expected format: "{PhaseName} Gate: ..." or "{PhaseName} gate: ..."
+        return title.startsWith(`${phaseLC} gate`) || title.startsWith(`${phaseLC}:`);
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Latest matching gate (handles resubmission — previous REJECTED gates are ignored)
+    return matches[0];
+  })();
 
   // Deployment timestamps
   const deployedAt = deployment.deployedAt.toISOString();
@@ -202,7 +210,7 @@ export async function GET(
     });
   }
 
-  // 3. Clarify
+  // 3. Clarify — uses real session state + message metadata
   {
     let status: PipelineStep["status"] = "waiting";
     let details: string | undefined;
@@ -211,12 +219,35 @@ export async function GET(
     );
     const startedAt = clarifyActivity?.createdAt?.toISOString();
 
-    if (clarificationAnswers.length > 0) {
+    // Parse active session to get exact question/answer counts
+    let sessionQuestions = 0;
+    let sessionAnswered = 0;
+    if (activeClarificationSession?.content) {
+      try {
+        const session = JSON.parse(activeClarificationSession.content);
+        const qs = Array.isArray(session.questions) ? session.questions : [];
+        sessionQuestions = qs.length;
+        sessionAnswered = qs.filter((q: any) => q.answered || q.answer).length;
+      } catch {}
+    }
+
+    if (activeClarificationSession && sessionQuestions > 0) {
+      // Live session — report real progress
+      if (sessionAnswered >= sessionQuestions) {
+        status = "done";
+        details = `All ${sessionQuestions} question${sessionQuestions !== 1 ? "s" : ""} answered`;
+      } else {
+        status = "running";
+        details = `${sessionAnswered}/${sessionQuestions} answered · ${sessionQuestions - sessionAnswered} pending`;
+      }
+    } else if (clarificationAnswers.length > 0) {
       status = "done";
       details = `${clarificationAnswers.length} answer${clarificationAnswers.length !== 1 ? "s" : ""} received`;
     } else if (phaseStatus === "awaiting_clarification") {
       status = "running";
-      details = `${clarificationMessages.length} question${clarificationMessages.length !== 1 ? "s" : ""} pending`;
+      details = clarificationMessages.length > 0
+        ? `${clarificationMessages.length} question${clarificationMessages.length !== 1 ? "s" : ""} pending`
+        : "Clarification session starting...";
     } else if (
       clarificationMessages.length === 0 &&
       (currentPhaseArtefacts.length > 0 || phaseStatus === "active")
@@ -251,24 +282,50 @@ export async function GET(
     );
     const startedAt = genActivity?.createdAt?.toISOString();
 
-    if (currentPhaseArtefacts.length > 0) {
+    // Find the expected artefact count from the phase record
+    const expectedArtefacts = Array.isArray(currentPhaseObj?.artefacts)
+      ? (currentPhaseObj!.artefacts as string[]).length
+      : 0;
+    const generatedCount = currentPhaseArtefacts.length;
+    const expectedVsGenerated = expectedArtefacts > 0
+      ? `${generatedCount}/${expectedArtefacts}`
+      : String(generatedCount);
+
+    // Smarter stall detection:
+    // - Use the most recent artefact's createdAt to detect activity (not just lastCycleAt)
+    // - Scale timeout with expected batch size (3 min per artefact, min 10 min, max 60 min)
+    const timeoutMins = Math.max(10, Math.min(60, expectedArtefacts * 3));
+    const lastArtefactAt = currentPhaseArtefacts[0]?.createdAt
+      ? new Date(currentPhaseArtefacts[0].createdAt).getTime()
+      : deployment.lastCycleAt?.getTime() || deployment.deployedAt.getTime();
+    const minutesSinceLastArtefact = (now - lastArtefactAt) / 60_000;
+
+    if (expectedArtefacts > 0 && generatedCount >= expectedArtefacts) {
+      // All expected artefacts generated
       status = "done";
-      details = `${currentPhaseArtefacts.length} artefact${currentPhaseArtefacts.length !== 1 ? "s" : ""} generated`;
-    } else if (
-      phaseStatus === "active" &&
-      currentPhaseArtefacts.length === 0 &&
-      minutesSinceUpdate <= 30
-    ) {
+      details = `${expectedVsGenerated} artefacts generated`;
+    } else if (generatedCount > 0 && phaseStatus === "active") {
+      // Partially generated — still running if recent activity, else stalled
+      if (minutesSinceLastArtefact <= timeoutMins) {
+        status = "running";
+        details = `${expectedVsGenerated} generated · more incoming`;
+      } else {
+        status = "failed";
+        error = `Generation stalled at ${expectedVsGenerated} artefacts — no new output for ${Math.floor(minutesSinceLastArtefact)} min`;
+        canRetry = true;
+      }
+    } else if (generatedCount > 0) {
+      // Generated but phaseStatus not active (e.g. awaiting_clarification)
+      status = "done";
+      details = `${expectedVsGenerated} artefacts generated`;
+    } else if (phaseStatus === "active" && minutesSinceUpdate <= timeoutMins) {
       status = "running";
-      details = "Generating artefacts...";
-    } else if (
-      phaseStatus === "active" &&
-      currentPhaseArtefacts.length === 0 &&
-      minutesSinceUpdate > 30
-    ) {
+      details = expectedArtefacts > 0
+        ? `Generating 0/${expectedArtefacts}...`
+        : "Generating artefacts...";
+    } else if (phaseStatus === "active" && minutesSinceUpdate > timeoutMins) {
       status = "failed";
-      error =
-        "Generation stalled — no artefacts produced after 30 minutes";
+      error = `Generation stalled — no output after ${Math.floor(minutesSinceUpdate)} min (expected within ${timeoutMins} min for ${expectedArtefacts || "this"} batch)`;
       canRetry = true;
     }
 
@@ -301,16 +358,31 @@ export async function GET(
       (a) => a.status === "APPROVED"
     );
 
+    // Extract unique approvers from artefact metadata
+    const approvers = new Set<string>();
+    let lastApprovedAt: Date | null = null;
+    for (const a of approvedArtefacts) {
+      const meta = (a as any).metadata || {};
+      if (meta.approvedByName) approvers.add(meta.approvedByName);
+      if (meta.approvedAt) {
+        const ts = new Date(meta.approvedAt);
+        if (!lastApprovedAt || ts > lastApprovedAt) lastApprovedAt = ts;
+      }
+    }
+    const approverText = approvers.size === 0 ? ""
+      : approvers.size === 1 ? ` by ${[...approvers][0]}`
+      : ` by ${approvers.size} reviewers`;
+
     if (currentPhaseArtefacts.length === 0) {
       status = "waiting";
     } else if (
       approvedArtefacts.length === currentPhaseArtefacts.length
     ) {
       status = "done";
-      details = `All ${approvedArtefacts.length} artefact${approvedArtefacts.length !== 1 ? "s" : ""} approved`;
+      details = `All ${approvedArtefacts.length} artefact${approvedArtefacts.length !== 1 ? "s" : ""} approved${approverText}`;
     } else if (approvedArtefacts.length > 0) {
       status = "running";
-      details = `${approvedArtefacts.length}/${currentPhaseArtefacts.length} approved`;
+      details = `${approvedArtefacts.length}/${currentPhaseArtefacts.length} approved${approverText}`;
     } else {
       status = "waiting";
       details = `${currentPhaseArtefacts.length} artefact${currentPhaseArtefacts.length !== 1 ? "s" : ""} awaiting review`;
@@ -321,6 +393,10 @@ export async function GET(
       label: `${phaseLabel}Review & Approve`,
       cycles: true,
       status,
+      startedAt: currentPhaseArtefacts.length > 0
+        ? currentPhaseArtefacts[currentPhaseArtefacts.length - 1].createdAt.toISOString()
+        : undefined,
+      completedAt: lastApprovedAt ? lastApprovedAt.toISOString() : undefined,
       details,
     });
   }
@@ -394,15 +470,25 @@ export async function GET(
     let details: string | undefined;
 
     if (currentPhaseGate) {
+      const iteration = (currentPhaseGate as any).iteration || 1;
+      const iterationTag = iteration > 1 ? ` · submission ${iteration}` : "";
+      const gateImpact = (currentPhaseGate as any).impact || {};
+      const approvedBy = gateImpact.resolvedByName;
+
       if (currentPhaseGate.status === "APPROVED") {
         status = "done";
-        details = "Phase gate approved";
+        details = approvedBy
+          ? `Approved by ${approvedBy}${iterationTag}`
+          : `Phase gate approved${iterationTag}`;
       } else if (currentPhaseGate.status === "PENDING") {
         status = "running";
-        details = "Awaiting phase gate approval";
+        const waitMins = Math.floor((now - new Date(currentPhaseGate.createdAt).getTime()) / 60_000);
+        const waitText = waitMins < 60 ? `${waitMins}m` : waitMins < 1440 ? `${Math.floor(waitMins / 60)}h` : `${Math.floor(waitMins / 1440)}d`;
+        details = `Awaiting approval · pending ${waitText}${iterationTag}`;
       } else if (currentPhaseGate.status === "REJECTED") {
         status = "failed";
-        details = "Phase gate rejected";
+        const comment = (currentPhaseGate as any).comment || "";
+        details = comment ? `Rejected: ${comment.slice(0, 80)}${iterationTag}` : `Phase gate rejected${iterationTag}`;
       } else {
         status = "waiting";
       }

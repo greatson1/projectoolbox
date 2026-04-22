@@ -28,12 +28,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const newStatus = statusMap[action];
   if (!newStatus) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
+  // Stamp resolver identity into impact JSON (audit trail)
+  const existingImpact = (approval.impact as any) || {};
+  const resolverName = session.user?.name || session.user?.email || "Unknown";
+  const resolverId = (session.user as any)?.id || null;
+
   const updated = await db.approval.update({
     where: { id },
     data: {
       status: newStatus as any,
       comment,
       resolvedAt: action !== "defer" ? new Date() : undefined,
+      impact: {
+        ...existingImpact,
+        resolvedByName: resolverName,
+        resolvedById: resolverId,
+        resolvedVia: "ui",
+      } as any,
+      assignedToId: resolverId || undefined,
     },
   });
 
