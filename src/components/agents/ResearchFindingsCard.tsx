@@ -25,6 +25,7 @@ export interface ResearchFindingsProps {
   sections: Array<{ label: string; content: string }>;
   facts: Array<{ title: string; content: string }>;
   onAcknowledge?: () => void;
+  phase?: string; // Optional phase name to filter KB by
 }
 
 // ─── Section icons ───────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ function categorizeFact(title: string): { icon: typeof Search; colour: string; c
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function ResearchFindingsCard({
-  projectName, factsCount, sections, facts, onAcknowledge,
+  projectName, factsCount, sections, facts, onAcknowledge, phase,
 }: ResearchFindingsProps) {
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set());
   const [showAllFacts, setShowAllFacts] = useState(false);
@@ -90,17 +91,19 @@ export function ResearchFindingsCard({
           <div className="w-8 h-8 rounded-lg bg-indigo-500/15 flex items-center justify-center">
             <Globe className="w-4 h-4 text-indigo-500" />
           </div>
-          <div>
-            <h3 className="text-[13px] font-bold text-foreground">Feasibility Research Complete</h3>
-            <p className="text-[10px] text-muted-foreground">Powered by AI research for "{projectName}"</p>
+          <div className="flex-1">
+            <h3 className="text-[13px] font-bold text-foreground">
+              {phase ? `${phase} Research Complete` : "Feasibility Research Complete"}
+            </h3>
+            <p className="text-[10px] text-muted-foreground">Powered by Perplexity AI · {projectName}</p>
           </div>
-          <Badge className="ml-auto border-indigo-500/30 bg-indigo-500/10 text-indigo-600 text-[10px]">
-            {factsCount} facts discovered
+          <Badge className="border-indigo-500/30 bg-indigo-500/10 text-indigo-600 text-[10px]">
+            {factsCount} facts → KB
           </Badge>
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          I've researched your project and gathered key information about costs, requirements, risks, and regulations.
-          Review the findings below — I'll use this knowledge to create more accurate project documents.
+          {factsCount} facts extracted and stored to the Knowledge Base{phase ? ` for the ${phase} phase` : ""}.
+          These will be used to inform artefact generation and clarification questions.
         </p>
       </div>
 
@@ -187,16 +190,27 @@ export function ResearchFindingsCard({
       </div>
 
       {/* ── Footer / CTA ── */}
-      <div className="px-5 py-3 flex items-center justify-between bg-muted/20">
-        <p className="text-[10px] text-muted-foreground">
-          <CheckCircle2 className="w-3 h-3 inline text-emerald-500 mr-1" />
-          All findings stored to Knowledge Base — will inform your project documents
-        </p>
-        {onAcknowledge && (
-          <Button size="sm" variant="default" className="text-xs h-7" onClick={onAcknowledge}>
-            Continue to Questions
-          </Button>
-        )}
+      <div className="px-5 py-3 flex items-center justify-between gap-3 bg-muted/20 flex-wrap">
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+          <span>
+            <strong className="text-foreground">{factsCount} facts</strong> stored to Knowledge Base
+            {phase ? ` · tagged as "${phase.toLowerCase()}"` : ""}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <a
+            href="/knowledge"
+            className="inline-flex items-center gap-1 text-[10px] font-medium text-primary hover:underline"
+          >
+            View in KB <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+          {onAcknowledge && (
+            <Button size="sm" variant="default" className="text-xs h-7" onClick={onAcknowledge}>
+              Continue to Questions
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

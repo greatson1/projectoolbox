@@ -201,6 +201,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
             factsCount={msg.data.factsCount || 0}
             sections={msg.data.sections || []}
             facts={msg.data.facts || []}
+            phase={msg.data.phase}
           />
         </div>
       </div>
