@@ -43,6 +43,7 @@ interface PipelineStep {
   error?: string;
   details?: string;
   canRetry?: boolean;
+  cycles?: boolean; // true if this step repeats per phase
 }
 
 interface Phase {
@@ -77,19 +78,35 @@ interface PipelineData {
 /*  Icon map                                                           */
 /* ------------------------------------------------------------------ */
 
-const STEP_ICONS: Record<string, React.ElementType> = {
-  Deploy: Rocket,
-  Research: Microscope,
-  Clarify: MessageSquare,
-  Generate: FileText,
-  Review: Eye,
-  Approve: CheckCircle2,
-  Gate: Shield,
-  Advance: ArrowRight,
+// Icon keyed by step.id (not label — labels now have phase prefix)
+const STEP_ICONS_BY_ID: Record<string, React.ElementType> = {
+  deploy: Rocket,
+  research: Microscope,
+  clarify: MessageSquare,
+  generate: FileText,
+  review: Eye,
+  delivery: CheckCircle2,
+  kb_check: Shield,
+  gate: Shield,
+  advance: ArrowRight,
 };
 
-function getStepIcon(label: string) {
-  return STEP_ICONS[label] || Circle;
+function getStepIcon(stepOrLabel: string | PipelineStep) {
+  if (typeof stepOrLabel === "object") {
+    return STEP_ICONS_BY_ID[stepOrLabel.id] || Circle;
+  }
+  // Legacy fallback: try to match keyword in label
+  const lower = stepOrLabel.toLowerCase();
+  if (lower.includes("deploy")) return Rocket;
+  if (lower.includes("research")) return Microscope;
+  if (lower.includes("clarif")) return MessageSquare;
+  if (lower.includes("generate")) return FileText;
+  if (lower.includes("review") || lower.includes("approve")) return Eye;
+  if (lower.includes("delivery")) return CheckCircle2;
+  if (lower.includes("kb")) return Shield;
+  if (lower.includes("gate")) return Shield;
+  if (lower.includes("advance")) return ArrowRight;
+  return Circle;
 }
 
 /* ------------------------------------------------------------------ */
@@ -273,7 +290,7 @@ function StepCard({
   onClick: () => void;
 }) {
   const colors = statusColor(step.status);
-  const Icon = getStepIcon(step.label);
+  const Icon = getStepIcon(step);
 
   return (
     <button
@@ -292,6 +309,16 @@ function StepCard({
         animationIterationCount: colors.glow ? "infinite" : undefined,
       }}
     >
+      {/* Cycle indicator (top-right corner) */}
+      {step.cycles && (
+        <div
+          className="absolute top-1.5 right-1.5 text-[9px] font-bold text-indigo-500/80 flex items-center gap-0.5"
+          title="Repeats per phase"
+        >
+          <RotateCcw className="w-2.5 h-2.5" />
+        </div>
+      )}
+
       {/* Icon */}
       <div
         className={cn(
@@ -727,6 +754,21 @@ export default function AgentPipelinePage() {
         {/* ========== Pipeline Steps (horizontal scroll) ========== */}
         <Card>
           <CardContent className="py-6">
+            <div className="flex items-center justify-between mb-4 px-1">
+              <div>
+                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  {data.currentPhase ? `${data.currentPhase} Phase` : "Current Phase"} — Step by Step
+                </h2>
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                  Steps marked <RotateCcw className="w-2.5 h-2.5 inline text-indigo-500" /> repeat for each phase
+                </p>
+              </div>
+              {data.currentPhase && (
+                <span className="text-[10px] px-2 py-1 rounded-full bg-primary/10 text-primary font-semibold">
+                  {data.phaseStatus === "blocked_tasks_incomplete" ? "⛔ BLOCKED" : data.phaseStatus?.replace("_", " ").toUpperCase()}
+                </span>
+              )}
+            </div>
             <div className="flex items-start overflow-x-auto pb-4 gap-0">
               {data.steps.map((step, i) => (
                 <React.Fragment key={step.id}>

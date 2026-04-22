@@ -14,18 +14,11 @@ interface PipelineStep {
   error?: string;
   details?: string;
   canRetry?: boolean;
+  cycles?: boolean; // true if this step repeats per phase
 }
 
-const STEP_DEFS: { id: string; label: string }[] = [
-  { id: "deploy", label: "Deploy Agent" },
-  { id: "research", label: "Feasibility Research" },
-  { id: "clarify", label: "Clarification Questions" },
-  { id: "generate", label: "Generate Artefacts" },
-  { id: "review", label: "Review Artefacts" },
-  { id: "approve", label: "Approve Artefacts" },
-  { id: "gate", label: "Phase Gate Approval" },
-  { id: "advance", label: "Advance Phase" },
-];
+// Pipeline steps are built inline per request.
+// Deploy is one-time; all other steps have cycles:true and repeat per phase.
 
 // GET /api/agents/:id/pipeline — Pipeline state for agent deployment
 export async function GET(
@@ -140,7 +133,10 @@ export async function GET(
   // --- Build steps ---
   const steps: PipelineStep[] = [];
 
-  // 1. Deploy — always done if deployment exists
+  // Phase-scoped label prefix — "Phase N:" to show this cycle belongs to a phase
+  const phaseLabel = currentPhase ? `${currentPhase}: ` : "";
+
+  // 1. Deploy — one-time, always done if deployment exists
   steps.push({
     id: "deploy",
     label: "Deploy Agent",
@@ -180,7 +176,8 @@ export async function GET(
 
     steps.push({
       id: "research",
-      label: "Feasibility Research",
+      label: `${phaseLabel}Research`,
+      cycles: true,
       status,
       startedAt,
       completedAt: status === "done" && researchItems.length > 0
@@ -222,7 +219,8 @@ export async function GET(
 
     steps.push({
       id: "clarify",
-      label: "Clarification Questions",
+      label: `${phaseLabel}Clarification`,
+      cycles: true,
       status,
       startedAt,
       completedAt:
@@ -267,7 +265,8 @@ export async function GET(
 
     steps.push({
       id: "generate",
-      label: "Generate Artefacts",
+      label: `${phaseLabel}Generate Artefacts`,
+      cycles: true,
       status,
       startedAt,
       completedAt:
@@ -285,33 +284,7 @@ export async function GET(
     });
   }
 
-  // 5. Review
-  {
-    let status: PipelineStep["status"] = "waiting";
-    let details: string | undefined;
-    const reviewedArtefacts = currentPhaseArtefacts.filter(
-      (a) => a.status !== "DRAFT"
-    );
-
-    if (currentPhaseArtefacts.length === 0) {
-      status = "waiting";
-    } else if (reviewedArtefacts.length > 0) {
-      status = "done";
-      details = `${reviewedArtefacts.length}/${currentPhaseArtefacts.length} artefact${currentPhaseArtefacts.length !== 1 ? "s" : ""} reviewed`;
-    } else {
-      status = "waiting";
-      details = `${currentPhaseArtefacts.length} artefact${currentPhaseArtefacts.length !== 1 ? "s" : ""} awaiting review`;
-    }
-
-    steps.push({
-      id: "review",
-      label: "Review Artefacts",
-      status,
-      details,
-    });
-  }
-
-  // 6. Approve
+  // 5. Review & Approve (merged)
   {
     let status: PipelineStep["status"] = "waiting";
     let details: string | undefined;
@@ -329,11 +302,78 @@ export async function GET(
     } else if (approvedArtefacts.length > 0) {
       status = "running";
       details = `${approvedArtefacts.length}/${currentPhaseArtefacts.length} approved`;
+    } else {
+      status = "waiting";
+      details = `${currentPhaseArtefacts.length} artefact${currentPhaseArtefacts.length !== 1 ? "s" : ""} awaiting review`;
     }
 
     steps.push({
-      id: "approve",
-      label: "Approve Artefacts",
+      id: "review",
+      label: `${phaseLabel}Review & Approve`,
+      cycles: true,
+      status,
+      details,
+    });
+  }
+
+  // 6. Delivery Tasks — uses phase-completion utility
+  {
+    let status: PipelineStep["status"] = "waiting";
+    let details: string | undefined;
+    try {
+      if (currentPhase && projectId) {
+        const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+        const comp = await getPhaseCompletion(projectId, currentPhase, agentId);
+        const pmTotal = comp.pmTasks.total;
+        const pmDone = comp.pmTasks.done;
+        const delTotal = comp.deliveryTasks.total;
+        const delPct = comp.deliveryTasks.pct;
+
+        if (pmTotal === 0 && delTotal === 0) {
+          status = "skipped";
+          details = "No tasks scaffolded for this phase";
+        } else if ((pmTotal === 0 || pmDone === pmTotal) && (delTotal === 0 || delPct >= 80)) {
+          status = "done";
+          details = `PM: ${pmDone}/${pmTotal}, Delivery: ${delPct}%`;
+        } else {
+          status = "running";
+          details = `PM: ${pmDone}/${pmTotal}, Delivery: ${delPct}% (need 80%)`;
+        }
+      }
+    } catch {}
+    steps.push({
+      id: "delivery",
+      label: `${phaseLabel}Delivery Tasks`,
+      cycles: true,
+      status,
+      details,
+    });
+  }
+
+  // 7. KB Risk Check
+  {
+    let status: PipelineStep["status"] = "waiting";
+    let details: string | undefined;
+    try {
+      if (currentPhase && projectId) {
+        const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+        const comp = await getPhaseCompletion(projectId, currentPhase, agentId);
+        const kbBlockers = comp.blockers.filter((b) => b.startsWith("KB flag"));
+        if (currentPhaseArtefacts.length === 0) {
+          status = "waiting";
+        } else if (kbBlockers.length > 0) {
+          status = "failed";
+          details = `${kbBlockers.length} KB blocker${kbBlockers.length !== 1 ? "s" : ""} flagged`;
+        } else {
+          status = "done";
+          details = "No KB blockers";
+        }
+      }
+    } catch {}
+    steps.push({
+      id: "kb_check",
+      label: `${phaseLabel}KB Risk Check`,
+      cycles: true,
       status,
       details,
     });
@@ -361,7 +401,8 @@ export async function GET(
 
     steps.push({
       id: "gate",
-      label: "Phase Gate Approval",
+      label: `${phaseLabel}Phase Gate`,
+      cycles: true,
       status,
       startedAt: currentPhaseGate?.createdAt?.toISOString(),
       completedAt: currentPhaseGate?.resolvedAt?.toISOString() ?? undefined,
@@ -394,7 +435,8 @@ export async function GET(
 
     steps.push({
       id: "advance",
-      label: "Advance Phase",
+      label: `${phaseLabel}Advance to Next Phase`,
+      cycles: true,
       status,
       details,
     });
