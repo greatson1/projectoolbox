@@ -568,6 +568,14 @@ When reporting status, NEVER say a phase is "complete" or the project is "ready"
 Example of WRONG: "Setup phase complete — all foundational artefacts generated" (when no tasks are done)
 Example of RIGHT: "Setup phase planning is complete — 3 documents approved. However, 0 of 12 project tasks have been started. The actual project work still needs to happen."
 
+## RESEARCH IS A REAL ACTION — NOT JUST TALK
+NEVER say "I'm researching", "Let me research", "I'll research" without actually calling the **run_phase_research** tool.
+- If the user asks what research you've done and you haven't called the tool for this phase → answer honestly: "I haven't run research yet for this phase."
+- If the KB has no facts tagged with the current phase → CALL run_phase_research BEFORE claiming you've done any research.
+- The tool returns a report with facts count. Only claim research once you see that report.
+- When asked about research, check the KNOWLEDGE BASE section above — if items are missing, say so and call the tool.
+- Research is PHASE-SPECIFIC: each phase has different queries. Running research for Requirements does NOT cover Planning.
+
 ## PHASE ADVANCEMENT REQUIREMENTS — ENFORCED BY SYSTEM
 The phase gate system enforces THREE completion layers before any phase can advance:
 1. **Artefacts** — ALL artefacts in the current phase must be APPROVED (100%)
@@ -971,6 +979,20 @@ These are handled by the platform automatically. Just write normal text.
         required: ["title", "value", "source", "confidence", "reasoning", "affectedArtefacts"],
       },
     },
+    {
+      name: "run_phase_research",
+      description: "Trigger phase-specific research via Perplexity AI. Use when the current phase has no research yet in KB, or when the user asks you to research something specific for this phase. This runs real queries against the web and stores facts to KB. Do NOT claim you are researching unless you've called this tool.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          phase: {
+            type: "string",
+            description: "The phase name to research (e.g., 'PI Planning', 'Requirements', 'Design'). Defaults to the current active phase.",
+          },
+        },
+        required: [],
+      },
+    },
   ];
 
   /**
@@ -1228,6 +1250,50 @@ These are handled by the platform automatically. Just write normal text.
 
       try {
         emitStatus("thinking", "Analysing your message...");
+
+        // ── Auto-research trigger: if current phase has no KB research, fire it in background ──
+        // This ensures phases automatically get research when they become ACTIVE
+        // without the user having to ask. Fire-and-forget so it doesn't block the response.
+        if (deployment?.projectId && deployment.currentPhase) {
+          const phaseLC = deployment.currentPhase.toLowerCase();
+          const existingPhaseFacts = await db.knowledgeBaseItem.count({
+            where: {
+              projectId: deployment.projectId,
+              agentId,
+              tags: { hasSome: [phaseLC, "phase_research"] },
+            },
+          }).catch(() => 0);
+
+          if (existingPhaseFacts === 0) {
+            // No research yet for this phase — auto-trigger in background
+            import("@/lib/agents/feasibility-research").then(async ({ runPhaseResearch }) => {
+              try {
+                const research = await runPhaseResearch(agentId, deployment.projectId!, orgId, deployment.currentPhase!);
+                if (research.factsDiscovered > 0) {
+                  await db.chatMessage.create({
+                    data: {
+                      agentId,
+                      conversationId,
+                      role: "agent",
+                      content: "__RESEARCH_FINDINGS__",
+                      metadata: {
+                        type: "research_findings",
+                        projectName: project?.name || "Project",
+                        factsCount: research.factsDiscovered,
+                        sections: research.sections,
+                        facts: research.facts,
+                        phase: deployment.currentPhase,
+                        autoTriggered: true,
+                      } as any,
+                    },
+                  }).catch(() => {});
+                }
+              } catch (e) {
+                console.error("[chat/stream] auto-research failed:", e);
+              }
+            }).catch(() => {});
+          }
+        }
 
         // ── Phase 1: initial streaming call ───────────────────────────────
         const phase1Response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1524,6 +1590,67 @@ These are handled by the platform automatically. Just write normal text.
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, assumptionId: assId, message: "Assumption recorded. User can confirm or change it in the Knowledge Base." }) });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+              }
+
+            } else if (toolBlock.name === "run_phase_research") {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: { stage: "researching", detail: "Running phase research..." } })}\n\n`));
+              try {
+                const depForResearch = await db.agentDeployment.findFirst({
+                  where: { agentId, isActive: true },
+                  select: { projectId: true, currentPhase: true },
+                });
+                const targetPhase = toolBlock.input.phase || depForResearch?.currentPhase;
+                if (!depForResearch?.projectId || !targetPhase) {
+                  toolResults.push({
+                    type: "tool_result",
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify({ error: "No active deployment or phase found" }),
+                  });
+                } else {
+                  const { runPhaseResearch } = await import("@/lib/agents/feasibility-research");
+                  const research = await runPhaseResearch(agentId, depForResearch.projectId, orgId, targetPhase);
+
+                  // Post research findings card in chat
+                  if (research.factsDiscovered > 0) {
+                    await db.chatMessage.create({
+                      data: {
+                        agentId,
+                        conversationId,
+                        role: "agent",
+                        content: "__RESEARCH_FINDINGS__",
+                        metadata: {
+                          type: "research_findings",
+                          projectName: project?.name || "Project",
+                          factsCount: research.factsDiscovered,
+                          sections: research.sections,
+                          facts: research.facts,
+                          phase: targetPhase,
+                        } as any,
+                      },
+                    }).catch(() => {});
+                  }
+
+                  toolResults.push({
+                    type: "tool_result",
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify({
+                      success: true,
+                      phase: targetPhase,
+                      factsDiscovered: research.factsDiscovered,
+                      queriesRun: research.queries.length,
+                      summary: research.summary.slice(0, 500),
+                      message: research.factsDiscovered > 0
+                        ? `Research complete — ${research.factsDiscovered} facts stored to KB for ${targetPhase} phase.`
+                        : `Research skipped — KB already has coverage for ${targetPhase} phase topics.`,
+                    }),
+                  });
+                }
+              } catch (err: any) {
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: toolBlock.id,
+                  content: JSON.stringify({ error: `Phase research failed: ${err.message}` }),
+                });
               }
 
             } else {
