@@ -814,11 +814,32 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             {/* Recent activity queue */}
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Recent Activity</h3>
-              {(apiAgent?.activities || []).filter((a: any) => a.type !== "comms_reminder").length === 0 ? (
-                <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">No activity recorded yet</div>
-              ) : (
-                <div className="space-y-2">
-                  {(apiAgent?.activities || []).filter((a: any) => a.type !== "comms_reminder").slice(0, 5).map((a: any, i: number) => (
+              {(() => {
+                // Hide noisy background types + dedupe identical summaries within 1h window
+                const HIDDEN_TYPES = new Set(["comms_reminder", "monitoring", "chat", "autonomous_cycle", "system"]);
+                const raw = (apiAgent?.activities || []) as any[];
+                const filtered = raw.filter((a) => !HIDDEN_TYPES.has(a.type));
+                const deduped: any[] = [];
+                const seen = new Map<string, number>(); // key: summary → index in deduped
+                for (const a of filtered) {
+                  const key = `${a.type}:${(a.summary || "").trim()}`;
+                  const existingIdx = seen.get(key);
+                  if (existingIdx !== undefined) {
+                    const existing = deduped[existingIdx];
+                    const hourAgo = Date.now() - 60 * 60 * 1000;
+                    // If both within 1h window, skip the new one (keep most recent already at top)
+                    if (new Date(existing.createdAt).getTime() > hourAgo && new Date(a.createdAt).getTime() > hourAgo) {
+                      continue;
+                    }
+                  }
+                  seen.set(key, deduped.length);
+                  deduped.push(a);
+                }
+                if (deduped.length === 0) {
+                  return <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">No activity recorded yet</div>;
+                }
+                return <div className="space-y-2">
+                  {deduped.slice(0, 5).map((a: any, i: number) => (
                     <div key={i} className="flex items-start gap-2.5 rounded-lg bg-muted/40 px-3 py-2">
                       <div className="mt-1 size-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
                       <div className="min-w-0 flex-1">
@@ -828,8 +849,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
+                </div>;
+              })()}
             </Card>
 
             {/* Recent artefacts */}

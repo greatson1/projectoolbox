@@ -31,20 +31,45 @@ export async function GET(req: NextRequest) {
     ...(agentId && { agentId }),
   };
 
-  const [activities, total, agents] = await Promise.all([
+  // Types that are noisy or redundant — hide from the Activity feed by default.
+  // Activity entries are now only shown for actual ACTIONS (approvals, artefact edits,
+  // research runs, task changes, risks, meetings).
+  const HIDDEN_TYPES = ["comms_reminder", "monitoring", "chat", "autonomous_cycle", "system"];
+  const filterWhere = { ...where, type: { notIn: HIDDEN_TYPES } };
+
+  const [rawActivities, total, agents] = await Promise.all([
     db.agentActivity.findMany({
-      where,
+      where: filterWhere,
       include: { agent: { select: { id: true, name: true, gradient: true, status: true } } },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
-      take: limit,
+      take: limit * 2, // over-fetch so dedup doesn't leave us short
     }),
-    db.agentActivity.count({ where }),
+    db.agentActivity.count({ where: filterWhere }),
     db.agent.findMany({
       where: { orgId, status: { not: "DECOMMISSIONED" } },
       select: { id: true, name: true, gradient: true },
     }),
   ]);
+
+  // Dedupe: collapse identical (agent + type + summary) entries created within
+  // a 1-hour window. Keeps the most recent, drops repeats.
+  const seen = new Map<string, number>();
+  const deduped: typeof rawActivities = [];
+  for (const a of rawActivities) {
+    const key = `${a.agentId}:${a.type}:${(a.summary || "").trim()}`;
+    const existingIdx = seen.get(key);
+    if (existingIdx !== undefined) {
+      const existing = deduped[existingIdx];
+      const hourAgo = Date.now() - 60 * 60 * 1000;
+      if (existing.createdAt.getTime() > hourAgo && a.createdAt.getTime() > hourAgo) {
+        continue;
+      }
+    }
+    seen.set(key, deduped.length);
+    deduped.push(a);
+  }
+  const activities = deduped.slice(0, limit);
 
   // Stats — must match resolveFilterGroup() in the activity page
   const stats = {
