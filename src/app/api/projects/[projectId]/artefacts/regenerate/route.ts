@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { looksLikeFabricatedName } from "@/lib/agents/fabricated-names";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min for Claude regeneration
@@ -75,6 +76,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     },
   }).catch(() => ({ count: 0 }));
 
+  // Purge fabricated legacy data: stakeholders with invented personal names and
+  // any task.assigneeName values that look fabricated. This is a one-shot
+  // cleanup for projects that were seeded before the fabricated-name filter.
+  let stakeholdersCleaned = 0;
+  let assigneesCleaned = 0;
+  try {
+    const existingStakeholders = await db.stakeholder.findMany({
+      where: { projectId },
+      select: { id: true, name: true },
+    });
+    const toDelete = existingStakeholders.filter(s => looksLikeFabricatedName(s.name));
+    if (toDelete.length > 0) {
+      const del = await db.stakeholder.deleteMany({
+        where: { id: { in: toDelete.map(s => s.id) } },
+      });
+      stakeholdersCleaned = del.count;
+    }
+
+    const tasksWithAssignee = await db.task.findMany({
+      where: { projectId, assigneeName: { not: null } },
+      select: { id: true, assigneeName: true },
+    });
+    const taskIdsToClear = tasksWithAssignee
+      .filter(t => looksLikeFabricatedName(t.assigneeName))
+      .map(t => t.id);
+    if (taskIdsToClear.length > 0) {
+      const upd = await db.task.updateMany({
+        where: { id: { in: taskIdsToClear } },
+        data: { assigneeName: null, assigneeId: null },
+      });
+      assigneesCleaned = upd.count;
+    }
+  } catch (e) {
+    console.warn("[artefacts/regenerate] Fabricated-name cleanup failed:", e);
+  }
+
   // Trigger fresh generation with the updated prompt
   try {
     const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
@@ -84,7 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       data: {
         agentId: deployment.agentId,
         type: "document",
-        summary: `Regenerated ${result.generated} artefact(s) for ${targetPhase} with updated prompt — ${deleted.count} old drafts replaced, ${kbDeleted.count} stale extracted facts cleared.`,
+        summary: `Regenerated ${result.generated} artefact(s) for ${targetPhase} with updated prompt — ${deleted.count} old drafts replaced, ${kbDeleted.count} stale extracted facts cleared, ${stakeholdersCleaned} fabricated stakeholders removed, ${assigneesCleaned} fabricated task assignees cleared.`,
       },
     }).catch(() => {});
 
@@ -93,6 +130,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         ...result,
         draftsDeleted: deleted.count,
         extractedFactsCleared: kbDeleted.count,
+        stakeholdersCleaned,
+        assigneesCleaned,
       },
     });
   } catch (e: any) {

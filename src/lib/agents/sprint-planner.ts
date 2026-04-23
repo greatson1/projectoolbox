@@ -14,6 +14,7 @@
  */
 
 import { db } from "@/lib/db";
+import { looksLikeFabricatedName } from "./fabricated-names";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -324,6 +325,9 @@ function extractTeamMembers(stakeholders: any[]): TeamMember[] {
 
   return stakeholders
     .filter(s => {
+      // Drop stakeholders whose name looks like an LLM-fabricated personal name
+      // (e.g. "Sarah Johnson") so they don't leak into task.assigneeName.
+      if (looksLikeFabricatedName(s.name)) return false;
       const role = (s.role || s.organisation || "").toLowerCase();
       const stake = (s.stake || "").toLowerCase();
       return teamRoles.some(r => role.includes(r) || stake.includes(r))

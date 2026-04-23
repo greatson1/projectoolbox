@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { looksLikeFabricatedName } from "@/lib/agents/fabricated-names";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,11 @@ export async function GET(
 
   // Merge stakeholders with their workload
   // Match by: stakeholder.name === assigneeId (name-based assignment) or by id
-  const members = stakeholders.map(s => {
+  // Defensive filter: drop stakeholders whose name looks fabricated (e.g. old
+  // rows that pre-date the fabricated-name block in the seeder).
+  const members = stakeholders
+    .filter(s => !looksLikeFabricatedName(s.name))
+    .map(s => {
     const workload = workloadByAssignee.get(s.name) || workloadByAssignee.get(s.id) || {
       tasks: { total: 0, done: 0, inProgress: 0, todo: 0, blocked: 0 },
       hours: { estimated: 0, actual: 0 },
@@ -96,6 +101,8 @@ export async function GET(
   const unmatched: typeof members = [];
   for (const [assigneeId, workload] of workloadByAssignee.entries()) {
     if (!knownIds.has(assigneeId)) {
+      // Don't surface freeform assignees that look like fabricated names
+      if (looksLikeFabricatedName(assigneeId)) continue;
       const allocation = totalTasks > 0 ? Math.round((workload.tasks.total / totalTasks) * 100) : 0;
       unmatched.push({
         id: assigneeId,

@@ -19,6 +19,7 @@
  */
 
 import { db } from "@/lib/db";
+import { looksLikeFabricatedName } from "./fabricated-names";
 
 // ─── Public dispatcher ────────────────────────────────────────────────────────
 
@@ -575,7 +576,7 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
           progress,
           storyPoints,
           sprintId,
-          assigneeName: owner && owner !== "TBD" ? owner : null,
+          assigneeName: owner && owner !== "TBD" && !looksLikeFabricatedName(owner) ? owner : null,
           isCriticalPath: false,
           createdBy: `agent:${agentId}`,
           lastEditedBy: `agent:${agentId}`,
