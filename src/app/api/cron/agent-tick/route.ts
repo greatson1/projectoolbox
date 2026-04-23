@@ -77,24 +77,37 @@ export async function GET(req: NextRequest) {
       });
       for (const dep of stuckDeployments) {
         if (!dep.projectId) continue;
-        const artCount = await db.agentArtefact.count({ where: { projectId: dep.projectId, agentId: dep.agentId } });
-        if (artCount === 0) {
-          // Check if there's a real clarification session active
-          let hasSession = false;
-          try {
-            const { getActiveSession } = await import("@/lib/agents/clarification-session");
-            hasSession = !!(await getActiveSession(dep.agentId, dep.projectId));
-          } catch {}
-          if (!hasSession) {
-            // Unstick — set to "active" so Generate Artefacts button works
-            await db.agentDeployment.update({
-              where: { id: dep.id },
-              data: { phaseStatus: "active", lastCycleAt: new Date() },
-            });
-            await db.agentActivity.create({
-              data: { agentId: dep.agentId, type: "system", summary: `Self-heal: deployment was stuck in "${dep.phaseStatus}" for over 1 hour with no artefacts. Reset to active.` },
-            }).catch(() => {});
-          }
+        const [artCount, factCount] = await Promise.all([
+          db.agentArtefact.count({ where: { projectId: dep.projectId, agentId: dep.agentId } }),
+          db.knowledgeBaseItem.count({
+            where: {
+              agentId: dep.agentId,
+              projectId: dep.projectId,
+              trustLevel: "HIGH_TRUST",
+              tags: { has: "user_confirmed" },
+            },
+          }).catch(() => 0),
+        ]);
+        // Check if there's a real clarification session active
+        let hasSession = false;
+        try {
+          const { getActiveSession } = await import("@/lib/agents/clarification-session");
+          hasSession = !!(await getActiveSession(dep.agentId, dep.projectId));
+        } catch {}
+
+        // Unstick if: no session active AND (no artefacts OR user has answered questions)
+        const shouldUnstick = !hasSession && (artCount === 0 || factCount > 0);
+        if (shouldUnstick) {
+          await db.agentDeployment.update({
+            where: { id: dep.id },
+            data: { phaseStatus: "active", lastCycleAt: new Date() },
+          });
+          const reason = factCount > 0
+            ? `${factCount} user-confirmed facts exist — user has answered clarification but state was stuck in "${dep.phaseStatus}".`
+            : `no artefacts and no session — stuck in "${dep.phaseStatus}" for over 1 hour.`;
+          await db.agentActivity.create({
+            data: { agentId: dep.agentId, type: "system", summary: `Self-heal: ${reason} Reset to active.` },
+          }).catch(() => {});
         }
       }
     } catch (e) {

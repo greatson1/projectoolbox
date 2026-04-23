@@ -59,8 +59,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const deployment0 = await db.agentDeployment.findFirst({
       where: { agentId, isActive: true },
-      select: { projectId: true },
+      select: { id: true, projectId: true, phaseStatus: true },
     });
+
+    // ── Self-heal: detect stuck phaseStatus ──
+    // If phaseStatus is "awaiting_clarification" but there is NO active
+    // clarification session AND the user has already accumulated HIGH_TRUST
+    // facts in KB (meaning they answered the questions), unlock the state.
+    // This fixes agents that got stuck due to a failed completion handler.
+    if (deployment0?.projectId && deployment0.phaseStatus === "awaiting_clarification") {
+      const { getActiveSession } = await import("@/lib/agents/clarification-session");
+      const activeCheck = await getActiveSession(agentId, deployment0.projectId);
+      if (!activeCheck) {
+        const factCount = await db.knowledgeBaseItem.count({
+          where: {
+            agentId,
+            projectId: deployment0.projectId,
+            trustLevel: "HIGH_TRUST",
+            tags: { has: "user_confirmed" },
+          },
+        }).catch(() => 0);
+        if (factCount > 0) {
+          await db.agentDeployment.update({
+            where: { id: deployment0.id },
+            data: { phaseStatus: "active" },
+          }).catch(() => {});
+          await db.agentActivity.create({
+            data: {
+              agentId,
+              type: "system",
+              summary: `Self-heal: deployment was stuck in "awaiting_clarification" but ${factCount} confirmed facts exist. Unlocked to "active".`,
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+
     if (deployment0?.projectId) {
       const { getActiveSession } = await import("@/lib/agents/clarification-session");
       const activeSession = await getActiveSession(agentId, deployment0.projectId);
@@ -268,6 +302,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { user: { select: { name: true, email: true } } },
   }).catch(() => []);
 
+  // ── Clarification state: detect if the user has already completed a clarification session ──
+  // If so, tell Claude NOT to re-ask those questions — instead, reference the stored answers.
+  let clarificationCompleteHint = "";
+  try {
+    const userConfirmedFactCount = project?.id ? await db.knowledgeBaseItem.count({
+      where: {
+        agentId,
+        projectId: project.id,
+        trustLevel: "HIGH_TRUST",
+        tags: { has: "user_confirmed" },
+      },
+    }).catch(() => 0) : 0;
+    if (userConfirmedFactCount > 0) {
+      clarificationCompleteHint = `\n\n## ⚠️ CLARIFICATION ALREADY COMPLETE\nThe user has already answered clarification questions for this project. ${userConfirmedFactCount} confirmed facts are stored in the Knowledge Base (tagged "user_confirmed", trustLevel HIGH_TRUST). DO NOT re-ask questions the user has already answered. Instead, reference the stored answers and proceed to the next step (artefact generation, follow-up work, etc). If you need additional information beyond what was already gathered, ask a NEW specific question — never repeat the original clarification questions.\n`;
+    }
+  } catch {}
+
   const systemPrompt = `You are Agent ${agent.name}, an AI Project Manager deployed through Projectoolbox.
 ${agent.title ? `Your role: ${agent.title}.` : ""}
 ${domainTags.length > 0 ? `Your domain specialisations: ${domainTags.join(", ")}. Apply this expertise to all your recommendations, risk assessments, and artefact content.` : ""}
@@ -331,7 +382,7 @@ You must:
 - **Use your Knowledge Base research**: your KB contains feasibility research from Perplexity AI about this specific project type. Use those facts to give informed, evidence-based advice — not generic PM platitudes.
 - **Challenge the user constructively**: if the user's plan has gaps that your domain knowledge reveals (e.g. insufficient budget for the venue size, missing regulatory requirement), flag it proactively
 - **Speak the language of the domain**: use terminology appropriate to the field, not just generic PM terms
-
+${clarificationCompleteHint}
 ## PROJECT CONTEXT
 ${project ? `
 - **Name:** ${project.name}

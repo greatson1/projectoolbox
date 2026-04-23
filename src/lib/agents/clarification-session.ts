@@ -503,6 +503,28 @@ export async function answerQuestionInSession(
       },
     }).catch(() => {});
 
+    // ── CRITICAL: unlock phaseStatus BEFORE the async regeneration kicks off ──
+    // Previously this was inside the fire-and-forget IIFE; if any code path
+    // threw before reaching the update, phaseStatus stayed on "awaiting_clarification"
+    // indefinitely. Do this synchronously so the banner flips immediately.
+    try {
+      const deploymentSync = await db.agentDeployment.findFirst({
+        where: { agentId, isActive: true },
+        select: { id: true },
+      });
+      if (deploymentSync) {
+        await db.agentDeployment.update({
+          where: { id: deploymentSync.id },
+          data: {
+            phaseStatus: "active",
+            nextCycleAt: new Date(Date.now() + 10 * 60_000),
+          },
+        });
+      }
+    } catch (e) {
+      console.error("[clarification] failed to unlock phaseStatus:", e);
+    }
+
     // Auto-regenerate artefacts now that the KB is enriched with user answers.
     // The initial artefacts were generated with [TBC] markers; delete them so
     // generatePhaseArtefacts creates fresh versions using the real KB data.
@@ -513,12 +535,12 @@ export async function answerQuestionInSession(
           select: { id: true, projectId: true, currentPhase: true },
         });
         if (deployment?.projectId) {
-          // Unlock generation — set phaseStatus from "awaiting_clarification" to "active"
+          // Ensure phaseStatus is active (idempotent with sync update above)
           await db.agentDeployment.update({
             where: { id: deployment.id },
             data: {
               phaseStatus: "active",
-              nextCycleAt: new Date(Date.now() + 10 * 60_000), // Resume normal cycle
+              nextCycleAt: new Date(Date.now() + 10 * 60_000),
             },
           });
           // Log transition so UI surfaces (status bar, activity feed) pick it up
