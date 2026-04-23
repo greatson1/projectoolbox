@@ -150,6 +150,7 @@ model Organisation {
   automationRules  AutomationRule[]
   mlInsights       MLInsight[]
   projectEmbeddings ProjectEmbedding[]
+  sentimentHistory SentimentHistory[]
   globalHitlPolicy Json?               // org-level HITL governance overrides
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
@@ -319,6 +320,10 @@ model Approval {
   suggestedAlternatives Json?           // [{ description, impactScores, creditCost }]
   affectedItems       Json?             // [{ type: "task"|"risk"|"issue", id, title }]
   reviewLinks         ReviewLink[]
+  // Sentiment — extracted from comment/description
+  sentiment           String?           // positive, neutral, concerned, negative
+  sentimentScore      Float?            // -1 to 1
+  sentimentConfidence Float?            // 0 to 1
 }
 
 // ─── Project Modules ───
@@ -441,6 +446,8 @@ model Stakeholder {
   power        Int     @default(50)
   interest     Int     @default(50)
   sentiment    String?
+  sentimentScore Float?       // -1 to 1, refreshed automatically from activity
+  sentimentUpdatedAt DateTime?
   email        String?
 }
 
@@ -771,6 +778,9 @@ model AgentInboxMessage {
   processedAs String?             // "meeting", "calendar_event", "activity_log"
   linkedId    String?             // ID of the created meeting/event/etc
   metadata    Json?               // { attachmentCount, hasCalendar, etc }
+  // Sentiment
+  sentiment   String?             // positive, neutral, concerned, negative
+  sentimentScore Float?
   receivedAt  DateTime @default(now())
 
   @@index([orgId, agentId])
@@ -916,8 +926,31 @@ model CommsLog {
   content     String?  @db.Text
   status      String   @default("SENT")
   sentAt      DateTime @default(now())
+  // Sentiment
+  sentiment   String?  // positive, neutral, concerned, negative
+  sentimentScore Float?
+  // For inbound/reply sentiment
+  direction   String?  // OUTBOUND, INBOUND
 
   @@index([projectId])
+}
+
+// ─── Sentiment History (time series for trend analysis) ───
+
+model SentimentHistory {
+  id             String   @id @default(cuid())
+  orgId          String
+  org            Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  subjectType    String   // stakeholder, project, org, user
+  subjectId      String
+  sentiment      String   // positive, neutral, concerned, negative
+  score          Float    // -1 to 1
+  source         String   // approval, chat, email, meeting, manual
+  sourceRef      String?  // ID of the triggering record
+  createdAt      DateTime @default(now())
+
+  @@index([orgId, subjectType, subjectId, createdAt])
+  @@index([orgId, createdAt])
 }
 
 // ─── Agent Knowledge Base (Section 7.6) ───

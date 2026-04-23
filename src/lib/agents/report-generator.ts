@@ -34,6 +34,20 @@ export async function gatherProjectData(projectId: string) {
 
   if (!project) throw new Error("Project not found");
 
+  // Stakeholder sentiment snapshot — used for "Recent Sentiment" section
+  const stakeholdersForSentiment = await db.stakeholder.findMany({
+    where: { projectId },
+    select: { name: true, sentiment: true, sentimentScore: true, role: true },
+  });
+  const negativeCount = stakeholdersForSentiment.filter(s => s.sentiment === "negative").length;
+  const concernedCount = stakeholdersForSentiment.filter(s => s.sentiment === "concerned").length;
+  const stakeholderSentiment = {
+    negative: negativeCount,
+    concerned: concernedCount,
+    total: stakeholdersForSentiment.length,
+    at_risk: stakeholdersForSentiment.filter(s => s.sentiment === "negative" || s.sentiment === "concerned"),
+  };
+
   // Calculate metrics
   const totalTasks = tasks.length;
   const doneTasks = tasks.filter(t => t.status === "DONE").length;
@@ -89,6 +103,7 @@ export async function gatherProjectData(projectId: string) {
     pendingCRs: pendingCRs.slice(0, 5).map(cr => ({
       title: cr.title, status: cr.status, impact: cr.impact,
     })),
+    stakeholderSentiment,
   };
 }
 

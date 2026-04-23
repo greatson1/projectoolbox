@@ -31,6 +31,8 @@ const TRIGGERS = [
   { value: "artefact_generated", label: "Artefact generated" },
   { value: "agent_needs_input", label: "Agent needs user input" },
   { value: "approval_pending", label: "New approval pending" },
+  { value: "stakeholder_sentiment_dropped", label: "Stakeholder sentiment dropped" },
+  { value: "negative_sentiment_detected", label: "Negative sentiment detected" },
 ] as const;
 
 const ACTIONS = [

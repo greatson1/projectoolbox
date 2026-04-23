@@ -29,9 +29,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // Save user message
-  await db.chatMessage.create({
+  const savedUserMsg = await db.chatMessage.create({
     data: { agentId, conversationId, role: "user", content: message },
+    select: { id: true },
   });
+
+  // ── Sentiment extraction (non-blocking, cheap Haiku) ──
+  if (message.length > 10) {
+    (async () => {
+      const a = await db.agent.findUnique({ where: { id: agentId }, select: { orgId: true } });
+      if (!a) return;
+      const { recordSentiment } = await import("@/lib/sentiment/recorder");
+      await recordSentiment({
+        orgId: a.orgId,
+        text: message,
+        subjectType: "chat",
+        subjectId: savedUserMsg.id,
+        context: "user chat message to agent",
+      });
+    })().catch(() => {});
+  }
 
   // ── Clarification session guard ───────────────────────────────────────────────
   // If an active clarification session exists, messages in the chat stream are

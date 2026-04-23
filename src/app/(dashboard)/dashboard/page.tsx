@@ -16,6 +16,7 @@ import {
   TrendingUp, ArrowRight, Bot, Zap, Activity, Clock,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine, BarChart, Bar } from "recharts";
+import { SentimentPulseWidget } from "@/components/ml/SentimentPulseWidget";
 
 // No mock data — all from API
 
@@ -632,6 +633,9 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Stakeholder Sentiment Pulse */}
+          <SentimentPulseWidget />
 
           {/* Activity Feed */}
           <Card className="px-5">

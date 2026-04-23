@@ -57,6 +57,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  // ── Sentiment extraction on comment (non-blocking) ──
+  const sessionOrgId = (session.user as any).orgId;
+  if (comment && comment.trim().length > 3 && sessionOrgId) {
+    import("@/lib/sentiment/recorder").then(({ recordSentiment }) => {
+      recordSentiment({
+        orgId: sessionOrgId,
+        text: comment,
+        subjectType: "approval",
+        subjectId: id,
+        context: `approval ${action} comment for "${approval.title}"`,
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+
   // ── Rejection/Changes workflow: notify agent and trigger revision ──
   if ((action === "reject" || action === "request_changes") && approval.requestedById) {
     try {

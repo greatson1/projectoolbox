@@ -64,7 +64,7 @@ export async function dispatchNotification(
     if (config.notifEmail) {
       const emails = admins.map(a => a.email).filter(Boolean) as string[];
       if (emails.length > 0) {
-        sendEmail(emails, payload).catch(e =>
+        sendEmail(emails, payload, orgId).catch(e =>
           console.error("[notification-channels] email failed:", e)
         );
       }
@@ -94,7 +94,7 @@ export async function dispatchNotification(
 
 // ─── Email via Resend ────────────────────────────────────────────────────────
 
-async function sendEmail(recipients: string[], payload: NotificationPayload): Promise<void> {
+async function sendEmail(recipients: string[], payload: NotificationPayload, orgId?: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY || process.env.RESEND_API_KEY_PROJECTOOLBOX;
   if (!apiKey) return;
 
@@ -103,7 +103,23 @@ async function sendEmail(recipients: string[], payload: NotificationPayload): Pr
     : payload.urgency === "medium" ? "🟡"
     : "";
 
-  const html = `
+  // Sentiment-aware tone hint — check if the primary recipient is a stakeholder
+  // with recent negative/concerned sentiment, and inject an HTML comment so
+  // future LLM-based comms drafters can soften the tone.
+  let toneHint = "";
+  if (orgId && recipients[0]) {
+    try {
+      const recipientStakeholder = await db.stakeholder.findFirst({
+        where: { email: recipients[0], project: { orgId } },
+        select: { sentiment: true, name: true },
+      });
+      if (recipientStakeholder?.sentiment === "negative" || recipientStakeholder?.sentiment === "concerned") {
+        toneHint = `\n\n<!-- Note: Recipient ${recipientStakeholder.name} has recent ${recipientStakeholder.sentiment} sentiment. Agent should use a conciliatory, careful tone. -->`;
+      }
+    } catch {}
+  }
+
+  const html = `${toneHint}
     <div style="font-family: 'Segoe UI', Calibri, Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="background: linear-gradient(135deg, #1e3a5f, #4f46e5); padding: 24px 32px; border-radius: 12px 12px 0 0;">
         <h1 style="color: white; font-size: 18px; margin: 0;">Projectoolbox</h1>
