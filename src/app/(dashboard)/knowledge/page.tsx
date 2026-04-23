@@ -267,17 +267,36 @@ export default function KnowledgeBasePage() {
                 </Button>
               </div>
             ) : (
-              filtered.map(item => {
+              // Sort raw research docs to the top, then by recency
+              filtered
+                .slice()
+                .sort((a, b) => {
+                  const aRaw = (a.tags || []).some((t: string) => t === "raw_research" || t === "phase_research" || t === "feasibility") && (a.content || "").length > 500;
+                  const bRaw = (b.tags || []).some((t: string) => t === "raw_research" || t === "phase_research" || t === "feasibility") && (b.content || "").length > 500;
+                  if (aRaw && !bRaw) return -1;
+                  if (!aRaw && bRaw) return 1;
+                  return 0;
+                })
+                .map(item => {
                 const typeConfig = TYPE_ICONS[item.type] || TYPE_ICONS.TEXT;
                 const Icon = typeConfig.icon;
                 const isActive = selectedId === item.id;
+                const contentLen = (item.content || "").length;
+                const isRawResearch = (item.tags || []).some((t: string) => t === "raw_research" || t === "phase_research") && contentLen > 500;
+                const isFact = contentLen < 300 && (item.tags || []).includes("research");
                 return (
                   <button key={item.id}
                     onClick={() => { setSelectedId(item.id); setEditing(false); setEditContent(item.content); setEditTitle(item.title); }}
-                    className={`w-full text-left px-3 py-2.5 border-b border-border/20 hover:bg-muted/30 transition-colors ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""}`}>
+                    className={`w-full text-left px-3 py-2.5 border-b border-border/20 hover:bg-muted/30 transition-colors ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""} ${isRawResearch ? "bg-primary/[0.03]" : ""}`}>
                     <div className="flex items-center gap-2">
                       <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: typeConfig.color }} />
                       <span className="text-xs font-medium truncate flex-1">{item.title}</span>
+                      {isRawResearch && (
+                        <span className="text-[8px] px-1 py-0 rounded bg-primary/15 text-primary font-bold flex-shrink-0" title="Full research document">RESEARCH</span>
+                      )}
+                      {isFact && (
+                        <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground flex-shrink-0" title="Extracted atomic fact">FACT</span>
+                      )}
                       {item.confidential && <Shield className="w-3 h-3 text-destructive flex-shrink-0" />}
                       <span className={`text-[9px] flex-shrink-0 ${TRUST_COLORS[item.trustLevel] || ""}`}>
                         {item.trustLevel === "HIGH_TRUST" ? "H" : item.trustLevel === "REFERENCE_ONLY" ? "R" : ""}
@@ -287,6 +306,9 @@ export default function KnowledgeBasePage() {
                       <p className="text-[10px] text-muted-foreground truncate flex-1">
                         {(item.content || "").slice(0, 55)}
                       </p>
+                      <span className="text-[9px] text-muted-foreground/60 flex-shrink-0">
+                        {contentLen > 999 ? `${(contentLen/1000).toFixed(1)}k` : `${contentLen}`} chars
+                      </span>
                     </div>
                   </button>
                 );
