@@ -27,24 +27,22 @@ type PackId = "pack_500" | "pack_2000" | "pack_5000" | "pack_10000";
  * Per-currency price ID lookup.
  *
  * Env var convention:
- *   STRIPE_PRICE_<PLAN>                  → GBP (legacy, kept as default)
- *   STRIPE_PRICE_<PLAN>_USD              → USD
- *   STRIPE_PRICE_<PLAN>_EUR              → EUR
+ *   STRIPE_PRICE_<PLAN>_GBP  / _USD / _EUR   — preferred, per-currency price
+ *   STRIPE_PRICE_<PLAN>                      — legacy fallback (historically USD)
  *
- * If the currency-specific env var is not set we fall back to the GBP one so
- * existing deployments keep working unchanged.
+ * If the currency-specific env var is not set we fall back to the legacy one.
+ * Callers must check the returned ID is non-empty — empty means no Stripe
+ * price is configured for that currency (UI should disable checkout).
  */
 function envPlan(plan: PlanId, currency: CurrencyCode): string {
-  const suffix = currency === "GBP" ? "" : `_${currency}`;
-  const specific = process.env[`STRIPE_PRICE_${plan}${suffix}`];
+  const specific = process.env[`STRIPE_PRICE_${plan}_${currency}`];
   const fallback = process.env[`STRIPE_PRICE_${plan}`];
   return specific || fallback || "";
 }
 
 function envPack(pack: PackId, currency: CurrencyCode): string {
-  const suffix = currency === "GBP" ? "" : `_${currency}`;
   const num = pack.replace("pack_", "");
-  const specific = process.env[`STRIPE_PRICE_CREDITS_${num}${suffix}`];
+  const specific = process.env[`STRIPE_PRICE_CREDITS_${num}_${currency}`];
   const fallback = process.env[`STRIPE_PRICE_CREDITS_${num}`];
   return specific || fallback || "";
 }
