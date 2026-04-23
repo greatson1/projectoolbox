@@ -15,6 +15,7 @@ import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
 import { AgentQuestionCard, ProjectStatusCard } from "@/components/agents/AgentResponseCards";
 import { ResearchFindingsCard } from "@/components/agents/ResearchFindingsCard";
+import { SentimentFeedback } from "@/components/ml/SentimentFeedback";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -89,10 +90,25 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
   if (isKickoff) return null;
 
   if (msg.role === "user") {
+    const msgSentiment = (msg as any).data?.sentiment || ((msg as any).metadata as any)?.sentiment;
+    const msgSentimentConf = (msg as any).data?.sentimentConfidence || ((msg as any).metadata as any)?.sentimentConfidence;
     return (
       <div className="flex justify-end gap-2">
-        <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-br-md bg-primary text-primary-foreground text-sm leading-relaxed whitespace-pre-line">
-          {content}
+        <div className="max-w-[70%] flex flex-col items-end">
+          <div className="px-4 py-3 rounded-2xl rounded-br-md bg-primary text-primary-foreground text-sm leading-relaxed whitespace-pre-line">
+            {content}
+          </div>
+          {msgSentiment && content.length > 20 && (
+            <div className="mt-1 opacity-70 hover:opacity-100 transition-opacity">
+              <SentimentFeedback
+                sourceType="chat"
+                sourceId={msg.id}
+                sentiment={msgSentiment}
+                confidence={msgSentimentConf}
+                compact
+              />
+            </div>
+          )}
         </div>
       </div>
     );

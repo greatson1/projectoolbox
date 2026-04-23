@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { MLProbabilityBadge, useMLPrediction } from "@/components/ml/MLInsightBadge";
+import { SentimentFeedback } from "@/components/ml/SentimentFeedback";
 
-function ApprovalLikelihoodRow({ type, urgency }: { type: string; urgency?: string | null }) {
-  const { data } = useMLPrediction<any>("approval_likelihood", { type, urgency: urgency || undefined }, !!type);
+function ApprovalLikelihoodRow({ type, urgency, projectId }: { type: string; urgency?: string | null; projectId?: string }) {
+  const { data } = useMLPrediction<any>("approval_likelihood", { type, urgency: urgency || undefined, projectId }, !!type);
   if (!data) return null;
   return (
     <MLProbabilityBadge
@@ -306,7 +307,16 @@ export default function ApprovalsPage() {
                       <span>·</span>
                       <span>{timeAgo(item.createdAt)}</span>
                       {item.iteration > 1 && <Badge variant="outline" className="text-[9px]">Iteration {item.iteration}</Badge>}
-                      <ApprovalLikelihoodRow type={item.type} urgency={item.urgency} />
+                      <ApprovalLikelihoodRow type={item.type} urgency={item.urgency} projectId={item.projectId || item.project?.id} />
+                      {item.sentiment && item.comment && (
+                        <SentimentFeedback
+                          sourceType="approval"
+                          sourceId={item.id}
+                          sentiment={item.sentiment}
+                          confidence={item.sentimentConfidence}
+                          compact
+                        />
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
