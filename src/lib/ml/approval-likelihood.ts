@@ -149,7 +149,9 @@ export async function predictApprovalLikelihood(
     }
   } catch { /* non-fatal — sentiment is a nice-to-have signal */ }
 
-  probability = probability + sentimentAdjust + 0.10 * overallRate; // absorb the 0.10 reserved weight into baseline if no sentiment
+  // If sentiment fired, sentimentAdjust consumes the reserved 0.10 weight.
+  // Otherwise, fold that 0.10 back into the overall-rate baseline so the total remains 1.00.
+  probability = probability + (sentimentAdjust !== 0 ? sentimentAdjust : 0.10 * overallRate);
 
   // Confidence scales with sample size, capped at 1.0 by 50 samples
   const confidence = Math.min(1, history.length / 50);

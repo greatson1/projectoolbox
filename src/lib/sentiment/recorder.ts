@@ -100,6 +100,18 @@ export async function recordSentiment(args: RecordSentimentArgs): Promise<Record
     }).catch(() => {});
   }
 
+  // 4. If this signal is about a stakeholder, refresh their rolling sentiment +
+  //    sync to Knowledge Base so the agent sees it in its memory. Fire-and-forget.
+  const stakeholderId =
+    args.subjectType === "stakeholder" ? args.subjectId
+    : args.associatedSubjectType === "stakeholder" ? args.associatedSubjectId
+    : undefined;
+  if (stakeholderId) {
+    import("./stakeholder-updater")
+      .then(({ refreshStakeholderSentiment }) => refreshStakeholderSentiment(stakeholderId))
+      .catch((e) => console.error("[sentiment-recorder] stakeholder refresh failed:", e));
+  }
+
   return { ...result, historyId };
 }
 
