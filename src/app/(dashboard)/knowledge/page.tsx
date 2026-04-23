@@ -499,6 +499,7 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
   const [confidential, setConfidential] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [scope, setScope]         = useState<"PROJECT" | "WORKSPACE">("PROJECT");
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -519,6 +520,7 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
             title: title.trim() || hostname,
             sourceUrl: normalizedUrl,
             content: content.trim() || undefined, // optional user notes
+            layer: scope,
           }),
         });
         const data = await res.json();
@@ -531,6 +533,7 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
         form.append("file", selectedFile);
         form.append("type", "document");
         form.append("title", title.trim() || selectedFile.name);
+        form.append("layer", scope);
         const res = await fetch(`/api/agents/${agentId}/ingest`, {
           method: "POST",
           body: form,
@@ -552,6 +555,7 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
             trustLevel,
             confidential,
             tags: tags.split(",").map(t => t.trim()).filter(Boolean),
+            layer: scope,
           }),
         });
       }
@@ -626,6 +630,31 @@ function AddKnowledgeModal({ agentId, onClose }: { agentId: string; onClose: () 
                 placeholder={tab === "url" ? "Optional notes to add alongside the AI summary..." : "Write in Markdown..."}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y font-mono" />
             )}
+
+            {/* Scope selector — who can see this knowledge */}
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 block">
+                Who can use this knowledge?
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setScope("PROJECT")}
+                  className={`text-left p-2.5 rounded-lg border transition-all ${scope === "PROJECT" ? "border-primary bg-primary/5" : "border-border hover:border-border/80"}`}>
+                  <p className="text-xs font-semibold flex items-center gap-1.5">
+                    <span className={scope === "PROJECT" ? "text-primary" : "text-muted-foreground"}>●</span>
+                    This project only
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 pl-4">The selected agent only</p>
+                </button>
+                <button type="button" onClick={() => setScope("WORKSPACE")}
+                  className={`text-left p-2.5 rounded-lg border transition-all ${scope === "WORKSPACE" ? "border-primary bg-primary/5" : "border-border hover:border-border/80"}`}>
+                  <p className="text-xs font-semibold flex items-center gap-1.5">
+                    <span className={scope === "WORKSPACE" ? "text-primary" : "text-muted-foreground"}>●</span>
+                    Shared across org
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 pl-4">All agents, all projects</p>
+                </button>
+              </div>
+            </div>
 
             <select value={trustLevel} onChange={e => setTrustLevel(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none">
