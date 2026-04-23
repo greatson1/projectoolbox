@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,12 +42,10 @@ const STATUS_LABEL: Record<BenefitStatus, string> = {
   NOT_STARTED: "Not Started",
 };
 
-function formatCurrency(v: number) {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(v);
-}
-
 export default function BenefitsPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const currency = useOrgCurrency();
+  const formatCurrency = (v: number) => formatMoney(v, currency);
   const [benefits, setBenefits] = useState<Benefit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);

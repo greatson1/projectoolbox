@@ -124,6 +124,7 @@ model Organisation {
   companySize      String?
   website          String?
   timezone         String              @default("Europe/London")
+  currency         String              @default("GBP") // GBP | USD | EUR — display + Stripe plan selection
   billingEmail     String?
   logoUrl          String?
   plan             PlanTier            @default(FREE)

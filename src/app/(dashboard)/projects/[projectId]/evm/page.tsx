@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney, currencySymbol } from "@/lib/currency";
 import {
   AreaChart,
   Area,
@@ -59,13 +61,10 @@ interface EVMData {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function fmt(v: number | null | undefined): string {
-  if (v === null || v === undefined || isNaN(v)) return "N/A";
-  const abs = Math.abs(v);
-  const sign = v < 0 ? "−" : "";
-  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000)     return `${sign}£${(abs / 1_000).toFixed(0)}K`;
-  return `${sign}£${abs.toLocaleString("en-GB")}`;
+// Shared compact formatter factory (the component reads its own currency).
+function makeFmt(currency: string) {
+  return (v: number | null | undefined) =>
+    v === null || v === undefined || isNaN(v) ? "N/A" : formatMoney(v, currency, { compact: true });
 }
 
 function fmtRatio(v: number | null | undefined): string {
@@ -214,6 +213,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label }: any) {
+  const currency = useOrgCurrency();
+  const fmt = makeFmt(currency);
   if (!active || !payload?.length) return null;
   return (
     <div
@@ -249,6 +250,8 @@ interface ScenarioProps {
 }
 
 function ScenarioCard({ label, value, desc, accentColor, eac, bac }: ScenarioProps) {
+  const currency = useOrgCurrency();
+  const fmt = makeFmt(currency);
   const overrun = eac !== null && eac !== undefined && bac !== null && bac !== undefined && !isNaN(eac) && !isNaN(bac)
     ? eac - bac
     : null;
@@ -284,6 +287,8 @@ function ScenarioCard({ label, value, desc, accentColor, eac, bac }: ScenarioPro
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function EVMDashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const currency = useOrgCurrency();
+  const fmt = makeFmt(currency);
   const [data, setData]       = useState<EVMData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -673,10 +678,11 @@ export default function EVMDashboardPage() {
                 tick={{ fill: T.muted, fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
-                tickFormatter={(v: number) =>
-                  v >= 1_000_000 ? `£${(v / 1_000_000).toFixed(1)}M` :
-                  v >= 1_000     ? `£${(v / 1_000).toFixed(0)}K` : `£${v}`
-                }
+                tickFormatter={(v: number) => {
+                  const sym = currencySymbol(currency);
+                  return v >= 1_000_000 ? `${sym}${(v / 1_000_000).toFixed(1)}M` :
+                    v >= 1_000 ? `${sym}${(v / 1_000).toFixed(0)}K` : `${sym}${v}`;
+                }}
               />
               <Tooltip content={<ChartTooltip />} />
               <Legend

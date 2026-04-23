@@ -4,21 +4,14 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useProject, useProjectMetrics } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PoundSterling, Plus, ArrowUpRight, ArrowDownRight, Download } from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
-
-function fmt(v: number | null | undefined): string {
-  if (v === null || v === undefined || isNaN(v)) return "—";
-  const abs = Math.abs(v);
-  const sign = v < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}K`;
-  return `${sign}£${abs.toLocaleString("en-GB")}`;
-}
 
 function fmtIndex(v: number | null | undefined): string {
   if (v === null || v === undefined || isNaN(v)) return "N/A";
@@ -47,6 +40,8 @@ export default function CostManagementPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: project, isLoading } = useProject(projectId);
   const { data: metrics } = useProjectMetrics(projectId);
+  const currency = useOrgCurrency();
+  const fmt = (v: number | null | undefined) => formatMoney(v, currency, { compact: true });
   const [costs, setCosts] = useState<CostEntry[]>([]);
   const [byCategory, setByCategory] = useState<Record<string, CostSummary>>({});
   const [costSummary, setCostSummary] = useState<CostSummary>({ estimated: 0, actual: 0, committed: 0 });

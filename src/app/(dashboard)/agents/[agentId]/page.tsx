@@ -4,6 +4,8 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest, useAgentMetrics } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { Skeleton } from "@/components/ui/skeleton";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -143,6 +145,8 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") || "overview";
   const { data: apiAgent, isLoading } = useAgent(agentId);
+  const currency = useOrgCurrency();
+  const money = (n: number) => formatMoney(n, currency);
 
   const projectId = apiAgent?.deployments?.[0]?.projectId || null;
   const { data: pmTasks } = usePMTasks(projectId);
@@ -1731,7 +1735,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   <>
                     <LimitRow label="Used this month" value={String(agentMetrics?.creditsUsedThisMonth ?? 0)} unit="credits" />
                     <LimitRow label="Total credits used" value={String(apiAgent?.creditsUsed ?? 0)} unit="credits" />
-                    <LimitRow label="HITL budget threshold" value={`£${((apiAgent?.deployments?.[0] as any)?.config?.hitlBudgetThreshold || (apiAgent?.deployments?.[0] as any)?.config?.hitleBudgetThreshold || "500").toLocaleString()}`} unit="" />
+                    <LimitRow label="HITL budget threshold" value={money(Number((apiAgent?.deployments?.[0] as any)?.config?.hitlBudgetThreshold || (apiAgent?.deployments?.[0] as any)?.config?.hitleBudgetThreshold || 500))} unit="" />
                     <p className="text-[10px] text-muted-foreground">No monthly budget cap set. Set one in agent configuration.</p>
                   </>
                 )}
@@ -1745,7 +1749,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   const cfg = (apiAgent?.deployments?.[0] as any)?.config || {};
                   return [
                     { label: "Phase gate approvals", value: cfg.hitlPhaseGates !== false ? "Required" : "Disabled", enabled: cfg.hitlPhaseGates !== false },
-                    { label: "Budget threshold", value: cfg.hitlBudgetThreshold ? `£${Number(cfg.hitlBudgetThreshold).toLocaleString()}` : cfg.hitleBudgetThreshold ? `£${Number(cfg.hitleBudgetThreshold).toLocaleString()}` : "£500", enabled: true },
+                    { label: "Budget threshold", value: money(Number(cfg.hitlBudgetThreshold || cfg.hitleBudgetThreshold || 500)), enabled: true },
                     { label: "Risk escalation level", value: cfg.hitlRiskThreshold || "high", enabled: true },
                     { label: "External comms approval", value: "Always required", enabled: true },
                   ].map((r) => (

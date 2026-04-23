@@ -5,6 +5,8 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useCreateProject, useCreateAgent, useDeployAgent, useCredits } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney, currencySymbol, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { toast } from "sonner";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +41,7 @@ interface PhaseGate {
 interface WizardState {
   // Step 1
   projectName: string; description: string; client: string;
-  startDate: string; endDate: string; budget: string;
+  startDate: string; endDate: string; budget: string; currency: string;
   priority: Priority; category: Category;
   // Step 2
   methodology: string;
@@ -61,7 +63,7 @@ interface WizardState {
 
 const INIT_STATE: WizardState = {
   projectName: "", description: "", client: "", startDate: "", endDate: "",
-  budget: "", priority: "medium", category: "other",
+  budget: "", currency: "GBP", priority: "medium", category: "other",
   methodology: "",
   phases: [], hitlePhaseGates: true, hitleBudgetThreshold: "",
   hitleCommsApproval: true, hitleRiskThreshold: "high", escalationTimeout: "24",
@@ -258,10 +260,19 @@ export default function ProjectWizardPage() {
   const [step, setStep] = useState(0);
   const { data: creditsData } = useCredits();
   const creditBalance = creditsData?.balance ?? creditsData?.creditBalance ?? null;
-  const [data, setData] = useState<WizardState>(INIT_STATE);
+  const orgCurrency = useOrgCurrency();
+  const [data, setData] = useState<WizardState>({ ...INIT_STATE, currency: orgCurrency });
   const [deploying, setDeploying] = useState(false);
   const [deployStage, setDeployStage] = useState(0);
   const [deployed, setDeployed] = useState(false);
+
+  useEffect(() => {
+    // Once the org currency resolves, seed the wizard with it (user can still change).
+    setData(prev => (prev.currency === orgCurrency ? prev : { ...prev, currency: orgCurrency }));
+  }, [orgCurrency]);
+
+  const money = (n: number) => formatMoney(n, data.currency || orgCurrency);
+  const sym = currencySymbol(data.currency || orgCurrency);
 
   const upd = (patch: Partial<WizardState>) => setData(prev => ({ ...prev, ...patch }));
   const g = GRADIENT_PRESETS[data.agentGradient];
@@ -371,6 +382,18 @@ export default function ProjectWizardPage() {
     try {
       // Stage 0: Initialising
       await advanceStage(0);
+
+      // If the wizard currency differs from the org default, persist it so
+      // every page renders the chosen currency consistently.
+      if (data.currency && data.currency !== orgCurrency) {
+        try {
+          await fetch("/api/me/currency", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ currency: data.currency }),
+          });
+        } catch {}
+      }
 
       // Stage 1: Create project
       await advanceStage(1);
@@ -578,8 +601,14 @@ export default function ProjectWizardPage() {
                 </FieldGroup>
                 <FieldGroup label="Budget">
                   <div className="flex gap-2">
-                    <select className="px-2 py-2 rounded-lg text-sm bg-card border border-border/30 text-foreground w-16" defaultValue="GBP">
-                      <option value="GBP">£</option><option value="USD">$</option><option value="EUR">€</option>
+                    <select
+                      className="px-2 py-2 rounded-lg text-sm bg-card border border-border/30 text-foreground w-16"
+                      value={data.currency}
+                      onChange={e => upd({ currency: e.target.value })}
+                    >
+                      {SUPPORTED_CURRENCIES.map(c => (
+                        <option key={c} value={c}>{currencySymbol(c)}</option>
+                      ))}
                     </select>
                     <StyledInput type="number" value={data.budget} onChange={v => upd({ budget: v })} placeholder="250000" />
                   </div>
@@ -625,7 +654,7 @@ export default function ProjectWizardPage() {
                       : null;
                     const signals: string[] = [];
                     if (data.category && data.category !== "other") signals.push(`${data.category} project`);
-                    if (budget > 0) signals.push(`£${budget.toLocaleString()} budget`);
+                    if (budget > 0) signals.push(`${money(budget)} budget`);
                     if (durationDays) signals.push(`${durationDays}-day timeline`);
                     const methodName = METHODOLOGIES.find(m => m.id === recommended)?.name || recommended;
                     const reasons: Record<string, string> = {
@@ -685,7 +714,7 @@ export default function ProjectWizardPage() {
                           : null;
                         const signals: string[] = [];
                         if (data.category && data.category !== "other") signals.push(`${data.category} project type`);
-                        if (budget > 0) signals.push(`£${budget.toLocaleString()} budget`);
+                        if (budget > 0) signals.push(`${money(budget)} budget`);
                         if (durationDays) signals.push(`${durationDays}-day timeline`);
                         const signalStr = signals.length > 0 ? `Based on your ${signals.join(", ")}: ` : "";
                         if (data.methodology === recommended) {
@@ -898,7 +927,7 @@ export default function ProjectWizardPage() {
                 <FieldGroup label="Budget threshold (£)">
                   <StyledInput value={data.hitleBudgetThreshold || autoThreshold} onChange={v => upd({ hitleBudgetThreshold: v })} placeholder={autoThreshold || "e.g. 500"} />
                   <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
-                    {autoThreshold ? `Auto-set to 10% of budget (£${Number(autoThreshold).toLocaleString()})` : "Approve spend above this amount"}
+                    {autoThreshold ? `Auto-set to 10% of budget (${money(Number(autoThreshold))})` : "Approve spend above this amount"}
                   </p>
                 </FieldGroup>
                 <FieldGroup label="Risk escalation threshold">
@@ -1251,7 +1280,7 @@ export default function ProjectWizardPage() {
                 ["Name", data.projectName || "—"],
                 ["Client", data.client || "—"],
                 ["Dates", `${data.startDate} → ${data.endDate}`],
-                ["Budget", `£${Number(data.budget).toLocaleString()}`],
+                ["Budget", money(Number(data.budget || 0))],
                 ["Priority", data.priority],
                 ["Category", data.category],
               ]} />
@@ -1259,7 +1288,7 @@ export default function ProjectWizardPage() {
                 ["Framework", METHODOLOGIES.find(m => m.id === data.methodology)?.name || "—"],
                 ["Phases", `${data.phases.length} phases`],
                 ["HITL Gates", data.hitlePhaseGates ? "Enabled" : "Disabled"],
-                ["Budget Threshold", `£${Number(data.hitleBudgetThreshold).toLocaleString()}`],
+                ["Budget Threshold", money(Number(data.hitleBudgetThreshold || 0))],
                 ["Escalation", `${data.escalationTimeout}h timeout`],
               ]} />
               <SummaryCard title="Team" items={[

@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useBilling } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney, taxNote } from "@/lib/currency";
 import { useSession } from "next-auth/react";
 import { cn, PLAN_LIMITS } from "@/lib/utils";
 import { toast } from "sonner";
@@ -127,6 +129,8 @@ export default function BillingPage() {
   const sessionResult = useSession();
   const userEmail = (sessionResult as any)?.data?.user?.email ?? "";
   const orgName = (sessionResult as any)?.data?.user?.orgName ?? (sessionResult as any)?.data?.user?.name ?? "";
+  const currency = useOrgCurrency();
+  const money = (n: number | null | undefined, opts?: { decimals?: 0 | 2 }) => formatMoney(n, currency, opts);
   usePageTitle("Billing");
   const [topupCustom, setTopupCustom] = useState(500);
   const [autoTopup, setAutoTopup] = useState(false);
@@ -206,7 +210,7 @@ export default function BillingPage() {
             <h2 className="text-2xl font-bold text-foreground">{plan}</h2>
             <p className="text-muted-foreground mt-0.5">
               <span className="text-3xl font-bold text-primary">
-                {price === 0 ? "Free" : `$${price}`}
+                {price === 0 ? "Free" : money(price)}
               </span>
               {price > 0 && <span className="text-sm">/month</span>}
             </p>
@@ -265,7 +269,7 @@ export default function BillingPage() {
                   <h4 className="text-lg font-bold text-foreground">{p.name}</h4>
                   <div className="mb-4">
                     <span className="text-2xl font-bold text-primary">
-                      {p.id === "ENTERPRISE" ? "From " : ""}{p.price === 0 ? "Free" : `$${p.price}`}
+                      {p.id === "ENTERPRISE" ? "From " : ""}{p.price === 0 ? "Free" : money(p.price)}
                     </span>
                     {p.price > 0 && <span className="text-xs text-muted-foreground">/month</span>}
                   </div>
@@ -320,7 +324,7 @@ export default function BillingPage() {
                 )}
                 <p className="text-2xl font-bold mt-1 text-foreground">{b.credits.toLocaleString()}</p>
                 <p className="text-[11px] text-muted-foreground">credits</p>
-                <p className="text-lg font-bold mt-2 text-primary">${b.price}</p>
+                <p className="text-lg font-bold mt-2 text-primary">{money(b.price)}</p>
                 <p className="text-[10px] text-muted-foreground">{b.perCredit}/credit</p>
                 <Button size="sm" className="w-full mt-3" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: b.id || "pack_500" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>Buy</Button>
               </div>
@@ -332,7 +336,7 @@ export default function BillingPage() {
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold text-foreground">Custom Amount</span>
               <span className="text-sm font-bold text-primary">
-                {topupCustom.toLocaleString()} credits -- ${customPrice}
+                {topupCustom.toLocaleString()} credits -- {money(customPrice)}
               </span>
             </div>
             <Slider
@@ -347,7 +351,7 @@ export default function BillingPage() {
               <span>100</span><span>2,500</span><span>5,000</span><span>10,000</span>
             </div>
             <Button size="sm" className="mt-3" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_custom", amount: topupCustom }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>
-              Purchase {topupCustom.toLocaleString()} Credits -- ${customPrice}
+              Purchase {topupCustom.toLocaleString()} Credits -- {money(customPrice)}
             </Button>
           </div>
 
@@ -359,7 +363,7 @@ export default function BillingPage() {
             <div>
               <p className="text-xs font-semibold text-foreground">Auto Top-Up</p>
               <p className="text-[10px] text-muted-foreground">
-                Automatically purchase 2,000 credits ($35) when balance drops below {autoTopupThreshold}
+                Automatically purchase 2,000 credits ({money(35)}) when balance drops below {autoTopupThreshold}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -461,9 +465,9 @@ export default function BillingPage() {
                         <td className="py-2.5 px-3 font-semibold text-primary">{inv.id}</td>
                         <td className="py-2.5 px-3 text-muted-foreground">{inv.date || new Date(inv.createdAt).toLocaleDateString()}</td>
                         <td className="py-2.5 px-3 text-foreground">{inv.desc || inv.description || "Payment"}</td>
-                        <td className="py-2.5 px-3 font-semibold text-foreground">${(inv.amount || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-muted-foreground">${(inv.vat || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 font-bold text-foreground">${(inv.total || inv.amount || 0).toFixed(2)}</td>
+                        <td className="py-2.5 px-3 font-semibold text-foreground">{formatMoney(inv.amount || 0, inv.currency || currency, { decimals: 2 })}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{formatMoney(inv.vat || 0, inv.currency || currency, { decimals: 2 })}</td>
+                        <td className="py-2.5 px-3 font-bold text-foreground">{formatMoney(inv.total || inv.amount || 0, inv.currency || currency, { decimals: 2 })}</td>
                         <td className="py-2.5 px-3">
                           <Badge variant={inv.status === "paid" ? "default" : "secondary"}>
                             {inv.status}
@@ -520,10 +524,10 @@ export default function BillingPage() {
                     <AreaChart data={monthlySpendData}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} className="text-muted-foreground" />
-                      <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 10 }} tickFormatter={v => money(v)} className="text-muted-foreground" />
                       <Tooltip
                         contentStyle={{ borderRadius: 8, fontSize: 11 }}
-                        formatter={(v: any) => [`$${v.toFixed(2)}`, "Spend"]}
+                        formatter={(v: any) => [money(Number(v), { decimals: 2 }), "Spend"]}
                       />
                       <Area
                         type="monotone"
@@ -538,8 +542,8 @@ export default function BillingPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-3">
-                  <MiniStat label="Avg Monthly" value={`$${(monthlySpendData.reduce((s: any, d: any) => s + d.spend, 0) / monthlySpendData.length).toFixed(2)}`} />
-                  <MiniStat label="This Month" value={`$${price.toFixed(2)}`} />
+                  <MiniStat label="Avg Monthly" value={money(monthlySpendData.reduce((s: any, d: any) => s + d.spend, 0) / monthlySpendData.length, { decimals: 2 })} />
+                  <MiniStat label="This Month" value={money(price, { decimals: 2 })} />
                 </div>
               </>
             )}
@@ -670,7 +674,7 @@ export default function BillingPage() {
               </div>
               <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  All prices are subject to 20% VAT. VAT is calculated and added to each invoice automatically.
+                  {taxNote(currency)} Tax is calculated and added to each invoice automatically.
                 </p>
               </div>
             </div>

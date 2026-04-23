@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,11 +78,9 @@ const HEALTH_LABEL: Record<string, string> = {
   RED: "Off Track",
 };
 
-function formatCurrency(v: number) {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(v);
-}
-
 export default function ProgrammesPage() {
+  const currency = useOrgCurrency();
+  const formatCurrency = (v: number) => formatMoney(v, currency);
   const [programmes, setProgrammes] = useState<Programme[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 

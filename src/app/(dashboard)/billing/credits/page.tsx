@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCreditUsage } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { cn, PLAN_LIMITS } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -60,6 +62,8 @@ function timeAgo(date: string | Date) {
 
 export default function CreditCentrePage() {
   const { data, isLoading } = useCreditUsage();
+  const currency = useOrgCurrency();
+  const money = (n: number) => formatMoney(n, currency);
   const [streamPaused, setStreamPaused] = useState(false);
   const [autoTopup, setAutoTopup] = useState(false);
   const [alertRules, setAlertRules] = useState([
@@ -176,9 +180,9 @@ export default function CreditCentrePage() {
           {/* Quick actions — matches Billing page bundles */}
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_500" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+500 · $10</Button>
-              <Button size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_2000" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+2,000 · $35</Button>
-              <Button variant="ghost" size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_5000" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+5,000 · $75</Button>
+              <Button variant="ghost" size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_500" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+500 · {money(10)}</Button>
+              <Button size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_2000" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+2,000 · {money(35)}</Button>
+              <Button variant="ghost" size="sm" onClick={async () => { try { const r = await fetch("/api/billing/checkout", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ type: "credits", packId: "pack_5000" }) }); const d = await r.json(); if (d.data?.checkoutUrl) window.location.href = d.data.checkoutUrl; else toast.error("Checkout unavailable"); } catch { toast.error("Checkout failed"); } }}>+5,000 · {money(75)}</Button>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">Auto top-up</span>

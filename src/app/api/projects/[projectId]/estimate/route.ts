@@ -71,6 +71,12 @@ export async function POST(
     return NextResponse.json({ error: "Provide either unitQty + unitRate or amount" }, { status: 400 });
   }
 
+  let orgCurrency = "GBP";
+  try {
+    const proj = await db.project.findUnique({ where: { id: projectId }, select: { org: { select: { currency: true } } } });
+    if (proj?.org?.currency) orgCurrency = proj.org.currency;
+  } catch {}
+
   const entry = await db.costEntry.create({
     data: {
       projectId,
@@ -81,7 +87,7 @@ export async function POST(
       vendorName: vendorName ?? null,
       unitQty: unitQty ?? null,
       unitRate: unitRate ?? null,
-      currency: "GBP",
+      currency: orgCurrency,
       createdBy: (session.user as { id?: string }).id ?? null,
     },
   });

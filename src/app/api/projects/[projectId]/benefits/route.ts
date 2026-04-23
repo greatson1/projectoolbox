@@ -26,6 +26,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const { projectId } = await params;
   const body = await req.json();
 
+  // Default the new benefit's currency to the owning org's display currency.
+  let orgCurrency = "GBP";
+  try {
+    const proj = await db.project.findUnique({ where: { id: projectId }, select: { org: { select: { currency: true } } } });
+    if ((proj as any)?.org?.currency) orgCurrency = (proj as any).org.currency;
+  } catch {}
+
   const benefit = await db.benefit.create({
     data: {
       projectId,
@@ -35,7 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       status: body.status || "NOT_STARTED",
       targetValue: body.targetValue || 0,
       realisedValue: body.realisedValue || 0,
-      currency: body.currency || "GBP",
+      currency: body.currency || orgCurrency,
       owner: body.owner || null,
       targetDate: body.targetDate ? new Date(body.targetDate) : null,
       measures: body.measures || null,

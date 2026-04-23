@@ -16,6 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { User, Bell, Shield, Palette, Building2, Key, Moon, Sun, Check, Plug } from "lucide-react";
 import Link from "next/link";
 import { useAppStore, type AccentTheme } from "@/stores/app";
+import { useOrgCurrency, useUpdateOrgCurrency } from "@/hooks/use-currency";
+import { SUPPORTED_CURRENCIES, CURRENCY_NAME, CURRENCY_SYMBOL, CurrencyCode } from "@/lib/currency";
+import { toast } from "sonner";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: User },
@@ -261,6 +264,7 @@ export default function SettingsPage() {
                   <Label className="text-xs">Billing Email</Label>
                   <Input defaultValue={user?.email ?? ""} className="mt-1" />
                 </div>
+                <CurrencyPicker />
                 <Button size="sm">Save Changes</Button>
               </CardContent>
             </Card>
@@ -368,6 +372,37 @@ export default function SettingsPage() {
           )}
 
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CurrencyPicker() {
+  const current = useOrgCurrency();
+  const update = useUpdateOrgCurrency();
+  return (
+    <div>
+      <Label className="text-xs">Display Currency</Label>
+      <p className="text-[11px] text-muted-foreground mb-2">
+        Controls how budgets, costs, and billing amounts are shown across the app and which currency Stripe charges.
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        {SUPPORTED_CURRENCIES.map((c) => (
+          <button
+            key={c}
+            onClick={() => {
+              update.mutate(c as CurrencyCode, {
+                onSuccess: () => toast.success(`Currency changed to ${CURRENCY_NAME[c]}`),
+                onError: () => toast.error("Could not update currency"),
+              });
+            }}
+            className={`px-3 py-2 rounded-lg border text-sm transition-all ${current === c ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border hover:bg-muted/40"}`}
+            disabled={update.isPending}
+          >
+            <span className="mr-1.5 font-bold">{CURRENCY_SYMBOL[c]}</span>
+            {CURRENCY_NAME[c]}
+          </button>
+        ))}
       </div>
     </div>
   );

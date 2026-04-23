@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { toast } from "sonner";
 import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -410,6 +412,7 @@ function AgentChatPage() {
   const searchParams = useSearchParams();
   const { data: agentData, isLoading: agentsLoading } = useAgents();
   const agents = agentData?.agents || [];
+  const currency = useOrgCurrency();
 
   usePageTitle("Chat with Agent");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(searchParams.get("agent"));
@@ -1239,7 +1242,7 @@ function AgentChatPage() {
                 <p className="text-sm font-bold">{activeAgent.deployments[0].project.name}</p>
                 <Badge variant="outline" className="text-[9px] mt-1">{METHOD_LABEL[activeAgent.deployments[0].project.methodology] || activeAgent.deployments[0].project.methodology}</Badge>
                 {activeAgent.deployments[0].project.budget && (
-                  <p className="text-xs text-muted-foreground mt-2">Budget: ${activeAgent.deployments[0].project.budget.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground mt-2">Budget: {formatMoney(activeAgent.deployments[0].project.budget, currency)}</p>
                 )}
               </CardContent>
             </Card>

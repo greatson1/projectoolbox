@@ -262,7 +262,7 @@ export class CreditService {
     try {
       const org = await db.organisation.findUnique({
         where: { id: orgId },
-        select: { stripeCustomerId: true, autoTopUp: true },
+        select: { stripeCustomerId: true, autoTopUp: true, currency: true },
       });
 
       if (!org?.stripeCustomerId) return;
@@ -302,10 +302,11 @@ export class CreditService {
         return;
       }
 
-      // Charge the saved card off-session
+      // Charge the saved card off-session in the org's currency
+      const { stripeCurrency } = await import("@/lib/currency");
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: pack.amountPence,
-        currency: "gbp",
+        amount: pack.amountMinor,
+        currency: stripeCurrency((org as any).currency || "GBP"),
         customer: org.stripeCustomerId,
         payment_method: paymentMethodId,
         confirm: true,

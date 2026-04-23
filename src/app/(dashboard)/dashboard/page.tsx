@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useDashboard } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { useAppStore } from "@/stores/app";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +37,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { data: dash, isLoading, error } = useDashboard();
   const { setPendingApprovals, setUnreadNotifications, setActiveProject } = useAppStore();
+  const currency = useOrgCurrency();
 
   // Redirect to onboarding if user has no org (first-time Google sign-in)
   useEffect(() => {
@@ -460,7 +463,7 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-3 ml-6 mt-1">
                             <span className="text-[10px] text-muted-foreground">{p.taskCount || 0} tasks</span>
                             <span className="text-[10px] text-muted-foreground">{p.riskCount || 0} risks</span>
-                            {p.budget > 0 && <span className="text-[10px] text-muted-foreground">£{(p.budget || 0).toLocaleString()}</span>}
+                            {p.budget > 0 && <span className="text-[10px] text-muted-foreground">{formatMoney(p.budget || 0, currency)}</span>}
                           </div>
                         </Link>
                       );

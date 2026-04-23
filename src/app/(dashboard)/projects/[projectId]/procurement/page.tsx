@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,12 +48,10 @@ const demoContracts: Contract[] = [];
 const demoPOs: PurchaseOrder[] = [];
 const demoInvoices: Invoice[] = [];
 
-function fmt(n: number) {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(n);
-}
-
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const currency = useOrgCurrency();
+  const fmt = (n: number) => formatMoney(n, currency);
   const [isLoading, setIsLoading] = useState(false);
   const [packages] = useState<ProcurementPackage[]>(demoPackages);
   const [vendors] = useState<Vendor[]>(demoVendors);

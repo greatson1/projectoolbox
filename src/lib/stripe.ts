@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { normaliseCurrency, CurrencyCode } from "@/lib/currency";
 
 let _stripe: Stripe | null = null;
 
@@ -19,14 +20,53 @@ export const stripe = new Proxy({} as Stripe, {
   },
 });
 
-// Plan price IDs — create these in Stripe Dashboard
+type PlanId = "STARTER" | "PROFESSIONAL" | "BUSINESS";
+type PackId = "pack_500" | "pack_2000" | "pack_5000" | "pack_10000";
+
+/**
+ * Per-currency price ID lookup.
+ *
+ * Env var convention:
+ *   STRIPE_PRICE_<PLAN>                  → GBP (legacy, kept as default)
+ *   STRIPE_PRICE_<PLAN>_USD              → USD
+ *   STRIPE_PRICE_<PLAN>_EUR              → EUR
+ *
+ * If the currency-specific env var is not set we fall back to the GBP one so
+ * existing deployments keep working unchanged.
+ */
+function envPlan(plan: PlanId, currency: CurrencyCode): string {
+  const suffix = currency === "GBP" ? "" : `_${currency}`;
+  const specific = process.env[`STRIPE_PRICE_${plan}${suffix}`];
+  const fallback = process.env[`STRIPE_PRICE_${plan}`];
+  return specific || fallback || "";
+}
+
+function envPack(pack: PackId, currency: CurrencyCode): string {
+  const suffix = currency === "GBP" ? "" : `_${currency}`;
+  const num = pack.replace("pack_", "");
+  const specific = process.env[`STRIPE_PRICE_CREDITS_${num}${suffix}`];
+  const fallback = process.env[`STRIPE_PRICE_CREDITS_${num}`];
+  return specific || fallback || "";
+}
+
+/** Pick the correct Stripe price ID for a plan given the org's currency. */
+export function planPriceId(plan: PlanId | string, currency: string | null | undefined): string {
+  return envPlan(plan as PlanId, normaliseCurrency(currency));
+}
+
+/** Pick the correct Stripe price ID for a credit pack given the org's currency. */
+export function packPriceId(pack: PackId | string, currency: string | null | undefined): string {
+  return envPack(pack as PackId, normaliseCurrency(currency));
+}
+
+// Legacy flat lookups — kept for any caller still reading them.
+// New code should call planPriceId() / packPriceId() with the org's currency.
 export const PLAN_PRICE_IDS: Record<string, string> = {
   STARTER: process.env.STRIPE_PRICE_STARTER || "",
   PROFESSIONAL: process.env.STRIPE_PRICE_PROFESSIONAL || "",
   BUSINESS: process.env.STRIPE_PRICE_BUSINESS || "",
 };
 
-// Credit pack price IDs (for Stripe Checkout sessions)
 export const CREDIT_PACK_PRICES: Record<string, { credits: number; priceId: string }> = {
   pack_500: { credits: 500, priceId: process.env.STRIPE_PRICE_CREDITS_500 || "" },
   pack_2000: { credits: 2000, priceId: process.env.STRIPE_PRICE_CREDITS_2000 || "" },
@@ -35,15 +75,15 @@ export const CREDIT_PACK_PRICES: Record<string, { credits: number; priceId: stri
 };
 
 /**
- * Credit pack amounts for off-session auto top-up charges (PaymentIntent).
- * amountPence must match the prices set in your Stripe Dashboard.
- * 1 credit = £0.01 retail price.
+ * Credit pack amounts for off-session auto top-up (PaymentIntent, in minor units).
+ * Approximate equivalence: values are matched to the Stripe prices for each currency.
+ * 1 credit = £0.01 / $0.01 / €0.01 retail price.
  */
-export const CREDIT_PACK_AMOUNTS: Record<string, { credits: number; amountPence: number; label: string }> = {
-  pack_500:   { credits: 500,   amountPence: 500,   label: "500 credits (£5)" },
-  pack_2000:  { credits: 2000,  amountPence: 2000,  label: "2,000 credits (£20)" },
-  pack_5000:  { credits: 5000,  amountPence: 5000,  label: "5,000 credits (£50)" },
-  pack_10000: { credits: 10000, amountPence: 10000, label: "10,000 credits (£100)" },
+export const CREDIT_PACK_AMOUNTS: Record<string, { credits: number; amountMinor: number; label: string }> = {
+  pack_500:   { credits: 500,   amountMinor: 500,   label: "500 credits" },
+  pack_2000:  { credits: 2000,  amountMinor: 2000,  label: "2,000 credits" },
+  pack_5000:  { credits: 5000,  amountMinor: 5000,  label: "5,000 credits" },
+  pack_10000: { credits: 10000, amountMinor: 10000, label: "10,000 credits" },
 };
 
 // Plan credit grants on subscription

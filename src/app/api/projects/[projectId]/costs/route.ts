@@ -45,6 +45,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const { projectId } = await params;
   const body = await req.json();
 
+  let orgCurrency = "GBP";
+  try {
+    const proj = await db.project.findUnique({ where: { id: projectId }, select: { org: { select: { currency: true } } } });
+    if (proj?.org?.currency) orgCurrency = proj.org.currency;
+  } catch {}
+
   const entry = await db.costEntry.create({
     data: {
       projectId,
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       entryType: body.entryType || "ACTUAL",
       category: body.category || "OTHER",
       amount: body.amount,
-      currency: body.currency || "GBP",
+      currency: body.currency || orgCurrency,
       description: body.description || null,
       vendorName: body.vendorName || null,
       poNumber: body.poNumber || null,

@@ -23,6 +23,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // 0a. Idempotent schema top-up — ensure Organisation.currency column exists.
+    //     First tick after a deploy that adds the column runs the ALTER; subsequent
+    //     ticks are no-ops thanks to IF NOT EXISTS.
+    try {
+      await db.$executeRawUnsafe(`ALTER TABLE "Organisation" ADD COLUMN IF NOT EXISTS "currency" TEXT NOT NULL DEFAULT 'GBP'`);
+    } catch {}
+
     // 0. Check approval timeouts (runs every tick regardless of deployments)
     let escalationResult = { reminders: 0, escalations: 0, overdue: 0 };
     try {

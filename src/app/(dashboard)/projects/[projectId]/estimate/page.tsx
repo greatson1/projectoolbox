@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useProject } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney, currencySymbol } from "@/lib/currency";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -57,23 +59,14 @@ interface CategoryConfig {
   isLumpSum: boolean;
 }
 
-const CATEGORIES: CategoryConfig[] = [
-  { label: "Labour",           category: "LABOUR",   qtyLabel: "Days",     rateLabel: "Day Rate (£)", isLumpSum: false },
-  { label: "Materials",        category: "MATERIALS",qtyLabel: "Quantity",  rateLabel: "Unit Cost (£)",isLumpSum: false },
-  { label: "Services",         category: "SERVICES", qtyLabel: "Qty",      rateLabel: "Rate (£)",     isLumpSum: false },
-  { label: "Travel",           category: "TRAVEL",   qtyLabel: "Qty",      rateLabel: "Rate (£)",     isLumpSum: false },
-  { label: "Other",            category: "OTHER",    qtyLabel: "Qty",      rateLabel: "Rate (£)",     isLumpSum: false },
-];
-
-// ── Currency formatter ─────────────────────────────────────────────────────
-
-function fmt(v: number | null | undefined): string {
-  if (v === null || v === undefined || isNaN(v)) return "—";
-  const abs = Math.abs(v);
-  const sign = v < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}£${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}£${(abs / 1_000).toFixed(0)}k`;
-  return `${sign}£${abs.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function buildCategories(sym: string): CategoryConfig[] {
+  return [
+    { label: "Labour",    category: "LABOUR",    qtyLabel: "Days",     rateLabel: `Day Rate (${sym})`,  isLumpSum: false },
+    { label: "Materials", category: "MATERIALS", qtyLabel: "Quantity", rateLabel: `Unit Cost (${sym})`, isLumpSum: false },
+    { label: "Services",  category: "SERVICES",  qtyLabel: "Qty",      rateLabel: `Rate (${sym})`,      isLumpSum: false },
+    { label: "Travel",    category: "TRAVEL",    qtyLabel: "Qty",      rateLabel: `Rate (${sym})`,      isLumpSum: false },
+    { label: "Other",     category: "OTHER",     qtyLabel: "Qty",      rateLabel: `Rate (${sym})`,      isLumpSum: false },
+  ];
 }
 
 // ── Inline add-row form ────────────────────────────────────────────────────
@@ -86,6 +79,8 @@ interface AddRowFormProps {
 }
 
 function AddRowForm({ config, projectId, onAdded, onCancel }: AddRowFormProps) {
+  const currency = useOrgCurrency();
+  const fmt = (v: number | null | undefined) => formatMoney(v, currency, { decimals: 2 });
   const [description, setDescription] = useState("");
   const [qty, setQty] = useState("");
   const [rate, setRate] = useState("");
@@ -194,6 +189,8 @@ interface EditRowFormProps {
 }
 
 function EditRowForm({ item, config, projectId, onSaved, onCancel }: EditRowFormProps) {
+  const _editCurrency = useOrgCurrency();
+  const fmt = (v: number | null | undefined) => formatMoney(v, _editCurrency, { decimals: 2 });
   const [description, setDescription] = useState(item.description ?? "");
   const [qty, setQty] = useState(item.unitQty != null ? String(item.unitQty) : "");
   const [rate, setRate] = useState(item.unitRate != null ? String(item.unitRate) : "");
@@ -307,6 +304,8 @@ interface CategorySectionProps {
 }
 
 function CategorySection({ config, group, projectId, onRefresh }: CategorySectionProps) {
+  const _catCurrency = useOrgCurrency();
+  const fmt = (v: number | null | undefined) => formatMoney(v, _catCurrency, { decimals: 2 });
   const [expanded, setExpanded] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -463,6 +462,9 @@ export default function EstimatePage() {
   usePageTitle("Cost Estimator");
   const { projectId } = useParams<{ projectId: string }>();
   const { data: project, isLoading: projectLoading } = useProject(projectId);
+  const currency = useOrgCurrency();
+  const fmt = (v: number | null | undefined) => formatMoney(v, currency, { decimals: 2 });
+  const CATEGORIES = buildCategories(currencySymbol(currency));
 
   const [data, setData] = useState<EstimateData | null>(null);
   const [loading, setLoading] = useState(true);

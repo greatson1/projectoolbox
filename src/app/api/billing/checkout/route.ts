@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { stripe, PLAN_PRICE_IDS, CREDIT_PACK_PRICES } from "@/lib/stripe";
+import { stripe, planPriceId, packPriceId, CREDIT_PACK_PRICES } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (type === "subscription") {
-    const priceId = PLAN_PRICE_IDS[planId];
+    const priceId = planPriceId(planId, (org as any).currency);
     if (!priceId) return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
 
     const checkoutSession = await stripe.checkout.sessions.create({
@@ -50,12 +50,14 @@ export async function POST(req: NextRequest) {
 
   if (type === "credits") {
     const pack = CREDIT_PACK_PRICES[packId];
-    if (!pack?.priceId) return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
+    if (!pack) return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
+    const priceId = packPriceId(packId, (org as any).currency);
+    if (!priceId) return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
 
     const checkoutSession = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: "payment",
-      line_items: [{ price: pack.priceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${process.env.NEXTAUTH_URL}/billing/credits?purchased=true`,
       cancel_url: `${process.env.NEXTAUTH_URL}/billing/credits`,
       metadata: { orgId, credits: pack.credits.toString() },
