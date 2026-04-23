@@ -19,7 +19,7 @@ export async function generatePhaseArtefacts(
   agentId: string,
   projectId: string,
   phaseName?: string,
-): Promise<{ generated: number; skipped: number; phase: string }> {
+): Promise<{ generated: number; skipped: number; phase: string; missing?: string[] }> {
   const [agent, project] = await Promise.all([
     db.agent.findUnique({ where: { id: agentId } }),
     db.project.findUnique({ where: { id: projectId } }),
@@ -1817,10 +1817,79 @@ export function extractTBCItems(artefacts: { name: string; content: string }[]):
 }
 
 /**
+ * Try to resolve a TBC topic from existing HIGH_TRUST / user_confirmed KB items.
+ * Keyword-based match: if ≥60% of the topic's meaningful tokens appear in a
+ * single KB item's title+content, that item is the answer. Stopwords ignored.
+ *
+ * Fixes the bug where Claude re-emits [TBC — visa turnaround] after the user
+ * already answered "visa processing time": different wording, same topic.
+ */
+async function resolveTBCFromKB(
+  agentId: string,
+  projectId: string,
+  topic: string,
+): Promise<string | null> {
+  const STOP = new Set([
+    "the","a","an","of","for","to","and","is","are","what","when","how","where",
+    "which","who","whom","why","current","about","as","on","in","at","by","or",
+  ]);
+  const tokens = topic.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !STOP.has(t));
+  if (tokens.length === 0) return null;
+  const threshold = Math.max(1, Math.ceil(tokens.length * 0.6));
+
+  // 1. Prefer user_confirmed facts (highest authority)
+  const confirmed = await db.knowledgeBaseItem.findMany({
+    where: { agentId, projectId, tags: { has: "user_confirmed" } },
+    select: { title: true, content: true },
+    take: 100,
+  }).catch(() => []);
+
+  let best: { value: string; score: number } | null = null;
+  for (const item of confirmed) {
+    const hay = `${item.title} ${item.content}`.toLowerCase();
+    const hits = tokens.filter(t => hay.includes(t)).length;
+    if (hits >= threshold && (!best || hits > best.score)) {
+      const cleaned = item.content.replace(/^\[User confirmed[^\]]*\]\s*/i, "").trim();
+      best = { value: cleaned, score: hits };
+    }
+  }
+  if (best) return best.value;
+
+  // 2. Fall back to HIGH_TRUST research facts (stricter threshold to avoid noise)
+  const research = await db.knowledgeBaseItem.findMany({
+    where: { projectId, trustLevel: "HIGH_TRUST" },
+    select: { title: true, content: true },
+    take: 200,
+  }).catch(() => []);
+  const stricter = Math.max(2, Math.ceil(tokens.length * 0.75));
+  for (const item of research) {
+    const hay = `${item.title} ${item.content}`.toLowerCase();
+    const hits = tokens.filter(t => hay.includes(t)).length;
+    if (hits >= stricter && (!best || hits > best.score)) {
+      best = { value: item.content.trim().slice(0, 400), score: hits };
+    }
+  }
+  return best?.value ?? null;
+}
+
+/**
+ * Replace every [TBC — <topic>] (and plain TBC variants) for a given topic in
+ * the artefact's stored content with the resolved value. Returns true if the
+ * content was mutated so the caller knows to persist.
+ */
+function replaceTBCInContent(content: string, topic: string, value: string): { content: string; changed: boolean } {
+  // Build a pattern that matches the specific topic phrase inside any [TBC — …] marker.
+  const escTopic = topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[?TBC\\s*[—–-]\\s*${escTopic}[^\\]\\n]*\\]?`, "gi");
+  const next = content.replace(re, value.replace(/\n+/g, " ").slice(0, 200));
+  return { content: next, changed: next !== content };
+}
+
+/**
  * Creates a clarification session from [TBC] items found in generated artefacts.
- * Instead of dumping a text list, this starts a proper interactive session using
- * the same ClarificationCard widgets as the deploy-time questions.
- * Each TBC item becomes a question the user answers one at a time.
+ * BEFORE asking, tries to resolve each TBC from the KB (user_confirmed facts
+ * first, then HIGH_TRUST research). Only unresolved TBCs become questions.
+ * Resolved TBCs are patched directly into the artefact content.
  */
 export async function createClarificationMessage(
   agentId: string,
@@ -1836,8 +1905,64 @@ export async function createClarificationMessage(
     const existing = await getActiveSession(agentId, projectId);
     if (existing) return; // Session already active — don't stack
 
-    // Convert TBC items into clarification questions
-    const questions = tbcItems.slice(0, 20).map((item, i) => ({
+    // ── Phase 1: try to auto-resolve each TBC from the KB ──
+    const unresolved: { artefactName: string; item: string }[] = [];
+    const resolvedByArtefact = new Map<string, { item: string; value: string }[]>();
+
+    for (const tbc of tbcItems) {
+      const value = await resolveTBCFromKB(agentId, projectId, tbc.item);
+      if (value) {
+        const list = resolvedByArtefact.get(tbc.artefactName) ?? [];
+        list.push({ item: tbc.item, value });
+        resolvedByArtefact.set(tbc.artefactName, list);
+      } else {
+        unresolved.push(tbc);
+      }
+    }
+
+    // Patch each artefact whose TBCs we could resolve
+    let autoFilled = 0;
+    if (resolvedByArtefact.size > 0) {
+      const artefacts = await db.agentArtefact.findMany({
+        where: {
+          projectId, agentId,
+          name: { in: Array.from(resolvedByArtefact.keys()) },
+        },
+        select: { id: true, name: true, content: true },
+      });
+      for (const art of artefacts) {
+        const replacements = resolvedByArtefact.get(art.name) ?? [];
+        let content = art.content;
+        let changed = false;
+        for (const { item, value } of replacements) {
+          const res = replaceTBCInContent(content, item, value);
+          if (res.changed) { content = res.content; changed = true; autoFilled++; }
+        }
+        if (changed) {
+          await db.agentArtefact.update({
+            where: { id: art.id },
+            data: { content, updatedAt: new Date() },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // If EVERYTHING was auto-resolved, skip the session entirely
+    if (unresolved.length === 0) {
+      if (autoFilled > 0) {
+        await db.chatMessage.create({
+          data: {
+            agentId,
+            role: "agent",
+            content: `Filled **${autoFilled}** [TBC] item${autoFilled !== 1 ? "s" : ""} automatically from your earlier answers and research. Your artefacts are ready for review.`,
+          },
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    // ── Phase 2: ask only for the genuinely missing items ──
+    const questions = unresolved.slice(0, 20).map((item, i) => ({
       id: `tbc_${i}`,
       artefact: item.artefactName,
       field: item.item.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
@@ -1848,12 +1973,16 @@ export async function createClarificationMessage(
 
     await startTBCClarificationSession(agentId, projectId, orgId, questions);
 
+    const autoFillNote = autoFilled > 0
+      ? ` (I also filled ${autoFilled} from your earlier answers / research.)`
+      : "";
+
     // Brief intro message
     await db.chatMessage.create({
       data: {
         agentId,
         role: "agent",
-        content: `Your artefacts are ready for review, but I have **${tbcItems.length} detail${tbcItems.length !== 1 ? "s" : ""}** marked as [TBC] that I couldn't find from my research or the project description. I'll ask you about each one now — your answers will update the documents automatically.`,
+        content: `Your artefacts are ready for review, but I have **${unresolved.length} detail${unresolved.length !== 1 ? "s" : ""}** I couldn't find from research or your earlier answers.${autoFillNote} I'll ask you about each one now — your answers will update the documents automatically.`,
       },
     }).catch(() => {});
   } catch (e) {
