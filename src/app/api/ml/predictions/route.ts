@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
       case "approval_likelihood": {
         const type = url.searchParams.get("type") || "CHANGE_REQUEST";
         const urgency = url.searchParams.get("urgency") || undefined;
+        const projectId = url.searchParams.get("projectId") || undefined;
         if (cached) {
           const row = await db.mLInsight.findFirst({
             where: { orgId, kind, subjectId: type },
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({ data: row });
         }
         const { predictApprovalLikelihood } = await import("@/lib/ml/approval-likelihood");
-        const result = await predictApprovalLikelihood({ orgId, type, urgency });
+        const result = await predictApprovalLikelihood({ orgId, type, urgency, projectId });
         return NextResponse.json({ data: result });
       }
 
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
         if (!riskId) return NextResponse.json({ error: "riskId required" }, { status: 400 });
         const risk = await db.risk.findFirst({
           where: { id: riskId, project: { orgId } },
-          select: { category: true, probability: true, impact: true, score: true },
+          select: { category: true, probability: true, impact: true, score: true, projectId: true },
         });
         if (!risk) return NextResponse.json({ error: "Risk not found" }, { status: 404 });
         const { predictRiskMaterialisation } = await import("@/lib/ml/risk-materialisation");

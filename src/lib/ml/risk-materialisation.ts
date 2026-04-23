@@ -16,6 +16,7 @@ export interface RiskMaterialisationInput {
   probability?: number | null;  // 1-5
   impact?: number | null;       // 1-5
   score?: number | null;        // p × i
+  projectId?: string | null;    // optional — enables sentiment adjustment
 }
 
 export interface RiskMaterialisationOutput {
@@ -104,8 +105,47 @@ export async function predictRiskMaterialisation(
     }
   }
 
+  // ── Sentiment adjustment — declining project sentiment predicts increased
+  //    risk materialisation (stakeholders disengage, issues escalate) ──
+  let sentimentAdjust = 0;
+  if (input.projectId) {
+    try {
+      const cutoff = new Date(Date.now() - 21 * 86400_000);
+      const recentSignals = await db.sentimentHistory.findMany({
+        where: {
+          orgId: input.orgId,
+          createdAt: { gte: cutoff },
+          OR: [
+            { subjectType: "stakeholder" },
+            { sourceRef: { contains: input.projectId } },
+          ],
+        },
+        select: { score: true, createdAt: true },
+        take: 100,
+      }).catch(() => []);
+
+      if (recentSignals.length >= 5) {
+        let weightedSum = 0, weightTotal = 0;
+        const now = Date.now();
+        for (const s of recentSignals) {
+          const ageDays = (now - s.createdAt.getTime()) / 86400_000;
+          const w = Math.exp(-ageDays / 10);
+          weightedSum += s.score * w;
+          weightTotal += w;
+        }
+        const avg = weightTotal > 0 ? weightedSum / weightTotal : 0;
+        // Negative sentiment → higher risk materialisation probability
+        // Map avg (-1..1) to adjustment (+0.20..-0.10) — negative sentiment boosts risk more than positive dampens it
+        sentimentAdjust = avg < 0 ? Math.abs(avg) * 0.20 : -avg * 0.10;
+        if (Math.abs(sentimentAdjust) > 0.02) {
+          reasoning += ` Project sentiment (${avg.toFixed(2)}, ${recentSignals.length} signals) ${sentimentAdjust > 0 ? "increases" : "decreases"} risk by ${Math.abs(Math.round(sentimentAdjust * 100))}%.`;
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
   return {
-    probability: Math.max(0, Math.min(1, probability)),
+    probability: Math.max(0, Math.min(1, probability + sentimentAdjust)),
     confidence: Math.min(1, comparable.length / 20),
     sampleSize: total,
     comparable: comparable.length,

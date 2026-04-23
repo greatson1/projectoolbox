@@ -16,6 +16,8 @@ export interface ApprovalLikelihoodInput {
   type: string;      // ApprovalType
   urgency?: string;  // LOW, MEDIUM, HIGH, CRITICAL
   impactScores?: { schedule?: number; cost?: number; scope?: number; stakeholder?: number };
+  approverUserId?: string;   // specific approver — factor their recent sentiment
+  projectId?: string;        // project — factor overall stakeholder sentiment
 }
 
 export interface ApprovalLikelihoodOutput {
@@ -100,11 +102,54 @@ export async function predictApprovalLikelihood(
   }
 
   // Weighted blend: type is strongest signal, then tier, then urgency, then baseline
-  const probability =
-    0.45 * typeRate +
-    0.25 * tierRate +
-    0.20 * urgencyRate +
+  let probability =
+    0.40 * typeRate +
+    0.22 * tierRate +
+    0.18 * urgencyRate +
     0.10 * overallRate;
+  // Remaining 0.10 weight reserved for sentiment adjustment below
+
+  // ── Sentiment adjustment — approvers with negative recent sentiment are
+  //    less likely to approve; positive trending approvers more likely ──
+  let sentimentAdjust = 0;
+  try {
+    // If we have a projectId, look at aggregate stakeholder sentiment for the project.
+    // A declining project sentiment reduces P(approve) because approvals often involve
+    // stakeholders who need to sign off.
+    if (input.projectId) {
+      const recentCutoff = new Date(Date.now() - 30 * 86400_000);
+      const signals = await db.sentimentHistory.findMany({
+        where: {
+          orgId: input.orgId,
+          createdAt: { gte: recentCutoff },
+          OR: [
+            { subjectType: "stakeholder" },
+            { source: "approval" },
+          ],
+        },
+        select: { score: true, createdAt: true },
+        take: 200,
+      }).catch(() => []);
+
+      if (signals.length >= 5) {
+        // Exponential recency-weighted average
+        let weightedSum = 0, weightTotal = 0;
+        const now = Date.now();
+        for (const s of signals) {
+          const ageDays = (now - s.createdAt.getTime()) / 86400_000;
+          const w = Math.exp(-ageDays / 14);
+          weightedSum += s.score * w;
+          weightTotal += w;
+        }
+        const avgScore = weightTotal > 0 ? weightedSum / weightTotal : 0;
+        // Map avgScore (-1..1) to adjustment (-0.15..+0.15)
+        sentimentAdjust = avgScore * 0.15;
+        reasoning.push(`Recent project sentiment: ${avgScore.toFixed(2)} (${signals.length} signals) → ${sentimentAdjust > 0 ? "boosts" : "reduces"} approval probability by ${Math.abs(Math.round(sentimentAdjust * 100))}%.`);
+      }
+    }
+  } catch { /* non-fatal — sentiment is a nice-to-have signal */ }
+
+  probability = probability + sentimentAdjust + 0.10 * overallRate; // absorb the 0.10 reserved weight into baseline if no sentiment
 
   // Confidence scales with sample size, capped at 1.0 by 50 samples
   const confidence = Math.min(1, history.length / 50);

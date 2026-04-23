@@ -92,6 +92,12 @@ export async function refreshStakeholderSentiment(stakeholderId: string): Promis
       sentimentUpdatedAt: new Date(),
     },
   }).catch(() => {});
+
+  // Sync to KB so the agent has explicit memory of this stakeholder's state
+  try {
+    const { syncStakeholderSentimentToKB } = await import("./kb-sync");
+    await syncStakeholderSentimentToKB(stakeholderId);
+  } catch { /* non-fatal */ }
 }
 
 /** Refresh sentiment for every stakeholder in an org (nightly batch). */
