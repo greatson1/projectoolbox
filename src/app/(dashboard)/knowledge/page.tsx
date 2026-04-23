@@ -17,6 +17,7 @@ import {
   Tag, Network, ArrowLeft, Save, Hash, Clock, List, GitBranch,
 } from "lucide-react";
 import { KBGraphView } from "@/components/knowledge/KBGraphView";
+import { RichKBEditor } from "@/components/knowledge/RichKBEditor";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -438,9 +439,13 @@ export default function KnowledgeBasePage() {
               {/* Content */}
               <div className="flex-1 overflow-y-auto">
                 {editing ? (
-                  <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-                    className="w-full h-full px-5 py-4 text-sm font-mono bg-transparent outline-none resize-none leading-relaxed"
-                    placeholder="Write in Markdown..." />
+                  <div className="px-5 py-4">
+                    <RichKBEditor
+                      content={editContent}
+                      onChange={setEditContent}
+                      placeholder="Write in rich text..."
+                    />
+                  </div>
                 ) : (
                   <div className="px-5 py-4 prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedItem.content || ""}</ReactMarkdown>
