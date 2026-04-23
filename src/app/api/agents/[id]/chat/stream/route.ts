@@ -160,6 +160,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 console.error("[chat/stream] approval-triggered generation failed:", e);
               }
             })();
+
+            // Stream an immediate acknowledgement and return early — do NOT also
+            // call Claude. Otherwise we get two agent bubbles (one from Claude,
+            // one from the background "documents generated" message).
+            const ackContent = `Generating the Requirements phase artefacts now — using your ${(await db.knowledgeBaseItem.count({ where: { agentId, projectId: dep0.projectId, trustLevel: "HIGH_TRUST" } }).catch(() => 0))} confirmed facts. I'll post an update in the chat when they're ready, or check the **Artefacts** tab shortly.`;
+            await db.chatMessage.create({
+              data: { agentId, role: "agent", content: ackContent },
+            }).catch(() => {});
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream({
+              start(controller) {
+                // Stream the ack as tokens so the UI renders it like a normal response
+                for (const chunk of ackContent.match(/.{1,40}/g) || [ackContent]) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: chunk })}\n\n`));
+                }
+                controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                controller.close();
+              },
+            });
+            return new Response(stream, {
+              headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+              },
+            });
           }
         }
       }
