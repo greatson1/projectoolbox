@@ -117,7 +117,44 @@ async function seedStakeholders(artefact: ArtefactInput, agentId: string): Promi
     // Note: Stakeholder has no createdBy — we delete all and re-seed
   });
 
+  // Build a set of user-confirmed names so we can preserve any the user
+  // explicitly provided during clarification. Everything else must match
+  // a role-title pattern or be filtered out as fabricated.
+  const confirmedFactsRaw = await db.knowledgeBaseItem.findMany({
+    where: {
+      projectId: artefact.projectId,
+      tags: { hasSome: ["user_confirmed", "user_answer"] },
+    },
+    select: { content: true, title: true },
+  }).catch(() => []);
+  const userConfirmedText = confirmedFactsRaw.map(i => `${i.title}\n${i.content}`).join("\n").toLowerCase();
+
+  /** True if a string looks like an invented personal name (FirstName LastName pattern) */
+  function isLikelyFabricatedPersonName(s: string): boolean {
+    const trimmed = s.trim();
+    // Role-title patterns (keep these):
+    if (/\b(manager|lead|director|sponsor|owner|team|member|representative|analyst|head|officer|coordinator|chair|agent|provider|supplier|contractor|partner|client|user|stakeholder|body|department|commission|authority|board|council|ministry|traveller|family|spouse|child|parent|guardian|companion|host|contact|emergency|insurance|airline|hotel|agency|primary|secondary|self)\b/i.test(trimmed)) {
+      return false;
+    }
+    // Organisation suffixes (keep): Ltd, Inc, Corp, LLC, plc, Airlines, Hotel, etc.
+    if (/\b(ltd|inc|corp|llc|plc|gmbh|airlines?|hotel|resort|clinic|hospital|bank|airways|ventures?|group|services?|solutions?|systems?|consultancy|consulting|agency|centre|center|commission|embassy|high commission|authority|department|ministry)\b/i.test(trimmed)) {
+      return false;
+    }
+    // Two-or-three capitalised words with no role keyword = likely a fabricated personal name
+    const words = trimmed.split(/\s+/);
+    if (words.length >= 2 && words.length <= 4) {
+      const allCapitalised = words.every(w => /^[A-Z][a-z]+/.test(w));
+      if (allCapitalised) {
+        // Check if the user confirmed this exact name somewhere
+        if (userConfirmedText.includes(trimmed.toLowerCase())) return false;
+        return true;
+      }
+    }
+    return false;
+  }
+
   let created = 0;
+  let filtered = 0;
   for (const row of rows) {
     const nameRaw  = col(row, ["Name / Role", "Name", "Stakeholder", "Stakeholder Name"]);
     if (!nameRaw) continue;
@@ -126,6 +163,14 @@ async function seedStakeholders(artefact: ArtefactInput, agentId: string): Promi
     const parts    = nameRaw.split(/[\/\-–]/).map(s => s.trim());
     const name     = parts[0] || nameRaw;
     const roleHint = parts[1] || col(row, ["Role", "Title", "Position"]);
+
+    // ⚠️ Filter out fabricated personal names — agent must use role titles
+    //    unless the user explicitly provided the real name during clarification.
+    if (isLikelyFabricatedPersonName(name)) {
+      filtered++;
+      console.warn(`[stakeholder-seeder] Filtering fabricated name: "${name}"`);
+      continue;
+    }
 
     const org          = col(row, ["Organisation", "Organization", "Company", "Department"]);
     const powerRaw     = col(row, ["Power (H/M/L)", "Power", "Influence (H/M/L)", "Influence"]);

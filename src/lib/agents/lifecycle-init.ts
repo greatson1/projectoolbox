@@ -605,7 +605,16 @@ Quote fields containing commas.`;
 "S004","End Users / Clients","External","Will use or be directly affected by project outputs","M","H","Neutral","Supportive","Demo/Review","Bi-weekly","PM","Requirements validation, UAT participation, final acceptance"
 "S005","Finance Department","Internal","Budget control, financial reporting, and payment approvals","H","M","Neutral","Supportive","Report/Meeting","Monthly","PM","Budget approval, actual cost tracking, variance authorisation"
 "S006","External Suppliers","External","Provide contracted services or materials to the project","M","M","Neutral","Supportive","Email/Meeting","As needed","PM","On-time delivery, quality of contracted outputs"`;
-      dataInstructions = `Use these exact data rows:\n${stRows}\nQuote fields containing commas.`;
+      dataInstructions = `Use these EXACT data rows verbatim — do NOT modify them, do NOT add fabricated personal names:
+${stRows}
+
+⚠️ CRITICAL RULES FOR STAKEHOLDER REGISTER:
+1. NEVER invent personal names like "Sarah Johnson", "Michael Chen", "James Smith". The Name/Role column MUST be a role title or relationship descriptor (e.g. "Primary Traveller", "Spouse", "Child 1", "Project Sponsor", "Finance Director", "British High Commission Lagos").
+2. For family/personal trips, use relationship titles: "Primary Traveller (self)", "Spouse", "Partner", "Child 1 (age TBC)", "Child 2 (age TBC)", "Parent", "Grandparent". DO NOT invent family member names.
+3. For organisations/suppliers, use the actual organisation name only if factually known (e.g. "Emirates Airlines" is fine if flights are confirmed with Emirates; "[Airline — TBC]" otherwise).
+4. If the user's clarification answers included specific names, you MAY use those exact names. Otherwise, use role titles.
+5. The seeder will REJECT any stakeholder row that looks like a fabricated personal name. Do not waste rows on names that will be filtered out.
+Quote fields containing commas.`;
     } else if (lname.includes("budget") || lname.includes("cost management")) {
       let budgetRows = "";
       if (isTravel && budget > 0) {
