@@ -101,12 +101,20 @@ function deriveState(
   totalArtefacts: number,
   activities: RawActivity[],
   hasActiveSession: boolean,
+  phaseStatus?: string | null,
 ): AgentState {
   if (!agentDeployed) return "idle";
-  if (hasActiveSession)        return "questions_waiting";
+
+  // phaseStatus is the PRIMARY source of truth — check it first so all UI surfaces agree
+  if (phaseStatus === "blocked_tasks_incomplete") return "phase_complete"; // treat as non-urgent steady state for bar
+  if (phaseStatus === "awaiting_clarification" || hasActiveSession) return "questions_waiting";
+  if (phaseStatus === "researching") return "generating"; // research pulses too
+  if (phaseStatus === "pending_approval" || phaseStatus === "waiting_approval") return "review";
+
+  // Fallback signals when phaseStatus is "active" or unset
   const fourMinAgo = Date.now() - 4 * 60 * 1000;
   const isGenerating = activities.some(
-    a => (a.type === "document" || a.type === "lifecycle_init") &&
+    a => (a.type === "document" || a.type === "lifecycle_init" || a.type === "decision") &&
          new Date(activityAt(a)).getTime() > fourMinAgo
   );
   if (isGenerating)           return "generating";
@@ -264,7 +272,8 @@ export function AgentStatusBar() {
           .map((a: any) => ({ id: a.id, type: a.type, summary: a.summary, createdAt: a.createdAt }));
         const activities = metricActivities.length > 0 ? metricActivities : fleetActivities;
 
-        const state = deriveState(true, pendingCount, totalArtefacts, activities, hasActiveSession);
+        const phaseStatus = (dep as any)?.phaseStatus ?? null;
+        const state = deriveState(true, pendingCount, totalArtefacts, activities, hasActiveSession, phaseStatus);
 
         return {
           agentId:       agent.id,

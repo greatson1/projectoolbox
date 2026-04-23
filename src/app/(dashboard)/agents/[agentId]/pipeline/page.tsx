@@ -842,23 +842,35 @@ export default function AgentPipelinePage() {
                 </p>
               </div>
               {data.currentPhase && (() => {
-                // Derive truthful status from the actual pipeline steps — not just the stale phaseStatus field
-                const researchStep = data.steps.find(s => s.id === "research");
-                const clarifyStep = data.steps.find(s => s.id === "clarification" || s.id === "clarify");
-                const generateStep = data.steps.find(s => s.id === "generate");
+                // phaseStatus is the PRIMARY source of truth — map it to a badge label.
+                // Fall back to step-derived state only when phaseStatus is null/unknown.
+                const ps = data.phaseStatus;
                 let displayStatus: string;
                 let colorClass: string;
-                if (data.phaseStatus === "blocked_tasks_incomplete") {
+                if (ps === "blocked_tasks_incomplete") {
                   displayStatus = "⛔ BLOCKED"; colorClass = "bg-red-500/10 text-red-500";
-                } else if (generateStep?.status === "running") {
-                  displayStatus = "GENERATING"; colorClass = "bg-blue-500/10 text-blue-500";
-                } else if (clarifyStep?.status === "running" || (researchStep?.status === "done" && clarifyStep?.status === "waiting")) {
-                  displayStatus = "AWAITING CLARIFICATION"; colorClass = "bg-amber-500/10 text-amber-500";
-                } else if (researchStep?.status === "running") {
+                } else if (ps === "researching") {
                   displayStatus = "RESEARCHING"; colorClass = "bg-blue-500/10 text-blue-500";
+                } else if (ps === "awaiting_clarification") {
+                  displayStatus = "AWAITING CLARIFICATION"; colorClass = "bg-amber-500/10 text-amber-500";
+                } else if (ps === "pending_approval" || ps === "waiting_approval") {
+                  displayStatus = "AWAITING APPROVAL"; colorClass = "bg-amber-500/10 text-amber-500";
+                } else if (ps === "complete") {
+                  displayStatus = "COMPLETE"; colorClass = "bg-emerald-500/10 text-emerald-500";
+                } else if (ps === "active") {
+                  // Active — subdivide based on step progress
+                  const generateStep = data.steps.find(s => s.id === "generate");
+                  const reviewStep = data.steps.find(s => s.id === "review");
+                  if (generateStep?.status === "running") {
+                    displayStatus = "GENERATING"; colorClass = "bg-blue-500/10 text-blue-500";
+                  } else if (reviewStep?.status === "running" || reviewStep?.status === "waiting") {
+                    displayStatus = "REVIEWING"; colorClass = "bg-indigo-500/10 text-indigo-500";
+                  } else {
+                    displayStatus = "ACTIVE"; colorClass = "bg-primary/10 text-primary";
+                  }
                 } else {
-                  displayStatus = data.phaseStatus?.replace(/_/g, " ").toUpperCase() || "ACTIVE";
-                  colorClass = "bg-primary/10 text-primary";
+                  displayStatus = (ps || "UNKNOWN").replace(/_/g, " ").toUpperCase();
+                  colorClass = "bg-muted text-muted-foreground";
                 }
                 return (
                   <span className={cn("text-[10px] px-2 py-1 rounded-full font-semibold", colorClass)}>

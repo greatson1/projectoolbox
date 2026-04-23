@@ -521,6 +521,14 @@ export async function answerQuestionInSession(
               nextCycleAt: new Date(Date.now() + 10 * 60_000), // Resume normal cycle
             },
           });
+          // Log transition so UI surfaces (status bar, activity feed) pick it up
+          await db.agentActivity.create({
+            data: {
+              agentId,
+              type: "decision",
+              summary: `Clarification complete — proceeding to artefact generation for ${deployment.currentPhase || "current phase"}`,
+            },
+          }).catch(() => {});
 
           // Delete existing DRAFT artefacts for this phase so they get regenerated
           const targetNames = session.artefactNames.map(n => n.toLowerCase());
