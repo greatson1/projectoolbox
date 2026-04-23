@@ -16,6 +16,9 @@ interface AgentPipelineSummary {
   currentPhase: string;
   phaseStatus: string;
   status: string;
+  derivedStatus?: string; // truthful status from pipeline API
+  overallProgress?: number;
+  currentStepLabel?: string;
 }
 
 export default function AgentPipelineIndex() {
@@ -25,10 +28,9 @@ export default function AgentPipelineIndex() {
   useEffect(() => {
     fetch("/api/agents")
       .then(r => r.json())
-      .then(json => {
-        // API returns { data: { agents: [...] } }
+      .then(async (json) => {
         const raw = json?.data?.agents || json?.agents || json?.data || [];
-        const list = raw.map((a: any) => {
+        const baseList = raw.map((a: any) => {
           const dep = a.deployments?.[0] || {};
           return {
             id: a.id,
@@ -38,10 +40,57 @@ export default function AgentPipelineIndex() {
             currentPhase: dep.currentPhase || "—",
             phaseStatus: dep.phaseStatus || "—",
             status: a.status || "ACTIVE",
-          };
+          } as AgentPipelineSummary;
         });
-        setAgents(list);
+        setAgents(baseList);
         setLoading(false);
+
+        // Enrich with truthful pipeline status from each agent's pipeline API
+        const enriched = await Promise.all(baseList.map(async (agent: AgentPipelineSummary) => {
+          try {
+            const res = await fetch(`/api/agents/${agent.id}/pipeline`);
+            if (!res.ok) return agent;
+            const payload = await res.json();
+            const d = payload?.data;
+            if (!d) return agent;
+
+            // Derive truthful status from actual step states
+            const steps = d.steps || [];
+            const researchStep = steps.find((s: any) => s.id === "research");
+            const clarifyStep = steps.find((s: any) => s.id === "clarify" || s.id === "clarification");
+            const generateStep = steps.find((s: any) => s.id === "generate");
+            const reviewStep = steps.find((s: any) => s.id === "review" || s.id === "approve");
+            const running = steps.find((s: any) => s.status === "running");
+            const failed = steps.find((s: any) => s.status === "failed");
+
+            let derivedStatus: string;
+            let currentStepLabel: string | undefined;
+
+            if (failed) {
+              derivedStatus = "Failed";
+              currentStepLabel = failed.label;
+            } else if (running) {
+              derivedStatus = running.label;
+              currentStepLabel = running.label;
+            } else if (generateStep?.status === "running") {
+              derivedStatus = "Generating";
+            } else if (reviewStep?.status === "waiting" || reviewStep?.status === "running") {
+              derivedStatus = "Awaiting Review";
+            } else if (clarifyStep?.status === "waiting" && researchStep?.status === "done") {
+              derivedStatus = "Awaiting Input";
+              currentStepLabel = "Clarification";
+            } else if (researchStep?.status === "running") {
+              derivedStatus = "Researching";
+            } else if (d.phaseStatus === "completed" || d.phaseStatus === "complete") {
+              derivedStatus = "Complete";
+            } else {
+              derivedStatus = d.phaseStatus?.replace(/_/g, " ") || "Active";
+            }
+
+            return { ...agent, derivedStatus, overallProgress: d.overallProgress, currentStepLabel };
+          } catch { return agent; }
+        }));
+        setAgents(enriched);
       })
       .catch(() => setLoading(false));
   }, []);
@@ -57,21 +106,26 @@ export default function AgentPipelineIndex() {
     );
   }
 
-  const statusIcon = (ps: string) => {
-    if (ps === "active") return <Clock className="w-4 h-4 text-blue-500" />;
-    if (ps === "complete" || ps === "completed") return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
-    if (ps === "pending_approval" || ps === "waiting_approval") return <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />;
-    if (ps === "researching" || ps === "awaiting_clarification") return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+  const statusIcon = (label: string) => {
+    const lower = (label || "").toLowerCase();
+    if (lower.includes("complete")) return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
+    if (lower.includes("failed")) return <AlertCircle className="w-4 h-4 text-red-500" />;
+    if (lower.includes("awaiting") || lower.includes("input") || lower.includes("review") || lower.includes("approval")) {
+      return <Clock className="w-4 h-4 text-amber-500" />;
+    }
+    if (lower.includes("research") || lower.includes("generat") || lower.includes("working") || lower.includes("ing")) {
+      return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+    }
     return <AlertCircle className="w-4 h-4 text-muted-foreground" />;
   };
 
-  const statusLabel = (ps: string) => {
-    if (ps === "active") return "Active";
-    if (ps === "complete" || ps === "completed") return "Complete";
-    if (ps === "pending_approval" || ps === "waiting_approval") return "Awaiting Approval";
-    if (ps === "researching") return "Researching";
-    if (ps === "awaiting_clarification") return "Awaiting Input";
-    return ps;
+  const statusColor = (label: string) => {
+    const lower = (label || "").toLowerCase();
+    if (lower.includes("complete")) return "text-emerald-500";
+    if (lower.includes("failed")) return "text-red-500";
+    if (lower.includes("awaiting") || lower.includes("input") || lower.includes("review") || lower.includes("approval")) return "text-amber-500";
+    if (lower.includes("research") || lower.includes("generat") || lower.includes("working")) return "text-blue-500";
+    return "text-muted-foreground";
   };
 
   return (
@@ -104,12 +158,20 @@ export default function AgentPipelineIndex() {
                       <h3 className="text-sm font-bold truncate">{agent.name}</h3>
                       <Badge variant="secondary" className="text-[9px]">{agent.projectName}</Badge>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                       <span>Phase: <strong className="text-foreground">{agent.currentPhase}</strong></span>
-                      <span className="flex items-center gap-1">
-                        {statusIcon(agent.phaseStatus)}
-                        {statusLabel(agent.phaseStatus)}
+                      <span className={`flex items-center gap-1 ${statusColor(agent.derivedStatus || agent.phaseStatus)}`}>
+                        {statusIcon(agent.derivedStatus || agent.phaseStatus)}
+                        <strong>{agent.derivedStatus || agent.phaseStatus?.replace(/_/g, " ")}</strong>
                       </span>
+                      {typeof agent.overallProgress === "number" && (
+                        <span className="flex items-center gap-1.5">
+                          <span className="inline-block w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <span className="block h-full bg-primary rounded-full" style={{ width: `${agent.overallProgress}%` }} />
+                          </span>
+                          <span className="tabular-nums text-[10px]">{agent.overallProgress}%</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                   <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0" />
