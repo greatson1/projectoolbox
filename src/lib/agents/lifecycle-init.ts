@@ -428,7 +428,22 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     });
   }
 
-  // ── Step 5: Create gate approval request (if not already created by VPS) ──
+  // ── Step 5: Create gate approval request — BUT ONLY if artefacts exist ──
+  // Premature gates (zero artefacts) were flooding the approvals queue. A phase
+  // gate is only meaningful when there's something to review.
+  const preCheckArtefactCount = await db.agentArtefact.count({ where: { projectId: project.id, agentId } });
+  if (preCheckArtefactCount === 0) {
+    await db.agentActivity.create({
+      data: {
+        agentId,
+        type: "system",
+        summary: `Skipped phase gate creation for ${firstPhase.name} — 0 artefacts exist yet. Gate will be created after artefacts are generated.`,
+      },
+    }).catch(() => {});
+    // Early exit from Step 5 — no gate
+    return;
+  }
+
   const existingGate = await db.approval.findFirst({
     where: { projectId: project.id, type: "PHASE_GATE", status: "PENDING" },
   });

@@ -101,6 +101,44 @@ export async function GET(req: NextRequest) {
       console.error("Self-heal stuck deployment check failed:", e);
     }
 
+    // 0c2. Cancel premature phase gates — PHASE_GATE approvals that reference
+    //      0 artefacts. These were created prematurely by the agent; approving
+    //      them would advance the phase with no documentation. Mark as REJECTED
+    //      with an explanatory comment so the user sees the cleanup.
+    try {
+      const prematureGates = await db.approval.findMany({
+        where: {
+          status: "PENDING",
+          type: "PHASE_GATE",
+        },
+        select: { id: true, projectId: true, description: true, reasoningChain: true, requestedById: true, title: true },
+      });
+      for (const gate of prematureGates) {
+        // Count actual artefacts in the project (any status)
+        const artCount = await db.agentArtefact.count({ where: { projectId: gate.projectId } });
+        // Also check description for the telltale "Generated 0 artefact" pattern
+        const text = ((gate.description || "") + " " + (gate.reasoningChain || "")).toLowerCase();
+        const textSaysZero = /generated\s+0\s+artefact/i.test(text) || /0\s+artefact\(s\)/i.test(text);
+        if (artCount === 0 || textSaysZero) {
+          await db.approval.update({
+            where: { id: gate.id },
+            data: {
+              status: "REJECTED",
+              comment: "Auto-cancelled: phase gate requested before any artefacts were generated. The agent must produce and get artefacts approved before a phase gate can be meaningfully reviewed.",
+              resolvedAt: new Date(),
+            },
+          }).catch(() => {});
+          if (gate.requestedById) {
+            await db.agentActivity.create({
+              data: { agentId: gate.requestedById, type: "system", summary: `Cleanup: cancelled premature phase gate "${gate.title}" — 0 artefacts existed.` },
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Premature phase gate cleanup failed:", e);
+    }
+
     // 0d. Self-heal: if any active deployment has a currentPhase but zero artefacts,
     //     generate them now — UNLESS the deployment is still in the onboarding flow
     //     (researching / awaiting_clarification). Those statuses mean the user hasn't

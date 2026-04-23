@@ -113,7 +113,20 @@ export default function ApprovalsPage() {
     </div>
   );
 
-  const items = (approvals || []).filter((a: any) => a.status === "PENDING" || a.status === "DEFERRED");
+  const rawPending = (approvals || []).filter((a: any) => a.status === "PENDING" || a.status === "DEFERRED");
+
+  // Filter out premature phase gates — gates where the project has 0 artefacts
+  // in any state, which means the agent is requesting advancement before it has
+  // produced anything to review. These are bugs, not legitimate approvals.
+  const items = rawPending.filter((a: any) => {
+    if (a.type !== "PHASE_GATE") return true;
+    const desc = (a.description || "").toLowerCase();
+    const summary = (a.reasoningChain || "").toLowerCase();
+    const text = desc + " " + summary;
+    // If description/summary says "0 artefact" or "generated 0", it's premature
+    if (/generated\s+0\s+artefact/i.test(text) || /0\s+artefact\(s\)/i.test(text)) return false;
+    return true;
+  });
 
   // Extract unique agents from approvals (use requestedByAgent or decision.agent)
   const agentList: { id: string; name: string; gradient: string | null }[] = [];
