@@ -47,7 +47,7 @@ export async function GET(
 
   const projectId = deployment.projectId;
   const currentPhase = deployment.currentPhase;
-  const phaseStatus = deployment.phaseStatus || "active";
+  let phaseStatus = deployment.phaseStatus || "active";
 
   // Parallel queries for all related data
   const [artefacts, kbItems, approvals, activities, phases, chatMessages] =
@@ -121,6 +121,20 @@ export async function GET(
   const activeClarificationSession = kbItems.find(
     (k) => k.title === "__clarification_session__" && (k.tags || []).includes("active")
   );
+
+  // ── Self-heal stale phaseStatus ─────────────────────────────────────
+  // If phaseStatus is "researching" but research is already complete
+  // (facts exist in KB), advance it to awaiting_clarification so the UI
+  // reflects the actual state. Fixes legacy deployments where the
+  // post-research update didn't fire.
+  if (phaseStatus === "researching" && researchItems.length > 0) {
+    const newStatus = activeClarificationSession ? "awaiting_clarification" : "active";
+    await db.agentDeployment.update({
+      where: { id: deployment.id },
+      data: { phaseStatus: newStatus },
+    }).catch(() => {});
+    phaseStatus = newStatus;
+  }
 
   // Phase gate approvals for current phase
   const phaseGateApprovals = approvals.filter(

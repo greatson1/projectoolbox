@@ -796,17 +796,35 @@ export default function AgentPipelinePage() {
                 <p className="text-xs text-red-400 mt-0.5">{currentStep.error}</p>
               )}
             </div>
-            {currentStep.status === "waiting" && currentStep.id === "clarification" && (
+            {/* CTA: jump to the right page for whatever action is needed */}
+            {(currentStep.id === "clarify" || currentStep.id === "clarification" || data.phaseStatus === "awaiting_clarification") && (
               <Link href={`/agents/chat?agent=${agentId}`}>
-                <Button size="sm" variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 flex-shrink-0">
-                  Open Chat <ArrowRight className="w-3 h-3 ml-1" />
+                <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0 font-semibold">
+                  <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                  Answer Questions in Chat <ArrowRight className="w-3 h-3 ml-1.5" />
                 </Button>
               </Link>
             )}
-            {currentStep.status === "waiting" && currentStep.id === "approve" && (
+            {currentStep.status === "waiting" && (currentStep.id === "approve" || currentStep.id === "review") && (
+              <Link href={`/agents/${agentId}?tab=artefacts`}>
+                <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0 font-semibold">
+                  <Eye className="w-3.5 h-3.5 mr-1.5" />
+                  Review Artefacts <ArrowRight className="w-3 h-3 ml-1.5" />
+                </Button>
+              </Link>
+            )}
+            {currentStep.id === "gate" && currentStep.status === "running" && (
               <Link href="/approvals">
-                <Button size="sm" variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 flex-shrink-0">
-                  Review Artefacts <ArrowRight className="w-3 h-3 ml-1" />
+                <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                  Approve Phase Gate <ArrowRight className="w-3 h-3 ml-1.5" />
+                </Button>
+              </Link>
+            )}
+            {data.phaseStatus === "blocked_tasks_incomplete" && (
+              <Link href={`/projects/${agentId}/agile`}>
+                <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white flex-shrink-0 font-semibold">
+                  Complete Tasks <ArrowRight className="w-3 h-3 ml-1.5" />
                 </Button>
               </Link>
             )}
