@@ -96,9 +96,12 @@ function buildResearchQueries(project: ProjectContext): string[] {
 
   // Query 2: Category-specific research
   if (category === "travel" || desc.toLowerCase().includes("trip") || desc.toLowerCase().includes("travel")) {
-    const destination = extractDestination(desc);
+    const destination = extractDestination(desc) || name;
+    // Extract travel month from project dates or description for seasonality check
+    const startDate = (project as any).startDate ? new Date((project as any).startDate) : null;
+    const travelMonth = startDate ? startDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "the travel period";
     queries.push(
-      `Travel planning requirements for ${destination || name}: visa requirements, health/vaccination requirements, typical accommodation costs, transport options, safety considerations, local regulations, and cultural considerations. Focus on practical logistics.`
+      `Comprehensive travel planning for ${destination} in ${travelMonth}: (1) CLIMATE AND WEATHER — what is the weather like in this specific month (temperature, humidity, rainfall, sandstorm/monsoon/hurricane risk)? Is it considered peak, shoulder, or off-season for tourism? (2) Visa and entry requirements for UK passport holders, (3) Typical accommodation costs in this season, (4) Transport options and costs, (5) Safety considerations including FCDO/FCO travel advisory status as of 2026, (6) Local regulations affecting visitors, (7) Cultural considerations and dress codes, (8) Health and vaccination requirements. Cite current sources and current conditions — do not rely on generic descriptions.`
     );
   } else if (category === "training" || desc.toLowerCase().includes("training") || desc.toLowerCase().includes("course")) {
     queries.push(
