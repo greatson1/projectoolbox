@@ -52,6 +52,7 @@ export default function ArtefactsPage() {
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   /** Invalidate cache so next render fetches fresh data from server */
   const refreshArtefacts = () => {
@@ -194,6 +195,30 @@ export default function ArtefactsPage() {
     }
   };
 
+  const handleRegenerate = async (explicitPhase?: string) => {
+    if (!confirm("Delete all DRAFT artefacts and regenerate from scratch with the latest prompt rules? Approved artefacts will be preserved.")) return;
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/artefacts/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(explicitPhase ? { phase: explicitPhase } : {}),
+      });
+      const json = await res.json();
+      if (res.ok && json?.data) {
+        const { generated, phase, draftsDeleted } = json.data;
+        toast.success(`Regenerated ${generated} artefact(s) for ${phase} — ${draftsDeleted} old drafts replaced.`, { duration: 5000 });
+        refreshArtefacts();
+      } else {
+        toast.error(json?.error || "Regeneration failed");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Regeneration failed");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const handleSyncSchedule = async (art: any) => {
     toast.loading("Syncing data…", { id: `sync-${art.id}` });
     try {
@@ -277,9 +302,14 @@ export default function ArtefactsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => handleGenerate()} disabled={generating}>
+          <Button size="sm" variant="outline" onClick={() => handleGenerate()} disabled={generating || regenerating}>
             <RefreshCw className={`h-4 w-4 mr-2 ${generating ? "animate-spin" : ""}`} />
             {generating ? "Generating…" : "Generate Artefacts"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => handleRegenerate()} disabled={generating || regenerating}
+            title="Delete all DRAFT artefacts and regenerate from scratch using the latest prompt rules. Approved artefacts are preserved.">
+            <RefreshCw className={`h-4 w-4 mr-2 ${regenerating ? "animate-spin" : ""}`} />
+            {regenerating ? "Regenerating…" : "Regenerate (Fresh)"}
           </Button>
           <Button size="sm" variant="outline">
             <Upload className="h-4 w-4 mr-2" />Upload Document
