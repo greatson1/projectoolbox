@@ -387,7 +387,7 @@ export function AgentStatusBar() {
 
             {/* Left — avatar + name + badge */}
             <div className="flex flex-col items-center gap-1.5 w-16 shrink-0">
-              <AgentAvatar size={44} colour={agentColour} initial={initial} pulse={c.pulse} ring={c.ring} loading={loading} />
+              <AgentAvatar size={44} colour={agentColour} initial={initial} pulse={c.pulse} ring={c.ring} loading={loading} state={slot.state} />
               <span className="text-[11px] font-bold text-foreground text-center leading-tight">{slot.agentName}</span>
               <span className="text-[9px] text-muted-foreground text-center truncate w-full">{slot.projectName}</span>
               <StateBadge label={label} colour={c.badge} bg={c.badgeBg} state={slot.state} />
@@ -512,7 +512,7 @@ export function AgentStatusBar() {
         <div className="max-w-screen-xl mx-auto flex items-center gap-3 w-full px-4">
 
           {/* Agent avatar */}
-          <AgentAvatar size={28} colour={agentColour} initial={initial} pulse={c.pulse} ring={c.ring} loading={loading} />
+          <AgentAvatar size={28} colour={agentColour} initial={initial} pulse={c.pulse} ring={c.ring} loading={loading} state={slot.state} />
 
           {/* Name + project */}
           <div className="hidden sm:flex flex-col leading-none">
@@ -621,17 +621,35 @@ export function AgentStatusBar() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function AgentAvatar({ size, colour, initial, pulse, ring, loading }: {
-  size: number; colour: string; initial: string; pulse: string; ring: string; loading: boolean;
+function AgentAvatar({ size, colour, initial, pulse, ring, loading, state }: {
+  size: number; colour: string; initial: string; pulse: string; ring: string; loading: boolean; state?: AgentState;
 }) {
   const outer = size + 8;
   const fs    = Math.round(size * 0.44);
+  // Only pulse/spin when the agent is actually active. Idle/monitoring = static.
+  const activeStates: AgentState[] = ["generating", "questions_waiting", "review"];
+  const isActive = state ? activeStates.includes(state) : false;
+  const isWorking = state === "generating" || loading;
   return (
     <div className="relative shrink-0" style={{ width: outer, height: outer }}>
-      <span className="absolute inset-0 rounded-full animate-ping"
-        style={{ background: pulse, animationDuration: "2.5s" }} />
+      {/* Conditional pulse ring — only when active */}
+      {isActive && (
+        <span className="absolute inset-0 rounded-full animate-ping"
+          style={{ background: pulse, animationDuration: "2.5s" }} />
+      )}
+      {/* Static ring border */}
       <span className="absolute inset-0 rounded-full"
         style={{ boxShadow: `0 0 0 1.5px ${ring}` }} />
+      {/* Spinning working ring — only when generating/loading */}
+      {isWorking && (
+        <span
+          className="absolute inset-0 rounded-full"
+          style={{
+            border: `2px dashed ${ring}`,
+            animation: "pipeline-spin 3s linear infinite",
+          }}
+        />
+      )}
       <div className="absolute inset-[4px] rounded-full flex items-center justify-center font-bold text-white"
         style={{ background: colour, fontSize: fs, lineHeight: 1 }}>
         {loading
@@ -653,9 +671,19 @@ function StateBadge({ label, colour, bg, state }: {
     monitoring:     <Shield size={10} />,
     idle:           <Bot size={10} />,
   };
+  // Add glow when actively working so the label stands out
+  const activeStates: AgentState[] = ["generating", "questions_waiting", "review"];
+  const isActive = activeStates.includes(state);
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap shrink-0"
-      style={{ color: colour, background: bg }}>
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap shrink-0"
+      style={{
+        color: colour,
+        background: bg,
+        boxShadow: isActive ? `0 0 10px ${bg}` : undefined,
+        border: isActive ? `1px solid ${colour}55` : "1px solid transparent",
+      }}
+    >
       <span style={{ color: colour }}>{ico[state]}</span>
       {label}
     </span>
