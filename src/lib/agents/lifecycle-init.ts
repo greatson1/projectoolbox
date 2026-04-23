@@ -104,6 +104,11 @@ export async function generatePhaseArtefacts(
 
   const BATCH_SIZE = 3;
   let totalGenerated = 0;
+  // Track which requested artefacts actually landed in the DB. A batch can silently
+  // drop an artefact if the LLM response gets truncated at max_tokens or the section
+  // header doesn't match — without this set we can't tell which are still missing.
+  const generatedNormNames = new Set<string>();
+  const normalizeName = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
 
   const allBatches: Array<{ names: string[]; isSheet: boolean }> = [];
   for (let i = 0; i < proseNames.length; i += BATCH_SIZE) allBatches.push({ names: proseNames.slice(i, i + BATCH_SIZE), isSheet: false });
@@ -168,6 +173,7 @@ export async function generatePhaseArtefacts(
             data: { agentId, projectId, name: artName, format: detectedFmt, content, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
           });
           existingNames.add(artName.toLowerCase());
+          generatedNormNames.add(normalizeName(artName));
           totalGenerated++;
           // Update scaffolded task progress
           try {
@@ -181,13 +187,70 @@ export async function generatePhaseArtefacts(
     }
   }
 
+  // Retry pass — any requested artefact missing from the DB gets one more attempt
+  // in its own API call (full 8192 token budget, no batch-mate competition).
+  const missingAfterBatches = toGenerate.filter(n => !generatedNormNames.has(normalizeName(n)));
+  for (const name of missingAfterBatches) {
+    const isSheet = isSpreadsheetArtefact(name);
+    const prompt = isSheet
+      ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext)
+      : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext);
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY!,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 8192,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!response.ok) {
+        console.error(`[generatePhaseArtefacts] Retry API error for "${name}": ${response.status}`);
+        continue;
+      }
+      const data = await response.json();
+      const text = (data.content?.[0]?.text || "").trim();
+      if (!text) continue;
+      // Strip ARTEFACT header if present; otherwise treat whole response as the doc
+      const stripped = text.replace(/^##\s*ARTEFACT:\s*[^\n]*\n/im, "").trim();
+      if (stripped.length < 20) continue;
+      let detectedFmt = "markdown";
+      if (isSheet) detectedFmt = "csv";
+      else if (stripped.startsWith("<")) detectedFmt = "html";
+      if (existingNames.has(name.toLowerCase())) continue;
+      await db.agentArtefact.create({
+        data: { agentId, projectId, name, format: detectedFmt, content: stripped, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
+      });
+      existingNames.add(name.toLowerCase());
+      generatedNormNames.add(normalizeName(name));
+      totalGenerated++;
+      try {
+        const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
+        await onArtefactGenerated(agentId, projectId, name);
+      } catch {}
+    } catch (e) {
+      console.error(`[generatePhaseArtefacts] Retry failed for "${name}":`, e);
+    }
+  }
+
+  // Honest summary: report which requested artefacts still haven't been produced.
+  const stillMissing = toGenerate.filter(n => !generatedNormNames.has(normalizeName(n)));
+
   if (totalGenerated > 0) {
     try {
       const { CreditService } = await import("@/lib/credits/service");
       await CreditService.deduct(agent.orgId, Math.max(5, totalGenerated * 2), `Generated ${targetPhaseName} artefacts for "${project.name}"`, agentId);
     } catch {}
+    const missingNote = stillMissing.length > 0
+      ? ` — ${stillMissing.length} still pending (${stillMissing.join(", ")})`
+      : "";
     await db.agentActivity.create({
-      data: { agentId, type: "document", summary: `${targetPhaseName}: ${totalGenerated} artefact(s) generated — ready for review` },
+      data: { agentId, type: "document", summary: `${targetPhaseName}: ${totalGenerated} artefact(s) generated — ready for review${missingNote}` },
     });
 
     // Collect TBC items across all newly-generated artefacts and ask the user to confirm them
@@ -203,9 +266,14 @@ export async function generatePhaseArtefacts(
     } catch (e) {
       console.error("[generatePhaseArtefacts] TBC extraction failed:", e);
     }
+  } else if (toGenerate.length > 0) {
+    // Generation attempted but produced nothing — don't go silent.
+    await db.agentActivity.create({
+      data: { agentId, type: "document", summary: `${targetPhaseName}: artefact generation failed for ${toGenerate.length} document(s) (${stillMissing.join(", ")}) — please retry from the Artefacts tab` },
+    }).catch(() => {});
   }
 
-  return { generated: totalGenerated, skipped, phase: targetPhaseName };
+  return { generated: totalGenerated, skipped, phase: targetPhaseName, missing: stillMissing };
 }
 
 /**
