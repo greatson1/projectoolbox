@@ -11,6 +11,36 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { MLProbabilityBadge, useMLPrediction } from "@/components/ml/MLInsightBadge";
+
+function ApprovalLikelihoodRow({ type, urgency }: { type: string; urgency?: string | null }) {
+  const { data } = useMLPrediction<any>("approval_likelihood", { type, urgency: urgency || undefined }, !!type);
+  if (!data) return null;
+  return (
+    <MLProbabilityBadge
+      label="P(approve)"
+      probability={data.probability ?? 0}
+      confidence={data.confidence ?? 0}
+      reasoning={data.reasoning}
+    />
+  );
+}
+
+function ImpactCalibrationHint({ type }: { type: string }) {
+  const { data } = useMLPrediction<any>("impact_calibration", { type }, !!type);
+  if (!data || !data.sampleSize || data.sampleSize < 3) return null;
+  const nonZero = Object.entries(data.deltas || {}).filter(([, v]) => Math.abs(Number(v)) >= 0.3) as [string, number][];
+  if (nonZero.length === 0) return null;
+  const hint = nonZero
+    .map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${v > 0 ? "+" : ""}${v.toFixed(1)}`)
+    .join(", ");
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] text-primary" title={`Based on ${data.sampleSize} past edits, your team typically adjusts: ${hint}`}>
+      <span>✦</span>
+      <span className="font-medium">Team tends to rate: {hint}</span>
+    </span>
+  );
+}
 
 const FILTERS = ["All", "High Priority", "Phase Gates", "Change Requests", "Scope & Risk", "Communications"];
 
@@ -276,6 +306,7 @@ export default function ApprovalsPage() {
                       <span>·</span>
                       <span>{timeAgo(item.createdAt)}</span>
                       {item.iteration > 1 && <Badge variant="outline" className="text-[9px]">Iteration {item.iteration}</Badge>}
+                      <ApprovalLikelihoodRow type={item.type} urgency={item.urgency} />
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
@@ -371,7 +402,10 @@ export default function ApprovalsPage() {
                     {/* ── 4. IMPACT ASSESSMENT ── */}
                     {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && (
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">4. Impact Assessment</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">4. Impact Assessment</p>
+                          <ImpactCalibrationHint type={item.type} />
+                        </div>
                         <div className="grid grid-cols-4 gap-2">
                           {[
                             { label: "Schedule", value: scores.schedule || 1, desc: ["No delay expected", "Minor delay (up to 1 week)", "Significant delay (1-4 weeks)", "Major delay (over 1 month)"] },

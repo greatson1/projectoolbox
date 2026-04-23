@@ -148,6 +148,8 @@ model Organisation {
   agentInbox       AgentInboxMessage[]
   integrations     Integration[]
   automationRules  AutomationRule[]
+  mlInsights       MLInsight[]
+  projectEmbeddings ProjectEmbedding[]
   globalHitlPolicy Json?               // org-level HITL governance overrides
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
@@ -492,6 +494,40 @@ model WebhookEndpoint {
   lastFired DateTime?
   failCount Int          @default(0)
   createdAt DateTime     @default(now())
+
+  @@index([orgId])
+}
+
+// ─── Machine Learning Insights ───
+
+model MLInsight {
+  id         String   @id @default(cuid())
+  orgId      String
+  org        Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kind       String   // approval_likelihood, impact_calibration, story_point_calibration, risk_materialisation
+  subjectId  String?
+  subjectType String?
+  score      Float
+  confidence Float    @default(0.5)
+  data       Json     @default("{}")
+  trainedAt  DateTime @default(now())
+  expiresAt  DateTime?
+
+  @@index([orgId, kind])
+  @@index([orgId, kind, subjectId])
+}
+
+model ProjectEmbedding {
+  id         String   @id @default(cuid())
+  orgId      String
+  org        Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  projectId  String   @unique
+  embedding  Json
+  sourceText String   @db.Text
+  model      String   @default("text-embedding-3-small")
+  dims       Int      @default(1536)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([orgId])
 }

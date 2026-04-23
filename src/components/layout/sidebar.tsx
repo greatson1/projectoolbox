@@ -53,6 +53,7 @@ const NAV: NavGroup[] = [
       { label: "Chat with Agent",  href: "/agents/chat",      icon: MessageSquare },
       { label: "Process Pipeline", href: "/agents/pipeline",  icon: Activity },
       { label: "Activity Log",     href: "/activity",         icon: BarChart3 },
+      { label: "ML Insights",      href: "/ml-insights",      icon: Brain },
       { label: "Deploy Agent",     href: "/agents/deploy",    icon: Rocket },
     ],
   },

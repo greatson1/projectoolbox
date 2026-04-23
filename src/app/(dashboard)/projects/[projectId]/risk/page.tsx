@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectRisks } from "@/hooks/use-api";
 import { toast } from "sonner";
+import { MLProbabilityBadge, useMLPrediction } from "@/components/ml/MLInsightBadge";
 import {
   Plus, AlertTriangle, Shield, TrendingDown, Download,
   Pencil, X, Check, Loader2, ChevronDown, ChevronUp, Trash2,
@@ -92,6 +93,21 @@ type RiskForm = Omit<Risk, "id" | "score" | "responseLog">;
 
 function scoreColour(score: number) {
   return score >= 15 ? "text-destructive" : score >= 8 ? "text-amber-500" : "text-green-500";
+}
+
+// ── ML: Risk materialisation probability indicator ──
+function RiskMaterialisationCell({ riskId }: { riskId: string }) {
+  const { data, loading } = useMLPrediction<any>("risk_materialisation", { riskId });
+  if (loading || !data) return <span className="text-[10px] text-muted-foreground">—</span>;
+  return (
+    <MLProbabilityBadge
+      label="P(mat)"
+      probability={data.probability ?? 0}
+      confidence={data.confidence ?? 0}
+      reasoning={data.reasoning}
+      inverse
+    />
+  );
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -410,7 +426,7 @@ export default function RiskRegisterPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border">
-                      {["ID", "Risk", "Category", "P", "I", "Score", "Status", "Owner"].map(h => (
+                      {["ID", "Risk", "Category", "P", "I", "Score", "ML", "Status", "Owner"].map(h => (
                         <th key={h} className="text-left py-2.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                       ))}
                     </tr>
@@ -429,6 +445,7 @@ export default function RiskRegisterPage() {
                           <td className="py-2.5 px-3">{r.probability}</td>
                           <td className="py-2.5 px-3">{r.impact}</td>
                           <td className="py-2.5 px-3"><span className={`font-bold ${scoreColour(score)}`}>{score}</span></td>
+                          <td className="py-2.5 px-3"><RiskMaterialisationCell riskId={r.id} /></td>
                           <td className="py-2.5 px-3"><Badge variant={STATUS_VARIANT[r.status] || "outline"}>{r.status}</Badge></td>
                           <td className="py-2.5 px-3 text-muted-foreground">{r.owner || "—"}</td>
                         </tr>

@@ -281,9 +281,22 @@ Return ONLY a JSON array of numbers in order, one per task. Example: [3,5,2,8,1]
     const match = text.match(/\[[\d,\s]+\]/);
     if (match) {
       const points: number[] = JSON.parse(match[0]);
+
+      // Apply ML calibration multiplier if we have historical data
+      let multiplier = 1.0;
+      try {
+        const project = await db.project.findUnique({ where: { id: projectId }, select: { orgId: true } });
+        if (project) {
+          const { predictStoryPointCalibration } = await import("@/lib/ml/story-point-calibration");
+          const cal = await predictStoryPointCalibration(project.orgId);
+          if (cal.confidence > 0.2) multiplier = cal.multiplier;
+        }
+      } catch { /* non-fatal */ }
+
       for (let i = 0; i < Math.min(points.length, tasksWithoutPoints.length); i++) {
-        const pts = Math.max(1, Math.min(13, points[i] || 2));
-        await db.task.update({ where: { id: tasksWithoutPoints[i].id }, data: { storyPoints: pts } });
+        const raw = Math.max(1, Math.min(13, points[i] || 2));
+        const calibrated = Math.max(1, Math.min(21, Math.round(raw * multiplier)));
+        await db.task.update({ where: { id: tasksWithoutPoints[i].id }, data: { storyPoints: calibrated } });
       }
     }
   } catch (e) {
