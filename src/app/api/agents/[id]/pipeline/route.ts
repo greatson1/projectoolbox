@@ -551,18 +551,41 @@ export async function GET(
     });
   }
 
-  // Enforce sequential step visibility: a step can only be "running" if every
-  // earlier non-skipped step is already "done". Without this, independently-
-  // computed statuses (e.g. Clarification awaiting answers + Delivery Tasks
-  // not yet complete) can both appear active at the same time.
+  // Enforce strict sequential progression: a step can only show as "done" or
+  // "running" if every earlier non-skipped step is already done/skipped.
+  //
+  // Two specific violations we want to catch:
+  //   1. Generate Artefacts showing "done" while Clarification is still running
+  //      — the artefacts were built without the user's clarification answers,
+  //      so they need regeneration.
+  //   2. KB Risk Check showing "done" while Review & Approve / Delivery Tasks
+  //      haven't completed — KB check is technically a background check but
+  //      surfacing it as "done" out of order misleads the user about sequence.
+  //
+  // Any step after an incomplete predecessor is forced to "waiting". If the
+  // step has its own data (e.g. 6 DRAFT artefacts) we annotate the details to
+  // make it clear rework is needed, rather than discarding the info.
   {
     let blockedByEarlier = false;
+    let blockingReason = "";
+    // Generate-Artefacts is special: if clarification is still pending, any
+    // artefacts that exist were produced without the user's answers and are
+    // stale — flag this as rework rather than "blocked by prerequisite".
     for (const s of steps) {
-      if (blockedByEarlier && s.status === "running") {
-        s.status = "waiting";
-        s.details = undefined;
+      if (blockedByEarlier) {
+        if (s.status === "done" || s.status === "running") {
+          const prevDetails = s.details;
+          s.status = "waiting";
+          const reworkHint = s.id === "generate" ? " (stale — will regenerate)" : "";
+          s.details = prevDetails
+            ? `${prevDetails} — waiting on ${blockingReason}${reworkHint}`
+            : `Waiting on ${blockingReason}`;
+          s.completedAt = undefined;
+          s.duration = undefined;
+        }
       }
       if (s.status !== "done" && s.status !== "skipped") {
+        if (!blockedByEarlier) blockingReason = s.label.replace(/^[^:]+:\s*/, "");
         blockedByEarlier = true;
       }
     }
