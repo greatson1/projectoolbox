@@ -89,45 +89,117 @@ function buildResearchQueries(project: ProjectContext): string[] {
 
   const queries: string[] = [];
 
-  // Query 1: Core feasibility — what does this type of project actually involve?
+  // Resolve time context — used across all queries so data is current-year-specific
+  const startDate = (project as any).startDate ? new Date((project as any).startDate) : null;
+  const endDate = (project as any).endDate ? new Date((project as any).endDate) : null;
+  const nowYear = new Date().getFullYear();
+  const projectYear = startDate ? startDate.getFullYear() : nowYear;
+  const projectMonth = startDate ? startDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : `${nowYear}`;
+  const duration = startDate && endDate ? Math.ceil((endDate.getTime() - startDate.getTime()) / 86_400_000) + " days" : "unknown duration";
+
+  // Query 1: Core feasibility — now with explicit quantitative + temporal focus
   queries.push(
-    `What are the key requirements, typical costs, common risks, and timeline considerations for: "${name}"? ${desc ? `Context: ${desc.slice(0, 300)}` : ""} ${budget ? `Budget: ${budget}.` : ""} Provide specific actionable details, not generic advice.`
+    `Project feasibility analysis for: "${name}". ${desc ? `Context: ${desc.slice(0, 300)}` : ""} ${budget ? `Budget: ${budget}.` : ""} Timing: ${projectMonth}, duration ${duration}.
+Provide SPECIFIC, CURRENT (${nowYear}) data on:
+(1) QUANTIFIED costs — actual current prices, not ranges from past years
+(2) Real timelines — how long similar projects actually take today
+(3) Top 5 risks with frequency data where available
+(4) Current market conditions affecting this project type
+Cite sources and avoid generic advice.`
   );
 
-  // Query 2: Category-specific research
+  // Query 2: Category-specific research — every category explicitly covers
+  // time-sensitive factors (current rates, current regulations, current trends)
+  // that Claude is most likely to hallucinate about if missing.
   if (category === "travel" || desc.toLowerCase().includes("trip") || desc.toLowerCase().includes("travel")) {
     const destination = extractDestination(desc) || name;
-    // Extract travel month from project dates or description for seasonality check
-    const startDate = (project as any).startDate ? new Date((project as any).startDate) : null;
-    const travelMonth = startDate ? startDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" }) : "the travel period";
     queries.push(
-      `Comprehensive travel planning for ${destination} in ${travelMonth}: (1) CLIMATE AND WEATHER — what is the weather like in this specific month (temperature, humidity, rainfall, sandstorm/monsoon/hurricane risk)? Is it considered peak, shoulder, or off-season for tourism? (2) Visa and entry requirements for UK passport holders, (3) Typical accommodation costs in this season, (4) Transport options and costs, (5) Safety considerations including FCDO/FCO travel advisory status as of 2026, (6) Local regulations affecting visitors, (7) Cultural considerations and dress codes, (8) Health and vaccination requirements. Cite current sources and current conditions — do not rely on generic descriptions.`
+      `Comprehensive travel planning for ${destination} in ${projectMonth}:
+(1) CLIMATE AND WEATHER — temperature, humidity, rainfall, sandstorm/monsoon/hurricane risk in this specific month. Peak/shoulder/off-season status?
+(2) Visa and entry requirements for UK passport holders as of ${nowYear}
+(3) Typical accommodation costs in this season (per night, 4-star and 5-star)
+(4) Transport options and current costs
+(5) FCDO/FCO travel advisory status as of ${nowYear}
+(6) Local regulations affecting visitors (including alcohol/dress codes)
+(7) Cultural considerations
+(8) Health and vaccination requirements
+Cite current sources. Do not rely on pre-${nowYear - 1} descriptions.`
     );
   } else if (category === "training" || desc.toLowerCase().includes("training") || desc.toLowerCase().includes("course")) {
     queries.push(
-      `Best practices for organising ${name}: venue requirements, typical costs per attendee, materials needed, scheduling considerations, evaluation methods, and certification requirements if applicable. ${budget ? `Budget: ${budget}.` : ""}`
+      `Training programme planning for "${name}" in the UK as of ${nowYear}:
+(1) CURRENT market rates for trainers and training venues (per day, per attendee)
+(2) Accreditation/certification body requirements and fees
+(3) Venue options with typical capacities and costs (hotels, dedicated training centres, hybrid)
+(4) Materials and equipment costs (printed, digital, licences)
+(5) Accessibility and inclusivity requirements
+(6) Common evaluation methods and expected completion/pass rates
+(7) Lead times for booking venues and recruiting delegates
+${budget ? `Budget context: ${budget}.` : ""} Cite current sources.`
     );
   } else if (category === "event" || desc.toLowerCase().includes("event") || desc.toLowerCase().includes("conference")) {
     queries.push(
-      `Event planning requirements for ${name}: venue capacity and costs, catering considerations, AV requirements, registration process, health and safety requirements, insurance needs. ${budget ? `Budget: ${budget}.` : ""}`
+      `Event planning for "${name}" in ${projectMonth}:
+(1) CURRENT venue market rates (capacity ranges and price bands)
+(2) Catering costs per head (current ${nowYear} rates)
+(3) AV and production costs
+(4) Date conflicts — major public/industry events on/around this date to avoid
+(5) Insurance requirements (public liability, event cancellation)
+(6) Health & safety regulations (COVID-era practices still required?)
+(7) Registration platform options and fees
+(8) Typical lead times for booking key elements
+${budget ? `Budget context: ${budget}.` : ""} Cite current sources.`
     );
-  } else if (category === "construction" || desc.toLowerCase().includes("build") || desc.toLowerCase().includes("renovation")) {
+  } else if (category === "construction" || desc.toLowerCase().includes("build") || desc.toLowerCase().includes("renovation") || desc.toLowerCase().includes("fit-out")) {
     queries.push(
-      `Construction/renovation project requirements for ${name}: planning permissions needed, typical contractor costs, building regulations, timeline expectations, common risks and delays, insurance requirements.`
+      `Construction/renovation planning for "${name}" in the UK as of ${nowYear}:
+(1) CURRENT material cost trends (steel, timber, concrete, glass, aggregates) — are prices rising or falling?
+(2) Current labour rates (day rates for key trades: builder, electrician, plumber, plasterer)
+(3) Planning permission requirements and typical timelines
+(4) Building regulations (Part L, Part B, fire safety post-Grenfell)
+(5) Typical contractor cost breakdowns for this project type
+(6) Common delay causes and mitigation strategies
+(7) Insurance and warranty requirements (NHBC, JCT contracts)
+(8) Supply chain conditions affecting lead times
+${budget ? `Budget context: ${budget}.` : ""} Cite sources from ${nowYear - 1}-${nowYear}.`
     );
-  } else if (category === "it" || category === "software" || desc.toLowerCase().includes("software") || desc.toLowerCase().includes("app") || desc.toLowerCase().includes("system")) {
+  } else if (category === "it" || category === "software" || desc.toLowerCase().includes("software") || desc.toLowerCase().includes("app") || desc.toLowerCase().includes("system") || desc.toLowerCase().includes("servicenow") || desc.toLowerCase().includes("migration")) {
     queries.push(
-      `Software/IT project considerations for ${name}: technology stack options, typical development timelines, infrastructure requirements, security considerations, testing approach, deployment strategy. ${budget ? `Budget: ${budget}.` : ""}`
+      `IT/Software project considerations for "${name}" as of ${nowYear}:
+(1) CURRENT technology landscape — which stacks/tools/versions are production-ready TODAY (not 2022)
+(2) Typical licence / SaaS costs per user per month
+(3) Cloud infrastructure costs (AWS/Azure/GCP current rates)
+(4) Current developer day rates (contract vs permanent, by seniority, UK)
+(5) Realistic delivery timelines for similar projects
+(6) Security/compliance requirements (GDPR, SOC 2, ISO 27001)
+(7) Common vendor/platform risks (deprecations, acquisitions, pricing changes in ${nowYear})
+(8) Integration patterns and typical gotchas
+${budget ? `Budget context: ${budget}.` : ""} Cite current sources.`
     );
   } else {
     queries.push(
-      `Key success factors, common pitfalls, and industry benchmarks for projects similar to: "${name}". ${desc ? `Description: ${desc.slice(0, 300)}` : ""} What should a project manager be aware of?`
+      `Domain analysis for "${name}" as of ${nowYear}: ${desc ? `Description: ${desc.slice(0, 300)}` : ""}
+(1) CURRENT market/industry conditions for this project type
+(2) Actual ${nowYear} benchmarks for cost, timeline, team size
+(3) Top 5 risks with frequency/likelihood data
+(4) Common pitfalls and how similar projects fail
+(5) Key success factors with measurable outcomes
+(6) Regulatory or compliance considerations
+Cite current sources. Avoid generic advice.`
     );
   }
 
-  // Query 3: Regulatory/compliance (always useful)
+  // Query 3: Regulatory/compliance — year-specific so we catch recent changes
   queries.push(
-    `What UK regulations, compliance requirements, or legal considerations apply to: "${name}"? ${desc ? `Context: ${desc.slice(0, 200)}` : ""} Include any permits, certifications, insurance, or health & safety requirements.`
+    `UK regulatory and compliance requirements for "${name}" as of ${nowYear}. ${desc ? `Context: ${desc.slice(0, 200)}` : ""}
+Include:
+(1) Permits, licences, certifications needed
+(2) Insurance requirements (professional indemnity, employer's liability, public liability)
+(3) Health & safety (CDM 2015 for construction, HSG for events, etc)
+(4) Data protection (UK GDPR post-${nowYear - 2})
+(5) Any recent regulatory changes in ${nowYear - 1}-${nowYear} affecting this project type
+(6) Industry-specific standards (ISO, BSI, sector-regulators)
+Cite current sources.`
   );
 
   return queries;
