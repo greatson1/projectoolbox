@@ -816,7 +816,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
               <h3 className="mb-3 text-sm font-semibold text-foreground">Recent Activity</h3>
               {(() => {
                 // Hide noisy background types + dedupe identical summaries within 1h window
-                const HIDDEN_TYPES = new Set(["comms_reminder", "monitoring", "chat", "autonomous_cycle", "system"]);
+                // prediction_alert: hidden until VPS predictive-engine guards land
+                // (was logging bogus "180-day slip" on young projects due to snake_case field name bug)
+                const HIDDEN_TYPES = new Set(["comms_reminder", "monitoring", "chat", "autonomous_cycle", "system", "prediction_alert"]);
                 const raw = (apiAgent?.activities || []) as any[];
                 const filtered = raw.filter((a) => !HIDDEN_TYPES.has(a.type));
                 const deduped: any[] = [];
