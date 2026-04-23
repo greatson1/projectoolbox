@@ -68,6 +68,8 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [newsletterEmail, setNewsletterEmail] = useState("");
+  const [newsletterState, setNewsletterState] = useState<"idle" | "loading" | "done" | "error">("idle");
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -75,6 +77,24 @@ export default function LandingPage() {
     window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
+
+  async function handleNewsletterSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newsletterEmail.trim()) return;
+    setNewsletterState("loading");
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newsletterEmail.trim(), sector: "newsletter" }),
+      });
+      if (!res.ok) { setNewsletterState("error"); return; }
+      setNewsletterState("done");
+      setNewsletterEmail("");
+    } catch {
+      setNewsletterState("error");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -559,10 +579,24 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="flex items-center justify-between pt-8 border-t border-border flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <input className="px-4 py-2 rounded-lg text-sm bg-background border border-input w-[220px] placeholder:text-muted-foreground" placeholder="Email for updates..." />
-              <Button size="sm">Subscribe</Button>
-            </div>
+            <form onSubmit={handleNewsletterSubmit} className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <input
+                  type="email"
+                  value={newsletterEmail}
+                  onChange={e => { setNewsletterEmail(e.target.value); setNewsletterState("idle"); }}
+                  disabled={newsletterState === "loading" || newsletterState === "done"}
+                  className="px-4 py-2 rounded-lg text-sm bg-background border border-input w-[220px] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+                  placeholder="Email for updates..."
+                />
+                <Button size="sm" type="submit" disabled={newsletterState === "loading" || newsletterState === "done"}>
+                  {newsletterState === "loading" ? "..." : newsletterState === "done" ? "Subscribed ✓" : "Subscribe"}
+                </Button>
+              </div>
+              {newsletterState === "error" && (
+                <p className="text-xs text-destructive">Something went wrong — please try again.</p>
+              )}
+            </form>
             <p className="text-xs text-muted-foreground">© 2026 Projectoolbox by PMGT Solutions Ltd.</p>
           </div>
         </div>

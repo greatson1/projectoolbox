@@ -9,6 +9,8 @@
  */
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +18,34 @@ import {
   AlertTriangle, BookOpen, Globe, Shield, Lightbulb,
   BarChart3, FileText, ExternalLink,
 } from "lucide-react";
+
+const RESEARCH_MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  h1: ({ children }) => <h4 className="text-[12px] font-bold mt-2 mb-1 text-foreground">{children}</h4>,
+  h2: ({ children }) => <h4 className="text-[12px] font-bold mt-2 mb-1 text-foreground">{children}</h4>,
+  h3: ({ children }) => <h5 className="text-[11px] font-semibold mt-2 mb-1 text-foreground uppercase tracking-wide">{children}</h5>,
+  h4: ({ children }) => <h5 className="text-[11px] font-semibold mt-2 mb-1 text-foreground">{children}</h5>,
+  p: ({ children }) => <p className="text-[11px] text-muted-foreground leading-relaxed mb-1.5 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="mb-1.5 space-y-0.5 ml-1">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-1.5 space-y-0.5 ml-3 list-decimal">{children}</ol>,
+  li: ({ children }) => <li className="text-[11px] text-muted-foreground leading-relaxed flex gap-1.5"><span className="text-primary/70 flex-shrink-0">•</span><span className="flex-1">{children}</span></li>,
+  hr: () => <hr className="my-2 border-border/40" />,
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{children}</a>,
+  code: ({ children, className }) => {
+    const isBlock = className?.includes("language-");
+    return isBlock
+      ? <pre className="bg-muted/50 rounded p-2 text-[10px] font-mono overflow-x-auto my-1.5"><code>{children}</code></pre>
+      : <code className="bg-muted/50 px-1 rounded text-[10px] font-mono">{children}</code>;
+  },
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2 rounded border border-border/30">
+      <table className="w-full text-[10px] border-collapse">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => <th className="px-2 py-1 text-left font-semibold text-foreground bg-muted/40">{children}</th>,
+  td: ({ children }) => <td className="px-2 py-1 text-muted-foreground border-t border-border/20">{children}</td>,
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -160,10 +190,11 @@ export function ResearchFindingsCard({
                   </button>
                   {isExpanded && (
                     <div className="ml-8 mr-2 mb-2 px-3 py-2.5 rounded-lg bg-muted/20 border border-border/20">
-                      <div className="text-[11px] text-muted-foreground leading-relaxed whitespace-pre-line">
-                        {section.content.slice(0, 2000)}
-                        {section.content.length > 2000 && "..."}
-                      </div>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={RESEARCH_MD_COMPONENTS}>
+                        {section.content.length > 2000
+                          ? section.content.slice(0, 2000) + "\n\n..."
+                          : section.content}
+                      </ReactMarkdown>
                     </div>
                   )}
                 </div>

@@ -694,3 +694,49 @@ export function useEmailPortfolioReport() {
     mutationFn: (data: any) => api("/api/portfolio/email", { method: "POST", body: JSON.stringify(data) }),
   });
 }
+
+// ── ML Predictions ──
+
+export function useApprovalLikelihood(type: string | null, urgency?: string | null) {
+  return useQuery({
+    queryKey: ["ml", "approval_likelihood", type, urgency],
+    queryFn: () => api<any>(`/api/ml/predictions?kind=approval_likelihood&type=${encodeURIComponent(type || "")}${urgency ? `&urgency=${encodeURIComponent(urgency)}` : ""}`),
+    enabled: !!type,
+    staleTime: 60 * 60 * 1000, // 1 hour — baseline changes slowly
+  });
+}
+
+export function useImpactCalibration(type: string | null) {
+  return useQuery({
+    queryKey: ["ml", "impact_calibration", type],
+    queryFn: () => api<any>(`/api/ml/predictions?kind=impact_calibration&type=${encodeURIComponent(type || "")}`),
+    enabled: !!type,
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useStoryPointCalibration(assignee?: string | null) {
+  return useQuery({
+    queryKey: ["ml", "story_point_calibration", assignee],
+    queryFn: () => api<any>(`/api/ml/predictions?kind=story_point_calibration${assignee ? `&assignee=${encodeURIComponent(assignee)}` : ""}`),
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+export function useRiskMaterialisation(riskId: string | null) {
+  return useQuery({
+    queryKey: ["ml", "risk_materialisation", riskId],
+    queryFn: () => api<any>(`/api/ml/predictions?kind=risk_materialisation&riskId=${encodeURIComponent(riskId || "")}`),
+    enabled: !!riskId,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+export function useSimilarProjects(projectId: string | null, k = 5) {
+  return useQuery({
+    queryKey: ["ml", "similar_projects", projectId, k],
+    queryFn: () => api<any[]>(`/api/ml/predictions?kind=similar_projects&projectId=${encodeURIComponent(projectId || "")}&k=${k}`),
+    enabled: !!projectId,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+}

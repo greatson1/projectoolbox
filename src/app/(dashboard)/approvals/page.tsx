@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2 } from "lucide-react";
+import { CheckCircle2, X, MessageSquare, ChevronDown, Shield, Clock, AlertTriangle, Loader2, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { MLProbabilityBadge, useMLPrediction } from "@/components/ml/MLInsightBadge";
 
@@ -35,8 +35,8 @@ function ImpactCalibrationHint({ type }: { type: string }) {
     .map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)} ${v > 0 ? "+" : ""}${v.toFixed(1)}`)
     .join(", ");
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] text-primary" title={`Based on ${data.sampleSize} past edits, your team typically adjusts: ${hint}`}>
-      <span>✦</span>
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/5 border border-primary/15 text-[10px] text-primary" title={`Based on ${data.sampleSize} past edits, your team typically adjusts these scores`}>
+      <Sparkles className="w-3 h-3" />
       <span className="font-medium">Team tends to rate: {hint}</span>
     </span>
   );

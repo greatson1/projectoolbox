@@ -153,6 +153,9 @@ export default function ProjectOverviewPage() {
       {/* EVM + Health Summary */}
       <ProjectHealthCard projectId={projectId} />
 
+      {/* Similar past projects (ML) */}
+      <SimilarProjectsWidget projectId={projectId} />
+
       {/* Agent Artefacts */}
       <ArtefactSection projectId={projectId} />
 
@@ -174,6 +177,67 @@ export default function ProjectOverviewPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Similar Past Projects (ML) ───
+function SimilarProjectsWidget({ projectId }: { projectId: string }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setLoading(true);
+    fetch(`/api/ml/predictions?kind=similar_projects&projectId=${projectId}&k=4`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) setError(d.error);
+        else setItems(d.data || []);
+      })
+      .catch(() => setError("Could not fetch similar projects"))
+      .finally(() => setLoading(false));
+  }, [projectId]);
+
+  if (loading) return <Skeleton className="h-20 rounded-xl" />;
+  if (error || items.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">Similar Past Projects</CardTitle>
+            <Badge variant="secondary" className="text-[10px]">ML</Badge>
+          </div>
+          <span className="text-[10px] text-muted-foreground">Cosine similarity on description, methodology, category</span>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {items.map((p: any) => {
+            const pct = Math.round(p.similarity * 100);
+            const barColour = pct >= 75 ? "bg-emerald-500" : pct >= 50 ? "bg-primary" : "bg-amber-500";
+            return (
+              <Link key={p.projectId} href={`/projects/${p.projectId}`}
+                className="block p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-muted/40 transition-all">
+                <p className="text-sm font-semibold truncate">{p.name}</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                    <div className={`h-full ${barColour}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-[10px] text-primary font-semibold flex-shrink-0">{pct}%</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  {p.category && <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">{p.category}</span>}
+                  {p.status && <span className="text-[9px] text-muted-foreground">{p.status}</span>}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

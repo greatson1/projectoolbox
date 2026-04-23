@@ -4,11 +4,12 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
-import { useProjectTasks } from "@/hooks/use-api";
+import { useProjectTasks, useStoryPointCalibration } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Sparkles } from "lucide-react";
 
 /**
  * Sprint Tracker — Sprint progress, burndown/burnup, stand-ups, team performance,
@@ -225,6 +226,7 @@ export default function SprintTrackerPage() {
   return (
     <div className="space-y-6 max-w-[1600px]">
       {/* ═══ 1. HEADER ═══ */}
+      <VelocityCalibrationBanner />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Sprint Tracker</h1>
@@ -790,6 +792,34 @@ function StatusPipeline({ current}: { current: ItemStatus;  }) {
       })}
       <span className="text-[9px] font-semibold ml-1" style={{ color: current === "blocked" ? "#EF4444" : STATUS_COLORS[current] }}>
         {STATUS_LABELS[current]}
+      </span>
+    </div>
+  );
+}
+
+/** Velocity calibration banner — compares team's estimate vs actual hours over time. */
+function VelocityCalibrationBanner() {
+  const { data } = useStoryPointCalibration();
+  if (!data || !data.sampleSize || data.sampleSize < 5) return null;
+  const mult = data.multiplier ?? 1;
+  const pct = Math.round(Math.abs(mult - 1) * 100);
+  const isUnder = mult > 1.1;  // actual > estimate → team under-estimates
+  const isOver = mult < 0.9;   // actual < estimate → team over-estimates
+  if (!isUnder && !isOver) return null;
+  const color = isUnder ? "#F59E0B" : "#10B981";
+  const label = isUnder
+    ? `Your team typically takes ${pct}% longer than estimated — consider padding new estimates by ${Math.round((mult - 1) * 100)}%.`
+    : `Your team consistently delivers ${pct}% faster than estimated — estimates may be too conservative.`;
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-[10px]"
+      style={{ background: `${color}12`, border: `1px solid ${color}33` }}>
+      <Sparkles className="w-4 h-4 flex-shrink-0" style={{ color }} />
+      <div className="flex-1 text-[12px]" style={{ color: "var(--foreground)" }}>
+        <span className="font-semibold" style={{ color }}>ML velocity insight:</span>{" "}
+        <span>{label}</span>
+      </div>
+      <span className="text-[11px] text-muted-foreground flex-shrink-0">
+        multiplier {mult.toFixed(2)} · {data.sampleSize} samples · {Math.round((data.confidence ?? 0) * 100)}% confidence
       </span>
     </div>
   );

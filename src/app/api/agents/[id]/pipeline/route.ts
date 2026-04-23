@@ -551,6 +551,23 @@ export async function GET(
     });
   }
 
+  // Enforce sequential step visibility: a step can only be "running" if every
+  // earlier non-skipped step is already "done". Without this, independently-
+  // computed statuses (e.g. Clarification awaiting answers + Delivery Tasks
+  // not yet complete) can both appear active at the same time.
+  {
+    let blockedByEarlier = false;
+    for (const s of steps) {
+      if (blockedByEarlier && s.status === "running") {
+        s.status = "waiting";
+        s.details = undefined;
+      }
+      if (s.status !== "done" && s.status !== "skipped") {
+        blockedByEarlier = true;
+      }
+    }
+  }
+
   // --- Phase completion data (used for both overall progress + phase summary) ---
   let completionData: any[] = [];
   try {

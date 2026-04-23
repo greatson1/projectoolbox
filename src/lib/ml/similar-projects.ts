@@ -175,3 +175,57 @@ export async function findSimilarProjects(
     };
   });
 }
+
+/** Find similar projects for a free-text input (deploy wizard preview). */
+export async function findSimilarByText(
+  orgId: string,
+  input: { name?: string; description?: string; category?: string; methodology?: string },
+  k: number = 5,
+): Promise<SimilarProject[]> {
+  const text = buildProjectText({
+    name: input.name || "New project",
+    description: input.description,
+    category: input.category,
+    methodology: input.methodology,
+    budget: null,
+  });
+
+  let targetVec: number[];
+  try {
+    targetVec = await embed(text);
+  } catch {
+    return [];
+  }
+
+  const candidates = await db.projectEmbedding.findMany({
+    where: { orgId },
+    select: { projectId: true, embedding: true },
+  }).catch(() => []);
+
+  if (candidates.length === 0) return [];
+
+  const scored = candidates.map((c) => ({
+    projectId: c.projectId,
+    similarity: cosineSimilarity(targetVec, c.embedding as unknown as number[]),
+  }));
+  scored.sort((a, b) => b.similarity - a.similarity);
+  const top = scored.slice(0, k);
+
+  const projects = await db.project.findMany({
+    where: { id: { in: top.map((t) => t.projectId) } },
+    select: { id: true, name: true, category: true, methodology: true, status: true },
+  });
+
+  return top.map((t) => {
+    const p = projects.find((pr) => pr.id === t.projectId);
+    return {
+      projectId: t.projectId,
+      name: p?.name || "Unknown project",
+      similarity: Math.round(t.similarity * 100) / 100,
+      category: p?.category,
+      methodology: p?.methodology,
+      status: p?.status,
+      health: null,
+    };
+  });
+}

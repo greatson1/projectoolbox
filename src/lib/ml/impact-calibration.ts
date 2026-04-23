@@ -31,7 +31,7 @@ export async function predictImpactCalibration(
     where: {
       orgId,
       action: { contains: "approval" },
-      targetType: "approval",
+      entityType: "approval",
     },
     select: { details: true, dataSnapshot: true, createdAt: true },
     orderBy: { createdAt: "desc" },

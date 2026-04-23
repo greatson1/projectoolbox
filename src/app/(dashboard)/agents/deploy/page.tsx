@@ -1238,6 +1238,13 @@ export default function ProjectWizardPage() {
           <div className="space-y-5">
             <StepHeader title="Review & Deploy" subtitle="Confirm your selections and launch your AI PM" />
 
+            <SimilarProjectsPreview
+              description={data.description}
+              category={data.category}
+              methodology={data.methodology}
+              name={data.projectName}
+            />
+
             {/* Summary grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <SummaryCard title="Project" items={[
@@ -1468,6 +1475,64 @@ function SliderField({ label, value, onChange, color, labelLeft, labelRight }: {
         className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
         style={{ background: `linear-gradient(to right, ${color} ${value}%, ${"var(--border)"}44 ${value}%)` }} />
     </div>
+  );
+}
+
+function SimilarProjectsPreview({ description, category, methodology, name }: {
+  description: string; category: string; methodology: string; name: string;
+}) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!description && !category && !methodology) return;
+    setLoading(true);
+    const q = new URLSearchParams({ kind: "similar_projects", description, category, methodology, name, k: "3" });
+    fetch(`/api/ml/predictions?${q.toString()}`)
+      .then(r => r.json())
+      .then(d => setItems(d.data || []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [description, category, methodology, name]);
+
+  if (loading) {
+    return (
+      <Card className="px-5 py-4">
+        <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--muted-foreground)" }}>
+          <span className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          Checking for similar past projects…
+        </div>
+      </Card>
+    );
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <Card className="px-5 py-4 border-primary/20 bg-primary/5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-primary">✦ ML: Similar past projects</span>
+        <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>— lessons from your org's history</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        {items.map((p: any) => {
+          const pct = Math.round(p.similarity * 100);
+          return (
+            <div key={p.projectId} className="p-2.5 rounded-lg bg-card border border-border">
+              <p className="text-[13px] font-semibold truncate">{p.name}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-[10px] text-primary font-semibold flex-shrink-0">{pct}% match</span>
+              </div>
+              <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+                {[p.category, p.methodology, p.status].filter(Boolean).join(" · ") || "—"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

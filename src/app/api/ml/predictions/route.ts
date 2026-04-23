@@ -59,6 +59,20 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ data: result });
       }
 
+      case "risk_materialisation_bulk": {
+        const projectId = url.searchParams.get("projectId");
+        if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+        const risks = await db.risk.findMany({
+          where: { projectId, project: { orgId }, status: { in: ["OPEN", "open", "MITIGATING", "mitigating", "WATCHING", "watching"] } },
+          select: { id: true, category: true, probability: true, impact: true, score: true },
+        });
+        const { predictRiskMaterialisation } = await import("@/lib/ml/risk-materialisation");
+        const predictions = await Promise.all(
+          risks.map(async (r) => ({ riskId: r.id, prediction: await predictRiskMaterialisation({ orgId, ...r }) })),
+        );
+        return NextResponse.json({ data: predictions });
+      }
+
       case "story_point_calibration": {
         const assignee = url.searchParams.get("assignee") || undefined;
         const { predictStoryPointCalibration } = await import("@/lib/ml/story-point-calibration");
@@ -76,15 +90,26 @@ export async function GET(req: NextRequest) {
       case "similar_projects": {
         const projectId = url.searchParams.get("projectId");
         const k = parseInt(url.searchParams.get("k") || "5", 10);
-        if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
-        // Verify the project belongs to this org
-        const project = await db.project.findFirst({
-          where: { id: projectId, orgId },
-          select: { id: true },
-        });
-        if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-        const { findSimilarProjects } = await import("@/lib/ml/similar-projects");
-        const results = await findSimilarProjects(projectId, k);
+        if (projectId) {
+          const project = await db.project.findFirst({
+            where: { id: projectId, orgId },
+            select: { id: true },
+          });
+          if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+          const { findSimilarProjects } = await import("@/lib/ml/similar-projects");
+          const results = await findSimilarProjects(projectId, k);
+          return NextResponse.json({ data: results });
+        }
+        // Free-text preview mode (deploy wizard): embed description + category + methodology directly
+        const description = url.searchParams.get("description") || "";
+        const category = url.searchParams.get("category") || "";
+        const methodology = url.searchParams.get("methodology") || "";
+        const name = url.searchParams.get("name") || "New project";
+        if (!description && !category && !methodology) {
+          return NextResponse.json({ error: "projectId or description required" }, { status: 400 });
+        }
+        const { findSimilarByText } = await import("@/lib/ml/similar-projects");
+        const results = await findSimilarByText(orgId, { name, description, category, methodology }, k);
         return NextResponse.json({ data: results });
       }
 

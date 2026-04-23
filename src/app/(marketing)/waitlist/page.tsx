@@ -19,8 +19,15 @@ export default function WaitlistPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setState("loading");
     setError("");
+
+    if (!email.trim()) {
+      setError("Work email is required.");
+      setState("error");
+      return;
+    }
+
+    setState("loading");
 
     try {
       const res = await fetch("/api/waitlist", {
@@ -77,17 +84,19 @@ export default function WaitlistPage() {
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1.5">Work email <span className="text-destructive">*</span></label>
                 <input
                   type="email"
-                  required
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => { setEmail(e.target.value); if (state === "error") { setError(""); setState("idle"); } }}
                   placeholder="you@company.com"
-                  className="w-full px-4 py-2.5 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className={`w-full px-4 py-2.5 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${state === "error" && !email.trim() ? "border-destructive" : "border-input"}`}
                 />
+                {state === "error" && !email.trim() && (
+                  <p className="text-xs text-destructive mt-1">Work email is required.</p>
+                )}
               </div>
 
               <div>
@@ -113,7 +122,7 @@ export default function WaitlistPage() {
                 </select>
               </div>
 
-              {state === "error" && (
+              {state === "error" && error && email.trim() && (
                 <p className="text-sm text-destructive">{error}</p>
               )}
 
