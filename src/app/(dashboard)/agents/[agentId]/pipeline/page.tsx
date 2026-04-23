@@ -157,6 +157,14 @@ const PIPELINE_STYLES = `
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes pipeline-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@keyframes pipeline-ping {
+  0% { transform: scale(1); opacity: 1; }
+  75%, 100% { transform: scale(2.5); opacity: 0; }
+}
 .pipeline-step-enter {
   animation: pipeline-fade-in 0.3s ease-out both;
 }
@@ -830,12 +838,60 @@ export default function AgentPipelinePage() {
         </div>
 
         {/* ========== Pipeline Steps (horizontal scroll) ========== */}
-        <Card>
+        {(() => {
+          // Determine if phase is in an ACTIVE state — controls card-level pulse
+          const ps = data.phaseStatus;
+          const activeStates = ["researching", "awaiting_clarification", "active", "pending_approval", "waiting_approval"];
+          const isActivePhase = ps ? activeStates.includes(ps) : false;
+          const anyStepRunning = data.steps.some(s => s.status === "running");
+          const shouldPulse = isActivePhase || anyStepRunning;
+          // Border colour by phase state
+          const borderColour = ps === "blocked_tasks_incomplete" ? "#EF4444"
+            : ps === "researching" ? "#3B82F6"
+            : ps === "awaiting_clarification" ? "#F59E0B"
+            : ps === "pending_approval" || ps === "waiting_approval" ? "#F59E0B"
+            : ps === "complete" ? "#10B981"
+            : "#6366F1";
+
+          return (
+        <Card
+          className="relative"
+          style={{
+            boxShadow: shouldPulse ? `0 0 0 1.5px ${borderColour}33, 0 0 28px ${borderColour}22` : undefined,
+            animation: shouldPulse ? "pipeline-pulse 2.2s ease-in-out infinite" : undefined,
+          }}
+        >
+          {/* Top-edge active marker bar */}
+          {shouldPulse && (
+            <div
+              className="absolute top-0 left-0 right-0 h-0.5 rounded-t-xl"
+              style={{
+                background: `linear-gradient(90deg, transparent, ${borderColour}, transparent)`,
+                backgroundSize: "200% 100%",
+                animation: "pipeline-shimmer 2.5s linear infinite",
+              }}
+            />
+          )}
           <CardContent className="py-6">
             <div className="flex items-center justify-between mb-4 px-1">
               <div>
-                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                   {data.currentPhase ? `${data.currentPhase} Phase` : "Current Phase"} — Step by Step
+                  {shouldPulse && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                      style={{ color: borderColour, background: `${borderColour}15` }}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{
+                          background: borderColour,
+                          animation: "pipeline-ping 1.2s ease-out infinite",
+                        }}
+                      />
+                      LIVE
+                    </span>
+                  )}
                 </h2>
                 <p className="text-[10px] text-muted-foreground/70 mt-0.5">
                   Steps marked <RotateCcw className="w-2.5 h-2.5 inline text-indigo-500" /> repeat for each phase
@@ -843,10 +899,9 @@ export default function AgentPipelinePage() {
               </div>
               {data.currentPhase && (() => {
                 // phaseStatus is the PRIMARY source of truth — map it to a badge label.
-                // Fall back to step-derived state only when phaseStatus is null/unknown.
-                const ps = data.phaseStatus;
                 let displayStatus: string;
                 let colorClass: string;
+                const pulseClass = shouldPulse ? " animate-pulse" : "";
                 if (ps === "blocked_tasks_incomplete") {
                   displayStatus = "⛔ BLOCKED"; colorClass = "bg-red-500/10 text-red-500";
                 } else if (ps === "researching") {
@@ -858,7 +913,6 @@ export default function AgentPipelinePage() {
                 } else if (ps === "complete") {
                   displayStatus = "COMPLETE"; colorClass = "bg-emerald-500/10 text-emerald-500";
                 } else if (ps === "active") {
-                  // Active — subdivide based on step progress
                   const generateStep = data.steps.find(s => s.id === "generate");
                   const reviewStep = data.steps.find(s => s.id === "review");
                   if (generateStep?.status === "running") {
@@ -873,7 +927,7 @@ export default function AgentPipelinePage() {
                   colorClass = "bg-muted text-muted-foreground";
                 }
                 return (
-                  <span className={cn("text-[10px] px-2 py-1 rounded-full font-semibold", colorClass)}>
+                  <span className={cn("text-[10px] px-2 py-1 rounded-full font-semibold", colorClass, pulseClass)}>
                     {displayStatus}
                   </span>
                 );
@@ -903,6 +957,8 @@ export default function AgentPipelinePage() {
             </div>
           </CardContent>
         </Card>
+          );
+        })()}
 
         {/* ========== Step Detail Panel (expandable below pipeline) ========== */}
         {selectedStep && (
