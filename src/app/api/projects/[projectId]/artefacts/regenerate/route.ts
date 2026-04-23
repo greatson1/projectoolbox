@@ -49,15 +49,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     return NextResponse.json({ error: "No current phase — deployment may need initialisation" }, { status: 400 });
   }
 
-  // Delete only DRAFT artefacts for this phase (preserve approved work)
-  const deleted = await db.agentArtefact.deleteMany({
-    where: {
-      projectId,
-      agentId: deployment.agentId,
-      phaseId: targetPhase,
-      status: "DRAFT",
-    },
+  // Resolve the Phase row — targetPhase is the phase NAME, not its id.
+  const phaseRow = await db.phase.findFirst({
+    where: { projectId, name: targetPhase },
+    select: { id: true },
   });
+
+  // Delete only DRAFT artefacts for this phase (preserve approved work).
+  // If a phase row exists, scope strictly by phaseId; otherwise fall back to
+  // every DRAFT for the agent (safer than silently matching nothing).
+  const deleteWhere: any = {
+    projectId,
+    agentId: deployment.agentId,
+    status: "DRAFT",
+  };
+  if (phaseRow?.id) deleteWhere.phaseId = phaseRow.id;
+  const deleted = await db.agentArtefact.deleteMany({ where: deleteWhere });
 
   // Also clear associated KB items that were extracted from those drafts, so
   // the regeneration doesn't re-read stale fabricated facts.

@@ -552,18 +552,49 @@ export async function answerQuestionInSession(
             },
           }).catch(() => {});
 
-          // Delete existing DRAFT artefacts for this phase so they get regenerated
-          const targetNames = session.artefactNames.map(n => n.toLowerCase());
+          // Delete ALL DRAFT artefacts for the current phase so every document
+          // gets regenerated with the fresh user answers — not just the
+          // "required" ones in session.artefactNames. Optional artefacts like
+          // Feasibility Study were previously left behind with stale [TBC]
+          // markers because they weren't in the required list.
+          const currentPhaseRow = deployment.currentPhase
+            ? await db.phase.findFirst({
+                where: { projectId: deployment.projectId, name: deployment.currentPhase },
+                select: { id: true },
+              })
+            : null;
+          const draftWhere: any = {
+            projectId: deployment.projectId,
+            agentId,
+            status: "DRAFT",
+          };
+          if (currentPhaseRow?.id) draftWhere.phaseId = currentPhaseRow.id;
           const drafts = await db.agentArtefact.findMany({
-            where: { projectId: deployment.projectId, agentId, status: "DRAFT" },
+            where: draftWhere,
             select: { id: true, name: true },
           });
-          const toDelete = drafts.filter(a => targetNames.includes(a.name.toLowerCase()));
-          if (toDelete.length > 0) {
+          if (drafts.length > 0) {
             await db.agentArtefact.deleteMany({
-              where: { id: { in: toDelete.map(a => a.id) } },
+              where: { id: { in: drafts.map(a => a.id) } },
             });
+            console.log(`[clarification] deleted ${drafts.length} DRAFT artefact(s) for regeneration: ${drafts.map(a => a.name).join(", ")}`);
           }
+
+          // Also purge artefact_extracted KB items so the agent re-reads
+          // the new user-confirmed facts instead of stale artefact-derived ones.
+          await db.knowledgeBaseItem.deleteMany({
+            where: {
+              agentId,
+              projectId: deployment.projectId,
+              tags: { hasSome: ["artefact_extracted"] },
+              NOT: {
+                OR: [
+                  { tags: { has: "user_confirmed" } },
+                  { tags: { has: "research" } },
+                ],
+              },
+            },
+          }).catch(() => {});
 
           const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
           const result = await generatePhaseArtefacts(agentId, deployment.projectId, deployment.currentPhase ?? undefined);
