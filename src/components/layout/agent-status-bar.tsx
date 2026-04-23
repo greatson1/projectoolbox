@@ -135,10 +135,24 @@ function gradientColour(gradient: string | null | undefined): string {
 /** Build the main commentary line from actual data */
 function buildCommentary(slot: AgentSlot, activityIdx: number): string {
   const { state, activities, pendingCount, currentPhase, nextPhase, projectName } = slot;
-  const act = activities[activityIdx] ?? activities[0] ?? null;
-  const actText = act?.summary ?? null;
   const phase = currentPhase ?? "current";
   const next  = nextPhase ?? "next";
+
+  // Only use activity summary text when it genuinely matches the current state.
+  // Previously any recent activity (e.g. a stale monitoring summary) would be
+  // quoted inside state-specific messages like "Writing X documents — '<stale text>'".
+  const relevantTypes: Record<string, Set<string>> = {
+    generating:     new Set(["document", "artefact_generated", "artefact", "lifecycle_init"]),
+    review:         new Set(["document", "artefact_generated", "artefact"]),
+    phase_complete: new Set(["approval", "document", "artefact_generated"]),
+    monitoring:     new Set(["monitoring", "risk", "proactive_alert", "report", "decision"]),
+  };
+  const allowedTypes = relevantTypes[state] || new Set<string>();
+  const relevantAct = activities.find((a) => allowedTypes.has(a.type));
+  const recentEnough = relevantAct
+    ? (Date.now() - new Date(activityAt(relevantAct)).getTime()) < 15 * 60_000 // 15 min
+    : false;
+  const actText = recentEnough ? relevantAct?.summary ?? null : null;
 
   switch (state) {
     case "questions_waiting":
@@ -146,22 +160,18 @@ function buildCommentary(slot: AgentSlot, activityIdx: number): string {
 
     case "generating":
       return actText
-        ? `Writing ${phase} documents — "${actText}"`
+        ? `Writing ${phase} documents — ${actText.slice(0, 120)}`
         : `Writing ${phase} phase documents — ready in ~30–60 s`;
 
     case "review":
-      return actText
-        ? `${actText} — ${pendingCount} document${pendingCount === 1 ? "" : "s"} ready for your review`
-        : `${pendingCount} ${phase} document${pendingCount === 1 ? "" : "s"} are ready for your review. Approve them to unlock ${next}.`;
+      return `${pendingCount} ${phase} document${pendingCount === 1 ? "" : "s"} ready for your review. Approve them to unlock ${next}.`;
 
     case "phase_complete":
-      return actText
-        ? `${actText} — all ${phase} documents approved. Ready to start ${next} phase.`
-        : `All ${phase} documents approved. Click Generate to start the ${next} phase.`;
+      return `All ${phase} documents approved. Click Generate to start the ${next} phase.`;
 
     case "monitoring":
       return actText
-        ? `${actText} — monitoring ${projectName} in real time`
+        ? `${actText.slice(0, 160)} — monitoring ${projectName}`
         : `Monitoring ${projectName} · everything is under control`;
 
     case "idle":

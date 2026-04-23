@@ -1257,6 +1257,41 @@ These are handled by the platform automatically. Just write normal text.
       try {
         emitStatus("thinking", "Analysing your message...");
 
+        // ── Auto-scaffold phase tasks if this phase has none yet.
+        // Covers existing projects where only the first phase was scaffolded at deploy,
+        // or methodologies that skipped delivery task scaffolding for some phases.
+        if (deployment?.projectId && deployment.currentPhase) {
+          try {
+            const phaseLC = deployment.currentPhase.toLowerCase();
+            const existingScaffolded = await db.task.count({
+              where: {
+                projectId: deployment.projectId,
+                createdBy: `agent:${agentId}`,
+                OR: [
+                  { phaseId: deployment.currentPhase },
+                  { phaseId: phaseLC },
+                ],
+                description: { contains: "[scaffolded" },
+              },
+            });
+            if (existingScaffolded === 0) {
+              const phaseRow = await db.phase.findFirst({
+                where: { projectId: deployment.projectId, name: deployment.currentPhase },
+                select: { id: true, name: true, order: true },
+              });
+              const projectRow = await db.project.findUnique({
+                where: { id: deployment.projectId },
+                select: { startDate: true, endDate: true, methodology: true },
+              });
+              if (phaseRow && projectRow) {
+                const { scaffoldProjectTasks } = await import("@/lib/agents/task-scaffolding");
+                // Fire-and-forget — doesn't block chat response
+                scaffoldProjectTasks(agentId, deployment.projectId, [phaseRow], projectRow as any).catch(() => {});
+              }
+            }
+          } catch {}
+        }
+
         // ── Auto-research trigger: if current phase has no KB research AND research
         // hasn't been attempted yet for this phase, fire it in background ONCE.
         // Tracked via a KB sentinel "__phase_research_attempted__" per phase so we
@@ -1296,6 +1331,12 @@ These are handled by the platform automatically. Just write normal text.
             }).catch(() => {});
 
             // Fire-and-forget research
+            // Flip phaseStatus to "researching" so UI surfaces reflect the live state
+            await db.agentDeployment.update({
+              where: { id: deployment.id },
+              data: { phaseStatus: "researching" },
+            }).catch(() => {});
+
             import("@/lib/agents/feasibility-research").then(async ({ runPhaseResearch }) => {
               try {
                 const research = await runPhaseResearch(agentId, deployment.projectId!, orgId, deployment.currentPhase!);
@@ -1318,8 +1359,26 @@ These are handled by the platform automatically. Just write normal text.
                     },
                   }).catch(() => {});
                 }
+                // Research complete — advance to clarification so UI reflects progress
+                await db.agentDeployment.update({
+                  where: { id: deployment.id },
+                  data: { phaseStatus: "awaiting_clarification" },
+                }).catch(() => {});
+                // Log transition for status bar + activity feed
+                await db.agentActivity.create({
+                  data: {
+                    agentId,
+                    type: "decision",
+                    summary: `Research complete — ${research.factsDiscovered} facts gathered for ${deployment.currentPhase}. Ready for clarification.`,
+                  },
+                }).catch(() => {});
               } catch (e) {
                 console.error("[chat/stream] auto-research failed:", e);
+                // On failure, don't leave state stuck at "researching"
+                await db.agentDeployment.update({
+                  where: { id: deployment.id },
+                  data: { phaseStatus: "active" },
+                }).catch(() => {});
               }
             }).catch(() => {});
           }
