@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -346,11 +347,21 @@ function StepCard({
         {formatDuration(step.duration)}
       </span>
 
-      {/* Detail snippet */}
+      {/* Detail snippet — clickable for research step (link to KB) */}
       {step.details && step.status !== "waiting" && (
-        <span className="text-[10px] text-muted-foreground text-center leading-tight line-clamp-2 px-1">
-          {step.details}
-        </span>
+        step.id === "research" && step.status === "done" ? (
+          <Link
+            href="/knowledge"
+            className="text-[10px] text-primary text-center leading-tight line-clamp-2 px-1 underline decoration-dotted hover:text-primary/80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {step.details} →
+          </Link>
+        ) : (
+          <span className="text-[10px] text-muted-foreground text-center leading-tight line-clamp-2 px-1">
+            {step.details}
+          </span>
+        )
       )}
 
       {/* Error snippet */}
@@ -682,6 +693,22 @@ export default function AgentPipelinePage() {
 
   const progressPercent = Math.min(100, Math.max(0, data.overallProgress));
 
+  // Determine the CURRENT step — the first step that isn't done/skipped/waiting
+  // Priority: running > failed > first waiting after a done step
+  const currentStep = (() => {
+    const running = data.steps.find(s => s.status === "running");
+    if (running) return running;
+    const failed = data.steps.find(s => s.status === "failed");
+    if (failed) return failed;
+    // First waiting step after a done step
+    for (let i = 0; i < data.steps.length; i++) {
+      if (data.steps[i].status === "waiting" && i > 0 && data.steps[i - 1].status === "done") {
+        return data.steps[i];
+      }
+    }
+    return data.steps.find(s => s.status === "waiting");
+  })();
+
   return (
     <>
       {/* Inject keyframe styles */}
@@ -727,6 +754,57 @@ export default function AgentPipelinePage() {
           </Button>
         </div>
 
+        {/* ========== Currently On — clear "here's what's happening" banner ========== */}
+        {currentStep && (
+          <div className={cn(
+            "flex items-center gap-4 px-5 py-4 rounded-xl border-2",
+            currentStep.status === "running" && "border-blue-500/40 bg-blue-500/5",
+            currentStep.status === "failed" && "border-red-500/40 bg-red-500/5",
+            currentStep.status === "waiting" && "border-amber-500/30 bg-amber-500/5",
+          )}>
+            <div className={cn(
+              "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
+              currentStep.status === "running" && "bg-blue-500/20",
+              currentStep.status === "failed" && "bg-red-500/20",
+              currentStep.status === "waiting" && "bg-amber-500/20",
+            )}>
+              {currentStep.status === "running" && (
+                <RefreshCw className="w-6 h-6 text-blue-500" style={{ animation: "pipeline-spin 1.5s linear infinite" }} />
+              )}
+              {currentStep.status === "failed" && <X className="w-6 h-6 text-red-500" />}
+              {currentStep.status === "waiting" && <Clock className="w-6 h-6 text-amber-500" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">
+                {currentStep.status === "running" ? "Currently working on" :
+                 currentStep.status === "failed" ? "Step failed" :
+                 "Waiting for action"}
+              </p>
+              <p className="text-base font-bold text-foreground">{currentStep.label}</p>
+              {currentStep.details && (
+                <p className="text-xs text-muted-foreground mt-0.5">{currentStep.details}</p>
+              )}
+              {currentStep.error && (
+                <p className="text-xs text-red-400 mt-0.5">{currentStep.error}</p>
+              )}
+            </div>
+            {currentStep.status === "waiting" && currentStep.id === "clarification" && (
+              <Link href={`/agents/chat?agent=${agentId}`}>
+                <Button size="sm" variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 flex-shrink-0">
+                  Open Chat <ArrowRight className="w-3 h-3 ml-1" />
+                </Button>
+              </Link>
+            )}
+            {currentStep.status === "waiting" && currentStep.id === "approve" && (
+              <Link href="/approvals">
+                <Button size="sm" variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 flex-shrink-0">
+                  Review Artefacts <ArrowRight className="w-3 h-3 ml-1" />
+                </Button>
+              </Link>
+            )}
+          </div>
+        )}
+
         {/* ========== Overall Progress Bar ========== */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -763,11 +841,31 @@ export default function AgentPipelinePage() {
                   Steps marked <RotateCcw className="w-2.5 h-2.5 inline text-indigo-500" /> repeat for each phase
                 </p>
               </div>
-              {data.currentPhase && (
-                <span className="text-[10px] px-2 py-1 rounded-full bg-primary/10 text-primary font-semibold">
-                  {data.phaseStatus === "blocked_tasks_incomplete" ? "⛔ BLOCKED" : data.phaseStatus?.replace("_", " ").toUpperCase()}
-                </span>
-              )}
+              {data.currentPhase && (() => {
+                // Derive truthful status from the actual pipeline steps — not just the stale phaseStatus field
+                const researchStep = data.steps.find(s => s.id === "research");
+                const clarifyStep = data.steps.find(s => s.id === "clarification" || s.id === "clarify");
+                const generateStep = data.steps.find(s => s.id === "generate");
+                let displayStatus: string;
+                let colorClass: string;
+                if (data.phaseStatus === "blocked_tasks_incomplete") {
+                  displayStatus = "⛔ BLOCKED"; colorClass = "bg-red-500/10 text-red-500";
+                } else if (generateStep?.status === "running") {
+                  displayStatus = "GENERATING"; colorClass = "bg-blue-500/10 text-blue-500";
+                } else if (clarifyStep?.status === "running" || (researchStep?.status === "done" && clarifyStep?.status === "waiting")) {
+                  displayStatus = "AWAITING CLARIFICATION"; colorClass = "bg-amber-500/10 text-amber-500";
+                } else if (researchStep?.status === "running") {
+                  displayStatus = "RESEARCHING"; colorClass = "bg-blue-500/10 text-blue-500";
+                } else {
+                  displayStatus = data.phaseStatus?.replace(/_/g, " ").toUpperCase() || "ACTIVE";
+                  colorClass = "bg-primary/10 text-primary";
+                }
+                return (
+                  <span className={cn("text-[10px] px-2 py-1 rounded-full font-semibold", colorClass)}>
+                    {displayStatus}
+                  </span>
+                );
+              })()}
             </div>
             <div className="flex items-start overflow-x-auto pb-4 gap-0">
               {data.steps.map((step, i) => (
