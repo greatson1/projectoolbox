@@ -143,6 +143,21 @@ export async function storeFactToKB(
       },
     });
   }
+
+  // Propagate the new/updated fact to any DRAFT artefact that still has a
+  // [TBC] placeholder this fact resolves. If a clarification session is
+  // active, skip propagation — the session-complete handler does a full
+  // regeneration, so intermediate per-answer updates would churn for nothing.
+  (async () => {
+    try {
+      const active = await getActiveSession(agentId, projectId);
+      if (active) return;
+      const { propagateKBToArtefacts } = await import("@/lib/agents/kb-to-artefact-sync");
+      await propagateKBToArtefacts(agentId, projectId, { title, content });
+    } catch (e) {
+      console.error("[storeFactToKB] propagation failed:", e);
+    }
+  })();
 }
 
 // ─── Question generation ──────────────────────────────────────────────────────
@@ -295,6 +310,97 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
   }
 }
 
+// ─── KB-aware dedup ───────────────────────────────────────────────────────────
+
+/**
+ * Removes questions whose answer is already in the KB.
+ *
+ * Two layers:
+ *   1. Deterministic keyword overlap — if the question's `field` token appears
+ *      in any HIGH_TRUST KB title, mark as answered without an LLM call.
+ *   2. Haiku verifier — for questions that slip through layer 1, one cheap
+ *      Haiku call over all candidates returns the IDs that are already
+ *      answered. If Haiku fails, we fall back to the layer-1 output (safe).
+ */
+async function filterAlreadyAnsweredQuestions(
+  questions: ClarificationQuestion[],
+  kbFacts: Array<{ title: string; content: string; trustLevel: string }>,
+  project: any,
+): Promise<ClarificationQuestion[]> {
+  if (questions.length === 0 || kbFacts.length === 0) return questions;
+
+  // Layer 1: deterministic keyword overlap on field + question text
+  const factBlob = kbFacts.map(f => `${f.title}\n${f.content}`).join("\n").toLowerCase();
+  const stopwords = new Set(["what", "when", "where", "which", "how", "have", "does", "your", "this", "that", "will", "with", "from", "for", "are", "the", "and", "any", "been", "has", "you", "project", "trip"]);
+  const candidates: ClarificationQuestion[] = [];
+  for (const q of questions) {
+    const fieldTokens = q.field.replace(/_/g, " ").toLowerCase().split(/\s+/).filter(Boolean);
+    const questionTokens = q.question.toLowerCase().replace(/[?.,!]/g, "").split(/\s+/).filter(t => t.length > 3 && !stopwords.has(t));
+    const tokens = [...new Set([...fieldTokens, ...questionTokens])].filter(t => t.length > 2);
+    const hits = tokens.filter(t => factBlob.includes(t)).length;
+    // Drop if 2+ meaningful tokens match AND a fact title/field matches tightly
+    const fieldMatchesTitle = kbFacts.some(f => {
+      const title = f.title.toLowerCase();
+      return fieldTokens.every(t => title.includes(t));
+    });
+    if (fieldMatchesTitle && hits >= 2) continue;
+    candidates.push(q);
+  }
+  if (candidates.length === 0) return [];
+
+  // Layer 2: Haiku verifier — one call, batch all candidates
+  if (!process.env.ANTHROPIC_API_KEY || candidates.length === 0) return candidates;
+
+  const factList = kbFacts
+    .filter(f => f.trustLevel === "HIGH_TRUST")
+    .map(f => `- ${f.title}: ${f.content.replace(/^\[User confirmed[^\]]+\]\s*/i, "").slice(0, 200)}`)
+    .join("\n");
+  if (!factList) return candidates;
+
+  const prompt = `You are filtering a list of clarification questions for project "${project.name}".
+
+Here are facts the user has ALREADY confirmed:
+${factList}
+
+Here are the draft questions:
+${candidates.map((q, i) => `${i + 1}. [${q.field}] ${q.question}`).join("\n")}
+
+For each question, decide if the confirmed facts already answer it. Return ONLY a JSON array of the 1-based indexes of questions that are ALREADY ANSWERED (and should therefore be removed). Example: [1, 3, 7]. If every question is still needed, return [].
+
+Be strict: only mark as answered if the confirmed facts clearly contain the specific answer the question is asking for. A related fact that doesn't directly answer the question is NOT enough.`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY!,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 256,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!response.ok) return candidates;
+    const data = await response.json();
+    const text = (data.content?.[0]?.text || "").trim();
+    const match = text.match(/\[[\s\S]*?\]/);
+    if (!match) return candidates;
+    const alreadyAnswered = JSON.parse(match[0]) as number[];
+    const toDrop = new Set(alreadyAnswered.map(n => n - 1));
+    const filtered = candidates.filter((_, i) => !toDrop.has(i));
+    if (filtered.length < candidates.length) {
+      console.log(`[clarification] KB dedup dropped ${candidates.length - filtered.length} already-answered question(s)`);
+    }
+    return filtered;
+  } catch (e) {
+    console.error("[clarification] KB dedup failed:", e);
+    return candidates;
+  }
+}
+
 // ─── Session start ────────────────────────────────────────────────────────────
 
 /**
@@ -331,9 +437,19 @@ export async function startClarificationSession(
   if (confirmedFacts.length >= 15) return false;
 
   const kbContext = kbItems.map(i => `[${i.trustLevel}] ${i.title}: ${i.content}`).join("\n");
-  const questions = await generateQuestions(project, artefactNames, kbContext, researchContext);
+  const rawQuestions = await generateQuestions(project, artefactNames, kbContext, researchContext);
 
   // If Claude found nothing to ask, proceed with generation
+  if (rawQuestions.length === 0) return false;
+
+  // ── Second-pass dedup: drop any question already answered by KB ────────────
+  // The generation prompt tells Claude to skip known facts, but phrasing can
+  // drift (e.g. it asks "how many travellers?" when KB already has
+  // "Number of travellers: 4"). A deterministic Haiku pass catches those.
+  const questions = confirmedFacts.length > 0
+    ? await filterAlreadyAnsweredQuestions(rawQuestions, confirmedFacts, project)
+    : rawQuestions;
+
   if (questions.length === 0) return false;
 
   // Build the session

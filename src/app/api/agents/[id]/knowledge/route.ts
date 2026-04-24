@@ -104,6 +104,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   });
 
+  // Propagate to any DRAFT artefacts that still have [TBC] placeholders this
+  // new fact can resolve. Fire-and-forget so the client doesn't wait.
+  if (effectiveProjectId) {
+    (async () => {
+      try {
+        const { propagateKBToArtefacts } = await import("@/lib/agents/kb-to-artefact-sync");
+        await propagateKBToArtefacts(agentId, effectiveProjectId, { title, content });
+      } catch (e) {
+        console.error("[knowledge] artefact propagation failed:", e);
+      }
+    })();
+  }
+
   return NextResponse.json({ data: item }, { status: 201 });
 }
 
