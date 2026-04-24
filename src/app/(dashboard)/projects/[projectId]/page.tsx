@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProject } from "@/hooks/use-api";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { useAppStore } from "@/stores/app";
 import {
   Calendar, Columns3, Timer, Target, DollarSign, Users, ShieldAlert,
@@ -343,6 +345,8 @@ function ArtefactSection({ projectId }: { projectId: string }) {
 // ─── Project Health Card (EVM + RAG) ───
 function ProjectHealthCard({ projectId }: { projectId: string }) {
   const [metrics, setMetrics] = useState<any>(null);
+  const currency = useOrgCurrency();
+  const moneyCompact = (n: number) => formatMoney(n, currency, { compact: true });
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/metrics`).then(r => r.json()).then(d => setMetrics(d.data)).catch(() => {});
@@ -398,6 +402,11 @@ function ProjectHealthCard({ projectId }: { projectId: string }) {
           {!evm?.hasRealEvm && (
             <p className="text-[10px] text-muted-foreground">Available once the project is underway and costs are tracked</p>
           )}
+          {evm?.hasRealEvm && evm?.spiInsufficientData && (
+            <p className="text-[10px] text-amber-500/80" title="SPI = Earned Value / Planned Value. Early in a project the Planned Value is tiny, so SPI swings wildly. Hidden until 15% of the timeline has elapsed.">
+              SPI hidden — project is too early in its timeline for a meaningful schedule index.
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           {evm?.hasRealEvm ? (
@@ -407,16 +416,16 @@ function ProjectHealthCard({ projectId }: { projectId: string }) {
                 <Gauge value={evm.cpi} label="CPI (Cost)" />
               </div>
               <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                <div className="p-2 rounded-lg bg-muted/30">
-                  <p className="text-xs font-bold">${(evm.budget / 1000).toFixed(0)}K</p>
+                <div className="p-2 rounded-lg bg-muted/30" title="Total approved project budget.">
+                  <p className="text-xs font-bold">{moneyCompact(evm.budget)}</p>
                   <p className="text-[9px] text-muted-foreground">Budget</p>
                 </div>
-                <div className="p-2 rounded-lg bg-muted/30">
-                  <p className="text-xs font-bold">${(evm.ev / 1000).toFixed(0)}K</p>
-                  <p className="text-[9px] text-muted-foreground">Earned</p>
+                <div className="p-2 rounded-lg bg-muted/30" title="Earned Value (EV) — the budgeted value of completed work, NOT money spent. EV = budget × (tasks done ÷ total tasks).">
+                  <p className="text-xs font-bold">{moneyCompact(evm.ev)}</p>
+                  <p className="text-[9px] text-muted-foreground">Earned <span className="opacity-60">ⓘ</span></p>
                 </div>
-                <div className="p-2 rounded-lg bg-muted/30">
-                  <p className="text-xs font-bold">{evm.eac ? `$${(evm.eac / 1000).toFixed(0)}K` : "—"}</p>
+                <div className="p-2 rounded-lg bg-muted/30" title="Estimate at Completion (EAC) — projected total cost based on actual spending so far. Available once actual costs are tracked.">
+                  <p className="text-xs font-bold">{evm.eac ? moneyCompact(evm.eac) : "—"}</p>
                   <p className="text-[9px] text-muted-foreground">Forecast</p>
                 </div>
               </div>

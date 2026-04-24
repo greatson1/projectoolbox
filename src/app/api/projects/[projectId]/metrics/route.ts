@@ -85,11 +85,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   // Planned Value — only if project has actually started
   let pv = 0;
   let spi: number | null = null;
+  let timeElapsedRatio = 0;
   if (projectHasStarted && budget > 0 && end) {
     const totalDuration = Math.max(1, end.getTime() - start!.getTime());
     const elapsed = Math.max(0, Math.min(totalDuration, now.getTime() - start!.getTime()));
-    const plannedProgress = elapsed / totalDuration;
-    pv = Math.round(budget * plannedProgress);
+    timeElapsedRatio = elapsed / totalDuration;
+    pv = Math.round(budget * timeElapsedRatio);
   }
 
   // Earned Value
@@ -99,8 +100,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   const realAC = actualCosts._sum.amount || 0;
   const hasRealCosts = actualCosts._count > 0;
 
-  // SPI — only when pv > 0 (project is underway with a timeline)
-  if (pv > 0 && ev >= 0) {
+  // SPI — only meaningful once the project is far enough into its timeline.
+  // Early on, PV ≈ 0 makes EV/PV explode (e.g. 4.6× on day 3 of a 1-year plan)
+  // even though the project isn't actually "ahead". Suppress until ≥15% elapsed.
+  const SPI_MIN_ELAPSED = 0.15;
+  const spiInsufficientData = projectHasStarted && timeElapsedRatio < SPI_MIN_ELAPSED;
+  if (pv > 0 && ev >= 0 && !spiInsufficientData) {
     spi = Math.round((ev / pv) * 100) / 100;
   }
 
@@ -113,8 +118,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   // EAC (Estimate at Completion) — only when CPI is real
   const eac = cpi && cpi > 0 ? Math.round(budget / cpi) : null;
 
-  // A flag so the UI can decide whether to show EVM gauges at all
-  const hasRealEvm = hasEarnedValue && projectHasStarted && (spi !== null || cpi !== null);
+  // A flag so the UI can decide whether to show EVM gauges at all.
+  // True if the project has any earned-value signal — either real SPI/CPI
+  // numbers, or just the start of work (ev > 0). Lets early projects show
+  // Budget/Earned tiles with N/A gauges instead of an empty state.
+  const hasRealEvm = projectHasStarted && (ev > 0 || spi !== null || cpi !== null);
 
   // Health RAG
   // Use only the metrics we actually have — fall back to task-based schedule health
@@ -125,8 +133,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     ? (cpi >= 0.95 ? "GREEN" : cpi >= 0.9 ? "AMBER" : "RED")
     : "GREEN"; // no cost data → not in trouble yet
   const riskHealth = criticalRisks > 0 ? "RED" : highRisks > 2 ? "AMBER" : "GREEN";
-  const overallHealth = [scheduleRag, budgetRag, riskHealth].includes("RED") ? "RED"
-    : [scheduleRag, budgetRag, riskHealth].filter(h => h === "AMBER").length >= 2 ? "AMBER" : "GREEN";
+
+  // Overall health rollup — a single RED dimension shouldn't push the whole
+  // project to "Critical" if the other two are GREEN. That made an early
+  // project with one critical risk read as Critical even when schedule and
+  // budget were on track, which is misleading.
+  // New rule:
+  //   • ≥2 RED  → RED ("Critical")
+  //   • 1 RED + ≥1 AMBER → RED
+  //   • 1 RED + 2 GREEN → AMBER (worth attention, not catastrophic)
+  //   • ≥2 AMBER → AMBER
+  //   • else → GREEN
+  const dims = [scheduleRag, budgetRag, riskHealth];
+  const reds = dims.filter(d => d === "RED").length;
+  const ambers = dims.filter(d => d === "AMBER").length;
+  let overallHealth: "RED" | "AMBER" | "GREEN";
+  if (reds >= 2 || (reds === 1 && ambers >= 1)) overallHealth = "RED";
+  else if (reds === 1 || ambers >= 2) overallHealth = "AMBER";
+  else overallHealth = "GREEN";
 
   // Phase progress
   const currentPhase = deployment?.currentPhase || phases.find(p => p.status === "ACTIVE")?.name || phases[0]?.name || "—";
@@ -150,6 +174,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         eac,
         hasRealEvm,
         hasRealCosts,
+        spiInsufficientData,                     // true = project too early in timeline for SPI to be meaningful
+        timeElapsedRatio,                        // 0..1 — how far through the planned timeline we are
         scheduleHealth: scheduleRag,
         budgetHealth: budgetRag,
       },
