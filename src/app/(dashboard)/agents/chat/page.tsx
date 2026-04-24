@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAgents } from "@/hooks/use-api";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -413,6 +414,7 @@ function AgentChatPage() {
   const { data: agentData, isLoading: agentsLoading } = useAgents();
   const agents = agentData?.agents || [];
   const currency = useOrgCurrency();
+  const queryClient = useQueryClient();
 
   usePageTitle("Chat with Agent");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(searchParams.get("agent"));
@@ -615,6 +617,15 @@ function AgentChatPage() {
       const json = await res.json();
       const result = json?.data;
       if (!result) return;
+
+      // Bust caches that drive the bottom status bar / pipeline / dashboard so
+      // they reflect the answered question immediately instead of on the next
+      // 60-second poll. The bar reads from useAgents() and the per-agent
+      // pipeline endpoint; dashboard reads from useDashboard.
+      queryClient.invalidateQueries({ queryKey: ["agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent", activeAgentId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline", activeAgentId] });
 
       if (result.status === "complete") {
         // Replace the current active question card with the completion card

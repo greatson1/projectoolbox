@@ -50,7 +50,8 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api<any>("/api/agents"),
-    refetchInterval: 60000, // 1 min — fleet status needs freshness
+    refetchInterval: 20000, // 20 s — drives the bottom status banner; needs to stay close to live
+    refetchOnWindowFocus: true,
   });
 }
 

@@ -40,12 +40,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  // Read the current artefact so we can merge metadata
-  const existing = await db.agentArtefact.findUnique({ where: { id }, select: { metadata: true } });
+  // Read the current artefact so we can merge metadata and detect
+  // content-edits to previously-APPROVED work.
+  const existing = await db.agentArtefact.findUnique({
+    where: { id },
+    select: { metadata: true, status: true, content: true, name: true, projectId: true },
+  });
 
-  // Build metadata update — stamp approvedBy/approvedAt when approving
+  // ── Edit-after-approval guard ────────────────────────────────────────────
+  // If the caller is changing the content of an APPROVED artefact without
+  // re-supplying status: "APPROVED", force the artefact back to DRAFT. The
+  // prior approval stamped by a human applied to the OLD content — it does
+  // not carry over to edits. This mirrors the chat-based edit path, which
+  // has always forced DRAFT on edit. APPROVED → APPROVED is only allowed
+  // when the request is the approval itself (status === "APPROVED").
+  const isContentEdit = typeof content === "string" && content !== existing?.content;
+  const wasApproved = existing?.status === "APPROVED";
+  const forceDraftOnEdit = isContentEdit && wasApproved && status !== "APPROVED";
+  const effectiveStatus = forceDraftOnEdit ? "DRAFT" : status;
+
+  // Build metadata update — stamp approvedBy/approvedAt when approving, and
+  // clear the stale approval stamps when an approved artefact is edited so
+  // the audit trail never claims a human approved this new content.
   let metadataUpdate: Record<string, unknown> | undefined;
-  if (status === "APPROVED") {
+  if (effectiveStatus === "APPROVED") {
     const currentMeta = (existing?.metadata as Record<string, unknown>) ?? {};
     metadataUpdate = {
       ...currentMeta,
@@ -53,17 +71,51 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       approvedAt: new Date().toISOString(),
       approvedByName: session.user.name ?? session.user.email ?? "unknown",
     };
+  } else if (forceDraftOnEdit) {
+    const currentMeta = (existing?.metadata as Record<string, unknown>) ?? {};
+    metadataUpdate = {
+      ...currentMeta,
+      priorApprovedBy: currentMeta.approvedBy,
+      priorApprovedByName: currentMeta.approvedByName,
+      priorApprovedAt: currentMeta.approvedAt,
+      approvedBy: null,
+      approvedByName: null,
+      approvedAt: null,
+      revertedToDraftAt: new Date().toISOString(),
+      revertedToDraftReason: "content_edited_after_approval",
+    };
   }
 
   const artefact = await db.agentArtefact.update({
     where: { id },
     data: {
-      ...(status && { status }),
+      ...(effectiveStatus && { status: effectiveStatus }),
       ...(feedback !== undefined && { feedback }),
       ...(content && { content, version: { increment: 1 } }),
       ...(metadataUpdate && { metadata: metadataUpdate }),
     },
   });
+
+  // Audit log + user-facing activity when an approved artefact is reverted.
+  if (forceDraftOnEdit) {
+    try {
+      const dep = await db.agentDeployment.findFirst({
+        where: { projectId: artefact.projectId, isActive: true },
+        select: { agentId: true },
+      });
+      const auditAgentId = dep?.agentId || artefact.agentId;
+      const editorName = session.user.name ?? session.user.email ?? "Unknown user";
+      await db.agentActivity.create({
+        data: {
+          agentId: auditAgentId,
+          type: "document",
+          summary: `"${artefact.name}" edited after approval by ${editorName} — reverted to DRAFT and must be re-approved.`,
+        },
+      });
+    } catch (e) {
+      console.error("[artefact PATCH] revert audit failed:", e);
+    }
+  }
 
   // ── Approval audit log ──────────────────────────────────────────────────
   // Record who approved the artefact so there is a permanent, human-attributed

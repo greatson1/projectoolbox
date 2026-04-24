@@ -105,9 +105,16 @@ function deriveState(
 ): AgentState {
   if (!agentDeployed) return "idle";
 
-  // phaseStatus is the PRIMARY source of truth — check it first so all UI surfaces agree
+  // hasActiveSession is the LIVE source of truth — phaseStatus can lag if the
+  // deployment column update missed (recovered on next pipeline fetch via
+  // self-heal). Always trust the active session presence first.
   if (phaseStatus === "blocked_tasks_incomplete") return "phase_complete"; // treat as non-urgent steady state for bar
-  if (phaseStatus === "awaiting_clarification" || hasActiveSession) return "questions_waiting";
+  if (hasActiveSession) return "questions_waiting";
+  // Only fall back to phaseStatus when there's no active session — and only if
+  // it's a definitive non-clarification status. A stale "awaiting_clarification"
+  // with no live session means the user just finished answering and the
+  // server-side phaseStatus update is in flight; show the next state instead
+  // of a misleading "Questions waiting".
   if (phaseStatus === "researching") return "generating"; // research pulses too
   if (phaseStatus === "pending_approval" || phaseStatus === "waiting_approval") return "review";
 

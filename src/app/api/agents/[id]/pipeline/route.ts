@@ -136,6 +136,19 @@ export async function GET(
     phaseStatus = newStatus;
   }
 
+  // Mirror self-heal for clarification: if phaseStatus is "awaiting_clarification"
+  // but no active session exists in the KB, the user has either finished answering
+  // or the session was abandoned — flip to "active" so the bottom banner stops
+  // saying "Questions waiting" when there are none. Source-of-truth: the active
+  // session entry in KB, NOT the deployment column.
+  if (phaseStatus === "awaiting_clarification" && !activeClarificationSession) {
+    await db.agentDeployment.update({
+      where: { id: deployment.id },
+      data: { phaseStatus: "active" },
+    }).catch(() => {});
+    phaseStatus = "active";
+  }
+
   // Phase gate approvals for current phase
   const phaseGateApprovals = approvals.filter(
     (a) => a.type === "PHASE_GATE"
