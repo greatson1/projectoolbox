@@ -524,9 +524,13 @@ function AgentStatusBanner({
   // Use current phase items for banner state, all items for total count
   const approved  = currentPhaseItems.filter((a: any) => a.status === "APPROVED").length;
   const pending   = currentPhaseItems.filter((a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
+  const rejected  = currentPhaseItems.filter((a: any) => a.status === "REJECTED").length;
   const total     = currentPhaseItems.length;
   const pct       = total > 0 ? Math.round((approved / total) * 100) : 0;
-  const allDone   = total > 0 && pending === 0 && !generating;
+  // A phase is only "complete" when EVERY artefact is approved. Rejected artefacts
+  // block progression — they need to be fixed/regenerated and re-approved.
+  const allDone   = total > 0 && approved === total && !generating;
+  const hasRejections = rejected > 0 && !generating;
   const noneYet   = total === 0 && !generating;
 
   // Derive current phase from project phases
@@ -562,11 +566,12 @@ function AgentStatusBanner({
     || null;
   const agentColor    = agentInfo?.gradient?.match(/#[0-9A-Fa-f]{6}/)?.[0] || "#6366f1";
 
-  // Determine state
-  let state: "generating" | "review" | "complete" | "empty" = "review";
-  if (generating)     state = "generating";
-  else if (noneYet)   state = "empty";
-  else if (allDone)   state = "complete";
+  // Determine state — rejections take priority over complete/review
+  let state: "generating" | "review" | "rejected" | "complete" | "empty" = "review";
+  if (generating)          state = "generating";
+  else if (noneYet)        state = "empty";
+  else if (hasRejections)  state = "rejected";
+  else if (allDone)        state = "complete";
 
   const stateConfig = {
     generating: {
@@ -584,6 +589,14 @@ function AgentStatusBanner({
       icon: <AlertCircle className="w-4 h-4" />,
       headline: `Review ${pending} document${pending === 1 ? "" : "s"} to advance`,
       sub: `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, your agent will automatically generate the ${nextPhase ? nextPhase.name : "next"} phase documents.`,
+    },
+    rejected: {
+      border: "border-red-500/30 bg-red-500/5",
+      badge: "bg-red-500/10 text-red-600 dark:text-red-400",
+      badgeText: "Rejected — action needed",
+      icon: <AlertCircle className="w-4 h-4" />,
+      headline: `${rejected} document${rejected === 1 ? "" : "s"} rejected — regenerate before advancing`,
+      sub: `${approved}/${total} approved, ${rejected} rejected. Open each rejected document, regenerate or edit it, then re-approve. The ${nextPhase ? nextPhase.name : "next"} phase cannot start until all documents are approved.`,
     },
     complete: {
       border: "border-emerald-500/30 bg-emerald-500/5",
