@@ -169,8 +169,11 @@ export async function generatePhaseArtefacts(
           let detectedFmt = "markdown";
           if (isSheet) { detectedFmt = "csv"; }
           else if (content.trimStart().startsWith("<")) { detectedFmt = "html"; }
+          // Resolve any [TBC — …] markers from the KB before saving so the artefact
+          // never lands in DRAFT with stale placeholders for facts we already know.
+          const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, content);
           await db.agentArtefact.create({
-            data: { agentId, projectId, name: artName, format: detectedFmt, content, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
+            data: { agentId, projectId, name: artName, format: detectedFmt, content: resolvedContent, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
           });
           existingNames.add(artName.toLowerCase());
           generatedNormNames.add(normalizeName(artName));
@@ -223,8 +226,9 @@ export async function generatePhaseArtefacts(
       if (isSheet) detectedFmt = "csv";
       else if (stripped.startsWith("<")) detectedFmt = "html";
       if (existingNames.has(name.toLowerCase())) continue;
+      const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, stripped);
       await db.agentArtefact.create({
-        data: { agentId, projectId, name, format: detectedFmt, content: stripped, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
+        data: { agentId, projectId, name, format: detectedFmt, content: resolvedRetry, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
       });
       existingNames.add(name.toLowerCase());
       generatedNormNames.add(normalizeName(name));
@@ -817,7 +821,7 @@ Any asterisk, hash, or pipe character in prose output = FAILURE.
 1. SPECIFIC — use "${project.name}", actual dates from the project, actual budget £${budget}
 2. OWNED — every action, risk, and deliverable must have an owner; use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor") — NEVER invent personal names
 3. CURRENT — as at ${today}; all items default to "Not Started" unless the project description explicitly states otherwise
-4. HONEST — THIS IS THE MOST IMPORTANT RULE: use [TBC — <plain English description of what is needed>] for ANY specific fact not explicitly provided in the project description above. It is BETTER to leave a field as [TBC] than to invent a plausible-sounding detail. Examples of facts that MUST be [TBC] if not in the description:
+4. HONEST — THIS IS THE MOST IMPORTANT RULE: use [TBC — <plain English description of what is needed>] for ANY specific fact not explicitly provided in the project description above OR in the Knowledge Base / Confirmed Facts above. BEFORE writing [TBC], scan the Knowledge Base AND any "USER-CONFIRMED FACTS" section for the same information under different wording (e.g. "visa processing time", "visa turnaround", "how long the visa takes" all refer to the same fact — if any is present, USE IT instead of [TBC]). It is BETTER to leave a field as [TBC] than to invent a plausible-sounding detail. Examples of facts that MUST be [TBC] if not in the description and not in the KB:
    • Venue names, addresses, room numbers, building names (e.g. "DIFC Gate District", "Marriott Al Jaddaf" — DO NOT invent these)
    • Specific meeting times, confirmation deadlines, action-by dates beyond the project end date
    • Supplier/vendor names, partner company names, contact persons, phone numbers
@@ -1814,6 +1818,40 @@ export function extractTBCItems(artefacts: { name: string; content: string }[]):
   }
 
   return results;
+}
+
+/**
+ * Scan Claude's freshly-generated artefact content for [TBC — …] markers and,
+ * for each one whose topic is already covered in the KB (user_confirmed first,
+ * then HIGH_TRUST research), replace it inline before the artefact is saved.
+ * This stops the TBC → clarification → re-ask loop ever starting for facts the
+ * agent already knew. Returns the (possibly mutated) content + count.
+ */
+export async function autoResolveTBCsInContent(
+  agentId: string,
+  projectId: string,
+  content: string,
+): Promise<{ content: string; autoFilled: number }> {
+  const tbcPattern = /\[?TBC\s*[—–-]\s*([^\]<\n,]{5,120})\]?/gi;
+  const topics = new Set<string>();
+  let m: RegExpExecArray | null;
+  tbcPattern.lastIndex = 0;
+  while ((m = tbcPattern.exec(content)) !== null) {
+    const topic = m[1].trim().replace(/\s+/g, " ");
+    if (topic.length > 4) topics.add(topic);
+  }
+  if (topics.size === 0) return { content, autoFilled: 0 };
+
+  let next = content;
+  let autoFilled = 0;
+  for (const topic of topics) {
+    const value = await resolveTBCFromKB(agentId, projectId, topic);
+    if (value) {
+      const res = replaceTBCInContent(next, topic, value);
+      if (res.changed) { next = res.content; autoFilled++; }
+    }
+  }
+  return { content: next, autoFilled };
 }
 
 /**
