@@ -22,6 +22,7 @@ interface ClarificationQuestion {
   question: string;
   type: QuestionType;
   options?: string[];
+  suggestions?: string[];
   answered: boolean;
   answer?: string;
 }
@@ -287,8 +288,29 @@ export function ClarificationCard({
             {/* ── Text widget ── */}
             {question.type === "text" && (
               <div className="mt-3 space-y-2">
+                {/* Researched suggestion chips — click to prefill the input */}
+                {question.suggestions && question.suggestions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
+                      From research — click to use
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {question.suggestions.map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => setTextValue(s)}
+                          className="px-2.5 py-1 rounded-full text-[11px] border border-border bg-muted/30 text-foreground/80 hover:border-primary/50 hover:bg-primary/10 hover:text-primary transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <Input
-                  placeholder="Type your answer…"
+                  placeholder={question.suggestions && question.suggestions.length > 0 ? "Pick one above or type your own…" : "Type your answer…"}
                   className="h-8 text-sm"
                   disabled={isSubmitting}
                   value={textValue}

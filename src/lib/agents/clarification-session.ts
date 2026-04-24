@@ -37,6 +37,13 @@ export interface ClarificationQuestion {
   question: string;          // the actual question to ask the user
   type: QuestionType;        // determines how it is rendered
   options?: string[];        // for "choice" and "multi" types
+  /**
+   * Pre-researched suggestions for "text" questions. Surfaced in the UI as
+   * clickable chips that populate the input — the user can click one, edit
+   * it, or type their own answer. Extracted from the feasibility research so
+   * no extra LLM call is needed.
+   */
+  suggestions?: string[];
   answered: boolean;
   answer?: string;
 }
@@ -178,6 +185,15 @@ QUESTION TYPE RULES — choose the most helpful type for each question:
 
 For "choice" and "multi" questions, provide realistic options tailored to the project. ALWAYS include "Other (please specify)" as the last option.
 
+RESEARCHED SUGGESTIONS — THIS IS IMPORTANT:
+For any "text" question where the FEASIBILITY RESEARCH above contains concrete, factual answers (specific hotel names, visa types, airline options, venue names, supplier names, known vendors, etc.), also populate a "suggestions" array with 3–5 short, specific, clickable answer options drawn directly from the research. The user will see these as chips they can click to pre-fill their answer.
+
+Rules for suggestions:
+- ONLY use suggestions that come directly from the research — do NOT invent them
+- Keep each suggestion short (under 60 chars) and concrete ("Atlantis The Palm", not "A luxury hotel on the palm")
+- Omit the suggestions field entirely if the research doesn't contain enough to suggest 3+ real options
+- Do NOT add suggestions to "choice", "multi", "yesno", "number" or "date" questions — those already have their own input widgets
+
 ${isTravel ? `TRAVEL PROJECT QUESTION HINTS — prioritise these types of questions:
 - Accommodation type (choice: Hotel / Serviced Apartment / Airbnb / Other)
 - Flight class (choice: Economy / Premium Economy / Business / First)
@@ -218,7 +234,8 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
     "artefact": "Detailed Trip Plan",
     "field": "hotel_name",
     "question": "What is the name and area of the hotel or accommodation you will be staying at?",
-    "type": "text"
+    "type": "text",
+    "suggestions": ["Atlantis The Palm (Palm Jumeirah)", "Jumeirah Beach Hotel (Jumeirah)", "Burj Al Arab (Jumeirah)", "Rove Downtown (Downtown Dubai)"]
   },
   {
     "id": "q4",
@@ -253,15 +270,25 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
     if (!match) return [];
 
     const raw = JSON.parse(match[0]) as any[];
-    return raw.map(q => ({
-      id: q.id || `q${Math.random()}`,
-      artefact: q.artefact || artefactNames[0],
-      field: q.field || "unknown",
-      question: q.question || "",
-      type: (["text", "choice", "multi", "yesno", "number", "date"].includes(q.type) ? q.type : "text") as QuestionType,
-      options: Array.isArray(q.options) && q.options.length > 0 ? q.options : undefined,
-      answered: false,
-    })).filter(q => q.question.length > 10);
+    return raw.map(q => {
+      const resolvedType = (["text", "choice", "multi", "yesno", "number", "date"].includes(q.type) ? q.type : "text") as QuestionType;
+      const suggestions = Array.isArray(q.suggestions)
+        ? q.suggestions
+            .filter((s: any) => typeof s === "string" && s.trim().length > 0 && s.length <= 80)
+            .slice(0, 5)
+        : undefined;
+      return {
+        id: q.id || `q${Math.random()}`,
+        artefact: q.artefact || artefactNames[0],
+        field: q.field || "unknown",
+        question: q.question || "",
+        type: resolvedType,
+        options: Array.isArray(q.options) && q.options.length > 0 ? q.options : undefined,
+        // Only keep suggestions on text questions — other types have their own widgets
+        suggestions: resolvedType === "text" && suggestions && suggestions.length >= 2 ? suggestions : undefined,
+        answered: false,
+      };
+    }).filter(q => q.question.length > 10);
   } catch (e) {
     console.error("[clarification-session] question generation failed:", e);
     return [];
