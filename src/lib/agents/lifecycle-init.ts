@@ -167,11 +167,15 @@ export async function generatePhaseArtefacts(
           if (existingNames.has(artName.toLowerCase())) continue;
           // Detect format: CSV for spreadsheets, HTML if content starts with tag, else markdown
           let detectedFmt = "markdown";
+          let cleaned = content;
           if (isSheet) { detectedFmt = "csv"; }
-          else if (content.trimStart().startsWith("<")) { detectedFmt = "html"; }
+          else if (content.trimStart().startsWith("<")) {
+            detectedFmt = "html";
+            cleaned = cleanMarkdownLeakage(content);
+          }
           // Resolve any [TBC — …] markers from the KB before saving so the artefact
           // never lands in DRAFT with stale placeholders for facts we already know.
-          const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, content);
+          const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, cleaned);
           await db.agentArtefact.create({
             data: { agentId, projectId, name: artName, format: detectedFmt, content: resolvedContent, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
           });
@@ -223,10 +227,14 @@ export async function generatePhaseArtefacts(
       const stripped = text.replace(/^##\s*ARTEFACT:\s*[^\n]*\n/im, "").trim();
       if (stripped.length < 20) continue;
       let detectedFmt = "markdown";
+      let cleanedRetry = stripped;
       if (isSheet) detectedFmt = "csv";
-      else if (stripped.startsWith("<")) detectedFmt = "html";
+      else if (stripped.startsWith("<")) {
+        detectedFmt = "html";
+        cleanedRetry = cleanMarkdownLeakage(stripped);
+      }
       if (existingNames.has(name.toLowerCase())) continue;
-      const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, stripped);
+      const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, cleanedRetry);
       await db.agentArtefact.create({
         data: { agentId, projectId, name, format: detectedFmt, content: resolvedRetry, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
       });
@@ -862,11 +870,61 @@ Any asterisk, hash, or pipe character in prose output = FAILURE.
 </table>
 
 ${knowledgeContext ? knowledgeContext : ""}━━━ ARTEFACTS TO GENERATE ━━━
+⚠️ The per-artefact guidance below uses markdown (# headings, | tables, **bold**)
+for STRUCTURAL READABILITY ONLY. You MUST convert every markdown construct in
+the guidance to its HTML equivalent in your output:
+  • "## Section" → <h3>Section</h3>
+  • "### Subsection" → <h4>Subsection</h4>
+  • "| col | col |\\n|----|----|" tables → <table><thead>…</thead><tbody>…</tbody></table>
+  • "**bold**" → <strong>bold</strong>
+  • "- item" or "* item" → <ul><li>item</li></ul>
+  • Do NOT echo the markdown guidance verbatim into a field value or paragraph.
 ${artefactSections}
 
 ━━━ SEPARATOR RULE ━━━
 Start each artefact with exactly "## ARTEFACT: <name>" on its own line (this line only may use ##).
-Everything inside the artefact body must be HTML. No preamble or commentary between artefacts.`;
+Everything inside the artefact body must be HTML. No preamble or commentary between artefacts.
+Any #, ##, ###, *, **, or | character in the artefact BODY is a failure and the output will be rejected.`;
+}
+
+/**
+ * Best-effort cleanup for LLM outputs that mix HTML with stray markdown.
+ * Runs on detected-html content only; converts common leakage patterns to
+ * their HTML equivalents rather than leaving raw markdown tokens on the page.
+ */
+function cleanMarkdownLeakage(html: string): string {
+  let out = html;
+
+  // Convert markdown table blocks (2+ rows starting and ending with |) to HTML tables.
+  // Matches a header row + separator + body rows.
+  out = out.replace(
+    /(^|\n)(\|[^\n]+\|)\n(\|[-:\s|]+\|)\n((?:\|[^\n]+\|\n?)+)/g,
+    (_, pre, header, _sep, body) => {
+      const cells = (line: string) => line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const headers = cells(header);
+      const rows = body.trim().split("\n").map(cells);
+      const thead = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>`;
+      const tbody = `<tbody>${rows.map((r: string[]) => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>`;
+      return `${pre}<table>${thead}${tbody}</table>`;
+    },
+  );
+
+  // Headings: #### / ### / ## / # at start of line
+  out = out.replace(/(^|\n)#{4,6}\s+([^\n]+)/g, (_, p, t) => `${p}<h5>${t.trim()}</h5>`);
+  out = out.replace(/(^|\n)###\s+([^\n]+)/g, (_, p, t) => `${p}<h4>${t.trim()}</h4>`);
+  out = out.replace(/(^|\n)##\s+([^\n]+)/g, (_, p, t) => `${p}<h3>${t.trim()}</h3>`);
+  out = out.replace(/(^|\n)#\s+([^\n]+)/g, (_, p, t) => `${p}<h2>${t.trim()}</h2>`);
+
+  // Bold: **text** → <strong>text</strong> (non-greedy, no line breaks inside)
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  // Italic: *text* (simple) → <em>text</em>. Avoid matching bullet asterisks at line start.
+  out = out.replace(/(^|[^*\n])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+
+  // Remove stray pipe-row fragments that weren't in a full markdown table (single rows).
+  out = out.replace(/(^|\n)\|[-:\s|]+\|(?=\n|$)/g, ""); // separator lines
+  out = out.replace(/(^|\n)\s*-{3,}\s*(?=\n|$)/g, "$1<hr>"); // --- rule
+
+  return out;
 }
 
 // ─── Per-artefact structural guidance ───
