@@ -240,19 +240,51 @@ export async function POST(req: NextRequest) {
       }).catch(() => {});
     }
 
-    // Auto-populate Knowledge Base with email content
+    // Auto-populate Knowledge Base with email content — tagged
+    // pending_user_confirmation so the agent does NOT use these claims when
+    // generating or mutating artefacts until the user has explicitly
+    // confirmed them. getProjectKnowledgeContext filters this tag out.
+    let kbItemId: string | null = null;
     try {
-      await db.knowledgeBaseItem.create({
+      const kbItem = await db.knowledgeBaseItem.create({
         data: {
           orgId, agentId: agent.id, projectId: activeProject?.id || null,
           layer: "PROJECT", type: "EMAIL",
           title: `Email from ${senderEmail}: ${subject}`,
           content: emailContent.slice(0, 2000),
-          tags: ["email", "auto-generated", emailType.toLowerCase()],
-          metadata: { from: senderEmail, subject, type: emailType },
+          tags: ["email", "auto-generated", "pending_user_confirmation", emailType.toLowerCase()],
+          metadata: { from: senderEmail, subject, type: emailType, inboxMessageId: inboxMsg.id },
         },
       });
+      kbItemId = kbItem.id;
     } catch {}
+
+    // ── Verification gate ────────────────────────────────────────────────
+    // Post a chat message asking the user to confirm the claims in the email
+    // before we trust them as project facts. The chat flow already knows how
+    // to extract user-confirmed answers and write them back to KB with the
+    // user_confirmed tag — this just routes the email's content through that
+    // same human-in-the-loop pipeline.
+    if (activeProject && emailContent.length > 50) {
+      try {
+        await db.chatMessage.create({
+          data: {
+            agentId: agent.id,
+            role: "agent",
+            content: `📧 **New email — please verify before I act on it**\n\nFrom: ${senderEmail}\nSubject: ${subject}\n\n---\n\n${emailContent.slice(0, 1500)}${emailContent.length > 1500 ? "\n\n…(truncated)" : ""}\n\n---\n\nReply with **confirm**, **reject**, or **edit:<your correction>** to tell me whether to use this in the project. I won't update any artefacts or registers until you respond.`,
+            metadata: {
+              type: "email_verification_required",
+              inboxMessageId: inboxMsg.id,
+              kbItemId,
+              senderEmail,
+              subject,
+            } as any,
+          },
+        });
+      } catch (e) {
+        console.error("[inbound-email] verification chat post failed:", e);
+      }
+    }
 
     let processedAs: string | null = null;
     let linkedId: string | null = null;

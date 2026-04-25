@@ -108,9 +108,18 @@ export async function getProjectKnowledgeContext(
   try {
     const [projectItems, workspaceItems, stakeholderRows, approvedArtefacts, project] = await Promise.all([
       // Project-level items (high-trust first — user answers, then artefact knowledge)
-      // Exclude internal session metadata items
+      // Exclude internal session metadata items AND items still awaiting user
+      // verification — claims ingested from inbound email/external sources are
+      // tagged "pending_user_confirmation" so they're not used to generate or
+      // mutate artefacts until the user has explicitly confirmed them in chat.
       db.knowledgeBaseItem.findMany({
-        where: { projectId, orgId, confidential: false, NOT: { title: { startsWith: "__" } } },
+        where: {
+          projectId, orgId, confidential: false,
+          NOT: [
+            { title: { startsWith: "__" } },
+            { tags: { has: "pending_user_confirmation" } },
+          ],
+        },
         orderBy: [{ trustLevel: "desc" }, { updatedAt: "desc" }],
         take: 60,
         select: { title: true, content: true, trustLevel: true, tags: true, type: true },

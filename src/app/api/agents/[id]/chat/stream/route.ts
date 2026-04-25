@@ -34,6 +34,71 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: { id: true },
   });
 
+  // ── Email verification reply handler ─────────────────────────────────────
+  // If the most recent agent message asked the user to verify an inbound email
+  // (metadata.type === "email_verification_required") and this user reply
+  // starts with confirm/reject/edit, handle it directly without burning AI
+  // credits. Confirms flip the KB item from pending → user_confirmed so it
+  // becomes available to artefact generation; reject deletes it; edit
+  // replaces the content and confirms.
+  try {
+    const trimmed = String(message).trim();
+    const lower = trimmed.toLowerCase();
+    const isConfirm = /^(confirm|yes|approve|approved|ok)\b/.test(lower);
+    const isReject = /^(reject|no|deny|denied|discard)\b/.test(lower);
+    const editMatch = /^edit\s*:\s*([\s\S]+)$/i.exec(trimmed);
+    if (isConfirm || isReject || editMatch) {
+      const recentAgentMsg = await db.chatMessage.findFirst({
+        where: { agentId, role: "agent" },
+        orderBy: { createdAt: "desc" },
+      });
+      const meta = recentAgentMsg?.metadata as Record<string, unknown> | null;
+      if (meta?.type === "email_verification_required" && typeof meta.kbItemId === "string") {
+        const kbItemId = meta.kbItemId;
+        if (isReject) {
+          await db.knowledgeBaseItem.delete({ where: { id: kbItemId } }).catch(() => {});
+          await db.chatMessage.create({
+            data: {
+              agentId, conversationId, role: "agent",
+              content: `✓ Discarded the email from ${meta.senderEmail || "sender"}. I won't use any of its content in this project.`,
+            },
+          });
+        } else {
+          // confirm or edit — flip pending → user_confirmed and (if edit)
+          // replace the content so the user's correction is what we trust.
+          const existing = await db.knowledgeBaseItem.findUnique({
+            where: { id: kbItemId },
+            select: { tags: true, content: true },
+          });
+          if (existing) {
+            const newTags = (existing.tags || [])
+              .filter((t) => t !== "pending_user_confirmation")
+              .concat("user_confirmed");
+            await db.knowledgeBaseItem.update({
+              where: { id: kbItemId },
+              data: {
+                tags: { set: newTags },
+                content: editMatch ? editMatch[1].trim() : existing.content,
+                trustLevel: "HIGH",
+              },
+            });
+          }
+          await db.chatMessage.create({
+            data: {
+              agentId, conversationId, role: "agent",
+              content: editMatch
+                ? `✓ Confirmed with your edit. I'll use this in the project: "${editMatch[1].trim().slice(0, 200)}${editMatch[1].length > 200 ? "…" : ""}"`
+                : `✓ Confirmed. The email content is now trusted project knowledge and will be used when generating or updating artefacts.`,
+            },
+          });
+        }
+        return new NextResponse(null, { status: 204 });
+      }
+    }
+  } catch (e) {
+    console.error("[chat/stream] email-verification handler failed:", e);
+  }
+
   // ── Sentiment extraction (non-blocking, cheap Haiku) ──
   if (message.length > 10) {
     (async () => {
