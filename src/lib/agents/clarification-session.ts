@@ -646,6 +646,16 @@ export async function answerQuestionInSession(
       },
     }).catch(() => {});
 
+    // Auto-complete the scaffolded "Conduct clarification Q&A with project
+    // owner" task — it has linkedEvent: "clarification_complete" and would
+    // otherwise sit at 10% (IN_PROGRESS placeholder) forever.
+    try {
+      const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+      await onAgentEvent(agentId, projectId, "clarification_complete");
+    } catch (e) {
+      console.error("[clarification] clarification_complete event hook failed:", e);
+    }
+
     // ── CRITICAL: unlock phaseStatus BEFORE the async regeneration kicks off ──
     // Previously this was inside the fire-and-forget IIFE; if any code path
     // threw before reaching the update, phaseStatus stayed on "awaiting_clarification"

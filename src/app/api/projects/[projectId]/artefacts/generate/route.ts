@@ -141,6 +141,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         }).catch(() => {});
         phaseAdvanced = { from: deployment.currentPhase, to: requestedPhase };
 
+        // Fire scaffolded-task hooks: mark all old-phase scaffolded tasks DONE
+        // (onPhaseAdvanced) and complete the "Obtain approval for all Phase X
+        // artefacts" event task (onAgentEvent("phase_advanced")). Without this
+        // they sit at 10% forever.
+        try {
+          const { onPhaseAdvanced, onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+          await onPhaseAdvanced(deployment.agentId, projectId, deployment.currentPhase, requestedPhase);
+          await onAgentEvent(deployment.agentId, projectId, "phase_advanced");
+        } catch (e) {
+          console.error("[artefacts/generate] phase-advance task hooks failed:", e);
+        }
+
         // Fire-and-forget: research → clarification → generation. Caller gets
         // an immediate response; the agent posts research findings and
         // clarification questions to chat as it progresses.

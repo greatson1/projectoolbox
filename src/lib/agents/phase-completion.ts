@@ -86,7 +86,7 @@ export async function getPhaseCompletion(
 
   // ── 2. PM Tasks (scaffolded overhead) ─────────────────────────────────
 
-  const pmTasks = await db.task.findMany({
+  const pmTasksRaw = await db.task.findMany({
     where: {
       projectId,
       OR: phaseIdMatch,
@@ -98,6 +98,20 @@ export async function getPhaseCompletion(
     },
     select: { id: true, title: true, status: true, progress: true },
   });
+
+  // Recurring universal tasks (e.g. "Review and update Risk Register",
+  // "Stakeholder communication and updates") are scaffolded into every phase
+  // and have no terminal state by design — they're cyclic monitoring work.
+  // Counting them as gate-blockers means a phase can never advance even when
+  // every meaningful task is done. Filter them out of the gate count; they
+  // remain visible on the PM Tracker as recurring activities.
+  const RECURRING_UNIVERSAL_TITLES = new Set([
+    "review and update risk register",
+    "stakeholder communication and updates",
+  ]);
+  const pmTasks = pmTasksRaw.filter(
+    (t) => !RECURRING_UNIVERSAL_TITLES.has((t.title || "").trim().toLowerCase()),
+  );
 
   const pmTasksDone = pmTasks.filter((t) => t.status === "DONE" || t.status === "COMPLETE" || (t.progress || 0) >= 100).length;
   const pmTasksTotal = pmTasks.length;

@@ -328,6 +328,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                     summary: `All ${artefact.phaseId} artefacts approved. Phase gate created — awaiting your approval to advance to ${nextPhase.name}.`,
                   },
                 });
+                // Auto-complete any scaffolded "Submit Phase X gate approval" task
+                try {
+                  const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+                  await onAgentEvent(dep.agentId, artefact.projectId, "gate_request");
+                } catch (e) {
+                  console.error("[artefact PATCH] gate_request event hook failed:", e);
+                }
               }
             }
           }
