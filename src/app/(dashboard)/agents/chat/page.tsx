@@ -977,7 +977,9 @@ function AgentChatPage() {
           <input className="w-full px-3 py-1.5 rounded-lg text-xs bg-muted border border-border" placeholder="Search conversations..." />
         </div>
         <div className="flex-1 overflow-y-auto">
-          {agents.length === 0 ? (
+          {agentsLoading || agentData === undefined ? (
+            <div className="p-6 text-center"><div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-muted-foreground/20 border-t-primary animate-spin" /><p className="text-xs text-muted-foreground">Loading agents…</p></div>
+          ) : agents.length === 0 ? (
             <div className="p-6 text-center"><Bot className="w-8 h-8 text-muted-foreground mx-auto mb-3" /><p className="text-sm font-medium mb-1">No agents deployed</p><p className="text-xs text-muted-foreground mb-3">Deploy your first agent to start chatting</p><a href="/agents/deploy" className="inline-flex items-center px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold">Deploy Agent →</a></div>
           ) : agents.map((agent: any) => {
             const agentMsgs = messagesByAgent[agent.id] || [];

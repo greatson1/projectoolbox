@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCalendarEvents, useCreateCalendarEvent, useProjects, useAgents } from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
 import { Calendar, Plus, Clock, MapPin, Users, Bot, FileText, X, ChevronRight } from "lucide-react";
 
 function timeUntil(date: string | Date) {
@@ -246,6 +247,7 @@ function CreateEventModal({ onClose }: { onClose: () => void }) {
 
   const { data: projects } = useProjects();
   const createEvent = useCreateCalendarEvent();
+  const queryClient = useQueryClient();
 
   // Check Zoom connection status
   useState(() => {
@@ -278,6 +280,11 @@ function CreateEventModal({ onClose }: { onClose: () => void }) {
         const data = await r.json();
 
         if (r.ok) {
+          // Bust the calendar list query so the new meeting appears immediately
+          // — the Zoom path uses raw fetch (not useCreateCalendarEvent's
+          // mutation), so without this the page stays on stale "No events"
+          // until manual refresh.
+          await queryClient.invalidateQueries({ queryKey: ["calendar"] });
           setResult(data.data?.joinUrl || "Meeting created!");
           setTimeout(onClose, 2000);
         } else {

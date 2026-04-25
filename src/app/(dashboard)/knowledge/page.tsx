@@ -61,7 +61,7 @@ export default function KnowledgeBasePage() {
   const [selectedAgent, setSelectedAgent] = useState("");
   const [viewMode, setViewMode]     = useState<"list" | "graph">("list");
 
-  const { data: agentsData } = useAgents();
+  const { data: agentsData, isLoading: agentsLoading } = useAgents();
   const agents = agentsData?.agents || [];
 
   useEffect(() => {
@@ -130,7 +130,11 @@ export default function KnowledgeBasePage() {
   };
 
   // ── No agents deployed yet — show onboarding ──
-  if (!loading && agents.length === 0) return (
+  // Wait for the agents query itself to settle before declaring "no agents".
+  // Without this guard the empty state flashes for one render on every visit
+  // because `loading` (which tracks KB items) flips to false the moment we
+  // see an empty selectedAgent, while agentsData is still in-flight.
+  if (!agentsLoading && agentsData !== undefined && agents.length === 0) return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
       <div className="flex items-center gap-3 mb-6">
         <Brain className="w-5 h-5 text-primary" />
