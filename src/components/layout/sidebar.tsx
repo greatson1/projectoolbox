@@ -49,13 +49,13 @@ const NAV: NavGroup[] = [
   {
     title: "AI AGENTS",
     items: [
+      { label: "Deploy Agent",     href: "/agents/deploy",    icon: Rocket },
       { label: "Fleet Overview",   href: "/agents",            icon: Bot },
       { label: "Chat with Agent",  href: "/agents/chat",      icon: MessageSquare },
       { label: "Process Pipeline", href: "/agents/pipeline",  icon: Activity },
       { label: "Activity Log",     href: "/activity",         icon: BarChart3 },
       { label: "ML Insights",      href: "/ml-insights",      icon: Brain },
       { label: "Sentiment",        href: "/sentiment",         icon: Activity },
-      { label: "Deploy Agent",     href: "/agents/deploy",    icon: Rocket },
     ],
   },
 
