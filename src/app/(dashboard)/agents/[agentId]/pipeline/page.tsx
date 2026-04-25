@@ -763,24 +763,49 @@ export default function AgentPipelinePage() {
         </div>
 
         {/* ========== Currently On — clear "here's what's happening" banner ========== */}
-        {currentStep && (
-          <div className={cn(
-            "flex items-center gap-4 px-5 py-4 rounded-xl border-2",
-            currentStep.status === "running" && "border-blue-500/40 bg-blue-500/5",
-            currentStep.status === "failed" && "border-red-500/40 bg-red-500/5",
-            currentStep.status === "waiting" && "border-amber-500/30 bg-amber-500/5",
-          )}>
+        {currentStep && (() => {
+          // Banner glow colour matches the step status so the pulse is visible
+          // at a glance (blue=running, amber=waiting, red=failed).
+          const bannerColour = currentStep.status === "failed" ? "#EF4444"
+            : currentStep.status === "waiting" ? "#F59E0B"
+            : "#3B82F6";
+          return (
+          <div
+            className={cn(
+              "flex items-center gap-4 px-5 py-4 rounded-xl border-2 relative overflow-hidden",
+              currentStep.status === "running" && "border-blue-500/40 bg-blue-500/5",
+              currentStep.status === "failed" && "border-red-500/40 bg-red-500/5",
+              currentStep.status === "waiting" && "border-amber-500/30 bg-amber-500/5",
+            )}
+            style={{
+              boxShadow: `0 0 0 1.5px ${bannerColour}33, 0 0 24px ${bannerColour}22`,
+              animation: "pipeline-pulse 2.2s ease-in-out infinite",
+            }}
+          >
+            {/* Top-edge shimmer to draw the eye */}
+            <div
+              className="absolute top-0 left-0 right-0 h-0.5 pointer-events-none"
+              style={{
+                background: `linear-gradient(90deg, transparent, ${bannerColour}, transparent)`,
+                backgroundSize: "200% 100%",
+                animation: "pipeline-shimmer 2.5s linear infinite",
+              }}
+            />
             <div className={cn(
               "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
               currentStep.status === "running" && "bg-blue-500/20",
               currentStep.status === "failed" && "bg-red-500/20",
               currentStep.status === "waiting" && "bg-amber-500/20",
-            )}>
+            )}
+              style={{ animation: "pipeline-pulse 2.2s ease-in-out infinite" }}
+            >
               {currentStep.status === "running" && (
                 <RefreshCw className="w-6 h-6 text-blue-500" style={{ animation: "pipeline-spin 1.5s linear infinite" }} />
               )}
               {currentStep.status === "failed" && <X className="w-6 h-6 text-red-500" />}
-              {currentStep.status === "waiting" && <Clock className="w-6 h-6 text-amber-500" />}
+              {currentStep.status === "waiting" && (
+                <Clock className="w-6 h-6 text-amber-500" style={{ animation: "pipeline-pulse 1.6s ease-in-out infinite" }} />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">
@@ -829,7 +854,8 @@ export default function AgentPipelinePage() {
               </Link>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ========== Overall Progress Bar ========== */}
         <div className="space-y-2">
@@ -859,10 +885,22 @@ export default function AgentPipelinePage() {
         {(() => {
           // Determine if phase is in an ACTIVE state — controls card-level pulse
           const ps = data.phaseStatus;
-          const activeStates = ["researching", "awaiting_clarification", "active", "pending_approval", "waiting_approval"];
+          // Any state that means "phase needs attention" — used to drive the
+          // glow + shimmer on the pipeline card. Includes blocked_* statuses
+          // because a blocked phase is the loudest possible "do something".
+          const activeStates = [
+            "researching",
+            "awaiting_clarification",
+            "active",
+            "pending_approval",
+            "waiting_approval",
+            "blocked_tasks_incomplete",
+            "blocked",
+          ];
           const isActivePhase = ps ? activeStates.includes(ps) : false;
           const anyStepRunning = data.steps.some(s => s.status === "running");
-          const shouldPulse = isActivePhase || anyStepRunning;
+          const anyStepWaiting = data.steps.some(s => s.status === "waiting" || s.status === "failed");
+          const shouldPulse = isActivePhase || anyStepRunning || anyStepWaiting;
           // Border colour by phase state
           const borderColour = ps === "blocked_tasks_incomplete" ? "#EF4444"
             : ps === "researching" ? "#3B82F6"
