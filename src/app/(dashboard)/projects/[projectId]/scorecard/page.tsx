@@ -25,11 +25,24 @@ const OBJECTIVE_ICONS = {
   compliance: Shield,
 };
 
-function ScoreGauge({ score, size = 80 }: { score: number; size?: number }) {
-  const color = score >= 75 ? "#10B981" : score >= 50 ? "#F59E0B" : "#EF4444";
-  const pct = Math.min(100, Math.max(0, score));
+function ScoreGauge({ score, size = 80 }: { score: number | null; size?: number }) {
   const radius = (size - 8) / 2;
   const circumference = 2 * Math.PI * radius;
+  if (score === null || score === undefined) {
+    return (
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-full -rotate-90">
+          <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke="var(--border)" strokeWidth="6" opacity={0.3} strokeDasharray="3 4" />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-xl font-bold text-muted-foreground">—</span>
+          <span className="text-[8px] text-muted-foreground uppercase">N/A</span>
+        </div>
+      </div>
+    );
+  }
+  const color = score >= 75 ? "#10B981" : score >= 50 ? "#F59E0B" : "#EF4444";
+  const pct = Math.min(100, Math.max(0, score));
   const offset = circumference - (pct / 100) * circumference;
 
   return (
@@ -93,14 +106,22 @@ export default function ScorecardPage({ params }: { params: Promise<{ projectId:
                 <Badge className={`${overallStyle.bg} ${overallStyle.text} border-0`}>{overallStyle.label}</Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                Composite score across {objectives.length} objectives. {overall.score >= 75 ? "Project is performing well." : overall.score >= 50 ? "Some areas need attention." : "Multiple objectives are at risk."}
+                {overall.scoredObjectives ?? objectives.length} of {overall.totalObjectives ?? objectives.length} objectives currently have data.
+                {" "}
+                {overall.score >= 75 ? "Project is performing well." : overall.score >= 50 ? "Some areas need attention." : "Multiple objectives are at risk."}
               </p>
             </div>
             {/* Agent stats */}
             <div className="flex gap-6 text-center">
               <div>
-                <p className="text-2xl font-bold text-primary">{agentPerformance.decisionAccuracy}%</p>
-                <p className="text-[10px] text-muted-foreground">Decision Accuracy</p>
+                <p className="text-2xl font-bold text-primary">
+                  {agentPerformance.decisionAccuracy === null || agentPerformance.decisionAccuracy === undefined
+                    ? "—"
+                    : `${agentPerformance.decisionAccuracy}%`}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {agentPerformance.totalDecisions === 0 ? "No decisions yet" : "Decision Accuracy"}
+                </p>
               </div>
               <div>
                 <p className="text-2xl font-bold">{agentPerformance.totalActivities}</p>
@@ -159,7 +180,11 @@ export default function ScorecardPage({ params }: { params: Promise<{ projectId:
               <p className="text-[10px] text-muted-foreground">Rejected</p>
             </div>
             <div className="p-3 rounded-lg bg-primary/10">
-              <p className="text-lg font-bold text-primary">{agentPerformance.decisionAccuracy}%</p>
+              <p className="text-lg font-bold text-primary">
+                {agentPerformance.decisionAccuracy === null || agentPerformance.decisionAccuracy === undefined
+                  ? "—"
+                  : `${agentPerformance.decisionAccuracy}%`}
+              </p>
               <p className="text-[10px] text-muted-foreground">Accuracy Rate</p>
             </div>
           </div>
