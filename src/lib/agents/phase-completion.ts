@@ -180,7 +180,7 @@ export async function getPhaseCompletion(
       // Only leaf tasks (not parent groupings)
       parentId: { not: null },
     },
-    select: { id: true, title: true, status: true, progress: true },
+    select: { id: true, title: true, status: true, progress: true, description: true },
   });
 
   // Recurring universal tasks (e.g. "Review and update Risk Register",
@@ -193,9 +193,17 @@ export async function getPhaseCompletion(
     "review and update risk register",
     "stakeholder communication and updates",
   ]);
-  const pmTasks = pmTasksRaw.filter(
-    (t) => !RECURRING_UNIVERSAL_TITLES.has((t.title || "").trim().toLowerCase()),
-  );
+  // Bookkeeping tasks whose linkedEvent is "phase_advanced" only tick DONE
+  // AFTER the phase advances. Counting them as a gate-blocker creates a
+  // deadlock — the phase can't advance because the task isn't done, and
+  // the task can't be done because the phase hasn't advanced. Exempt them.
+  const pmTasks = pmTasksRaw.filter((t) => {
+    const title = (t.title || "").trim().toLowerCase();
+    if (RECURRING_UNIVERSAL_TITLES.has(title)) return false;
+    const desc = (t.description || "").toLowerCase();
+    if (desc.includes("[event:phase_advanced]")) return false;
+    return true;
+  });
 
   const pmTasksDone = pmTasks.filter((t) => t.status === "DONE" || t.status === "COMPLETE" || (t.progress || 0) >= 100).length;
   const pmTasksTotal = pmTasks.length;

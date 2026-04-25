@@ -175,9 +175,60 @@ export async function GET(
   }
 
   // Phase gate approvals for current phase
-  const phaseGateApprovals = approvals.filter(
+  let phaseGateApprovals = approvals.filter(
     (a) => a.type === "PHASE_GATE"
   );
+
+  // ── Auto-raise a phase gate when one is genuinely needed ───────────────
+  // If the 3-layer phase completion check says canAdvance === true but no
+  // PENDING PHASE_GATE exists for this phase, raise one now. Without this,
+  // a project that's "ready to advance" can sit forever with the user
+  // looking at an empty Approvals queue and no way to actually advance.
+  if (currentPhase && deployment.projectId) {
+    try {
+      const pendingGateForPhase = phaseGateApprovals.find((a) => {
+        const t = (a.title || "").toLowerCase();
+        return a.status === "PENDING" && (t.startsWith(`${currentPhase.toLowerCase()} gate`) || t.startsWith(`${currentPhase.toLowerCase()}:`));
+      });
+      if (!pendingGateForPhase) {
+        const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+        const completion = await getPhaseCompletion(deployment.projectId, currentPhase, agentId);
+        if (completion.canAdvance) {
+          // Pick a sensible requestedById — the org owner (creates pre-deploy
+          // by the system are otherwise rejected on FK).
+          const owner = await db.user.findFirst({
+            where: { orgId: deployment.agent.orgId, role: { in: ["OWNER", "ADMIN"] } },
+            select: { id: true },
+          });
+          if (owner) {
+            const created = await db.approval.create({
+              data: {
+                projectId: deployment.projectId,
+                requestedById: owner.id,
+                title: `${currentPhase} Gate: Review and approve to advance`,
+                description: `${currentPhase} phase is complete (${completion.overall}%). Approve to advance to the next phase.`,
+                type: "PHASE_GATE",
+                status: "PENDING",
+                impact: { level: "MEDIUM", description: "Phase gate approval" } as any,
+              },
+            }).catch(() => null);
+            if (created) {
+              phaseGateApprovals = [created as any, ...phaseGateApprovals];
+              await db.agentActivity.create({
+                data: {
+                  agentId,
+                  type: "approval",
+                  summary: `${currentPhase} gate raised — ready for review (${completion.overall}% complete)`,
+                },
+              }).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[pipeline] auto-raise phase gate failed:", e);
+    }
+  }
   // Find the CURRENT phase's gate — use exact prefix match on title ("{phase} Gate:")
   // and always prefer the most recently created to handle resubmission cycles.
   const currentPhaseGate = (() => {
