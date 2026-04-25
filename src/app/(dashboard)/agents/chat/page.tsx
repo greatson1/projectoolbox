@@ -586,8 +586,21 @@ function AgentChatPage() {
 
         setMessagesByAgent(prev => ({ ...prev, [activeAgentId]: loaded }));
         setHistoryLoaded(prev => new Set([...prev, activeAgentId]));
-        // Scroll to bottom after history loads
-        setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 150);
+        // Snap to bottom after history loads. A single 150ms timeout wasn't
+        // enough for long histories — the DOM hadn't finished laying out all
+        // the message bubbles yet, so scrollHeight was still climbing and we
+        // landed mid-conversation. Two rAF passes + a couple of late ticks
+        // covers the slow cases without flashing the top of the chat.
+        const snapToBottom = () => {
+          const el = scrollRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        };
+        requestAnimationFrame(() => {
+          snapToBottom();
+          requestAnimationFrame(snapToBottom);
+        });
+        setTimeout(snapToBottom, 120);
+        setTimeout(snapToBottom, 350);
       })
       .catch(() => {
         // If history fetch fails, mark as loaded so we fall through to kickoff
