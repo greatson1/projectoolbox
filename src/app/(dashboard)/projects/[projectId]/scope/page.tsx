@@ -137,7 +137,31 @@ export default function ScopeManagementPage() {
   const completedTasks = items.filter((t: any) => t.status === "DONE" || t.status === "COMPLETED").length;
   const inProgress = items.filter((t: any) => t.status === "IN_PROGRESS").length;
   const workPackages = items.filter((t: any) => items.some((c: any) => c.parentId === t.id)).length;
-  const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  // Scope completion = weighted average of per-item progress (PMI WBS standard).
+  // Weight by estimatedHours when every item has hours so a 40-hour deliverable
+  // counts more than a 1-hour checklist item; otherwise fall back to a simple
+  // average. Fully DONE items are forced to 100% even if their progress field
+  // is stale — completion status trumps numeric progress.
+  // (Previously this was `completedTasks / total` which under-reported any
+  // project where work had started but nothing was 100% finished.)
+  const itemProgress = items.map((t: any) => {
+    if (t.status === "DONE" || t.status === "COMPLETED") return 100;
+    const p = Number(t.progress);
+    return Number.isFinite(p) ? Math.max(0, Math.min(100, p)) : 0;
+  });
+  const allHaveHours = items.length > 0 && items.every((t: any) => Number(t.estimatedHours) > 0);
+  let overallProgress = 0;
+  if (totalTasks > 0) {
+    if (allHaveHours) {
+      const totalHours = items.reduce((s: number, t: any) => s + Number(t.estimatedHours), 0);
+      const earnedHours = items.reduce((s: number, t: any, i: number) =>
+        s + (Number(t.estimatedHours) * (itemProgress[i] / 100)), 0);
+      overallProgress = totalHours > 0 ? Math.round((earnedHours / totalHours) * 100) : 0;
+    } else {
+      overallProgress = Math.round(itemProgress.reduce((s: number, p: number) => s + p, 0) / totalTasks);
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-[1400px]">
