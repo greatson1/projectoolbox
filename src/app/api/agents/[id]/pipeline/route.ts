@@ -83,10 +83,25 @@ export async function GET(
   const firstPhase = phases.length > 0 ? phases[0] : null;
   const now = Date.now();
 
-  // Filter artefacts for current phase
+  // Filter artefacts for current phase. AgentArtefact.phaseId is inconsistent
+  // (sometimes the phase row CUID, sometimes the phase name string, sometimes
+  // null with the phase recorded in metadata). Fall through several signals
+  // before giving up — the Generate Artefacts / Review & Approve steps depend
+  // on this to know what the agent has done.
   const currentPhaseObj = phases.find((p) => p.name === currentPhase);
+  const currentPhaseLCEarly = (currentPhase || "").toLowerCase();
   const currentPhaseArtefacts = currentPhaseObj
-    ? artefacts.filter((a) => a.phaseId === currentPhaseObj.id)
+    ? artefacts.filter((a) => {
+        if (a.phaseId && a.phaseId === currentPhaseObj.id) return true;
+        if (a.phaseId && a.phaseId === currentPhase) return true; // some rows store the name
+        const meta = (a as any).metadata as Record<string, unknown> | null;
+        if (meta && typeof meta.phase === "string" && meta.phase.toLowerCase() === currentPhaseLCEarly) return true;
+        // Last-resort: artefact with no phase tag at all but the deployment is on
+        // its first phase OR the artefact name contains the phase keyword.
+        if (!a.phaseId && currentPhaseObj.order === 0) return true;
+        if (!a.phaseId && a.name?.toLowerCase().includes(currentPhaseLCEarly)) return true;
+        return false;
+      })
     : artefacts;
 
   // Research KB items — scope to CURRENT phase only (not ALL research ever)
@@ -117,6 +132,16 @@ export async function GET(
     const meta = msg.metadata as Record<string, unknown> | null;
     return meta?.type === "clarification_answer" || meta?.type === "agent_question_answered";
   });
+  // The interactive clarification flow doesn't write a chat message per answer
+  // (answers go straight to the KB). Detect completion via the
+  // "__CLARIFICATION_COMPLETE__" message + any KB items tagged "user_answer".
+  const clarificationCompletes = chatMessages.filter((msg) => {
+    const meta = msg.metadata as Record<string, unknown> | null;
+    return meta?.type === "clarification_complete";
+  });
+  const clarificationKBAnswers = kbItems.filter((item) =>
+    (item.tags || []).some((t) => t.toLowerCase() === "user_answer" || t.toLowerCase() === "user_confirmed"),
+  );
   // Active clarification session lives in KB as __clarification_session__
   const activeClarificationSession = kbItems.find(
     (k) => k.title === "__clarification_session__" && (k.tags || []).includes("active")
@@ -267,9 +292,23 @@ export async function GET(
         status = "running";
         details = `${sessionAnswered}/${sessionQuestions} answered · ${sessionQuestions - sessionAnswered} pending`;
       }
-    } else if (clarificationAnswers.length > 0) {
+    } else if (clarificationCompletes.length > 0) {
+      // The interactive flow posts __CLARIFICATION_COMPLETE__ when a session
+      // finishes. Treat it as authoritative — answers live in the KB, not in
+      // chatMessages, so the clarificationAnswers chat filter would miss this.
       status = "done";
-      details = `${clarificationAnswers.length} answer${clarificationAnswers.length !== 1 ? "s" : ""} received`;
+      const lastComplete = clarificationCompletes[0];
+      const meta = lastComplete?.metadata as Record<string, unknown> | null;
+      const total = Number(meta?.totalCount) || clarificationKBAnswers.length;
+      details = total > 0
+        ? `All ${total} question${total !== 1 ? "s" : ""} answered`
+        : "Clarification complete";
+    } else if (clarificationAnswers.length > 0 || clarificationKBAnswers.length > 0) {
+      // Either chat-message answers (legacy) OR KB-stored answers (current flow)
+      // are enough to call the step done.
+      status = "done";
+      const count = Math.max(clarificationAnswers.length, clarificationKBAnswers.length);
+      details = `${count} answer${count !== 1 ? "s" : ""} captured`;
     } else if (phaseStatus === "awaiting_clarification") {
       status = "running";
       details = clarificationMessages.length > 0
