@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { getMethodology } from "@/lib/methodology-definitions";
 import { getPlaybook } from "./methodology-playbooks";
 import { isSpreadsheetArtefact, getArtefactColumns } from "@/lib/artefact-types";
+import { cleanMarkdownLeakage } from "./markdown-cleanup";
 
 /**
  * Generate artefacts for the current (or specified) phase of a project.
@@ -97,7 +98,17 @@ export async function generatePhaseArtefacts(
   if (!force && deployment) {
     const blockingStatuses = ["researching", "awaiting_clarification"];
     if (deployment.phaseStatus && blockingStatuses.includes(deployment.phaseStatus)) {
-      return { generated: 0, skipped, phase: targetPhaseName };
+      // Loud-failure: don't return 0 silently — log it so the missing artefacts
+      // are visible in the activity feed instead of vanishing into a 0-count toast.
+      console.warn(`[generatePhaseArtefacts] Blocked by phaseStatus=${deployment.phaseStatus} for agent=${agentId} phase=${targetPhaseName}, missing=${toGenerate.join(", ")}`);
+      await db.agentActivity.create({
+        data: {
+          agentId,
+          type: "document",
+          summary: `${targetPhaseName}: generation blocked — phase is ${deployment.phaseStatus}. ${toGenerate.length} artefact(s) still pending: ${toGenerate.join(", ")}. Answer clarifications to unblock, or use Regenerate (Fresh) to override.`,
+        },
+      }).catch(() => {});
+      return { generated: 0, skipped, phase: targetPhaseName, missing: toGenerate };
     }
   }
 
@@ -107,7 +118,15 @@ export async function generatePhaseArtefacts(
       const { getActiveSession } = await import("@/lib/agents/clarification-session");
       const activeSession = await getActiveSession(agentId, projectId);
       if (activeSession) {
-        return { generated: 0, skipped, phase: targetPhaseName };
+        console.warn(`[generatePhaseArtefacts] Blocked by active clarification session for agent=${agentId} phase=${targetPhaseName}, missing=${toGenerate.join(", ")}`);
+        await db.agentActivity.create({
+          data: {
+            agentId,
+            type: "document",
+            summary: `${targetPhaseName}: generation blocked — active clarification session pending. ${toGenerate.length} artefact(s) waiting: ${toGenerate.join(", ")}. Finish answering questions, or use Regenerate (Fresh) to override.`,
+          },
+        }).catch(() => {});
+        return { generated: 0, skipped, phase: targetPhaseName, missing: toGenerate };
       }
     } catch (e) {
       console.error("[generatePhaseArtefacts] clarification import failed:", e);
@@ -929,45 +948,10 @@ Everything inside the artefact body must be HTML. No preamble or commentary betw
 Any #, ##, ###, *, **, or | character in the artefact BODY is a failure and the output will be rejected.`;
 }
 
-/**
- * Best-effort cleanup for LLM outputs that mix HTML with stray markdown.
- * Runs on detected-html content only; converts common leakage patterns to
- * their HTML equivalents rather than leaving raw markdown tokens on the page.
- */
-function cleanMarkdownLeakage(html: string): string {
-  let out = html;
-
-  // Convert markdown table blocks (2+ rows starting and ending with |) to HTML tables.
-  // Matches a header row + separator + body rows.
-  out = out.replace(
-    /(^|\n)(\|[^\n]+\|)\n(\|[-:\s|]+\|)\n((?:\|[^\n]+\|\n?)+)/g,
-    (_, pre, header, _sep, body) => {
-      const cells = (line: string) => line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
-      const headers = cells(header);
-      const rows = body.trim().split("\n").map(cells);
-      const thead = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>`;
-      const tbody = `<tbody>${rows.map((r: string[]) => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>`;
-      return `${pre}<table>${thead}${tbody}</table>`;
-    },
-  );
-
-  // Headings: #### / ### / ## / # at start of line
-  out = out.replace(/(^|\n)#{4,6}\s+([^\n]+)/g, (_, p, t) => `${p}<h5>${t.trim()}</h5>`);
-  out = out.replace(/(^|\n)###\s+([^\n]+)/g, (_, p, t) => `${p}<h4>${t.trim()}</h4>`);
-  out = out.replace(/(^|\n)##\s+([^\n]+)/g, (_, p, t) => `${p}<h3>${t.trim()}</h3>`);
-  out = out.replace(/(^|\n)#\s+([^\n]+)/g, (_, p, t) => `${p}<h2>${t.trim()}</h2>`);
-
-  // Bold: **text** → <strong>text</strong> (non-greedy, no line breaks inside)
-  out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  // Italic: *text* (simple) → <em>text</em>. Avoid matching bullet asterisks at line start.
-  out = out.replace(/(^|[^*\n])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
-
-  // Remove stray pipe-row fragments that weren't in a full markdown table (single rows).
-  out = out.replace(/(^|\n)\|[-:\s|]+\|(?=\n|$)/g, ""); // separator lines
-  out = out.replace(/(^|\n)\s*-{3,}\s*(?=\n|$)/g, "$1<hr>"); // --- rule
-
-  return out;
-}
+// cleanMarkdownLeakage lives in "@/lib/agents/markdown-cleanup" so it can be
+// unit-tested in isolation (no Prisma client). Re-exported here for any
+// callers that previously imported it from this module.
+export { cleanMarkdownLeakage };
 
 // ─── Per-artefact structural guidance ───
 
