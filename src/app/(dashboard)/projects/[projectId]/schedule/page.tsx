@@ -104,10 +104,12 @@ export default function SchedulePage() {
         : s === "AT_RISK" || s === "BLOCKED" ? "at-risk"
         : "pending";
 
-      // phaseId is a UUID — resolve to name, fall back to "Execution"
+      // phaseId is a UUID — resolve to name. Don't invent a phase name when
+      // we can't resolve one (was hardcoded to "Execution" which mis-labelled
+      // every task across every project as Execution-phase work).
       const phase = (t.phaseId && phaseNameById[t.phaseId])
         || t.phase  // in case the API ever normalises this
-        || "Execution";
+        || "Unassigned";
 
       return {
         id: t.id,
@@ -219,15 +221,28 @@ export default function SchedulePage() {
     return map;
   }, [TASKS_DATA]);
 
-  // Derive phases summary from actual data
+  // Derive phases summary from actual data. Progress is now the average of
+  // per-task progress (matching the Scope & WBS rollup), not a binary
+  // "% of tasks fully done" — partial progress shows up instead of being
+  // hidden until status flips to DONE.
   const phasesSummary = useMemo(() => {
-    const phases: { name: string; status: "done" | "active" | "pending"; tasks: number; complete: number; gate: string }[] = [];
+    const phases: {
+      name: string;
+      status: "done" | "active" | "pending";
+      tasks: number;
+      complete: number;
+      progress: number;
+      gate: string;
+    }[] = [];
     for (const [name, tasks] of tasksByPhase) {
       const complete = tasks.filter(t => t.status === "done").length;
       const hasActive = tasks.some(t => t.status === "active");
       const status = complete === tasks.length ? "done" as const : hasActive ? "active" as const : "pending" as const;
+      const progress = tasks.length === 0 ? 0 : Math.round(
+        tasks.reduce((s, t) => s + (t.status === "done" ? 100 : Math.max(0, Math.min(100, Number(t.progress) || 0))), 0) / tasks.length,
+      );
       const gate = status === "done" ? "Approved" : hasActive ? "Pending" : "Not started";
-      phases.push({ name, status, tasks: tasks.length, complete, gate });
+      phases.push({ name, status, tasks: tasks.length, complete, progress, gate });
     }
     return phases;
   }, [tasksByPhase]);
@@ -746,7 +761,7 @@ function StatPill({ label, value, color,  }: { label: string; value: string; col
 }
 
 // ── Phase Gates Sidebar ──
-function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string }[] }) {
+function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[] }) {
   const gateStatusColor = (s: string) => s === "Approved" ? "#10B981" : s === "Pending" ? "#F59E0B" : "var(--muted-foreground)";
 
   return (
@@ -760,25 +775,43 @@ function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string;
                 <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{p.name}</span>
                 <span className="text-[10px] font-semibold" style={{ color: gateStatusColor(p.gate) }}>{p.gate}</span>
               </div>
-              <Progress value={p.tasks > 0 ? Math.round((p.complete / p.tasks) * 100) : 0} className="h-1.5" />
-              <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{p.complete}/{p.tasks} tasks complete</span>
+              <Progress value={p.progress ?? (p.tasks > 0 ? Math.round((p.complete / p.tasks) * 100) : 0)} className="h-1.5" />
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{p.complete}/{p.tasks} done</span>
+                <span className="text-[10px] font-semibold" style={{ color: "var(--muted-foreground)" }}>{p.progress ?? 0}%</span>
+              </div>
             </div>
           ))}
         </div>
       </Card>
 
       <Card>
-        <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>AI Insights</h3>
+        <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Insights</h3>
         <div className="space-y-2 text-[12px]" style={{ color: "var(--muted-foreground)" }}>
           {phases.length === 0 ? (
             <div className="p-2 rounded-[8px]" style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.2)" }}>
               <span className="font-semibold" style={{ color: "var(--muted-foreground)" }}>No tasks yet.</span> Add tasks to this project to see schedule insights.
             </div>
-          ) : (
-            <div className="p-2 rounded-[8px]" style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
-              <span className="font-semibold text-emerald-400">Summary:</span> {phases.length} phase{phases.length !== 1 ? "s" : ""} with {phases.reduce((s, p) => s + p.tasks, 0)} tasks tracked.
-            </div>
-          )}
+          ) : (() => {
+            const totalTasks = phases.reduce((s, p) => s + p.tasks, 0);
+            const totalDone = phases.reduce((s, p) => s + p.complete, 0);
+            const overall = totalTasks === 0 ? 0 : Math.round(
+              phases.reduce((s, p) => s + (p.progress ?? 0) * p.tasks, 0) / totalTasks,
+            );
+            const activePhase = phases.find(p => p.status === "active");
+            return (
+              <>
+                <div className="p-2 rounded-[8px]" style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
+                  <span className="font-semibold text-emerald-400">Overall:</span> {overall}% complete · {totalDone}/{totalTasks} tasks done across {phases.length} phase{phases.length !== 1 ? "s" : ""}.
+                </div>
+                {activePhase && (
+                  <div className="p-2 rounded-[8px]" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)" }}>
+                    <span className="font-semibold" style={{ color: "var(--primary)" }}>Active:</span> {activePhase.name} — {activePhase.complete}/{activePhase.tasks} done ({activePhase.progress ?? 0}%).
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </Card>
     </div>

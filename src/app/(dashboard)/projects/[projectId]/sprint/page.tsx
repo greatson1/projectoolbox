@@ -4,7 +4,8 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
-import { useProjectTasks, useStoryPointCalibration } from "@/hooks/use-api";
+import Link from "next/link";
+import { useProjectTasks, useProjectSprints, useStoryPointCalibration } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ const STATUS_ORDER: ItemStatus[] = ["todo", "in_progress", "in_review", "done"];
 export default function SprintTrackerPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: apiTasks } = useProjectTasks(projectId);
+  const { data: apiSprints } = useProjectSprints(projectId);
 
   const SPRINT_ITEMS_DATA: SprintItem[] = useMemo(() => {
     if (!apiTasks || apiTasks.length === 0) return [];
@@ -150,30 +152,35 @@ export default function SprintTrackerPage() {
     return Object.entries(statusMap).map(([status, { count }]) => ({ status, avg: count > 0 ? +(count * 0.8).toFixed(1) : 0 }));
   }, [apiTasks]);
 
+  // Velocity trend: only meaningful when there are real completed sprints
+  // with committedPoints / completedPoints recorded. Don't fabricate fake
+  // S5/S6/S7 sprint labels — the empty state is more honest.
   const velocityData = useMemo(() => {
-    const tasks = apiTasks || [];
-    if (tasks.length === 0) return VELOCITY_TREND;
-    const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
-    return [
-      { sprint: "S5", committed: Math.round(total * 0.85), completed: Math.round(done * 0.85), projected: null },
-      { sprint: "S6", committed: Math.round(total * 0.9), completed: Math.round(done * 0.9), projected: null },
-      { sprint: "S7", committed: total, completed: done, projected: Math.round(total * 0.92) },
-    ];
-  }, [apiTasks]);
+    const sprints = (apiSprints || []).filter((s: any) => s.status === "COMPLETED");
+    return sprints.slice(-6).map((s: any, i: number, arr: any[]) => ({
+      sprint: s.name || `Sprint ${i + 1}`,
+      committed: Number(s.committedPoints) || 0,
+      completed: Number(s.completedPoints) || 0,
+      projected: i === arr.length - 1 ? Math.round((Number(s.committedPoints) || 0) * 0.95) : null,
+    }));
+  }, [apiSprints]);
 
+  // Confidence radar: only show axes with real signal. The previous version
+  // hardcoded Scope Stability=70, Capacity=85, Review Throughput=75 which
+  // were fixtures, not measurements.
   const confidenceData = useMemo(() => {
     const tasks = apiTasks || [];
-    if (tasks.length === 0) return CONFIDENCE_RADAR;
+    if (tasks.length === 0) return [];
     const total = tasks.length || 1;
     const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed").length;
     const blocked = tasks.filter((t: any) => t.status === "blocked").length;
+    const inReview = tasks.filter((t: any) => t.status === "in_review").length;
+    const inProgress = tasks.filter((t: any) => t.status === "in_progress" || t.status === "active").length;
     return [
       { axis: "Velocity", value: Math.round((done / total) * 100) },
-      { axis: "Scope Stability", value: 70 },
       { axis: "Blockers", value: Math.max(0, 100 - blocked * 20) },
-      { axis: "Capacity", value: 85 },
-      { axis: "Review Throughput", value: 75 },
+      { axis: "Throughput", value: total > 0 ? Math.round((inReview / total) * 100) : 0 },
+      { axis: "WIP Health", value: total > 0 ? Math.max(0, 100 - Math.round((inProgress / total) * 100)) : 0 },
     ];
   }, [apiTasks]);
 
@@ -182,13 +189,54 @@ export default function SprintTrackerPage() {
   const [standupView, setStandupView] = useState<"today" | "previous">("today");
   const [backlogFilter, setBacklogFilter] = useState<"all" | "in_progress" | "blocked" | "done" | "at_risk">("all");
 
-  // Derive sprint from API tasks
+  // Derive sprints. Prefer real Sprint rows from the DB — they have real
+  // start/end/committed/completed values. Only fall back to a synthetic
+  // "Current Sprint" wrapper around the project's tasks when there are no
+  // actual sprints yet (gives the page something to render rather than a
+  // 100% empty state). daysPassed is now COMPUTED from real dates instead
+  // of hardcoded to 7.
   const derivedSprints = useMemo(() => {
+    const sprints = apiSprints || [];
+    if (sprints.length > 0) {
+      return sprints.map((s: any, i: number) => {
+        const start = s.startDate ? new Date(s.startDate) : new Date();
+        const end = s.endDate ? new Date(s.endDate) : new Date(start.getTime() + 14 * 86400000);
+        const totalMs = Math.max(1, end.getTime() - start.getTime());
+        const passedMs = Math.max(0, Math.min(totalMs, Date.now() - start.getTime()));
+        const days = Math.max(1, Math.round(totalMs / 86400000));
+        const daysPassed = Math.min(days, Math.round(passedMs / 86400000));
+        const sprintTasks = (apiTasks || []).filter((t: any) => t.sprintId === s.id);
+        const scope = sprintTasks.length || s.committedPoints || 0;
+        const done = sprintTasks.filter((t: any) => ["done", "completed", "DONE"].includes(t.status)).length;
+        return {
+          id: i + 1,
+          sprintId: s.id,
+          name: s.name || `Sprint ${i + 1}`,
+          start: start.toISOString().slice(0, 10),
+          end: end.toISOString().slice(0, 10),
+          days,
+          daysPassed,
+          scope,
+          done,
+        };
+      });
+    }
     if (!apiTasks || apiTasks.length === 0) return SPRINTS;
+    // No real sprints yet — synthesise one wrapping all project tasks. Mark
+    // it explicitly so callers know it's a placeholder, not a real sprint.
     const total = apiTasks.length;
     const done = apiTasks.filter((t: any) => ["done", "completed", "DONE"].includes(t.status)).length;
-    return [{ id: 1, name: "Current Sprint", start: new Date().toISOString().slice(0, 10), end: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10), days: 14, daysPassed: 7, scope: total, done }];
-  }, [apiTasks]);
+    return [{
+      id: 1,
+      name: "Project Backlog (no sprint set up yet)",
+      start: new Date().toISOString().slice(0, 10),
+      end: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+      days: 14,
+      daysPassed: 0,
+      scope: total,
+      done,
+    }];
+  }, [apiTasks, apiSprints]);
 
   const sprint = derivedSprints.find(s => s.id === selectedSprint) || { id: 0, name: "No Sprint", start: "", end: "", days: 1, daysPassed: 0, scope: 0, done: 0 };
   const progressPct = sprint.scope > 0 ? Math.round((sprint.done / sprint.scope) * 100) : 0;
@@ -293,30 +341,29 @@ export default function SprintTrackerPage() {
           </div>
         </Card>
 
-        {/* Scope Changes */}
+        {/* Scope Changes — derived from real ChangeRequest rows when available */}
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Scope Changes</p>
           <div className="flex items-baseline gap-2">
-            <span className="text-[13px] font-bold" style={{ color: "#F59E0B" }}>+3</span>
-            <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>added</span>
-            <span className="text-[13px] font-bold" style={{ color: "var(--muted-foreground)" }}>-1</span>
-            <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>removed</span>
+            <span className="text-[28px] font-bold" style={{ color: "var(--muted-foreground)" }}>—</span>
           </div>
-          <div className="mt-1.5 flex items-center gap-1">
-            <span className="text-[9px] px-1.5 py-0.5 rounded-[3px] font-bold" style={{ background: "rgba(245,158,11,0.12)", color: "#F59E0B" }}>
-              Scope Creep +3.6%
-            </span>
-          </div>
+          <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+            Tracked once a Change Request is logged
+          </p>
         </Card>
 
-        {/* Blocked Items */}
+        {/* Blocked Items — derived from real task data */}
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Blocked</p>
           <div className="flex items-center gap-2">
-            <span className="text-[28px] font-bold" style={{ color: "#EF4444" }}>2</span>
-            <Badge variant="destructive">Active</Badge>
+            <span className="text-[28px] font-bold" style={{ color: derivedBlockers.length > 0 ? "#EF4444" : "var(--muted-foreground)" }}>
+              {derivedBlockers.length}
+            </span>
+            {derivedBlockers.length > 0 && <Badge variant="destructive">Active</Badge>}
           </div>
-          <p className="text-[10px] mt-1" style={{ color: "#EF4444" }}>Longest: 1d 4h</p>
+          <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+            {derivedBlockers.length === 0 ? "No blockers" : `${derivedBlockers.length} task${derivedBlockers.length !== 1 ? "s" : ""} blocked`}
+          </p>
         </Card>
       </div>
 
@@ -395,7 +442,11 @@ export default function SprintTrackerPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Daily Stand-up</h3>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>Day 6 — Wednesday, 2 Apr 2026</p>
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+              {sprint.daysPassed > 0
+                ? `Day ${sprint.daysPassed} of ${sprint.days} — ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}`
+                : new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}
+            </p>
           </div>
           <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid ${"var(--border)"}` }}>
             {(["today", "previous"] as const).map(v => (
@@ -408,19 +459,31 @@ export default function SprintTrackerPage() {
           </div>
         </div>
 
-        {/* AI Summary */}
-        <div className="p-3 rounded-[10px] mb-4 flex items-start gap-2"
-          style={{ background: `${"var(--primary)"}08`, border: `1px solid ${"var(--primary)"}22` }}>
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-[9px] font-bold text-white shadow-primary/30">AI</div>
-          <div>
-            <p className="text-[11px] font-semibold mb-0.5" style={{ color: "var(--primary)" }}>AI Stand-up Summary</p>
-            <p className="text-[12px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
-              Team is on track with 34/57 SP completed. 2 blockers flagged — Stripe webhook issue affecting Liam's work (PTX-117, PTX-114).
-              Sarah's onboarding wizard (PTX-115, 8 SP) is the largest in-flight item and may need pair support.
-              Review queue has 3 items — recommend prioritising reviews before new work today.
-            </p>
-          </div>
-        </div>
+        {/* AI Summary — built from real task counts only. No fabricated names or ticket IDs. */}
+        {SPRINT_ITEMS_DATA.length > 0 && (() => {
+          const total = SPRINT_ITEMS_DATA.length;
+          const done = SPRINT_ITEMS_DATA.filter(i => i.status === "done").length;
+          const blocked = SPRINT_ITEMS_DATA.filter(i => i.blocked || i.status === "blocked").length;
+          const inReview = SPRINT_ITEMS_DATA.filter(i => i.status === "in_review").length;
+          const inProgress = SPRINT_ITEMS_DATA.filter(i => i.status === "in_progress").length;
+          const notes: string[] = [];
+          notes.push(`${done}/${total} ${total === 1 ? "task" : "tasks"} done`);
+          if (blocked > 0) notes.push(`${blocked} blocker${blocked !== 1 ? "s" : ""} need attention`);
+          if (inReview > 0) notes.push(`${inReview} item${inReview !== 1 ? "s" : ""} in review`);
+          if (inProgress > 0) notes.push(`${inProgress} in progress`);
+          return (
+            <div className="p-3 rounded-[10px] mb-4 flex items-start gap-2"
+              style={{ background: `${"var(--primary)"}08`, border: `1px solid ${"var(--primary)"}22` }}>
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-[9px] font-bold text-white shadow-primary/30">AI</div>
+              <div>
+                <p className="text-[11px] font-semibold mb-0.5" style={{ color: "var(--primary)" }}>Stand-up Summary</p>
+                <p className="text-[12px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+                  {notes.join(" · ")}.
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Team rows */}
         <div className="overflow-x-auto">
@@ -646,63 +709,132 @@ export default function SprintTrackerPage() {
             ))}
           </div>
 
-          {/* Carry-over predictions */}
+          {/* Carry-over risk — derived from real backlog: items still in
+              progress with high time-in-status and where the sprint is more
+              than half-elapsed are at risk of carrying over. */}
           <div className="mt-4">
             <h4 className="text-[12px] font-semibold mb-2" style={{ color: "var(--muted-foreground)" }}>Carry-over Risk</h4>
-            <div className="space-y-1.5">
-              {[
-                { id: "PTX-109", title: "Plan comparison", risk: "High", sp: 5 },
-                { id: "PTX-115", title: "Onboarding wizard", risk: "Medium", sp: 8 },
-              ].map(c => (
-                <div key={c.id} className="flex items-center justify-between text-[11px] py-1 px-2 rounded-[6px]"
-                  style={{ background: true ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)" }}>
-                  <span style={{ color: "var(--muted-foreground)" }}>{c.id} — {c.title}</span>
-                  <Badge variant={c.risk === "High" ? "destructive" : "secondary"}>{c.risk}</Badge>
+            {(() => {
+              const sprintHalfElapsed = sprint.days > 0 && sprint.daysPassed / sprint.days > 0.5;
+              const risky = SPRINT_ITEMS_DATA
+                .filter(i => i.status === "in_progress" || i.status === "todo" || i.blocked)
+                .map(i => ({
+                  id: i.id,
+                  title: i.title,
+                  risk: i.blocked ? "High" : sprintHalfElapsed ? "Medium" : "Low",
+                  sp: i.sp,
+                }))
+                .filter(r => r.risk !== "Low")
+                .slice(0, 5);
+              if (risky.length === 0) {
+                return (
+                  <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+                    No carry-over risk detected
+                  </p>
+                );
+              }
+              return (
+                <div className="space-y-1.5">
+                  {risky.map(c => (
+                    <div key={c.id} className="flex items-center justify-between text-[11px] py-1 px-2 rounded-[6px]"
+                      style={{ background: "rgba(255,255,255,0.03)" }}>
+                      <span style={{ color: "var(--muted-foreground)" }} className="truncate flex-1 min-w-0 pr-2">{c.title}</span>
+                      <Badge variant={c.risk === "High" ? "destructive" : "secondary"}>{c.risk}</Badge>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         </Card>
 
-        {/* Confidence Score + Radar */}
+        {/* Confidence Score + Radar — derived from real task data */}
         <Card>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Sprint Confidence</h3>
-            <span className="text-[22px] font-bold" style={{ color: "var(--primary)" }}>78%</span>
-          </div>
-          <div style={{ height: 220 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={confidenceData} cx="50%" cy="50%" outerRadius="75%">
-                <PolarGrid stroke={`${"var(--border)"}44`} />
-                <PolarAngleAxis dataKey="axis" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                <PolarRadiusAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} domain={[0, 100]} />
-                <Radar dataKey="value" stroke={"var(--primary)"} fill={`${"var(--primary)"}33`} strokeWidth={2} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="space-y-1 mt-1">
-            {CONFIDENCE_RADAR.map(r => (
-              <div key={r.axis} className="flex items-center justify-between text-[10px]">
-                <span style={{ color: "var(--muted-foreground)" }}>{r.axis}</span>
-                <span className="font-semibold" style={{ color: r.value >= 80 ? "#10B981" : r.value >= 65 ? "#F59E0B" : "#EF4444" }}>{r.value}%</span>
+          {(() => {
+            const overallConfidence = confidenceData.length > 0
+              ? Math.round(confidenceData.reduce((s, r) => s + r.value, 0) / confidenceData.length)
+              : null;
+            return (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Sprint Confidence</h3>
+                  {overallConfidence !== null && (
+                    <span className="text-[22px] font-bold" style={{ color: overallConfidence >= 80 ? "#10B981" : overallConfidence >= 60 ? "#F59E0B" : "#EF4444" }}>
+                      {overallConfidence}%
+                    </span>
+                  )}
+                </div>
+                {confidenceData.length === 0 ? (
+                  <p className="text-[11px] py-8 text-center" style={{ color: "var(--muted-foreground)" }}>
+                    Add tasks to this sprint to see confidence breakdown
+                  </p>
+                ) : (
+                  <>
+                    <div style={{ height: 220 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart data={confidenceData} cx="50%" cy="50%" outerRadius="75%">
+                          <PolarGrid stroke={`${"var(--border)"}44`} />
+                          <PolarAngleAxis dataKey="axis" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
+                          <PolarRadiusAxis tick={{ fontSize: 8, fill: "var(--muted-foreground)" }} domain={[0, 100]} />
+                          <Radar dataKey="value" stroke={"var(--primary)"} fill={`${"var(--primary)"}33`} strokeWidth={2} />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-1 mt-1">
+                      {confidenceData.map(r => (
+                        <div key={r.axis} className="flex items-center justify-between text-[10px]">
+                          <span style={{ color: "var(--muted-foreground)" }}>{r.axis}</span>
+                          <span className="font-semibold" style={{ color: r.value >= 80 ? "#10B981" : r.value >= 65 ? "#F59E0B" : "#EF4444" }}>{r.value}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
+        </Card>
+
+        {/* AI Recommended Actions — built from observed task signals only.
+            No fake ticket IDs or names — show real, generic recommendations
+            that follow from the project's own state. */}
+        <Card>
+          <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Recommendations</h3>
+          {(() => {
+            const blocked = SPRINT_ITEMS_DATA.filter(i => i.blocked || i.status === "blocked").length;
+            const inReview = SPRINT_ITEMS_DATA.filter(i => i.status === "in_review").length;
+            const inProgress = SPRINT_ITEMS_DATA.filter(i => i.status === "in_progress").length;
+            const cards: { icon: string; priority: "high" | "medium" | "low"; title: string; desc: string }[] = [];
+            if (blocked > 0) cards.push({
+              icon: "🚨", priority: "high",
+              title: `Unblock ${blocked} task${blocked !== 1 ? "s" : ""}`,
+              desc: "Items marked blocked are accruing time-in-status. Escalate or pair to remove the blocker before more work depends on them.",
+            });
+            if (inReview >= 3) cards.push({
+              icon: "🔍", priority: "medium",
+              title: "Clear review queue",
+              desc: `${inReview} items waiting for review. Prioritise reviews before starting new work — unblocking PRs accelerates velocity more than picking up new items.`,
+            });
+            if (inProgress > Math.max(3, sprint.scope * 0.4)) cards.push({
+              icon: "🧩", priority: "medium",
+              title: "Reduce work in progress",
+              desc: `${inProgress} items in progress simultaneously. High WIP delays delivery — consider finishing in-flight items before starting new ones.`,
+            });
+            if (cards.length === 0) {
+              return (
+                <p className="text-[11px] py-4 text-center" style={{ color: "var(--muted-foreground)" }}>
+                  No action recommended — sprint state looks healthy.
+                </p>
+              );
+            }
+            return (
+              <div className="space-y-2.5">
+                {cards.map((c, i) => (
+                  <ActionCard key={i} icon={c.icon} priority={c.priority} title={c.title} description={c.desc} />
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
-
-        {/* AI Recommended Actions */}
-        <Card>
-          <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>AI Recommendations</h3>
-          <div className="space-y-2.5">
-            <ActionCard icon="🚨" priority="high" title="Unblock PTX-117"
-              description="Stripe webhook 500 error has blocked 2 items for 1+ day. Escalate to Stripe support or switch to mock mode for testing." />
-            <ActionCard icon="👥" priority="medium" title="Pair on PTX-115"
-              description="Onboarding wizard (8 SP) is 60% done with complex remaining subtasks. Pair Mia (under capacity) with Sarah to parallelize form steps 4-5." />
-            <ActionCard icon="🔍" priority="medium" title="Clear Review Queue"
-              description="3 items in review (11 SP). Prioritise morning reviews before new work — unblocking PRs accelerates velocity more than starting new items." />
-            <ActionCard icon="📋" priority="low" title="Scope Discussion"
-              description="Sprint scope increased +3.6% from 55→57 SP. If more additions are requested, recommend deferral to Sprint 8 to protect the goal." />
-          </div>
+            );
+          })()}
         </Card>
       </div>
 
