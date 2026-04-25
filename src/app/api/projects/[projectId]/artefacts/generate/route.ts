@@ -55,21 +55,73 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       return NextResponse.json({ data: { generated: arts.length, skipped: 0, phase: updated?.currentPhase ?? "Pre-Project" } });
     }
 
-    // Determine target phase — use deployment's current phase only.
-    // If caller explicitly requests a phase that differs from the current deployment phase,
-    // reject with 409 rather than silently auto-advancing. Phase advancement must happen
-    // explicitly via the approve-artefacts flow (handleApprove in the artefacts page).
-    const targetPhase = deployment.currentPhase;
+    // Determine target phase. If the caller explicitly requests a different phase
+    // than the deployment is currently on (e.g. "Generate Design Phase" button
+    // clicked from the artefacts page when all Requirements artefacts are
+    // approved), auto-advance the deployment IF the current phase actually
+    // satisfies completion criteria. Otherwise reject with 409 so the user sees
+    // the real blocker (incomplete artefacts / pending approvals / open tasks).
+    let targetPhase = deployment.currentPhase;
+    let phaseAdvanced: { from: string; to: string } | null = null;
 
     if (requestedPhase && requestedPhase !== deployment.currentPhase) {
-      return NextResponse.json({
-        error: `Phase mismatch: deployment is currently at "${deployment.currentPhase}" but "${requestedPhase}" was requested. Advance the phase explicitly by approving all current-phase artefacts before generating the next phase.`,
-      }, { status: 409 });
+      const project = await db.project.findUnique({ where: { id: projectId } });
+      if (!project) {
+        return NextResponse.json({ error: "Project not found" }, { status: 404 });
+      }
+      const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+      const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
+      const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+      const expectedNext = deployment.currentPhase ? getNextPhase(methodologyId, deployment.currentPhase) : null;
+
+      // Only honour requests for the IMMEDIATE next phase. Skipping further
+      // ahead is still a 409 — surface the real workflow.
+      if (expectedNext && requestedPhase === expectedNext && deployment.currentPhase) {
+        const completion = await getPhaseCompletion(projectId, deployment.currentPhase, deployment.agentId);
+        if (!completion.canAdvance) {
+          return NextResponse.json({
+            error: `Cannot advance to "${requestedPhase}" yet: ${completion.blockers.join("; ")}`,
+            completion,
+          }, { status: 409 });
+        }
+
+        // All checks pass — advance the deployment to the next phase before generating.
+        await db.agentDeployment.update({
+          where: { id: deployment.id },
+          data: {
+            currentPhase: requestedPhase,
+            phaseStatus: "active",
+            lastCycleAt: new Date(),
+            nextCycleAt: new Date(Date.now() + 2 * 60_000),
+          },
+        });
+        await db.phase.updateMany({
+          where: { projectId, name: deployment.currentPhase },
+          data: { status: "COMPLETED" },
+        });
+        await db.phase.updateMany({
+          where: { projectId, name: requestedPhase },
+          data: { status: "ACTIVE" },
+        });
+        await db.agentActivity.create({
+          data: {
+            agentId: deployment.agentId,
+            type: "approval",
+            summary: `Phase advanced: "${deployment.currentPhase}" → "${requestedPhase}" (all artefacts approved). Generating next-phase artefacts...`,
+          },
+        }).catch(() => {});
+        phaseAdvanced = { from: deployment.currentPhase, to: requestedPhase };
+        targetPhase = requestedPhase;
+      } else {
+        return NextResponse.json({
+          error: `Phase mismatch: deployment is currently at "${deployment.currentPhase}" but "${requestedPhase}" was requested. Advance the phase explicitly by approving all current-phase artefacts before generating the next phase.`,
+        }, { status: 409 });
+      }
     }
 
     const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
     const result = await generatePhaseArtefacts(deployment.agentId, projectId, targetPhase ?? undefined);
-    return NextResponse.json({ data: result });
+    return NextResponse.json({ data: { ...result, phaseAdvanced } });
   } catch (e: any) {
     console.error("[artefacts/generate] Failed:", e?.message, e?.stack?.slice(0, 500));
     return NextResponse.json({ error: e.message || "Generation failed" }, { status: 500 });

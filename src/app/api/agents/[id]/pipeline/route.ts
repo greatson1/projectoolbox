@@ -513,9 +513,32 @@ export async function GET(
         const waitText = waitMins < 60 ? `${waitMins}m` : waitMins < 1440 ? `${Math.floor(waitMins / 60)}h` : `${Math.floor(waitMins / 1440)}d`;
         details = `Awaiting approval · pending ${waitText}${iterationTag}`;
       } else if (currentPhaseGate.status === "REJECTED") {
-        status = "failed";
-        const comment = (currentPhaseGate as any).comment || "";
-        details = comment ? `Rejected: ${comment.slice(0, 80)}${iterationTag}` : `Phase gate rejected${iterationTag}`;
+        // If the gate was rejected (e.g. auto-cancelled because the cron raised
+        // it before any artefacts were generated) but every artefact for this
+        // phase is now APPROVED, treat the gate as superseded — the user
+        // doesn't have a real failure to act on. Pipeline should show the step
+        // as "waiting for a fresh gate" rather than red "failed".
+        const phaseArtefacts = artefacts.filter(
+          (a) => (a.phaseId === currentPhase) || ((a as any).metadata as any)?.phase === currentPhase || (a.name || "").toLowerCase().includes((currentPhase || "").toLowerCase()),
+        );
+        const phaseArtefactsApproved = phaseArtefacts.length > 0 && phaseArtefacts.every((a) => a.status === "APPROVED");
+        const rejectedAfterArtefacts =
+          phaseArtefacts.some(
+            (a) => new Date(a.updatedAt).getTime() > new Date(currentPhaseGate.createdAt).getTime(),
+          );
+        const supersededByArtefactProgress =
+          phaseArtefacts.length > 0 && (phaseArtefactsApproved || rejectedAfterArtefacts);
+
+        if (supersededByArtefactProgress) {
+          status = "waiting";
+          details = phaseArtefactsApproved
+            ? `All ${phaseArtefacts.length} artefact${phaseArtefacts.length !== 1 ? "s" : ""} approved — ready for a fresh gate`
+            : `Earlier gate auto-cancelled — artefacts in progress`;
+        } else {
+          status = "failed";
+          const comment = (currentPhaseGate as any).comment || "";
+          details = comment ? `Rejected: ${comment.slice(0, 80)}${iterationTag}` : `Phase gate rejected${iterationTag}`;
+        }
       } else {
         status = "waiting";
       }
