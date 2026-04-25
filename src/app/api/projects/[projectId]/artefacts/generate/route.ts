@@ -72,7 +72,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
       const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
       const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
-      const expectedNext = deployment.currentPhase ? getNextPhase(methodologyId, deployment.currentPhase) : null;
+      const playbookNext = deployment.currentPhase ? getNextPhase(methodologyId, deployment.currentPhase) : null;
+
+      // The methodology playbook can return null when the project's stored
+      // phase names don't match the playbook (e.g. project is set up with a
+      // Waterfall layout but project.methodology is "PRINCE2"). The project's
+      // Phase table is the real source of truth for THIS project's flow —
+      // fall back to it so the user isn't blocked by an unrelated mismatch.
+      let phaseTableNext: string | null = null;
+      if (deployment.currentPhase) {
+        const phaseRows = await db.phase.findMany({
+          where: { projectId },
+          select: { name: true, order: true },
+          orderBy: { order: "asc" },
+        });
+        const currentRow = phaseRows.find(p => p.name === deployment.currentPhase);
+        if (currentRow) {
+          const nextRow = phaseRows.find(p => p.order === currentRow.order + 1);
+          phaseTableNext = nextRow?.name ?? null;
+        }
+      }
+
+      // Either source confirming the requested phase is the immediate next one is enough.
+      const expectedNext = playbookNext === requestedPhase
+        ? playbookNext
+        : phaseTableNext === requestedPhase
+          ? phaseTableNext
+          : (playbookNext || phaseTableNext);
 
       // Only honour requests for the IMMEDIATE next phase. Skipping further
       // ahead is still a 409 — surface the real workflow.
@@ -113,8 +139,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         phaseAdvanced = { from: deployment.currentPhase, to: requestedPhase };
         targetPhase = requestedPhase;
       } else {
+        const nextDescription = playbookNext && playbookNext !== phaseTableNext
+          ? `Methodology playbook says next is "${playbookNext}"; project Phase table says next is "${phaseTableNext ?? "(none)"}".`
+          : `Next phase: "${expectedNext ?? "(none)"}".`;
         return NextResponse.json({
-          error: `Phase mismatch: deployment is currently at "${deployment.currentPhase}" but "${requestedPhase}" was requested. Advance the phase explicitly by approving all current-phase artefacts before generating the next phase.`,
+          error: `Phase mismatch: deployment is at "${deployment.currentPhase}" but "${requestedPhase}" was requested. ${nextDescription} Approve all current-phase artefacts then click Generate again.`,
         }, { status: 409 });
       }
     }
