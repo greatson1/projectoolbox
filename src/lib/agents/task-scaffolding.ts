@@ -31,8 +31,8 @@ interface TaskTemplate {
 
 /** Universal tasks that appear in every phase */
 const UNIVERSAL_TASKS: TaskTemplate[] = [
-  { title: "Review and update Risk Register", category: "monitoring", estimatedHours: 1 },
-  { title: "Stakeholder communication and updates", category: "stakeholder", estimatedHours: 1 },
+  { title: "Review and update Risk Register", category: "monitoring", linkedEvent: "risk_register_updated", estimatedHours: 1 },
+  { title: "Stakeholder communication and updates", category: "stakeholder", linkedEvent: "stakeholder_updated", estimatedHours: 1 },
 ];
 
 /** Phase-specific task templates keyed by normalised phase name */
@@ -441,6 +441,49 @@ export async function onAgentEvent(
     }
   } catch (e) {
     console.error("[task-scaffolding] onAgentEvent failed:", e);
+  }
+}
+
+/**
+ * Set fractional progress on the scaffolded task tied to a given linkedEvent
+ * (e.g. clarification_complete during the answering flow). Use this when an
+ * event is in-progress and you want the UI to reflect partial completion
+ * rather than waiting for the binary "complete" trigger. Uses Math.round and
+ * clamps to [0, 100]. Does NOT mark the task DONE — that's onAgentEvent's job.
+ */
+export async function setScaffoldedTaskProgress(
+  agentId: string,
+  projectId: string,
+  eventType: string,
+  progress: number,
+): Promise<void> {
+  try {
+    const clamped = Math.max(0, Math.min(100, Math.round(progress)));
+    // Don't allow this helper to flip to 100 — only the actual completion
+    // event should mark DONE so we keep status transitions auditable.
+    const safeProgress = clamped >= 100 ? 99 : clamped;
+
+    const task = await db.task.findFirst({
+      where: {
+        projectId,
+        createdBy: `agent:${agentId}`,
+        description: { contains: `[event:${eventType}]` },
+        status: { not: "DONE" },
+      },
+    });
+    if (!task) return;
+    if ((task.progress || 0) >= safeProgress) return; // never go backwards
+
+    await db.task.update({
+      where: { id: task.id },
+      data: { progress: safeProgress, status: safeProgress > 0 ? "IN_PROGRESS" : "TODO" },
+    });
+
+    if (task.parentId) {
+      await updateParentProgress(task.parentId);
+    }
+  } catch (e) {
+    console.error("[task-scaffolding] setScaffoldedTaskProgress failed:", e);
   }
 }
 

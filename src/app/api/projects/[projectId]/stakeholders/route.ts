@@ -31,5 +31,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     syncStakeholdersToArtefact(projectId).catch(() => {})
   ).catch(() => {});
 
+  // Mark the scaffolded "Stakeholder communication and updates" PM task as
+  // completed for this phase — see task-scaffolding.UNIVERSAL_TASKS.
+  try {
+    const deployment = await db.agentDeployment.findFirst({
+      where: { projectId, isActive: true },
+      select: { agentId: true },
+    });
+    if (deployment?.agentId) {
+      const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+      await onAgentEvent(deployment.agentId, projectId, "stakeholder_updated");
+    }
+  } catch (e) {
+    console.error("[stakeholders POST] stakeholder_updated event hook failed:", e);
+  }
+
   return NextResponse.json({ data: stakeholder }, { status: 201 });
 }

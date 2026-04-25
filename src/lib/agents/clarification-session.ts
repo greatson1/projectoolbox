@@ -616,6 +616,20 @@ export async function answerQuestionInSession(
 
   session.currentQuestionIndex = nextIndex;
 
+  // Fractional progress on the scaffolded "Conduct clarification Q&A" task so
+  // the PM Tracker reflects partial completion as answers come in (instead of
+  // sitting at 0 until the final answer flips it to 100).
+  try {
+    const total = session.questions.length;
+    if (total > 0 && nextQuestion) {
+      const pct = Math.round((answeredCount / total) * 100);
+      const { setScaffoldedTaskProgress } = await import("@/lib/agents/task-scaffolding");
+      await setScaffoldedTaskProgress(agentId, projectId, "clarification_complete", pct);
+    }
+  } catch (e) {
+    console.error("[clarification] partial-progress hook failed:", e);
+  }
+
   if (!nextQuestion) {
     // Session complete
     session.status = "complete";

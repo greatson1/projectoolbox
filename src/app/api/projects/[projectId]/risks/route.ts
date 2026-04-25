@@ -37,6 +37,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     syncRisksToArtefact(projectId).catch(() => {})
   ).catch(() => {});
 
+  // Mark the scaffolded "Review and update Risk Register" monitoring task done
+  // for this phase — see task-scaffolding.UNIVERSAL_TASKS.
+  try {
+    const deployment = await db.agentDeployment.findFirst({
+      where: { projectId, isActive: true },
+      select: { agentId: true },
+    });
+    if (deployment?.agentId) {
+      const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+      await onAgentEvent(deployment.agentId, projectId, "risk_register_updated");
+    }
+  } catch (e) {
+    console.error("[risks POST] risk_register_updated event hook failed:", e);
+  }
+
   return NextResponse.json({ data: risk }, { status: 201 });
 }
 
@@ -417,6 +432,24 @@ ${project?.name ?? "Project"} — AI Project Manager`;
   import("@/lib/agents/artefact-sync").then(({ syncRisksToArtefact }) =>
     syncRisksToArtefact(projectId).catch(() => {})
   ).catch(() => {});
+
+  // Mark the scaffolded "Review and update Risk Register" monitoring task done
+  // for this phase — only on substantive field updates (probability/impact/
+  // status/mitigation), not on response-action sub-actions handled above.
+  if (data.probability || data.impact || data.status || data.mitigation || data.title || data.description) {
+    try {
+      const deployment = await db.agentDeployment.findFirst({
+        where: { projectId, isActive: true },
+        select: { agentId: true },
+      });
+      if (deployment?.agentId) {
+        const { onAgentEvent } = await import("@/lib/agents/task-scaffolding");
+        await onAgentEvent(deployment.agentId, projectId, "risk_register_updated");
+      }
+    } catch (e) {
+      console.error("[risks PATCH] risk_register_updated event hook failed:", e);
+    }
+  }
 
   return NextResponse.json({ data: risk });
 }
