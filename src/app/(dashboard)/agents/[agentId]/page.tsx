@@ -450,6 +450,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   </>
                 )}
               </div>
+              {/* Agent email — surfaced here so users don't have to dig into
+                  Settings to find the address to share with stakeholders. */}
+              <AgentEmailInline agentId={AGENT_RESOLVED.id} />
             </div>
             {/* Actions */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -2250,6 +2253,49 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 }
 
 // ─── Agent Email Section ───
+/**
+ * Compact agent-email pill for the page header. Shows the address with a
+ * one-click copy button so users don't have to open Settings to share it
+ * with stakeholders. Renders nothing while loading or if no address is
+ * assigned (the full AgentEmailSection in Settings handles generation).
+ */
+function AgentEmailInline({ agentId }: { agentId: string }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/agents/${agentId}/email`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setEmail(j?.data?.address || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [agentId]);
+
+  if (!email) return null;
+
+  return (
+    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/5 border border-primary/15 max-w-full">
+      <Mail className="size-3 text-primary shrink-0" />
+      <span className="text-[11px] font-mono text-primary truncate" title={email}>{email}</span>
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          navigator.clipboard.writeText(email);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        className="ml-0.5 p-0.5 rounded hover:bg-primary/10 transition-colors shrink-0"
+        title="Copy agent email"
+      >
+        {copied
+          ? <CheckCircle2 className="size-3 text-emerald-500" />
+          : <Copy className="size-3 text-primary/70" />}
+      </button>
+    </div>
+  );
+}
+
 function AgentEmailSection({ agentId }: { agentId: string }) {
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
