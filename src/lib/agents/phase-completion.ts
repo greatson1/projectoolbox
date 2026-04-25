@@ -155,14 +155,42 @@ export async function getPhaseCompletion(
 
   // ── 1. Artefacts ──────────────────────────────────────────────────────
 
-  const artefacts = await db.agentArtefact.findMany({
-    where: {
-      projectId,
-      agentId,
-      OR: phaseIdMatch.map((p) => ({ phaseId: p.phaseId })),
-    },
-    select: { id: true, name: true, status: true },
-  });
+  const [artefacts, projectForMethodology] = await Promise.all([
+    db.agentArtefact.findMany({
+      where: {
+        projectId,
+        agentId,
+        OR: phaseIdMatch.map((p) => ({ phaseId: p.phaseId })),
+      },
+      select: { id: true, name: true, status: true },
+    }),
+    db.project.findUnique({
+      where: { id: projectId },
+      select: { methodology: true },
+    }),
+  ]);
+
+  // Resolve the methodology's required artefact list for THIS phase. A
+  // phase isn't really "complete" if a required document was never even
+  // generated — e.g. user has Project Charter approved but WBS / Cost
+  // Management Plan / Schedule were never produced. Detect those gaps
+  // and add them to the blocker list.
+  let missingRequired: string[] = [];
+  try {
+    const { getMethodology } = await import("@/lib/methodology-definitions");
+    const methodologyId = (projectForMethodology?.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+    const methodology = getMethodology(methodologyId);
+    const phaseDef = methodology.phases.find(p => p.name === phaseName);
+    if (phaseDef) {
+      const generatedNames = new Set(artefacts.map(a => a.name.toLowerCase()));
+      missingRequired = phaseDef.artefacts
+        .filter(a => a.required && a.aiGeneratable)
+        .map(a => a.name)
+        .filter(n => !generatedNames.has(n.toLowerCase()));
+    }
+  } catch (e) {
+    console.error("[phase-completion] required-artefact lookup failed:", e);
+  }
 
   const artefactsDone = artefacts.filter((a) => a.status === "APPROVED").length;
   const artefactsTotal = artefacts.length;
@@ -299,6 +327,15 @@ export async function getPhaseCompletion(
   if (artefactsTotal > 0 && artefactsDone / artefactsTotal < cfg.artefactThreshold) {
     const remaining = artefactsTotal - artefactsDone;
     blockers.push(`${remaining} artefact${remaining !== 1 ? "s" : ""} not yet approved`);
+  }
+
+  // Required-artefact gap — methodology says these MUST exist for this
+  // phase but they were never generated. Without them downstream layers
+  // are starved (no WBS = no delivery tasks; no Cost Plan = no budget).
+  if (missingRequired.length > 0) {
+    blockers.push(
+      `Missing required artefact${missingRequired.length === 1 ? "" : "s"}: ${missingRequired.join(", ")} — generate these before advancing`,
+    );
   }
 
   // PM task check

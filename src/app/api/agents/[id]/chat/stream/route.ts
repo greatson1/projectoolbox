@@ -507,6 +507,47 @@ ${comp.blockers.length > 0 ? `  **Blockers:** ${comp.blockers.join("; ")}` : "  
   } catch { return "Phase completion data unavailable."; }
 })()}
 
+## PHASE REQUIREMENTS — WHAT SHOULD EXIST FOR THIS PHASE
+${await (async () => {
+  if (!currentPhase?.name) return "Lifecycle not initialised.";
+  try {
+    const { getMethodology } = await import("@/lib/methodology-definitions");
+    const projForMeth = deployment?.projectId
+      ? await db.project.findUnique({ where: { id: deployment.projectId }, select: { methodology: true } })
+      : null;
+    const methodologyId = (projForMeth?.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+    const methodology = getMethodology(methodologyId);
+    const phaseDef = methodology.phases.find(p => p.name === currentPhase.name);
+    if (!phaseDef) return "Phase definition not found.";
+
+    const generated = new Set(recentArtefacts
+      .filter((a: any) => {
+        const phaseObj = phases.find((p: any) => p.name === currentPhase.name);
+        return phaseObj ? a.phaseId === phaseObj.id || a.phaseId === currentPhase.name : true;
+      })
+      .map((a: any) => a.name.toLowerCase()));
+
+    const required = phaseDef.artefacts.filter(a => a.required && a.aiGeneratable);
+    const optional = phaseDef.artefacts.filter(a => !a.required && a.aiGeneratable);
+    const missingRequired = required.filter(a => !generated.has(a.name.toLowerCase()));
+    const missingOptional = optional.filter(a => !generated.has(a.name.toLowerCase()));
+
+    const lines: string[] = [];
+    if (missingRequired.length > 0) {
+      lines.push(`⚠️ MISSING REQUIRED (must generate before advancing): ${missingRequired.map(a => a.name).join(", ")}`);
+    }
+    if (missingOptional.length > 0) {
+      lines.push(`Optional not yet generated: ${missingOptional.map(a => a.name).join(", ")}`);
+    }
+    if (lines.length === 0) {
+      lines.push("All required + optional artefacts for this phase have been generated.");
+    }
+    lines.push("");
+    lines.push("Gate criteria for this phase: " + phaseDef.gate.criteria);
+    return lines.join("\n");
+  } catch { return "Phase requirements unavailable."; }
+})()}
+
 ## PENDING APPROVALS (HITL GATES)
 ${pendingApprovals.length > 0
   ? pendingApprovals.map(a => `- **${a.title}** — ${a.description} [${a.type}]`).join("\n")

@@ -71,11 +71,26 @@ export async function generatePhaseArtefacts(
   // AI-generatable capability filter from methodology definition
   const aiGeneratableSet = new Set(phaseDef.artefacts.filter(a => a.aiGeneratable).map(a => a.name.toLowerCase()));
 
+  // Required artefacts MUST always be generated regardless of the user's
+  // wizard selections. Methodology marks WBS / Cost Management Plan / etc.
+  // as required because they're prerequisites for downstream phases (no
+  // Schedule means no delivery tasks; no Cost Plan means no budget burn).
+  // If the user deselected one accidentally, force-include it.
+  const requiredAiGeneratable = phaseDef.artefacts
+    .filter(a => a.required && a.aiGeneratable)
+    .map(a => a.name);
+
   // Phase.artefacts stores the user's selections (set during lifecycle init from deployment config).
   // Fall back to methodology defaults if the Phase row has no stored selections.
-  const artefactNames: string[] = (phaseRow?.artefacts && (phaseRow.artefacts as string[]).length > 0)
+  // Then union in the required-by-methodology set so nothing essential is skipped.
+  const userSelected = (phaseRow?.artefacts && (phaseRow.artefacts as string[]).length > 0)
     ? (phaseRow.artefacts as string[]).filter(n => aiGeneratableSet.has(n.toLowerCase()))
     : phaseDef.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
+  const seenLC = new Set(userSelected.map(n => n.toLowerCase()));
+  const artefactNames: string[] = [
+    ...userSelected,
+    ...requiredAiGeneratable.filter(n => !seenLC.has(n.toLowerCase())),
+  ];
 
   // Find which artefacts already exist for this project
   const existing = await db.agentArtefact.findMany({
