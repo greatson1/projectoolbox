@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { NewEventModal } from "@/components/meetings/new-event-modal";
 
 const PLATFORM_ICONS: Record<string, string> = {
   zoom: "📹", teams: "🟦", meet: "🟢", email: "📧", other: "💬",
@@ -41,6 +42,7 @@ export default function MeetingsPage() {
   const [detailTab, setDetailTab] = useState<"summary" | "transcript" | "actions" | "decisions">("summary");
   const [searchTranscript, setSearchTranscript] = useState("");
   const [showUpload, setShowUpload] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   const { data: meetingsData, isLoading } = useMeetings();
   const { data: meeting, isLoading: meetingLoading } = useMeeting(selectedMeeting);
@@ -314,7 +316,7 @@ export default function MeetingsPage() {
             <Button variant="outline" size="sm" onClick={() => setShowUpload(true)}>
               <Upload className="h-3.5 w-3.5 mr-1" /> Upload Transcript
             </Button>
-            <Button size="sm" onClick={() => setShowUpload(true)}>
+            <Button size="sm" onClick={() => setShowSchedule(true)}>
               <Plus className="h-3.5 w-3.5 mr-1" /> New Meeting
             </Button>
           </div>
@@ -323,6 +325,9 @@ export default function MeetingsPage() {
 
       {/* Upload/Paste Modal */}
       {showUpload && <TranscriptUploadModal onClose={() => setShowUpload(false)} />}
+
+      {/* Schedule Meeting Modal — same component used by Calendar */}
+      {showSchedule && <NewEventModal onClose={() => setShowSchedule(false)} />}
 
       {/* Upcoming */}
       {upcoming.length > 0 && (
