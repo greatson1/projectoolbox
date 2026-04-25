@@ -166,6 +166,16 @@ export function ProjectTabBar() {
   // Is user on the project overview page (not a sub-page)?
   const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
 
+  // Find the group whose item is currently active. Used to render a second
+  // row of sibling-page pills so navigating within a group is one click
+  // instead of two (open dropdown + click item). Pick the deepest match so
+  // /sprint-planning beats /sprint when both share a prefix.
+  const activeGroup = !isOverview
+    ? PROJECT_TABS.find((g) =>
+        g.items.some((it) => pathname.startsWith(`${projectBase}${it.href}`)),
+      )
+    : null;
+
   return (
     <div className="sticky top-14 lg:top-16 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
       <div className="flex items-center gap-2 px-3 lg:px-6 py-1.5 lg:py-2 flex-wrap">
@@ -190,6 +200,46 @@ export function ProjectTabBar() {
           <DropdownTab key={group.label} group={group} projectBase={projectBase} pathname={pathname} />
         ))}
       </div>
+
+      {/* ── Second row: sibling pages of the active group (one-click siblings) ── */}
+      {activeGroup && (
+        <div
+          className="flex items-center gap-1.5 px-3 lg:px-6 pb-2 pt-0.5 flex-wrap border-t border-border/40"
+          style={{ background: `${activeGroup.color}06` }}
+        >
+          <span
+            className="text-[9px] font-bold uppercase tracking-widest opacity-70 mr-1"
+            style={{ color: activeGroup.color }}
+          >
+            {activeGroup.label}
+          </span>
+          {activeGroup.items.map((item) => {
+            const fullHref = `${projectBase}${item.href}`;
+            const isActive = pathname.startsWith(fullHref);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={fullHref}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all",
+                  isActive
+                    ? "shadow-sm"
+                    : "text-muted-foreground hover:bg-background hover:text-foreground",
+                )}
+                style={
+                  isActive
+                    ? { background: activeGroup.color, color: "#fff" }
+                    : undefined
+                }
+              >
+                <Icon className="w-3 h-3 flex-shrink-0" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
