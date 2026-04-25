@@ -145,17 +145,6 @@ const NAV: NavGroup[] = [
     ],
   },
 
-  // ── Tools ─────────────────────────────────────────────────────────
-  {
-    title: "TOOLS",
-    items: [
-      { label: "Decision Tree",   href: "/tools/decision-tree",  icon: GitBranch },
-      { label: "Monte Carlo",     href: "/tools/monte-carlo",    icon: Dice5 },
-      { label: "NPV Calculator",  href: "/tools/npv-calculator", icon: Calculator },
-      { label: "RACI Matrix",     href: "/tools/raci-matrix",    icon: Table2 },
-    ],
-  },
-
   // ── Account ───────────────────────────────────────────────────────
   {
     title: "ACCOUNT",
@@ -166,6 +155,17 @@ const NAV: NavGroup[] = [
       { label: "Billing",       href: "/billing",       icon: CreditCard },
       { label: "Settings",      href: "/settings",      icon: Settings },
       { label: "Admin",         href: "/admin",         icon: Shield },
+    ],
+  },
+
+  // ── Tools (last — utility calculators sit at the bottom of the sidebar) ──
+  {
+    title: "TOOLS",
+    items: [
+      { label: "Decision Tree",   href: "/tools/decision-tree",  icon: GitBranch },
+      { label: "Monte Carlo",     href: "/tools/monte-carlo",    icon: Dice5 },
+      { label: "NPV Calculator",  href: "/tools/npv-calculator", icon: Calculator },
+      { label: "RACI Matrix",     href: "/tools/raci-matrix",    icon: Table2 },
     ],
   },
 ];
