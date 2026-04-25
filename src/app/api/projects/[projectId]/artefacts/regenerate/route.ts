@@ -184,6 +184,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       projectId,
       targetPhase,
       Object.keys(priorFeedback).length > 0 ? priorFeedback : undefined,
+      true, // force — user explicitly clicked regenerate, bypass clarification gate
     );
 
     await db.agentActivity.create({

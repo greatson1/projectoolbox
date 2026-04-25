@@ -27,6 +27,14 @@ export async function generatePhaseArtefacts(
    * regenerating the same content.
    */
   priorFeedback?: Record<string, string>,
+  /**
+   * When true, skip the lifecycle gate that blocks generation while the
+   * deployment is in `researching`/`awaiting_clarification` or has an active
+   * clarification session. Used by the user-initiated regenerate endpoints —
+   * the user has explicitly asked to replace a draft/rejected artefact and
+   * should not be blocked by the onboarding flow gate.
+   */
+  force?: boolean,
 ): Promise<{ generated: number; skipped: number; phase: string; missing?: string[] }> {
   const [agent, project] = await Promise.all([
     db.agent.findUnique({ where: { id: agentId } }),
@@ -85,22 +93,25 @@ export async function generatePhaseArtefacts(
   // These statuses mean the user hasn't completed the Research → Review →
   // Clarification flow yet. Only the clarification-complete handler or
   // the research-approve handler can unlock generation.
-  if (deployment) {
+  // Skipped when force=true — user-initiated regenerate must work mid-flow.
+  if (!force && deployment) {
     const blockingStatuses = ["researching", "awaiting_clarification"];
     if (deployment.phaseStatus && blockingStatuses.includes(deployment.phaseStatus)) {
       return { generated: 0, skipped, phase: targetPhaseName };
     }
   }
 
-  // Also check for active clarification session
-  try {
-    const { getActiveSession } = await import("@/lib/agents/clarification-session");
-    const activeSession = await getActiveSession(agentId, projectId);
-    if (activeSession) {
-      return { generated: 0, skipped, phase: targetPhaseName };
+  // Also check for active clarification session (skipped when force=true)
+  if (!force) {
+    try {
+      const { getActiveSession } = await import("@/lib/agents/clarification-session");
+      const activeSession = await getActiveSession(agentId, projectId);
+      if (activeSession) {
+        return { generated: 0, skipped, phase: targetPhaseName };
+      }
+    } catch (e) {
+      console.error("[generatePhaseArtefacts] clarification import failed:", e);
     }
-  } catch (e) {
-    console.error("[generatePhaseArtefacts] clarification import failed:", e);
   }
 
   await db.agentActivity.create({
