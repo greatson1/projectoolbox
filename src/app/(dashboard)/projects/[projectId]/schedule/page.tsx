@@ -87,11 +87,24 @@ export default function SchedulePage() {
   const { data: project } = useProject(projectId);
   const { data: apiTasks } = useProjectTasks(projectId);
 
-  // Build a phaseId → phase name lookup from the project's phases
-  const phaseNameById = useMemo(() => {
+  // Build a tolerant phase lookup from the project's Phase rows.
+  // Task.phaseId is inconsistent across the codebase: sometimes it's the
+  // Phase row CUID, sometimes the phase name string (the agent scaffolder
+  // stores names so its own self-update queries can match by name later).
+  // Accept either format so tasks group under the right phase regardless.
+  const phaseLookup = useMemo(() => {
     const phases: any[] = (project as any)?.phases || [];
-    return Object.fromEntries(phases.map((p: any) => [p.id, p.name]));
+    const map = new Map<string, string>();
+    for (const p of phases) {
+      if (p?.id) map.set(p.id, p.name);              // CUID → name
+      if (p?.name) map.set(p.name.toLowerCase(), p.name); // name (case-insensitive) → name
+    }
+    return map;
   }, [project]);
+  const resolvePhase = (raw: string | null | undefined): string | null => {
+    if (!raw) return null;
+    return phaseLookup.get(raw) || phaseLookup.get(raw.toLowerCase()) || null;
+  };
 
   const TASKS_DATA: ScheduleTask[] = useMemo(() => {
     if (!apiTasks || apiTasks.length === 0) return [];
@@ -104,11 +117,11 @@ export default function SchedulePage() {
         : s === "AT_RISK" || s === "BLOCKED" ? "at-risk"
         : "pending";
 
-      // phaseId is a UUID — resolve to name. Don't invent a phase name when
-      // we can't resolve one (was hardcoded to "Execution" which mis-labelled
-      // every task across every project as Execution-phase work).
-      const phase = (t.phaseId && phaseNameById[t.phaseId])
-        || t.phase  // in case the API ever normalises this
+      // phaseId may be a CUID OR a name string — resolvePhase handles both.
+      // Don't invent a phase name when nothing matches (was hardcoded to
+      // "Execution" which mis-labelled every task on every project).
+      const phase = resolvePhase(t.phaseId)
+        || resolvePhase(t.phase)
         || "Unassigned";
 
       return {
@@ -125,7 +138,7 @@ export default function SchedulePage() {
         isCriticalPath: t.isCriticalPath || false,
       };
     });
-  }, [apiTasks, phaseNameById]);
+  }, [apiTasks, phaseLookup]);
 
   const mode = "dark";
   const [zoom, setZoom] = useState<ZoomLevel>("month");
