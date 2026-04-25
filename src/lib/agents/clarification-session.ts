@@ -706,21 +706,28 @@ export async function answerQuestionInSession(
                 select: { id: true },
               })
             : null;
-          const draftWhere: any = {
+          const replaceWhere: any = {
             projectId: deployment.projectId,
             agentId,
-            status: "DRAFT",
+            status: { in: ["DRAFT", "REJECTED"] },
           };
-          if (currentPhaseRow?.id) draftWhere.phaseId = currentPhaseRow.id;
-          const drafts = await db.agentArtefact.findMany({
-            where: draftWhere,
-            select: { id: true, name: true },
+          if (currentPhaseRow?.id) replaceWhere.phaseId = currentPhaseRow.id;
+          const replaceable = await db.agentArtefact.findMany({
+            where: replaceWhere,
+            select: { id: true, name: true, status: true, feedback: true, version: true },
           });
-          if (drafts.length > 0) {
+          // Capture rejection feedback so the regeneration prompt can address it
+          const postClarFeedback: Record<string, string> = {};
+          for (const r of replaceable) {
+            if (r.status === "REJECTED" && r.feedback && r.feedback.trim().length > 0) {
+              postClarFeedback[r.name] = r.feedback;
+            }
+          }
+          if (replaceable.length > 0) {
             await db.agentArtefact.deleteMany({
-              where: { id: { in: drafts.map(a => a.id) } },
+              where: { id: { in: replaceable.map(a => a.id) } },
             });
-            console.log(`[clarification] deleted ${drafts.length} DRAFT artefact(s) for regeneration: ${drafts.map(a => a.name).join(", ")}`);
+            console.log(`[clarification] deleted ${replaceable.length} DRAFT/REJECTED artefact(s) for regeneration: ${replaceable.map(a => `${a.name}[${a.status}]`).join(", ")}`);
           }
 
           // Also purge artefact_extracted KB items so the agent re-reads
@@ -740,7 +747,12 @@ export async function answerQuestionInSession(
           }).catch(() => {});
 
           const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
-          const result = await generatePhaseArtefacts(agentId, deployment.projectId, deployment.currentPhase ?? undefined);
+          const result = await generatePhaseArtefacts(
+            agentId,
+            deployment.projectId,
+            deployment.currentPhase ?? undefined,
+            Object.keys(postClarFeedback).length > 0 ? postClarFeedback : undefined,
+          );
           if (result.generated > 0) {
             await db.chatMessage.create({
               data: {

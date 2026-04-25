@@ -196,7 +196,7 @@ export default function ArtefactsPage() {
   };
 
   const handleRegenerate = async (explicitPhase?: string) => {
-    if (!confirm("Delete all DRAFT artefacts and regenerate from scratch with the latest prompt rules? Approved artefacts will be preserved.")) return;
+    if (!confirm("Delete all DRAFT and REJECTED artefacts and regenerate from scratch with the latest prompt rules? Approved artefacts will be preserved.")) return;
     setRegenerating(true);
     try {
       const res = await fetch(`/api/projects/${projectId}/artefacts/regenerate`, {
@@ -207,7 +207,38 @@ export default function ArtefactsPage() {
       const json = await res.json();
       if (res.ok && json?.data) {
         const { generated, phase, draftsDeleted } = json.data;
-        toast.success(`Regenerated ${generated} artefact(s) for ${phase} — ${draftsDeleted} old drafts replaced.`, { duration: 5000 });
+        toast.success(`Regenerated ${generated} artefact(s) for ${phase} — ${draftsDeleted} old draft/rejected replaced.`, { duration: 5000 });
+        refreshArtefacts();
+      } else {
+        toast.error(json?.error || "Regeneration failed");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Regeneration failed");
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  // Per-artefact regenerate — for a single rejected artefact. Deletes that
+  // record then triggers phase-level regeneration so the agent recreates it.
+  const handleRegenerateOne = async (art: any) => {
+    if (!confirm(`Regenerate "${art.name}"? The current rejected version will be deleted and the agent will produce a fresh draft using the latest prompt rules.`)) return;
+    setRegenerating(true);
+    try {
+      const del = await fetch(`/api/agents/artefacts/${art.id}`, { method: "DELETE" });
+      if (!del.ok) {
+        const j = await del.json().catch(() => ({}));
+        throw new Error(j?.error || `Could not delete rejected artefact (${del.status})`);
+      }
+      // Backend defaults to deployment.currentPhase when no phase is passed
+      const res = await fetch(`/api/projects/${projectId}/artefacts/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(art.phaseName ? { phase: art.phaseName } : {}),
+      });
+      const json = await res.json();
+      if (res.ok && json?.data) {
+        toast.success(`"${art.name}" regenerated.`, { duration: 5000 });
         refreshArtefacts();
       } else {
         toast.error(json?.error || "Regeneration failed");
@@ -473,6 +504,13 @@ export default function ArtefactsPage() {
                             <XCircle className="w-4 h-4" />
                           </Button>
                         </>
+                      )}
+                      {art.status === "REJECTED" && (
+                        <Button variant="ghost" size="sm" className="text-primary" disabled={regenerating}
+                          onClick={() => handleRegenerateOne(art)}
+                          title="Regenerate this rejected artefact with the latest prompt">
+                          <RefreshCw className={`w-4 h-4 ${regenerating ? "animate-spin" : ""}`} />
+                        </Button>
                       )}
                       {/* Sync to module — shown for approved seedable artefacts */}
                       {art.status === "APPROVED" && (() => {

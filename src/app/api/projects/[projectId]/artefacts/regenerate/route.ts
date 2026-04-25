@@ -55,13 +55,51 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     select: { id: true },
   });
 
-  // Delete only DRAFT artefacts for this phase (preserve approved work).
+  // ── Capture rejection feedback BEFORE deletion ──────────────────────────
+  // REJECTED artefacts carry explicit reviewer feedback. We harvest the
+  // feedback and the artefact name into a map keyed by name (case-
+  // insensitive) so generatePhaseArtefacts can inject "the previous version
+  // was rejected with this feedback: …" into the Sonnet prompt — the next
+  // version then directly addresses what was wrong instead of silently
+  // regenerating the same content.
+  const rejectedWhere: any = {
+    projectId,
+    agentId: deployment.agentId,
+    status: "REJECTED",
+  };
+  if (phaseRow?.id) rejectedWhere.phaseId = phaseRow.id;
+  const rejectedRows = await db.agentArtefact.findMany({
+    where: rejectedWhere,
+    select: { name: true, feedback: true, version: true },
+  });
+  const priorFeedback: Record<string, string> = {};
+  for (const r of rejectedRows) {
+    if (r.feedback && r.feedback.trim().length > 0) {
+      priorFeedback[r.name] = r.feedback;
+    }
+  }
+  // Audit trail: keep a permanent record of every rejection feedback we are
+  // about to retire so the "what was wrong" history survives the row delete.
+  if (rejectedRows.length > 0) {
+    await db.agentActivity.create({
+      data: {
+        agentId: deployment.agentId,
+        type: "document",
+        summary: `Regenerating ${rejectedRows.length} rejected artefact(s) with prior feedback — ${rejectedRows.map(r => `"${r.name}" (v${r.version}): ${(r.feedback || "no feedback").slice(0, 200)}`).join(" | ")}`,
+      },
+    }).catch(() => {});
+  }
+
+  // Delete DRAFT and REJECTED artefacts for this phase (preserve approved work).
+  // REJECTED artefacts have explicit user feedback that they need to be replaced —
+  // leaving them in place would cause the dedup check in generatePhaseArtefacts to
+  // skip generating their replacements.
   // If a phase row exists, scope strictly by phaseId; otherwise fall back to
-  // every DRAFT for the agent (safer than silently matching nothing).
+  // every DRAFT/REJECTED for the agent (safer than silently matching nothing).
   const deleteWhere: any = {
     projectId,
     agentId: deployment.agentId,
-    status: "DRAFT",
+    status: { in: ["DRAFT", "REJECTED"] },
   };
   if (phaseRow?.id) deleteWhere.phaseId = phaseRow.id;
   const deleted = await db.agentArtefact.deleteMany({ where: deleteWhere });
@@ -122,13 +160,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   // Trigger fresh generation with the updated prompt
   try {
     const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
-    const result = await generatePhaseArtefacts(deployment.agentId, projectId, targetPhase);
+    const result = await generatePhaseArtefacts(
+      deployment.agentId,
+      projectId,
+      targetPhase,
+      Object.keys(priorFeedback).length > 0 ? priorFeedback : undefined,
+    );
 
     await db.agentActivity.create({
       data: {
         agentId: deployment.agentId,
         type: "document",
-        summary: `Regenerated ${result.generated} artefact(s) for ${targetPhase} with updated prompt — ${deleted.count} old drafts replaced, ${kbDeleted.count} stale extracted facts cleared, ${stakeholdersCleaned} fabricated stakeholders removed, ${assigneesCleaned} fabricated task assignees cleared.`,
+        summary: `Regenerated ${result.generated} artefact(s) for ${targetPhase} with updated prompt — ${deleted.count} old draft/rejected replaced, ${kbDeleted.count} stale extracted facts cleared, ${stakeholdersCleaned} fabricated stakeholders removed, ${assigneesCleaned} fabricated task assignees cleared.`,
       },
     }).catch(() => {});
 

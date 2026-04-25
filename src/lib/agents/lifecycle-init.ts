@@ -19,6 +19,14 @@ export async function generatePhaseArtefacts(
   agentId: string,
   projectId: string,
   phaseName?: string,
+  /**
+   * Optional reviewer feedback from prior REJECTED versions, keyed by
+   * artefact name (case-insensitive on the key). When provided, the
+   * generation prompt is augmented with "The previous version was rejected
+   * with this feedback: …" so Claude addresses the rejection rather than
+   * regenerating the same content.
+   */
+  priorFeedback?: Record<string, string>,
 ): Promise<{ generated: number; skipped: number; phase: string; missing?: string[] }> {
   const [agent, project] = await Promise.all([
     db.agent.findUnique({ where: { id: agentId } }),
@@ -114,10 +122,31 @@ export async function generatePhaseArtefacts(
   for (let i = 0; i < proseNames.length; i += BATCH_SIZE) allBatches.push({ names: proseNames.slice(i, i + BATCH_SIZE), isSheet: false });
   for (let i = 0; i < spreadsheetNames.length; i += BATCH_SIZE) allBatches.push({ names: spreadsheetNames.slice(i, i + BATCH_SIZE), isSheet: true });
 
+  // Normalise the feedback map for case-insensitive lookup
+  const feedbackByName = new Map<string, string>();
+  if (priorFeedback) {
+    for (const [name, fb] of Object.entries(priorFeedback)) {
+      if (typeof fb === "string" && fb.trim().length > 0) {
+        feedbackByName.set(name.toLowerCase(), fb.trim());
+      }
+    }
+  }
+  const feedbackBlockFor = (names: string[]) => {
+    const lines: string[] = [];
+    for (const n of names) {
+      const fb = feedbackByName.get(n.toLowerCase());
+      if (fb) lines.push(`- ${n}: ${fb}`);
+    }
+    if (lines.length === 0) return "";
+    return `\n\n⚠️ PRIOR REJECTION FEEDBACK — the previous version of the following document(s) was rejected by the human reviewer. Address these issues directly in the new version:\n${lines.join("\n")}\n\nDo not silently regenerate the same content — make concrete changes that respond to the feedback above.`;
+  };
+
   for (const { names: batch, isSheet } of allBatches) {
-    const prompt = isSheet
+    const feedbackBlock = feedbackBlockFor(batch);
+    const basePrompt = isSheet
       ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext)
       : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext);
+    const prompt = feedbackBlock ? `${basePrompt}${feedbackBlock}` : basePrompt;
 
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -199,9 +228,11 @@ export async function generatePhaseArtefacts(
   const missingAfterBatches = toGenerate.filter(n => !generatedNormNames.has(normalizeName(n)));
   for (const name of missingAfterBatches) {
     const isSheet = isSpreadsheetArtefact(name);
-    const prompt = isSheet
+    const retryFeedback = feedbackBlockFor([name]);
+    const baseRetryPrompt = isSheet
       ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext)
       : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext);
+    const prompt = retryFeedback ? `${baseRetryPrompt}${retryFeedback}` : baseRetryPrompt;
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
