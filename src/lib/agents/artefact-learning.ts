@@ -106,13 +106,13 @@ export async function getProjectKnowledgeContext(
   orgId: string,
 ): Promise<string> {
   try {
-    const [projectItems, workspaceItems] = await Promise.all([
+    const [projectItems, workspaceItems, stakeholderRows, approvedArtefacts, project] = await Promise.all([
       // Project-level items (high-trust first — user answers, then artefact knowledge)
       // Exclude internal session metadata items
       db.knowledgeBaseItem.findMany({
         where: { projectId, orgId, confidential: false, NOT: { title: { startsWith: "__" } } },
         orderBy: [{ trustLevel: "desc" }, { updatedAt: "desc" }],
-        take: 40,
+        take: 60,
         select: { title: true, content: true, trustLevel: true, tags: true, type: true },
       }),
       // Workspace-level items (templates, policies, org standards)
@@ -122,9 +122,27 @@ export async function getProjectKnowledgeContext(
         take: 10,
         select: { title: true, content: true, trustLevel: true, tags: true, type: true },
       }),
+      // Structured stakeholders — the Stakeholder table is the canonical
+      // source for who the sponsor / project manager / key contacts are.
+      // Without this, KB-only context misses sponsor info that lives in
+      // the Stakeholder Register artefact's seeded rows.
+      db.stakeholder.findMany({
+        where: { projectId },
+        select: { name: true, role: true, organisation: true, email: true, power: true, interest: true, sentiment: true },
+      }),
+      // Approved artefacts — names + first paragraph so the agent can refer
+      // back to "what the Project Brief said" when generating later phases.
+      db.agentArtefact.findMany({
+        where: { projectId, agentId, status: "APPROVED" },
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+        select: { name: true, content: true, format: true, updatedAt: true },
+      }),
+      db.project.findUnique({
+        where: { id: projectId },
+        select: { name: true, description: true, category: true, budget: true, startDate: true, endDate: true, methodology: true },
+      }),
     ]);
-
-    if (projectItems.length === 0 && workspaceItems.length === 0) return "";
 
     // Separate user-confirmed answers from other KB items for emphasis
     const userAnswers = projectItems.filter(i => i.tags.includes("user_confirmed") || i.tags.includes("user_answer"));
@@ -132,16 +150,61 @@ export async function getProjectKnowledgeContext(
 
     const lines: string[] = [
       "━━━ PROJECT KNOWLEDGE BASE (use this information — do NOT invent alternatives) ━━━",
-      "The following facts, names, decisions, and policies have been established for this project.",
-      "ALWAYS use this information in preference to generating new names or data.",
+      "Every fact below is canonical. Use these EXACT names, dates, organisations, and decisions.",
+      "If a fact you need is NOT below, write [TBC — what's needed] rather than inventing one.",
       "",
     ];
 
-    // User-confirmed answers get top billing — these are direct answers the user gave
+    // ── Project facts (always first — these are the canonical baselines) ──
+    if (project) {
+      lines.push("── PROJECT BASELINE ──");
+      lines.push(`• Project name: ${project.name}`);
+      if (project.description) lines.push(`• Description: ${truncate(project.description, 400)}`);
+      if (project.category) lines.push(`• Category: ${project.category}`);
+      if (project.budget) lines.push(`• Budget: £${project.budget.toLocaleString()}`);
+      if (project.startDate) lines.push(`• Start: ${new Date(project.startDate).toLocaleDateString("en-GB")}`);
+      if (project.endDate) lines.push(`• End: ${new Date(project.endDate).toLocaleDateString("en-GB")}`);
+      if (project.methodology) lines.push(`• Methodology: ${project.methodology}`);
+      lines.push("");
+    }
+
+    // ── Structured stakeholders (sponsor, PM, contacts) ──
+    // Lifted from the Stakeholder table directly so the agent never
+    // "doesn't know the sponsor" while generating downstream artefacts.
+    if (stakeholderRows.length > 0) {
+      lines.push("── PROJECT STAKEHOLDERS (canonical roster — use these EXACT names) ──");
+      // Sponsors / decision-makers first
+      const sponsors = stakeholderRows.filter(s => /sponsor|owner|executive|director|principal/i.test(s.role || ""));
+      const others = stakeholderRows.filter(s => !sponsors.includes(s));
+      const renderRow = (s: typeof stakeholderRows[number]) => {
+        const parts = [s.name];
+        if (s.role) parts.push(s.role);
+        if (s.organisation) parts.push(s.organisation);
+        if (s.email) parts.push(s.email);
+        return `• ${parts.join(" — ")}${s.power && s.interest ? ` (Power ${s.power}/Interest ${s.interest})` : ""}`;
+      };
+      for (const s of sponsors) lines.push(renderRow(s));
+      for (const s of others)   lines.push(renderRow(s));
+      lines.push("");
+    }
+
+    // User-confirmed answers next — direct answers the user gave during clarification
     if (userAnswers.length > 0) {
       lines.push("── USER-CONFIRMED FACTS (HIGHEST PRIORITY — the user explicitly told you these) ──");
       for (const item of userAnswers) {
         lines.push(`• ${item.title}: ${truncate(item.content, 500)}`);
+      }
+      lines.push("");
+    }
+
+    // ── Approved artefacts — let the agent see what was already documented ──
+    if (approvedArtefacts.length > 0) {
+      lines.push("── PREVIOUSLY APPROVED ARTEFACTS (canonical content — do not contradict) ──");
+      for (const a of approvedArtefacts) {
+        const preview = a.format === "csv"
+          ? truncate(a.content, 600)
+          : truncate(stripHtml(a.content), 600);
+        lines.push(`• ${a.name} [approved ${new Date(a.updatedAt).toLocaleDateString("en-GB")}]:\n  ${preview.replace(/\n/g, "\n  ")}`);
       }
       lines.push("");
     }
@@ -152,7 +215,7 @@ export async function getProjectKnowledgeContext(
     const factItems = otherItems.filter(i => !stakeholderItems.includes(i) && !policyItems.includes(i));
 
     if (stakeholderItems.length > 0) {
-      lines.push("── KNOWN PEOPLE & STAKEHOLDERS (use these exact names) ──");
+      lines.push("── EXTRACTED STAKEHOLDER FACTS ──");
       for (const item of stakeholderItems) {
         lines.push(`• ${item.title}: ${truncate(item.content, 400)}`);
       }
