@@ -209,7 +209,14 @@ export default function CostManagementPage() {
             value: fmtIndex(spi),
             desc: "Schedule Performance Index",
             color: spiColor,
-            detail: spi === null ? "Project not started" : spi >= 1 ? "Ahead of schedule" : "Behind schedule",
+            detail:
+              spi === null && (evm as any)?.spiInsufficientData
+                ? "Insufficient timeline elapsed (suppressed until 15%)"
+                : spi === null
+                  ? "No schedule data yet"
+                  : spi >= 1
+                    ? "Ahead of schedule"
+                    : "Behind schedule",
           },
           {
             label: "ETC",
