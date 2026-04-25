@@ -24,10 +24,20 @@ export function Providers({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 60 * 1000,     // 5 min — data stays fresh, no refetch on navigate
+            // 15s stale window — keeps in-page navigation fast (no refetch
+            // when popping between sub-pages within seconds) without letting
+            // post-mutation state drift across pages. Phase changes,
+            // approvals, and task updates land on every surface within 15s
+            // of switching to it.
+            staleTime: 15 * 1000,
             gcTime: 15 * 60 * 1000,        // 15 min — keep unused data in cache
-            refetchOnWindowFocus: false,
-            refetchOnMount: false,          // don't refetch if data is fresh
+            // Refetch when the tab regains focus so coming back from another
+            // app/tab doesn't show 5-minute-old phase or task counts.
+            refetchOnWindowFocus: true,
+            // Default (true) — refetch on mount if data is stale. With the
+            // 15s staleTime this means hopping between pages refreshes data
+            // that's older than 15 seconds.
+            refetchOnMount: true,
             // Retry on 403 "session loading" errors (orgId not yet in JWT after refresh)
             retry: (failureCount, error: any) => {
               if (error?.message?.includes("session may still be loading") && failureCount < 3) return true;

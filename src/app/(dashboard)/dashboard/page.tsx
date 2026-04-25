@@ -481,28 +481,84 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* Burndown Chart */}
+          {/* Burndown Chart — only renders when we have a real project
+              timeline to anchor it to. Previously this was hardcoded to 8
+              weeks regardless of project duration, so a 3-day project
+              showed "W6" on the right edge with nonsense data. */}
           {stats.totalTasks > 0 && (() => {
             const total = stats.totalTasks;
             const done = stats.completedTasks;
-            const weeks = 8;
-            const ideal = Array.from({ length: weeks + 1 }, (_, i) => ({
-              week: i === 0 ? "Start" : `W${i}`,
-              ideal: Math.round(total - (total / weeks) * i),
-              actual: i === 0 ? total : i < Math.ceil(done / (total / weeks)) ? Math.max(0, total - Math.round((total / weeks) * i * (done / total) * 1.15)) : undefined,
-            }));
+            // Pick the project that actually has dates set. Prefer one that
+            // is currently active (start <= today <= end); fall back to the
+            // most recently started project with dates.
+            const dated = projects
+              .filter((p: any) => p.startDate && p.endDate)
+              .sort((a: any, b: any) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+            const today = new Date();
+            const anchor = dated.find((p: any) => {
+              const s = new Date(p.startDate); const e = new Date(p.endDate);
+              return s <= today && today <= e;
+            }) || dated[0];
+            if (!anchor) {
+              // No real timeline to track against — show a simple done/total
+              // progress card instead of a fictional burndown.
+              const pct = Math.round((done / total) * 100);
+              return (
+                <Card className="px-5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Task Progress</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{done}<span className="text-base text-muted-foreground font-normal">/{total}</span></div>
+                    <div className="text-xs text-muted-foreground mb-3">{pct}% complete · set project dates to see a proper burndown</div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }
+            const start = new Date(anchor.startDate);
+            const end = new Date(anchor.endDate);
+            const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000));
+            // Pick a sensible bucket size: daily for ≤14 days, weekly for ≤84 days,
+            // bi-weekly thereafter. Cap to ~12 buckets so the chart stays readable.
+            const bucketDays = totalDays <= 14 ? 1 : totalDays <= 84 ? 7 : 14;
+            const buckets = Math.min(12, Math.max(2, Math.ceil(totalDays / bucketDays)));
+            const elapsedDays = Math.max(0, Math.min(totalDays, Math.floor((today.getTime() - start.getTime()) / 86_400_000)));
+            const elapsedBuckets = Math.min(buckets, Math.floor(elapsedDays / bucketDays));
+            const labelFor = (i: number) =>
+              i === 0 ? "Start"
+              : bucketDays === 1 ? `D${i}`
+              : bucketDays === 7 ? `W${i}`
+              : `${i * 2}w`;
+            const data = Array.from({ length: buckets + 1 }, (_, i) => {
+              const ideal = Math.round(total - (total / buckets) * i);
+              const actual = i <= elapsedBuckets
+                ? (i === elapsedBuckets ? Math.max(0, total - done) : undefined)
+                : undefined;
+              const point: { week: string; ideal: number; actual?: number } = {
+                week: labelFor(i),
+                ideal,
+              };
+              if (actual !== undefined) point.actual = actual;
+              if (i === 0) point.actual = total;
+              return point;
+            });
             return (
               <Card className="px-5">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm">Sprint Burndown</CardTitle>
-                    <span className="text-[10px] text-muted-foreground">{done}/{total} tasks complete</span>
+                    <CardTitle className="text-sm">Burndown</CardTitle>
+                    <span className="text-[10px] text-muted-foreground">
+                      {anchor.name} · {done}/{total} tasks · day {elapsedDays + 1} of {totalDays}
+                    </span>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[160px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={ideal} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                      <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                         <XAxis dataKey="week" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                         <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
