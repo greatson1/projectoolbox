@@ -35,7 +35,7 @@ export async function POST(
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
   // Verify the user belongs to this org
-  const member = await db.orgMember.findFirst({
+  const member = await db.userOrganisation.findFirst({
     where: { orgId: project.orgId, userId: (session.user as any).id },
   });
   if (!member) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

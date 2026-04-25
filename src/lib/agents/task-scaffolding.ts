@@ -21,7 +21,7 @@ import { db } from "@/lib/db";
 
 interface TaskTemplate {
   title: string;
-  category: "artefact" | "governance" | "monitoring" | "stakeholder" | "delivery";
+  category: "artefact" | "governance" | "monitoring" | "stakeholder" | "delivery" | "delivery_activity";
   /** If set, this task auto-completes when the named artefact is generated */
   linkedArtefact?: string;
   /** If set, this task auto-completes when this event fires */

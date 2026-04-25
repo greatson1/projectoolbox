@@ -286,10 +286,10 @@ Return ONLY a JSON array of numbers in order, one per task. Example: [3,5,2,8,1]
       // Apply ML calibration multiplier if we have historical data
       let multiplier = 1.0;
       try {
-        const project = await db.project.findUnique({ where: { id: projectId }, select: { orgId: true } });
-        if (project) {
+        const projectRecord = await db.project.findUnique({ where: { id: project.id }, select: { orgId: true } });
+        if (projectRecord) {
           const { predictStoryPointCalibration } = await import("@/lib/ml/story-point-calibration");
-          const cal = await predictStoryPointCalibration(project.orgId);
+          const cal = await predictStoryPointCalibration(projectRecord.orgId);
           if (cal.confidence > 0.2) multiplier = cal.multiplier;
         }
       } catch { /* non-fatal */ }

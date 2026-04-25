@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
             agentId: agentId || null,
             projectId: projectId || null,
             title: data.title,
-            transcript: data.transcript || null,
+            rawTranscript: data.transcript || null,
             summary: data.summary || null,
             status: data.status || "COMPLETED",
             platform: data.platform || "n8n",
