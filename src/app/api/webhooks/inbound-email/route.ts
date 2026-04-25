@@ -224,6 +224,22 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // ── Sentiment: analyze the email body and record to history ──
+    // Fire-and-forget so the webhook responds quickly. The recorder updates
+    // the AgentInboxMessage row + writes a SentimentHistory entry that the
+    // org pulse / heatmap surface.
+    if (emailContent && emailContent.trim().length > 20) {
+      import("@/lib/sentiment/recorder").then(({ recordSentiment }) => {
+        recordSentiment({
+          orgId,
+          text: `${subject}\n\n${emailContent.slice(0, 4000)}`,
+          subjectType: "email",
+          subjectId: inboxMsg.id,
+          context: "inbound email",
+        }).catch((e) => console.error("[inbound-email] sentiment record failed:", e));
+      }).catch(() => {});
+    }
+
     // Auto-populate Knowledge Base with email content
     try {
       await db.knowledgeBaseItem.create({

@@ -150,6 +150,24 @@ export async function POST(req: NextRequest) {
           },
         });
         results.push({ meetingId: meeting.id });
+
+        // Sentiment: analyze the meeting body (prefer summary if present —
+        // raw transcripts are noisy and Haiku will dilute the signal).
+        // Fire-and-forget so the webhook stays fast.
+        const meetingText = (data.summary && String(data.summary).trim().length > 20)
+          ? String(data.summary)
+          : (data.transcript ? String(data.transcript).slice(0, 6000) : "");
+        if (meetingText) {
+          import("@/lib/sentiment/recorder").then(({ recordSentiment }) => {
+            recordSentiment({
+              orgId,
+              text: meetingText,
+              subjectType: "meeting",
+              subjectId: meeting.id,
+              context: "meeting transcript",
+            }).catch((e) => console.error("[n8n-callback] meeting sentiment record failed:", e));
+          }).catch(() => {});
+        }
         break;
       }
 
