@@ -23,7 +23,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AgentState = "questions_waiting" | "generating" | "review" | "phase_complete" | "monitoring" | "idle";
+type AgentState = "questions_waiting" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "monitoring" | "idle";
 
 interface RawActivity {
   id?: string;
@@ -55,6 +55,13 @@ interface AgentSlot {
   // artefacts
   pendingCount:  number;
   totalArtefacts: number;
+  // current-phase completion — drives whether "Generate next phase" is honest
+  canAdvance:    boolean;
+  blockers:      string[];
+  pmTasksDone:   number;
+  pmTasksTotal:  number;
+  deliveryDone:  number;
+  deliveryTotal: number;
   // activity
   activities:    RawActivity[];
 }
@@ -66,6 +73,7 @@ const COLOURS: Record<AgentState, { border: string; glow: string; badge: string;
   review:         { border: "#F59E0B", glow: "rgba(245,158,11,0.22)", badge: "#F59E0B", badgeBg: "rgba(245,158,11,0.13)", ring: "#F59E0B", pulse: "rgba(245,158,11,0.35)" },
   generating:     { border: "#6366F1", glow: "rgba(99,102,241,0.22)",  badge: "#6366F1", badgeBg: "rgba(99,102,241,0.13)",  ring: "#6366F1", pulse: "rgba(99,102,241,0.35)"  },
   phase_complete: { border: "#10B981", glow: "rgba(16,185,129,0.22)",  badge: "#10B981", badgeBg: "rgba(16,185,129,0.13)",  ring: "#10B981", pulse: "rgba(16,185,129,0.35)"  },
+  blocked_by_tasks: { border: "#F59E0B", glow: "rgba(245,158,11,0.22)", badge: "#F59E0B", badgeBg: "rgba(245,158,11,0.13)", ring: "#F59E0B", pulse: "rgba(245,158,11,0.35)" },
   monitoring:     { border: "rgba(100,116,139,0.3)", glow: "rgba(100,116,139,0.08)", badge: "#64748B", badgeBg: "rgba(100,116,139,0.1)", ring: "#64748B", pulse: "rgba(100,116,139,0.2)" },
   idle:           { border: "rgba(100,116,139,0.2)", glow: "rgba(100,116,139,0.05)", badge: "#94A3B8", badgeBg: "rgba(100,116,139,0.08)", ring: "#94A3B8", pulse: "rgba(100,116,139,0.15)" },
 };
@@ -102,13 +110,15 @@ function deriveState(
   activities: RawActivity[],
   hasActiveSession: boolean,
   phaseStatus?: string | null,
+  canAdvance?: boolean,
+  hasCompletionData?: boolean,
 ): AgentState {
   if (!agentDeployed) return "idle";
 
   // hasActiveSession is the LIVE source of truth — phaseStatus can lag if the
   // deployment column update missed (recovered on next pipeline fetch via
   // self-heal). Always trust the active session presence first.
-  if (phaseStatus === "blocked_tasks_incomplete") return "phase_complete"; // treat as non-urgent steady state for bar
+  if (phaseStatus === "blocked_tasks_incomplete") return "blocked_by_tasks";
   if (hasActiveSession) return "questions_waiting";
   // Only fall back to phaseStatus when there's no active session — and only if
   // it's a definitive non-clarification status. A stale "awaiting_clarification"
@@ -126,13 +136,19 @@ function deriveState(
   );
   if (isGenerating)           return "generating";
   if (pendingCount > 0)       return "review";
-  if (totalArtefacts > 0)     return "phase_complete";
+  if (totalArtefacts > 0) {
+    // Don't claim "phase_complete" (which renders the green "Click Generate"
+    // banner) when getPhaseCompletion says we cannot advance because PM tasks
+    // or delivery tasks are still outstanding. Surface the blockers instead.
+    if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
+    return "phase_complete";
+  }
   return "monitoring";
 }
 
 /** Priority for auto-focus: lower = more urgent */
 function statePriority(s: AgentState): number {
-  return { questions_waiting: 0, review: 1, generating: 2, phase_complete: 3, monitoring: 4, idle: 5 }[s] ?? 6;
+  return { questions_waiting: 0, review: 1, blocked_by_tasks: 2, generating: 3, phase_complete: 4, monitoring: 5, idle: 6 }[s] ?? 7;
 }
 
 function gradientColour(gradient: string | null | undefined): string {
@@ -140,7 +156,7 @@ function gradientColour(gradient: string | null | undefined): string {
 }
 
 /** Build the main commentary line from actual data */
-function buildCommentary(slot: AgentSlot, activityIdx: number): string {
+function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
   const { state, activities, pendingCount, currentPhase, nextPhase, projectName } = slot;
   const phase = currentPhase ?? "current";
   const next  = nextPhase ?? "next";
@@ -176,6 +192,15 @@ function buildCommentary(slot: AgentSlot, activityIdx: number): string {
     case "phase_complete":
       return `All ${phase} documents approved. Click Generate to start the ${next} phase.`;
 
+    case "blocked_by_tasks": {
+      // Surface the real blockers that getPhaseCompletion identified, instead
+      // of pretending the phase is ready to advance.
+      const headline = slot.blockers.length > 0
+        ? slot.blockers.slice(0, 2).join(" · ")
+        : `${slot.pmTasksDone}/${slot.pmTasksTotal} PM tasks · ${slot.deliveryDone}/${slot.deliveryTotal} delivery tasks`;
+      return `All ${phase} documents approved, but advancement is blocked: ${headline}. Complete the outstanding tasks before generating ${next}.`;
+    }
+
     case "monitoring":
       return actText
         ? `${actText.slice(0, 160)} — monitoring ${projectName}`
@@ -193,6 +218,14 @@ function badgeLabel(slot: AgentSlot): string {
     case "review":         return `${slot.pendingCount} doc${slot.pendingCount === 1 ? "" : "s"} to review`;
     case "generating":     return "Writing…";
     case "phase_complete": return slot.nextPhase ? `Start ${slot.nextPhase}` : "All done";
+    case "blocked_by_tasks": {
+      const remainingPm = Math.max(0, slot.pmTasksTotal - slot.pmTasksDone);
+      const remainingDel = Math.max(0, slot.deliveryTotal - slot.deliveryDone);
+      if (remainingPm > 0 && remainingDel > 0) return `${remainingPm} PM + ${remainingDel} delivery to finish`;
+      if (remainingPm > 0) return `${remainingPm} PM task${remainingPm === 1 ? "" : "s"} to finish`;
+      if (remainingDel > 0) return `${remainingDel} delivery task${remainingDel === 1 ? "" : "s"} to finish`;
+      return "Tasks blocking advance";
+    }
     case "monitoring":     return "Monitoring";
     case "idle":           return "Not deployed";
   }
@@ -290,7 +323,25 @@ export function AgentStatusBar() {
         const activities = metricActivities.length > 0 ? metricActivities : fleetActivities;
 
         const phaseStatus = (dep as any)?.phaseStatus ?? null;
-        const state = deriveState(true, pendingCount, totalArtefacts, activities, hasActiveSession, phaseStatus);
+        // Current-phase completion data — drives the canAdvance / blockers banner
+        const completion = m?.phases?.currentCompletion ?? null;
+        const canAdvance = completion ? !!completion.canAdvance : undefined;
+        const blockers: string[] = Array.isArray(completion?.blockers) ? completion.blockers : [];
+        const pmTasksDone   = completion?.pmTasks?.done   ?? 0;
+        const pmTasksTotal  = completion?.pmTasks?.total  ?? 0;
+        const deliveryDone  = completion?.deliveryTasks?.done  ?? 0;
+        const deliveryTotal = completion?.deliveryTasks?.total ?? 0;
+
+        const state = deriveState(
+          true,
+          pendingCount,
+          totalArtefacts,
+          activities,
+          hasActiveSession,
+          phaseStatus,
+          canAdvance,
+          completion !== null,
+        );
 
         return {
           agentId:       agent.id,
@@ -305,6 +356,12 @@ export function AgentStatusBar() {
           phases,
           pendingCount,
           totalArtefacts,
+          canAdvance: canAdvance ?? true,
+          blockers,
+          pmTasksDone,
+          pmTasksTotal,
+          deliveryDone,
+          deliveryTotal,
           activities,
         };
       });
@@ -372,6 +429,8 @@ export function AgentStatusBar() {
   const sidebarW   = sidebarCollapsed ? 60 : 240;
   const ctaHref    = slot.state === "questions_waiting"
     ? `/agents/chat?agent=${slot.agentId}`
+    : slot.state === "blocked_by_tasks"
+    ? (slot.projectId ? `/projects/${slot.projectId}/agile` : "/agents")
     : slot.projectId ? `/projects/${slot.projectId}/artefacts` : "/agents";
 
   // Other agents for switcher
@@ -495,7 +554,7 @@ export function AgentStatusBar() {
           </div>
 
           {/* CTA strip */}
-          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete") && (
+          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete" || slot.state === "blocked_by_tasks") && (
             <div className="border-t px-5 py-2.5 flex items-center justify-between"
               style={{ borderColor: `${c.border}22`, background: `${c.badgeBg}` }}>
               <p className="text-[12px] font-medium" style={{ color: c.badge }}>
@@ -503,12 +562,20 @@ export function AgentStatusBar() {
                   ? `${slot.agentName} needs your answers before it can generate documents — open Chat to respond`
                   : slot.state === "review"
                   ? `${slot.pendingCount} document${slot.pendingCount === 1 ? "" : "s"} need your approval before ${slot.agentName} can continue`
+                  : slot.state === "blocked_by_tasks"
+                  ? `${slot.currentPhase} documents approved, but ${slot.blockers.slice(0, 2).join(" · ") || `${slot.pmTasksDone}/${slot.pmTasksTotal} PM · ${slot.deliveryDone}/${slot.deliveryTotal} delivery`}`
                   : `${slot.currentPhase} complete — ${slot.agentName} is ready to write ${slot.nextPhase ?? "next"} phase documents`}
               </p>
               <Link href={ctaHref} onClick={() => setExpanded(false)}
                 className="flex items-center gap-1.5 text-[12px] font-bold px-4 py-1.5 rounded-lg border transition-colors"
                 style={{ color: c.badge, borderColor: `${c.badge}44`, background: `${c.badge}11` }}>
-                {slot.state === "questions_waiting" ? "Open Chat" : slot.state === "review" ? "Review Documents" : `Generate ${slot.nextPhase ?? "Next Phase"}`}
+                {slot.state === "questions_waiting"
+                  ? "Open Chat"
+                  : slot.state === "review"
+                  ? "Review Documents"
+                  : slot.state === "blocked_by_tasks"
+                  ? "Open Task Boards"
+                  : `Generate ${slot.nextPhase ?? "Next Phase"}`}
                 <ArrowRight size={12} />
               </Link>
             </div>
@@ -601,13 +668,14 @@ export function AgentStatusBar() {
           )}
 
           {/* CTA button */}
-          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete" || slot.state === "generating") && (
+          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete" || slot.state === "blocked_by_tasks" || slot.state === "generating") && (
             <Link href={ctaHref}
               className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap hover:opacity-90"
               style={{ color: c.badge, borderColor: `${c.badge}55`, background: c.badgeBg }}>
               {slot.state === "questions_waiting" && <MessageSquare size={11} />}
               {slot.state === "review"            && <AlertCircle size={11} />}
               {slot.state === "phase_complete"    && <Sparkles size={11} />}
+              {slot.state === "blocked_by_tasks"  && <AlertCircle size={11} />}
               {slot.state === "generating"        && <ArrowRight size={11} />}
               {slot.state === "questions_waiting"
                 ? "Answer Questions"
@@ -615,6 +683,8 @@ export function AgentStatusBar() {
                 ? `Review ${slot.pendingCount}`
                 : slot.state === "phase_complete"
                 ? `Generate ${slot.nextPhase ?? "Next"}`
+                : slot.state === "blocked_by_tasks"
+                ? "Finish Tasks"
                 : "View Artefacts"}
             </Link>
           )}
@@ -685,6 +755,7 @@ function StateBadge({ label, colour, bg, state }: {
     review:         <AlertCircle size={10} />,
     generating:     <RefreshCw size={10} className="animate-spin" />,
     phase_complete: <CheckCircle2 size={10} />,
+    blocked_by_tasks: <AlertCircle size={10} />,
     monitoring:     <Shield size={10} />,
     idle:           <Bot size={10} />,
   };

@@ -156,6 +156,28 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   const currentPhase = deployment?.currentPhase || phases.find(p => p.status === "ACTIVE")?.name || phases[0]?.name || "—";
   const phaseProgress = phases.map(p => ({ name: p.name, status: p.status, order: p.order }));
 
+  // Current-phase completion — same source of truth as the artefacts page and
+  // generate endpoint, so the status-bar banner can never claim "ready to
+  // generate next phase" while PM tasks or delivery tasks still block.
+  let currentPhaseCompletion: any = null;
+  try {
+    if (deployment?.currentPhase && deployment?.agentId) {
+      const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+      const c = await getPhaseCompletion(projectId, deployment.currentPhase, deployment.agentId);
+      currentPhaseCompletion = {
+        phaseName: c.phaseName,
+        artefacts: c.artefacts,
+        pmTasks: c.pmTasks,
+        deliveryTasks: c.deliveryTasks,
+        overall: c.overall,
+        canAdvance: c.canAdvance,
+        blockers: c.blockers,
+      };
+    }
+  } catch (e) {
+    console.error("[metrics] currentPhaseCompletion failed:", e);
+  }
+
   return NextResponse.json({
     data: {
       project: { ...project, progressPct },
@@ -180,7 +202,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         budgetHealth: budgetRag,
       },
       health: { overall: overallHealth, schedule: scheduleRag, budget: budgetRag, risk: riskHealth },
-      phases: { current: currentPhase, status: deployment?.phaseStatus || "active", list: phaseProgress },
+      phases: { current: currentPhase, status: deployment?.phaseStatus || "active", list: phaseProgress, currentCompletion: currentPhaseCompletion },
       agent: deployment?.agent ? { name: deployment.agent.name, status: deployment.agent.status, level: deployment.agent.autonomyLevel, lastCycle: deployment.lastCycleAt } : null,
       activities: activities.map(a => ({ type: a.type, summary: a.summary, date: a.createdAt, metadata: a.metadata })),
       artefacts: artefacts.map(a => ({ id: a.id, name: a.name, status: a.status, format: a.format, version: a.version, date: a.createdAt })),
