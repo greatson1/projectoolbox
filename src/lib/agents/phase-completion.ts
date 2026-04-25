@@ -69,6 +69,90 @@ export async function getPhaseCompletion(
     ? [{ phaseId: phaseName }, { phaseId: phaseRow.id }]
     : [{ phaseId: phaseName }];
 
+  // ── Retroactive event-task self-heal ─────────────────────────────────
+  // Scaffolded tasks declare linkedEvents (clarification_complete,
+  // gate_request, phase_advanced). The handlers that fire those events
+  // were wired AFTER projects were already running, so on existing
+  // deployments those tasks sit at 10% forever. Before counting, scan
+  // them and mark done if the underlying event has effectively happened.
+  // This is idempotent — runs on every getPhaseCompletion call (every
+  // metrics poll), self-heals legacy state within seconds.
+  try {
+    const eventTasks = await db.task.findMany({
+      where: {
+        projectId,
+        OR: phaseIdMatch,
+        description: { contains: "[event:" },
+        status: { not: "DONE" },
+        parentId: { not: null },
+      },
+      select: { id: true, description: true, phaseId: true },
+    });
+    if (eventTasks.length > 0) {
+      // Pull the signals we need to decide each event's truth, in parallel.
+      const [deployment, gateApprovals, kbConfirmed, kbActiveSession] = await Promise.all([
+        db.agentDeployment.findFirst({
+          where: { projectId, isActive: true },
+          select: { currentPhase: true },
+        }),
+        db.approval.findMany({
+          where: { projectId, type: "PHASE_GATE" },
+          select: { id: true, title: true, status: true, createdAt: true },
+        }),
+        db.knowledgeBaseItem.count({
+          where: { projectId, agentId, tags: { hasSome: ["user_confirmed", "user_answer"] } },
+        }),
+        db.knowledgeBaseItem.findFirst({
+          where: { projectId, agentId, title: "__clarification_session__", tags: { has: "active" } },
+          select: { id: true },
+        }),
+      ]);
+
+      // Phase-order map: any phase strictly EARLIER than the current
+      // deployment phase is considered "advanced past".
+      const phaseOrders = await db.phase.findMany({
+        where: { projectId },
+        select: { name: true, order: true },
+      });
+      const orderByName = new Map(phaseOrders.map(p => [p.name, p.order]));
+      const currentOrder = deployment?.currentPhase ? orderByName.get(deployment.currentPhase) ?? -1 : -1;
+      const myOrder = phaseRow ? orderByName.get(phaseRow.name) ?? -1 : -1;
+      const isPastPhase = currentOrder >= 0 && myOrder >= 0 && myOrder < currentOrder;
+
+      const phaseLC = phaseName.toLowerCase();
+      const gateForThisPhase = gateApprovals.find(g =>
+        (g.title || "").toLowerCase().startsWith(`${phaseLC} gate`)
+        || (g.title || "").toLowerCase().startsWith(`${phaseLC}:`)
+        || (g.title || "").toLowerCase().includes(`gate: ${phaseLC}`),
+      );
+
+      const toMarkDone: string[] = [];
+      for (const t of eventTasks) {
+        const desc = t.description || "";
+        if (desc.includes("[event:clarification_complete]")) {
+          // Event has effectively happened if no active session AND user
+          // has confirmed at least one fact (proves they answered).
+          if (!kbActiveSession && kbConfirmed > 0) toMarkDone.push(t.id);
+        } else if (desc.includes("[event:gate_request]")) {
+          // Event has happened if a phase gate exists for this phase.
+          if (gateForThisPhase) toMarkDone.push(t.id);
+        } else if (desc.includes("[event:phase_advanced]")) {
+          // Event has happened if the deployment has moved past this phase.
+          if (isPastPhase) toMarkDone.push(t.id);
+        }
+      }
+
+      if (toMarkDone.length > 0) {
+        await db.task.updateMany({
+          where: { id: { in: toMarkDone } },
+          data: { progress: 100, status: "DONE" },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[phase-completion] retroactive event-task self-heal failed:", e);
+  }
+
   // ── 1. Artefacts ──────────────────────────────────────────────────────
 
   const artefacts = await db.agentArtefact.findMany({
