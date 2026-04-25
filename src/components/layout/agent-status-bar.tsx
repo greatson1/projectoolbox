@@ -396,8 +396,18 @@ export function AgentStatusBar() {
   useEffect(() => {
     setLoading(true);
     fetchAll();
-    const iv = setInterval(fetchAll, 60_000);
-    return () => clearInterval(iv);
+    // 30s — tight enough that task completions, approvals and phase advances
+    // reflect on the banner within half a minute. The metrics endpoint that
+    // backs this is cheap (single Prisma round-trip + getPhaseCompletion).
+    const iv = setInterval(fetchAll, 30_000);
+    // Also refetch when the tab regains focus so coming back from another
+    // tab doesn't show a 30s-stale banner.
+    const onFocus = () => fetchAll();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [fetchAll]);
 
   // Re-dismiss on project change
@@ -427,10 +437,30 @@ export function AgentStatusBar() {
   const commentary = buildCommentary(slot, activityIdx);
   const label      = badgeLabel(slot);
   const sidebarW   = sidebarCollapsed ? 60 : 240;
+  // Route the CTA based on what is actually blocking. PM tasks live on the
+  // PM Tracker page; delivery tasks live on the Agile Board. If both are
+  // blocking, prefer the bigger blocker (lower completion %). If neither
+  // count is set, fall back to the artefacts page.
+  const blockedTarget = (() => {
+    if (!slot.projectId) return "/agents";
+    const pmRemaining = Math.max(0, slot.pmTasksTotal - slot.pmTasksDone);
+    const delRemaining = Math.max(0, slot.deliveryTotal - slot.deliveryDone);
+    if (pmRemaining > 0 && delRemaining === 0) return `/projects/${slot.projectId}/pm-tracker`;
+    if (delRemaining > 0 && pmRemaining === 0) return `/projects/${slot.projectId}/agile`;
+    if (pmRemaining > 0 && delRemaining > 0) {
+      // Both blocking — go to the bigger gap by % incomplete
+      const pmPct  = slot.pmTasksTotal  > 0 ? slot.pmTasksDone  / slot.pmTasksTotal  : 1;
+      const delPct = slot.deliveryTotal > 0 ? slot.deliveryDone / slot.deliveryTotal : 1;
+      return delPct < pmPct
+        ? `/projects/${slot.projectId}/agile`
+        : `/projects/${slot.projectId}/pm-tracker`;
+    }
+    return `/projects/${slot.projectId}/artefacts`;
+  })();
   const ctaHref    = slot.state === "questions_waiting"
     ? `/agents/chat?agent=${slot.agentId}`
     : slot.state === "blocked_by_tasks"
-    ? (slot.projectId ? `/projects/${slot.projectId}/agile` : "/agents")
+    ? blockedTarget
     : slot.projectId ? `/projects/${slot.projectId}/artefacts` : "/agents";
 
   // Other agents for switcher
@@ -574,7 +604,9 @@ export function AgentStatusBar() {
                   : slot.state === "review"
                   ? "Review Documents"
                   : slot.state === "blocked_by_tasks"
-                  ? "Open Task Boards"
+                  ? (blockedTarget.endsWith("/pm-tracker") ? "Open PM Tracker"
+                    : blockedTarget.endsWith("/agile")     ? "Open Agile Board"
+                    : "Open Task Boards")
                   : `Generate ${slot.nextPhase ?? "Next Phase"}`}
                 <ArrowRight size={12} />
               </Link>
@@ -684,7 +716,9 @@ export function AgentStatusBar() {
                 : slot.state === "phase_complete"
                 ? `Generate ${slot.nextPhase ?? "Next"}`
                 : slot.state === "blocked_by_tasks"
-                ? "Finish Tasks"
+                ? (blockedTarget.endsWith("/pm-tracker") ? "Open PM Tracker"
+                  : blockedTarget.endsWith("/agile")     ? "Open Agile Board"
+                  : "Finish Tasks")
                 : "View Artefacts"}
             </Link>
           )}
