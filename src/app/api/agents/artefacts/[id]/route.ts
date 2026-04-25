@@ -17,6 +17,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ data: artefact });
 }
 
+// DELETE /api/agents/artefacts/[id]
+// Used by the per-artefact regenerate flow to remove a rejected/draft row
+// before triggering phase regeneration. APPROVED artefacts cannot be deleted
+// here — that requires explicit governance action elsewhere.
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const orgId = (session.user as any).orgId as string | undefined;
+  const { id } = await params;
+
+  const artefact = await db.agentArtefact.findUnique({
+    where: { id },
+    select: { id: true, status: true, name: true, projectId: true },
+  });
+  if (!artefact) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Verify the artefact belongs to a project in the caller's org
+  if (orgId) {
+    const proj = await db.project.findFirst({
+      where: { id: artefact.projectId, orgId },
+      select: { id: true },
+    });
+    if (!proj) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (artefact.status === "APPROVED") {
+    return NextResponse.json(
+      { error: "Cannot delete an APPROVED artefact via this endpoint" },
+      { status: 409 },
+    );
+  }
+
+  await db.agentArtefact.delete({ where: { id } });
+  return NextResponse.json({ data: { id, name: artefact.name, deleted: true } });
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
