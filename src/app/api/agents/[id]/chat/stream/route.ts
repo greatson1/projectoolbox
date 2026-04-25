@@ -234,7 +234,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { projectId: project.id },
         orderBy: { createdAt: "desc" },
         take: 20,
-        select: { id: true, name: true, status: true, content: true, phaseId: true, createdAt: true, updatedAt: true },
+        select: { id: true, name: true, status: true, content: true, phaseId: true, createdAt: true, updatedAt: true, version: true, feedback: true },
       }),
       db.risk.findMany({ where: { projectId: project.id }, orderBy: { score: "desc" }, take: 15, select: { title: true, description: true, probability: true, impact: true, score: true, status: true, category: true, owner: true, mitigation: true, responseLog: true } }),
       db.agentActivity.findMany({ where: { agentId }, orderBy: { createdAt: "desc" }, take: 10 }),
@@ -451,12 +451,19 @@ ${pendingApprovals.length > 0
 ${recentArtefacts.length > 0
   ? recentArtefacts.map(a => {
       const statusIcon = a.status === "APPROVED" ? "✅" : a.status === "PENDING_REVIEW" ? "⏳" : a.status === "REJECTED" ? "❌" : "📝";
-      // Approved artefacts: show first 800 chars of content so agent knows what was decided
-      // Draft/pending: just name and status — content not yet confirmed
-      const preview = a.status === "APPROVED" && a.content
-        ? `\n  > ${a.content.slice(0, 800).replace(/\n/g, "\n  > ")}${a.content.length > 800 ? "…" : ""}`
+      // Include content preview for every status — the user often asks about
+      // DRAFT and REJECTED artefacts ("are there any TBCs?", "what changed?",
+      // "fix this") and the agent must be able to read them. APPROVED gets a
+      // shorter preview because it's settled context; DRAFT/REJECTED gets a
+      // larger preview because that's the active work.
+      const previewLen = a.status === "DRAFT" || a.status === "REJECTED" ? 2000 : 800;
+      const preview = a.content
+        ? `\n  > ${a.content.slice(0, previewLen).replace(/\n/g, "\n  > ")}${a.content.length > previewLen ? `…\n  > [${a.content.length - previewLen} more chars omitted — full content available on request]` : ""}`
         : "";
-      return `${statusIcon} **${a.name}** [${a.status}] — ${new Date(a.updatedAt || a.createdAt).toLocaleDateString("en-GB")}${preview}`;
+      const feedbackLine = a.status === "REJECTED" && (a as any).feedback
+        ? `\n  Reviewer feedback: ${(a as any).feedback}`
+        : "";
+      return `${statusIcon} **${a.name}** [${a.status}] v${(a as any).version || 1} — ${new Date(a.updatedAt || a.createdAt).toLocaleDateString("en-GB")}${feedbackLine}${preview}`;
     }).join("\n\n")
   : "No artefacts generated yet."}
 
