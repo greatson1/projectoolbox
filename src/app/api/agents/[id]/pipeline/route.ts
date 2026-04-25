@@ -190,9 +190,25 @@ export async function GET(
         const t = (a.title || "").toLowerCase();
         return a.status === "PENDING" && (t.startsWith(`${currentPhase.toLowerCase()} gate`) || t.startsWith(`${currentPhase.toLowerCase()}:`));
       });
+      // Always run completion check — we use it both for auto-gate AND for
+      // self-healing the "blocked_tasks_incomplete" status that can stick
+      // around after PM tasks are completed (or after a deadlock fix).
+      const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+      const completion = await getPhaseCompletion(deployment.projectId, currentPhase, agentId);
+
+      // Self-heal stale BLOCKED status: phaseStatus may still be
+      // "blocked_tasks_incomplete" from an earlier check even though the
+      // 3-layer completion now passes. Clear it so the BLOCKED badge and
+      // "Tasks blocking advance" banner stop showing.
+      if (phaseStatus === "blocked_tasks_incomplete" && completion.canAdvance) {
+        await db.agentDeployment.update({
+          where: { id: deployment.id },
+          data: { phaseStatus: pendingGateForPhase ? "waiting_approval" : "active" },
+        }).catch(() => {});
+        phaseStatus = pendingGateForPhase ? "waiting_approval" : "active";
+      }
+
       if (!pendingGateForPhase) {
-        const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
-        const completion = await getPhaseCompletion(deployment.projectId, currentPhase, agentId);
         if (completion.canAdvance) {
           // Pick a sensible requestedById — the org owner (creates pre-deploy
           // by the system are otherwise rejected on FK).
@@ -404,8 +420,13 @@ export async function GET(
       ? (currentPhaseObj!.artefacts as string[]).length
       : 0;
     const generatedCount = currentPhaseArtefacts.length;
+    // Don't render confusing "7/6" when an extra artefact was created on top
+    // of the template. If the agent over-delivers, show the absolute count
+    // with a hint that more than the template were produced.
     const expectedVsGenerated = expectedArtefacts > 0
-      ? `${generatedCount}/${expectedArtefacts}`
+      ? generatedCount > expectedArtefacts
+        ? `${generatedCount} (target ${expectedArtefacts})`
+        : `${generatedCount}/${expectedArtefacts}`
       : String(generatedCount);
 
     // Smarter stall detection:
