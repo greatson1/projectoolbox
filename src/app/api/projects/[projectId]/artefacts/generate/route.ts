@@ -111,12 +111,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
           }, { status: 409 });
         }
 
-        // All checks pass — advance the deployment to the next phase before generating.
+        // All checks pass — advance the deployment to the next phase, then
+        // run the same research → clarification → generation pipeline that
+        // the phase-gate APPROVED handler uses, so this fast-path produces
+        // the same quality output as the official path.
         await db.agentDeployment.update({
           where: { id: deployment.id },
           data: {
             currentPhase: requestedPhase,
-            phaseStatus: "active",
+            phaseStatus: "researching",
             lastCycleAt: new Date(),
             nextCycleAt: new Date(Date.now() + 2 * 60_000),
           },
@@ -133,11 +136,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
           data: {
             agentId: deployment.agentId,
             type: "approval",
-            summary: `Phase advanced: "${deployment.currentPhase}" → "${requestedPhase}" (all artefacts approved). Generating next-phase artefacts...`,
+            summary: `Phase advanced: "${deployment.currentPhase}" → "${requestedPhase}" (all artefacts approved). Running phase research and clarification before generating artefacts...`,
           },
         }).catch(() => {});
         phaseAdvanced = { from: deployment.currentPhase, to: requestedPhase };
-        targetPhase = requestedPhase;
+
+        // Fire-and-forget: research → clarification → generation. Caller gets
+        // an immediate response; the agent posts research findings and
+        // clarification questions to chat as it progresses.
+        const agent = await db.agent.findUnique({
+          where: { id: deployment.agentId },
+          select: { orgId: true },
+        });
+        if (agent?.orgId) {
+          const { runPhaseAdvanceFlow } = await import("@/lib/agents/phase-advance");
+          runPhaseAdvanceFlow({
+            agentId: deployment.agentId,
+            deploymentId: deployment.id,
+            projectId,
+            projectName: project.name,
+            orgId: agent.orgId,
+            fromPhase: deployment.currentPhase,
+            toPhase: requestedPhase,
+            requestedById: (session.user as any).id,
+          }).catch((e) => console.error("[generate] phase-advance flow failed:", e));
+        }
+
+        return NextResponse.json({
+          data: {
+            phaseAdvanced,
+            phase: requestedPhase,
+            generated: 0,
+            skipped: 0,
+            message: `Advanced to "${requestedPhase}" — running phase research and clarification, then generating artefacts.`,
+          },
+        });
       } else {
         const nextDescription = playbookNext && playbookNext !== phaseTableNext
           ? `Methodology playbook says next is "${playbookNext}"; project Phase table says next is "${phaseTableNext ?? "(none)"}".`
