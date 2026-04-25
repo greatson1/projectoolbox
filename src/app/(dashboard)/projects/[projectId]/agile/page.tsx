@@ -225,13 +225,44 @@ export default function AgileBoardPage() {
   // Strip internal seeder tags from description for clean display
   function cleanDescription(raw: string | null | undefined): string {
     if (!raw) return "";
-    return raw
+    // Capture scaffolding markers so we can build a friendly fallback if the
+    // task has no real description content beneath them.
+    const artefactMatch = raw.match(/\[artefact:([^\]]+)\]/);
+    const eventMatch = raw.match(/\[event:([^\]]+)\]/);
+
+    const cleaned = raw
+      .replace(/\[scaffolded:delivery\]/g, "")
+      .replace(/\[scaffolded\s+Parent\]/g, "")
+      .replace(/\[scaffolded\]/g, "")
+      .replace(/\[artefact:[^\]]+\]/g, "")
+      .replace(/\[event:[^\]]+\]/g, "")
       .replace(/\[source:\w+\]\s*/g, "")
       .replace(/Sprint:\s*Sprint\s*\d+\s*\|?\s*/g, "")
       .replace(/Owner:\s*/g, "Assigned to: ")
       .replace(/^\s*\|\s*/, "")
       .replace(/\s*\|\s*$/, "")
+      .replace(/\s{2,}/g, " ")
       .trim();
+
+    if (cleaned.length > 0) return cleaned;
+
+    // Fallback: turn the markers into a short, readable hint so the user
+    // sees something meaningful instead of "[scaffolded:delivery]".
+    if (artefactMatch) {
+      return `Auto-completes when the ${artefactMatch[1]} artefact is generated.`;
+    }
+    if (eventMatch) {
+      const eventLabels: Record<string, string> = {
+        clarification_complete: "all clarification questions are answered",
+        gate_request: "the phase gate is submitted for approval",
+        phase_advanced: "the phase advances to the next stage",
+        stakeholder_updated: "a stakeholder is added or updated",
+        risk_register_updated: "the risk register is updated",
+      };
+      const trigger = eventLabels[eventMatch[1]] || `the "${eventMatch[1]}" event fires`;
+      return `Auto-completes when ${trigger}.`;
+    }
+    return "";
   }
 
   // Strip internal goal prefixes from sprint names/goals
