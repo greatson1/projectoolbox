@@ -30,9 +30,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
   let requestedPhase: string | undefined;
+  let inlinePriorFeedback: Record<string, string> | undefined;
   try {
     const body = await req.json();
     requestedPhase = body?.phase;
+    // Optional caller-provided feedback map — used by the per-artefact
+    // "Regenerate" button which deletes the row before this endpoint runs,
+    // so the feedback would otherwise be unrecoverable. Phase-level
+    // regeneration relies on the DB read below and doesn't need this.
+    if (body?.priorFeedback && typeof body.priorFeedback === "object" && !Array.isArray(body.priorFeedback)) {
+      inlinePriorFeedback = body.priorFeedback as Record<string, string>;
+    }
   } catch { /* no body */ }
 
   const deployment = await db.agentDeployment.findFirst({
@@ -76,6 +84,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   for (const r of rejectedRows) {
     if (r.feedback && r.feedback.trim().length > 0) {
       priorFeedback[r.name] = r.feedback;
+    }
+  }
+  // Merge caller-provided inline feedback (used when the per-artefact
+  // Regenerate button deletes the row before this endpoint runs). Inline
+  // entries win over DB-read entries — the caller had the row in hand and
+  // is the more authoritative source.
+  if (inlinePriorFeedback) {
+    for (const [name, fb] of Object.entries(inlinePriorFeedback)) {
+      if (typeof fb === "string" && fb.trim().length > 0) {
+        priorFeedback[name] = fb;
+      }
     }
   }
   // Audit trail: keep a permanent record of every rejection feedback we are

@@ -222,19 +222,30 @@ export default function ArtefactsPage() {
   // Per-artefact regenerate — for a single rejected artefact. Deletes that
   // record then triggers phase-level regeneration so the agent recreates it.
   const handleRegenerateOne = async (art: any) => {
-    if (!confirm(`Regenerate "${art.name}"? The current rejected version will be deleted and the agent will produce a fresh draft using the latest prompt rules.`)) return;
+    if (!confirm(`Regenerate "${art.name}"? The current rejected version will be deleted and the agent will produce a fresh draft that addresses your rejection feedback.`)) return;
     setRegenerating(true);
     try {
+      // Capture rejection feedback BEFORE deletion so the regeneration prompt
+      // can address it explicitly. The DELETE below removes the row.
+      const priorFeedback: Record<string, string> = {};
+      if (art.feedback && typeof art.feedback === "string" && art.feedback.trim().length > 0) {
+        priorFeedback[art.name] = art.feedback;
+      }
+
       const del = await fetch(`/api/agents/artefacts/${art.id}`, { method: "DELETE" });
       if (!del.ok) {
         const j = await del.json().catch(() => ({}));
         throw new Error(j?.error || `Could not delete rejected artefact (${del.status})`);
       }
-      // Backend defaults to deployment.currentPhase when no phase is passed
+      // Backend defaults to deployment.currentPhase when no phase is passed.
+      // Pass priorFeedback so Sonnet sees the rejection reason in its prompt.
       const res = await fetch(`/api/projects/${projectId}/artefacts/regenerate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(art.phaseName ? { phase: art.phaseName } : {}),
+        body: JSON.stringify({
+          ...(art.phaseName ? { phase: art.phaseName } : {}),
+          ...(Object.keys(priorFeedback).length > 0 ? { priorFeedback } : {}),
+        }),
       });
       const json = await res.json();
       if (res.ok && json?.data) {

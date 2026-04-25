@@ -2107,7 +2107,7 @@ These are handled by the platform automatically. Just write normal text.
             // Find all artefacts for this project to match against
             const allArtefacts = await db.agentArtefact.findMany({
               where: { agentId, projectId: deployment.projectId },
-              select: { id: true, name: true, content: true, format: true, status: true, version: true },
+              select: { id: true, name: true, content: true, format: true, status: true, version: true, feedback: true },
             });
 
             if (allArtefacts.length > 0) {
@@ -2125,6 +2125,15 @@ These are handled by the platform automatically. Just write normal text.
 
               if (target && process.env.ANTHROPIC_API_KEY) {
                 emitStatus("editing", `Revising "${target.name}"...`);
+                // If the artefact is REJECTED, the stored feedback is the
+                // canonical record of what the reviewer wanted changed. Pull
+                // it into the prompt alongside the user's chat message so
+                // Claude addresses the rejection even when the user's
+                // request is terse ("fix it", "redo this").
+                const rejectionContext = target.status === "REJECTED" && (target as any).feedback
+                  ? `\n\nPRIOR REJECTION FEEDBACK from the human reviewer (you MUST address this):\n${(target as any).feedback}\n`
+                  : "";
+
                 // Call Claude to revise the artefact
                 const editPrompt = `You are editing a project management document. Apply the user's requested change to the existing document content.
 
@@ -2132,7 +2141,7 @@ DOCUMENT NAME: ${target.name}
 FORMAT: ${target.format}
 CURRENT CONTENT:
 ${target.content.slice(0, 30000)}
-
+${rejectionContext}
 USER'S EDIT REQUEST:
 ${message}
 
