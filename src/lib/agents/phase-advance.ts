@@ -33,6 +33,19 @@ export interface PhaseAdvanceContext {
 
 /** Execute the post-advance research → clarification → generation pipeline. */
 export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<void> {
+  // 0. Scaffold the new phase's PM + delivery tasks. Without this, the PM
+  // Tracker / pipeline "Delivery Tasks" step shows "No tasks scaffolded for
+  // this phase" and the 3-layer phase-completion check has nothing to count.
+  // Idempotent: onPhaseAdvanced first marks any leftover scaffolded tasks
+  // from the previous phase as done, then scaffolds the new phase. Safe to
+  // call even on the first phase transition.
+  try {
+    const { onPhaseAdvanced } = await import("@/lib/agents/task-scaffolding");
+    await onPhaseAdvanced(ctx.agentId, ctx.projectId, ctx.fromPhase || "", ctx.toPhase);
+  } catch (e) {
+    console.error(`[phase-advance:${ctx.toPhase}] task scaffolding failed:`, e);
+  }
+
   // 1. Phase research — capture latest context before generating docs
   try {
     await db.agentDeployment.update({

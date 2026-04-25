@@ -179,6 +179,38 @@ export async function GET(
     (a) => a.type === "PHASE_GATE"
   );
 
+  // ── Cancel stale PENDING gates for phases the project has already moved past ──
+  // After phase advance, the OLD phase's gate row sometimes lingers as
+  // PENDING (e.g. the user approved it but the status update raced with the
+  // phase advance, or the gate was raised after the user had already moved
+  // on). The Approvals page would then show "Requirements Gate" as pending
+  // even though the project is now on Design. Auto-resolve any PENDING
+  // PHASE_GATE whose phase name doesn't match currentPhase — silently mark
+  // them APPROVED with a note so they drop out of the pending queue.
+  if (currentPhase) {
+    const currentPhaseLC = currentPhase.toLowerCase();
+    const stalePending = phaseGateApprovals.filter((a) => {
+      if (a.status !== "PENDING") return false;
+      const t = (a.title || "").toLowerCase();
+      return !t.startsWith(`${currentPhaseLC} gate`) && !t.startsWith(`${currentPhaseLC}:`);
+    });
+    if (stalePending.length > 0) {
+      await db.approval.updateMany({
+        where: { id: { in: stalePending.map((a) => a.id) } },
+        data: {
+          status: "APPROVED",
+          resolvedAt: new Date(),
+          comment: "Auto-resolved — project has already advanced past this phase.",
+        },
+      }).catch(() => {});
+      phaseGateApprovals = phaseGateApprovals.map((a) =>
+        stalePending.some((s) => s.id === a.id)
+          ? { ...a, status: "APPROVED", resolvedAt: new Date(), comment: "Auto-resolved — project has already advanced past this phase." }
+          : a,
+      );
+    }
+  }
+
   // ── Auto-raise a phase gate when one is genuinely needed ───────────────
   // If the 3-layer phase completion check says canAdvance === true but no
   // PENDING PHASE_GATE exists for this phase, raise one now. Without this,

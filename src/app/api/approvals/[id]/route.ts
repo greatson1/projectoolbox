@@ -246,6 +246,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 },
               });
 
+              // 3b. Scaffold the new phase's PM + delivery tasks. Without
+              // this, the next phase's "Delivery Tasks" pipeline step shows
+              // "No tasks scaffolded" and the 3-layer phase-completion check
+              // has nothing to count, leaving the user unable to satisfy the
+              // gate on the new phase. onPhaseAdvanced also marks any
+              // leftover scaffolded tasks from the previous phase as DONE.
+              try {
+                const { onPhaseAdvanced } = await import("@/lib/agents/task-scaffolding");
+                await onPhaseAdvanced(deployment.agentId, deployment.projectId, currentPhase ?? "", nextPhase);
+              } catch (e) {
+                console.error("[approval] task scaffolding for next phase failed:", e);
+              }
+
               // 4. Run phase-specific research, then generate artefacts (fire & forget)
               (async () => {
                 // 4a. Phase research — capture latest context before generating docs

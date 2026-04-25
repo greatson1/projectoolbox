@@ -952,7 +952,11 @@ export default function AgentPipelinePage() {
               })()}
             </div>
             <div className="flex items-start overflow-x-auto pb-4 gap-0">
-              {data.steps.map((step, i) => (
+              {/* Only show cycling steps in the per-phase carousel — one-off
+                  steps like "Deploy Agent" belong to project init, not the
+                  current phase, so they shouldn't show as the first card in
+                  the "Design Phase — Step by Step" strip. */}
+              {data.steps.filter((s) => s.cycles).map((step, i) => (
                 <React.Fragment key={step.id}>
                   <StepCard
                     step={step}
