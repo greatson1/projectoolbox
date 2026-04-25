@@ -47,5 +47,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  return NextResponse.json({ data: { joinUrl: result.joinUrl } }, { status: 201 });
+  return NextResponse.json({
+    data: {
+      joinUrl: result.joinUrl,
+      botDispatched: result.botDispatched ?? false,
+      botProvider: result.botProvider ?? null,
+    },
+  }, { status: 201 });
 }

@@ -244,6 +244,8 @@ function CreateEventModal({ onClose }: { onClose: () => void }) {
   const [agenda, setAgenda] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{ joinUrl: string; botDispatched: boolean; botProvider: string | null } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const { data: projects } = useProjects();
   const createEvent = useCreateCalendarEvent();
@@ -285,8 +287,14 @@ function CreateEventModal({ onClose }: { onClose: () => void }) {
           // mutation), so without this the page stays on stale "No events"
           // until manual refresh.
           await queryClient.invalidateQueries({ queryKey: ["calendar"] });
-          setResult(data.data?.joinUrl || "Meeting created!");
-          setTimeout(onClose, 2000);
+          // Show a persistent success card with Join + Copy buttons instead of
+          // auto-closing after 2s — the user needs the link to actually attend.
+          setSuccess({
+            joinUrl: data.data?.joinUrl || "",
+            botDispatched: !!data.data?.botDispatched,
+            botProvider: data.data?.botProvider ?? null,
+          });
+          setSubmitting(false);
         } else {
           setResult(data.error || "Failed to schedule");
           setSubmitting(false);
@@ -305,6 +313,78 @@ function CreateEventModal({ onClose }: { onClose: () => void }) {
       setSubmitting(false);
     }
   };
+
+  // Persistent success state — shown once a Zoom meeting has been created.
+  // Gives the user a clickable "Join meeting" button + "Copy link" + a clear
+  // status of whether the bot will dial in. Closes only when the user clicks
+  // "Done", not on a 2-second auto-timer.
+  if (success) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <Card className="w-full max-w-lg">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Meeting scheduled</h2>
+              <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              <span className="font-semibold text-foreground">{title}</span> is on the calendar for{" "}
+              {new Date(startTime).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
+            </p>
+
+            <div className="rounded-lg border border-border bg-muted/30 p-3 mb-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Join URL</p>
+              <p className="text-xs font-mono break-all text-foreground select-all">{success.joinUrl}</p>
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              <a
+                href={success.joinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-colors"
+              >
+                📹 Join meeting
+              </a>
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(success.joinUrl);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1800);
+                  } catch {/* noop */}
+                }}
+                className="px-4 py-2 rounded-lg border border-border hover:bg-muted/40 text-sm font-medium"
+              >
+                {copied ? "Copied" : "Copy link"}
+              </button>
+            </div>
+
+            <div className={`rounded-lg p-3 text-xs ${success.botDispatched ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300"}`}>
+              {success.botDispatched ? (
+                <>
+                  <span className="font-semibold">Note-taking bot dispatched</span>
+                  {success.botProvider ? ` (${success.botProvider})` : ""}.
+                  It will join at the meeting's start time, record, and post the
+                  transcript-driven summary, decisions, risks, and action items
+                  to the Knowledge Base after the call.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold">No note-taking bot will join.</span>{" "}
+                  Recording credentials aren't configured for this org, so the
+                  agent won't capture the call automatically. You can paste a
+                  recap on the calendar event afterwards if you want it on file.
+                </>
+              )}
+            </div>
+
+            <Button className="w-full mt-4" onClick={onClose}>Done</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
