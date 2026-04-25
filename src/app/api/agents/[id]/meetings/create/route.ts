@@ -192,67 +192,58 @@ export async function POST(
   let botId: string | null = null;
   let botStatus: string = "idle";
 
+  let dispatchResult: any = null;
   if (autoBot) {
-    try {
-      const canRecall = await orgCanUseFeature(caller.orgId, "recallBot");
-      const canCustom = await orgCanUseFeature(caller.orgId, "customBot" as any);
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://projectoolbox.vercel.app";
-      const webhookUrl = `${appUrl}/api/webhooks/meeting-transcript`;
-      const botName = `${agent.name} (AI Assistant)`;
+    const canRecall = await orgCanUseFeature(caller.orgId, "recallBot");
+    const canCustom = await orgCanUseFeature(caller.orgId, "customBot" as any);
 
-      let provider: "recall" | "custom" = "recall";
-      let botCost: number = CREDIT_COSTS.RECALL_BOT_PER_HOUR;
+    // Plan-tier gate: if neither bot feature is enabled for this org, skip
+    // dispatch entirely with a specific upgrade prompt. Same upgrade copy
+    // as before, just consolidated.
+    if (!canRecall && !canCustom) {
+      await db.meeting.update({ where: { id: meeting.id }, data: { botProvider: null } }).catch(() => {});
+      return NextResponse.json({
+        data: { meetingId: meeting.id, calendarEventId: calEvent.id, joinUrl, botDispatched: false,
+                message: `${title} created. Upgrade your plan to have ${agent.name} join meetings automatically.` },
+      }, { status: 201 });
+    }
 
-      if (canCustom && process.env.CUSTOM_BOT_SERVICE_URL) {
-        provider = "custom";
-        botCost = CREDIT_COSTS.CUSTOM_BOT_PER_HOUR;
-      } else if (!canRecall || !process.env.RECALL_API_KEY) {
-        // No bot available — meeting created but not recorded
-        await db.meeting.update({ where: { id: meeting.id }, data: { botProvider: null } });
-        return NextResponse.json({
-          data: { meetingId: meeting.id, calendarEventId: calEvent.id, joinUrl, botDispatched: false,
-                  message: `${title} created. Upgrade to Starter or above to have ${agent.name} join automatically.` },
-        }, { status: 201 });
-      }
+    // Pick the right per-hour cost based on which providers are unlocked
+    // for the org. Custom bot is preferred and cheaper.
+    const botCost = (canCustom && process.env.CUSTOM_BOT_SERVICE_URL)
+      ? CREDIT_COSTS.CUSTOM_BOT_PER_HOUR
+      : CREDIT_COSTS.RECALL_BOT_PER_HOUR;
 
-      const budgetCheck = await CreditService.checkAgentBudget(agentId, caller.orgId, botCost);
-      if (!budgetCheck.allowed) {
-        return NextResponse.json({
-          data: { meetingId: meeting.id, calendarEventId: calEvent.id, joinUrl, botDispatched: false,
-                  message: `Meeting created — insufficient credits (${budgetCheck.orgBalance}) to dispatch bot.` },
-        }, { status: 201 });
-      }
+    const budgetCheck = await CreditService.checkAgentBudget(agentId, caller.orgId, botCost);
+    if (!budgetCheck.allowed) {
+      return NextResponse.json({
+        data: { meetingId: meeting.id, calendarEventId: calEvent.id, joinUrl, botDispatched: false,
+                message: `${title} created — insufficient credits (${budgetCheck.orgBalance}) to dispatch ${agent.name}.` },
+      }, { status: 201 });
+    }
 
-      if (provider === "recall") {
-        const bot = await createRecallBot(joinUrl, botName, webhookUrl, {
-          joinAt: scheduledAt ? new Date(scheduledAt) : undefined,
-        });
-        botId = bot.id;
-        botStatus = normaliseBotStatus(bot.status.code);
-      } else {
-        const { createCustomBot } = await import("@/lib/custom-bot-client");
-        const bot = await createCustomBot(meeting.id, agentId, caller.orgId, joinUrl, botName, {
-          joinAt: scheduledAt ? new Date(scheduledAt) : undefined,
-        });
-        botId = bot.id;
-        botStatus = normaliseBotStatus(bot.status.code);
-      }
+    // Dispatch via the shared helper: tries Custom first, falls back to
+    // Recall.ai on failure, returns a structured result with the real
+    // reason if neither succeeded — surfaced to the user verbatim.
+    const { dispatchMeetingBot } = await import("@/lib/agents/dispatch-meeting-bot");
+    dispatchResult = await dispatchMeetingBot({
+      meetingId: meeting.id,
+      agentId,
+      orgId: caller.orgId,
+      agentName: agent.name,
+      joinUrl,
+      scheduledAt,
+    });
 
-      await db.meeting.update({
-        where: { id: meeting.id },
-        data: { recallBotId: botId, recallBotStatus: botStatus, botProvider: provider, status: "SCHEDULED" },
-      });
-
+    if (dispatchResult.dispatched) {
+      botId = dispatchResult.botId;
+      botStatus = dispatchResult.botStatus;
       await CreditService.deduct(
-        caller.orgId, botCost,
-        `${provider === "recall" ? "Recall.ai" : "Custom"} bot: "${title}"`,
+        caller.orgId,
+        dispatchResult.provider === "recall" ? CREDIT_COSTS.RECALL_BOT_PER_HOUR : CREDIT_COSTS.CUSTOM_BOT_PER_HOUR,
+        `${dispatchResult.provider === "recall" ? "Recall.ai" : "Custom"} bot: "${title}"`,
         agentId,
-      );
-
-    } catch (e: any) {
-      console.error("[create-meeting] bot dispatch failed:", e);
-      // Meeting created successfully even if bot fails
-      await db.meeting.update({ where: { id: meeting.id }, data: { recallBotStatus: "failed" } });
+      ).catch(() => {});
     }
   }
 
@@ -264,9 +255,14 @@ export async function POST(
       botId,
       botStatus,
       botDispatched: !!botId,
+      botProvider: dispatchResult?.dispatched ? dispatchResult.provider : null,
+      botFailureReason: dispatchResult && !dispatchResult.dispatched ? dispatchResult.reason : undefined,
+      botFailureDetail: dispatchResult && !dispatchResult.dispatched ? dispatchResult.detail : undefined,
       message: botId
-        ? `${title} created. ${agent.name} will join automatically${scheduledAt ? " at the scheduled time" : " shortly"}.`
-        : `${title} created successfully. ${agent.name} was not dispatched.`,
+        ? `${title} created. ${dispatchResult?.message || `${agent.name} will join automatically.`}`
+        : dispatchResult?.message
+          ? `${title} created. ${dispatchResult.message}`
+          : `${title} created successfully. ${agent.name} was not dispatched.`,
     },
   }, { status: 201 });
 }

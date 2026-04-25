@@ -23,7 +23,7 @@ export function NewEventModal({ onClose }: { onClose: () => void }) {
   const [agenda, setAgenda] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ joinUrl: string; botDispatched: boolean; botProvider: string | null } | null>(null);
+  const [success, setSuccess] = useState<{ joinUrl: string; botDispatched: boolean; botProvider: string | null; botFailureDetail: string | null } | null>(null);
   const [copied, setCopied] = useState(false);
 
   const { data: projects } = useProjects();
@@ -68,6 +68,7 @@ export function NewEventModal({ onClose }: { onClose: () => void }) {
             joinUrl: data.data?.joinUrl || "",
             botDispatched: !!data.data?.botDispatched,
             botProvider: data.data?.botProvider ?? null,
+            botFailureDetail: data.data?.botFailureDetail ?? null,
           });
           setSubmitting(false);
         } else {
@@ -142,10 +143,10 @@ export function NewEventModal({ onClose }: { onClose: () => void }) {
                 </>
               ) : (
                 <>
-                  <span className="font-semibold">No note-taking bot will join.</span>{" "}
-                  Recording credentials aren't configured for this org, so the
-                  agent won't capture the call automatically. You can paste a
-                  recap on the calendar event afterwards if you want it on file.
+                  <span className="font-semibold">No note-taking bot joined.</span>{" "}
+                  {success.botFailureDetail
+                    ? <>The dispatch attempt failed: <span className="font-mono">{success.botFailureDetail}</span>. The meeting still works — you can join via the link above; the agent just won't capture a transcript this time.</>
+                    : <>Recording credentials aren't configured for this org, so the agent won't capture the call automatically. You can paste a recap on the calendar event afterwards if you want it on file.</>}
                 </>
               )}
             </div>

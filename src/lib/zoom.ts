@@ -192,7 +192,17 @@ export async function agentScheduleZoomMeeting(agentId: string, data: {
   projectId?: string;
   invitees?: { name: string; email: string }[];
   agenda?: string;
-}): Promise<{ success: boolean; joinUrl?: string; error?: string; botDispatched?: boolean; botProvider?: "recall" | "custom" | null }> {
+}): Promise<{
+  success: boolean;
+  joinUrl?: string;
+  error?: string;
+  botDispatched?: boolean;
+  botProvider?: "recall" | "custom" | null;
+  /** When botDispatched is false: short machine code so the UI can match on it. */
+  botFailureReason?: string;
+  /** When botDispatched is false: human-readable reason to show the user. */
+  botFailureDetail?: string;
+}> {
   const agent = await db.agent.findUnique({
     where: { id: agentId },
     include: { org: { select: { id: true } }, agentEmail: true },
@@ -245,49 +255,21 @@ export async function agentScheduleZoomMeeting(agentId: string, data: {
     },
   });
 
-  // Dispatch the recording bot — Recall.ai (or self-hosted Custom bot) joins
-  // the meeting at start time, captures the audio + transcript, and posts to
-  // /api/webhooks/meeting-transcript when done. Same logic the
-  // /api/agents/[id]/meetings/create endpoint uses; previously this Calendar
-  // path silently skipped it, leaving the agent with no way to capture what
-  // was said. Best-effort: bot failure does NOT fail the meeting creation.
-  let botId: string | null = null;
-  let botProvider: "recall" | "custom" | null = null;
-  try {
-    const haveCustom = !!process.env.CUSTOM_BOT_SERVICE_URL && !!process.env.CUSTOM_BOT_SERVICE_KEY;
-    const haveRecall = !!process.env.RECALL_API_KEY;
-    if (haveCustom || haveRecall) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "";
-      const webhookUrl = `${appUrl}/api/webhooks/meeting-transcript`;
-      const botName = `${agent.name} (AI Assistant)`;
-      const joinAt = new Date(data.startTime);
-
-      if (haveCustom) {
-        const { createCustomBot } = await import("@/lib/custom-bot-client");
-        const bot = await createCustomBot(meeting.id, agentId, orgId, zoom.joinUrl, botName, { joinAt });
-        botId = bot.id;
-        botProvider = "custom";
-      } else {
-        const { createRecallBot, normaliseBotStatus } = await import("@/lib/recall-client");
-        const bot = await createRecallBot(zoom.joinUrl, botName, webhookUrl, { joinAt });
-        botId = bot.id;
-        botProvider = "recall";
-        // Eagerly normalise the initial status string for visibility
-        normaliseBotStatus(bot.status.code);
-      }
-
-      await db.meeting.update({
-        where: { id: meeting.id },
-        data: { recallBotId: botId, botProvider },
-      }).catch(() => {});
-    }
-  } catch (e) {
-    console.error("[zoom] bot dispatch failed:", e);
-    await db.meeting.update({
-      where: { id: meeting.id },
-      data: { recallBotStatus: "failed" },
-    }).catch(() => {});
-  }
+  // Dispatch the recording bot via the shared helper. It tries the
+  // self-hosted Custom bot first, falls back to Recall.ai if Custom fails,
+  // and returns a structured reason when neither works so the caller can
+  // tell the user precisely why the agent isn't joining.
+  const { dispatchMeetingBot } = await import("@/lib/agents/dispatch-meeting-bot");
+  const dispatch = await dispatchMeetingBot({
+    meetingId: meeting.id,
+    agentId,
+    orgId,
+    agentName: agent.name,
+    joinUrl: zoom.joinUrl,
+    scheduledAt: data.startTime,
+  });
+  const botId: string | null = dispatch.dispatched ? dispatch.botId : null;
+  const botProvider: "recall" | "custom" | null = dispatch.dispatched ? dispatch.provider : null;
 
   // Send invite emails via agent email
   if (data.invitees?.length && agent.agentEmail?.isActive) {
@@ -339,5 +321,12 @@ export async function agentScheduleZoomMeeting(agentId: string, data: {
     }
   }
 
-  return { success: true, joinUrl: zoom.joinUrl, botDispatched: !!botId, botProvider };
+  return {
+    success: true,
+    joinUrl: zoom.joinUrl,
+    botDispatched: !!botId,
+    botProvider,
+    botFailureReason: dispatch.dispatched ? undefined : dispatch.reason,
+    botFailureDetail: dispatch.dispatched ? undefined : dispatch.detail,
+  };
 }

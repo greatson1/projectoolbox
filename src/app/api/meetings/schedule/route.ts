@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
       joinUrl: result.joinUrl,
       botDispatched: result.botDispatched ?? false,
       botProvider: result.botProvider ?? null,
+      botFailureReason: result.botFailureReason ?? null,
+      botFailureDetail: result.botFailureDetail ?? null,
     },
   }, { status: 201 });
 }
