@@ -96,6 +96,12 @@ async function getCachedResult(orgId: string, queryKey: string): Promise<Researc
 
 /**
  * Save research result to knowledge base with 7-day cache.
+ *
+ * Project-scoped results are gated behind a research-finding approval so
+ * the agent can't silently shape artefacts with web-search content the
+ * user hasn't seen. Workspace-scoped results stay open — they're
+ * methodology/template caches reused across projects, not facts about a
+ * specific project.
  */
 async function cacheResult(
   orgId: string,
@@ -107,8 +113,12 @@ async function cacheResult(
   type: string,
 ): Promise<void> {
   const cacheExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  const isProjectScoped = !!projectId && !!agentId;
 
-  await db.knowledgeBaseItem.create({
+  const tags = [type, "research", "auto-generated"];
+  if (isProjectScoped) tags.push("pending_user_confirmation");
+
+  const created = await db.knowledgeBaseItem.create({
     data: {
       orgId,
       agentId,
@@ -117,11 +127,26 @@ async function cacheResult(
       type: "URL",
       title,
       content,
-      tags: [type, "research", "auto-generated"],
+      tags,
       metadata: { sources, researchType: type, generatedAt: new Date().toISOString() },
       cachedUntil: cacheExpiry,
     },
   });
+
+  if (isProjectScoped) {
+    try {
+      const { createResearchApproval } = await import("./research-approval");
+      await createResearchApproval({
+        agentId: agentId!,
+        projectId: projectId!,
+        kbItemIds: [created.id],
+        source: "web_research",
+        query: type,
+      });
+    } catch (e) {
+      console.error("[web-research] createResearchApproval failed:", e);
+    }
+  }
 }
 
 // ─── Public Research Functions ───

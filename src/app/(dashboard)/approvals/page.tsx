@@ -41,9 +41,20 @@ function ApprovalLikelihoodRow({ type, urgency, projectId }: { type: string; urg
  * "X facts extracted" line and has to dig into the KB to know what
  * they're approving.
  */
-function ResearchFindingsPreview({ kbItemIds, projectId }: { kbItemIds: string[]; projectId?: string }) {
+function ResearchFindingsPreview({
+  approvalId, kbItemIds, projectId, onResolved,
+}: {
+  approvalId: string;
+  kbItemIds: string[];
+  projectId?: string;
+  onResolved?: () => void;
+}) {
   const [rows, setRows] = useState<Array<{ id: string; title: string; content: string }>>([]);
   const [loading, setLoading] = useState(true);
+  // Default: all checked = all approved on submit. Unchecking a row marks
+  // it for rejection. Submit splits the bundle accordingly.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!projectId || !kbItemIds || kbItemIds.length === 0) { setLoading(false); return; }
@@ -51,11 +62,49 @@ function ResearchFindingsPreview({ kbItemIds, projectId }: { kbItemIds: string[]
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         const list = (j?.data) as any[];
-        if (Array.isArray(list)) setRows(list);
+        if (Array.isArray(list)) {
+          setRows(list);
+          setCheckedIds(new Set(list.map((r: any) => r.id))); // default all checked
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [projectId, kbItemIds.join(",")]);
+
+  const toggle = (id: string) => {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const allChecked = rows.length > 0 && rows.every(r => checkedIds.has(r.id));
+  const noneChecked = checkedIds.size === 0;
+  const toggleAll = () => {
+    if (allChecked) setCheckedIds(new Set());
+    else setCheckedIds(new Set(rows.map(r => r.id)));
+  };
+
+  const submit = async () => {
+    if (rows.length === 0) return;
+    setSubmitting(true);
+    try {
+      const approveIds = rows.filter(r => checkedIds.has(r.id)).map(r => r.id);
+      const rejectIds = rows.filter(r => !checkedIds.has(r.id)).map(r => r.id);
+      const res = await fetch(`/api/approvals/${approvalId}/apply-per-fact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approveIds, rejectIds }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || `${res.status}`);
+      onResolved?.();
+    } catch (e: any) {
+      alert(e?.message || "Could not save");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) return <p className="text-[11px] text-muted-foreground">Loading research findings…</p>;
   if (rows.length === 0) {
@@ -70,21 +119,50 @@ function ResearchFindingsPreview({ kbItemIds, projectId }: { kbItemIds: string[]
     <div className="mt-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5">
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          Research findings — {rows.length}
+          Research findings — {checkedIds.size}/{rows.length} kept
         </span>
-        <span className="text-[9px] text-blue-500/80 font-semibold">All gated until approved</span>
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="text-[10px] text-primary hover:underline font-semibold"
+        >
+          {allChecked ? "Uncheck all" : "Check all"}
+        </button>
       </div>
       <ul className="space-y-1.5 max-h-64 overflow-y-auto">
-        {rows.map(r => (
-          <li key={r.id} className="text-[11px]">
-            <p className="font-semibold text-foreground">{r.title}</p>
-            <p className="text-muted-foreground mt-0.5 line-clamp-2">{r.content}</p>
-          </li>
-        ))}
+        {rows.map(r => {
+          const checked = checkedIds.has(r.id);
+          return (
+            <li key={r.id} className="text-[11px]">
+              <label className="flex items-start gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(r.id)}
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-emerald-500 flex-shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className={`font-semibold ${checked ? "text-foreground" : "text-muted-foreground line-through"}`}>{r.title}</p>
+                  <p className="text-muted-foreground mt-0.5 line-clamp-2">{r.content}</p>
+                </div>
+              </label>
+            </li>
+          );
+        })}
       </ul>
-      <p className="text-[10px] text-muted-foreground mt-2">
-        Approve to flip every fact above to <span className="font-semibold text-emerald-500">user_confirmed / HIGH</span> trust. Reject to discard the whole batch.
-      </p>
+      <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border/30">
+        <p className="text-[10px] text-muted-foreground flex-1">
+          Checked → <span className="text-emerald-500 font-semibold">user_confirmed/HIGH</span>. Unchecked → discarded.
+        </p>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting || noneChecked && rows.length > 1}
+          className="px-3 py-1 rounded-md bg-primary text-white text-[11px] font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
+        >
+          {submitting ? "Saving…" : noneChecked ? "Reject all" : checkedIds.size === rows.length ? "Approve all" : `Apply (${checkedIds.size} keep, ${rows.length - checkedIds.size} discard)`}
+        </button>
+      </div>
     </div>
   );
 }
@@ -616,8 +694,10 @@ export default function ApprovalsPage() {
                         )}
                         {item.type === "CHANGE_REQUEST" && item.impact?.subtype === "research_finding" && (
                           <ResearchFindingsPreview
+                            approvalId={item.id}
                             projectId={item.projectId || item.project?.id}
                             kbItemIds={Array.isArray(item.impact?.kbItemIds) ? item.impact.kbItemIds : []}
+                            onResolved={() => refetch()}
                           />
                         )}
                       </div>
