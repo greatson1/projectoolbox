@@ -337,11 +337,15 @@ Return ONLY a JSON array of the 1-based indices to flag, e.g. [2, 5, 7]. If none
     console.error("[research-validation] cross-check failed (storing all as STANDARD):", e);
   }
 
-  // Store each fact to KB. Flagged facts get pending_user_confirmation so
-  // getProjectKnowledgeContext excludes them from prompts until the user
-  // explicitly confirms.
+  // Store each fact to KB. ALL research facts now land tagged
+  // pending_user_confirmation so getProjectKnowledgeContext excludes them
+  // from artefact prompts until the user signs off via the approval queue.
+  // Previously only "flagged" (low-confidence) facts were gated; the rest
+  // silently became inputs to artefact generation. Now every fact follows
+  // the same human-in-the-loop path.
   let stored = 0;
   let flaggedCount = 0;
+  const createdIds: string[] = [];
   for (const fact of facts.slice(0, 20)) {
     if (!fact.title || !fact.content) continue;
     try {
@@ -352,7 +356,7 @@ Return ONLY a JSON array of the 1-based indices to flag, e.g. [2, 5, 7]. If none
       if (existing) continue; // Don't duplicate
 
       const isFlagged = flaggedTitles.has(fact.title);
-      await db.knowledgeBaseItem.create({
+      const created = await db.knowledgeBaseItem.create({
         data: {
           orgId,
           agentId,
@@ -367,24 +371,43 @@ Return ONLY a JSON array of the 1-based indices to flag, e.g. [2, 5, 7]. If none
             "feasibility",
             "perplexity",
             queryLabel.toLowerCase().replace(/\s+/g, "_"),
-            ...(isFlagged ? ["pending_user_confirmation", "needs_review"] : []),
+            "pending_user_confirmation",
+            ...(isFlagged ? ["needs_review"] : []),
           ],
           metadata: { source: "perplexity_research", extractedAt: new Date().toISOString(), flaggedForReview: isFlagged } as any,
         },
       });
       stored++;
       if (isFlagged) flaggedCount++;
+      createdIds.push(created.id);
     } catch {}
   }
 
-  // Surface a chat message when any fact is flagged so the user knows to
-  // confirm — otherwise these facts sit invisible until manually reviewed.
+  // Bundle the findings into a single approval row so the user reviews them
+  // through the approval queue instead of digging through the KB. Keeping
+  // the chat heads-up too for the flagged subset.
+  if (createdIds.length > 0) {
+    try {
+      const { createResearchApproval } = await import("@/lib/agents/research-approval");
+      await createResearchApproval({
+        agentId,
+        projectId,
+        kbItemIds: createdIds,
+        source: "perplexity_research",
+        query: queryLabel,
+        flaggedCount,
+      });
+    } catch (e) {
+      console.error("[feasibility-research] createResearchApproval failed:", e);
+    }
+  }
+
   if (flaggedCount > 0) {
     await db.chatMessage.create({
       data: {
         agentId,
         role: "agent",
-        content: `Research returned ${stored} fact${stored !== 1 ? "s" : ""} (${queryLabel}). I've flagged **${flaggedCount}** for your confirmation — they conflict with what we already know, or were specific claims I couldn't verify in the source. Visit the Knowledge Base to review and confirm or edit them. Until then I won't use them to generate artefacts.`,
+        content: `Research returned ${stored} fact${stored !== 1 ? "s" : ""} (${queryLabel}). I've flagged **${flaggedCount}** as low-confidence. The full batch is now in the Approvals queue for your review — nothing influences artefact generation until you approve.`,
       },
     }).catch(() => {});
   }
@@ -674,6 +697,12 @@ export async function runPhaseResearch(
   });
 
   if (queries.length === 0) {
+    // KB already covers this phase's topics — count as research done so the
+    // resolver doesn't loop us back to "needs research".
+    try {
+      const { markResearchComplete } = await import("@/lib/agents/phase-next-action");
+      await markResearchComplete(projectId, phaseName);
+    } catch {}
     return {
       factsDiscovered: 0, queries: [], summary: `KB already covers topics for "${phaseName}" — skipping redundant research.`,
       sections: [], facts: existingKB.filter((k) => (k.tags || []).includes(phaseName.toLowerCase())).map((k) => ({ title: k.title, content: k.content.slice(0, 300) })),
@@ -722,6 +751,16 @@ export async function runPhaseResearch(
       summary: `Phase research for "${phaseName}" complete — ${totalFacts} new facts from ${allResearch.length} queries.`,
     },
   }).catch(() => {});
+
+  // Audit-trail mark for the phase-next-action resolver. Records that
+  // research has been run for this phase so downstream gate checks can
+  // distinguish "research never ran" from "research ran but found no facts".
+  try {
+    const { markResearchComplete } = await import("@/lib/agents/phase-next-action");
+    await markResearchComplete(projectId, phaseName);
+  } catch (e) {
+    console.error(`[phase-research] markResearchComplete failed for ${phaseName}:`, e);
+  }
 
   const sections: ResearchSection[] = allResearch.map((r, i) => ({ label: queryLabels[i], content: r }));
   const storedFacts = await db.knowledgeBaseItem.findMany({

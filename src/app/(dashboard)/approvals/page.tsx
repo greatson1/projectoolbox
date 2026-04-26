@@ -34,6 +34,61 @@ function ApprovalLikelihoodRow({ type, urgency, projectId }: { type: string; urg
  * — the previous static recommendation copy claimed "all criteria met"
  * regardless of reality.
  */
+/**
+ * Inline preview for research-finding approvals — shows the actual facts
+ * the user is about to accept or reject, fetched from the KB rows linked
+ * via approval.impact.kbItemIds. Without this the user sees a generic
+ * "X facts extracted" line and has to dig into the KB to know what
+ * they're approving.
+ */
+function ResearchFindingsPreview({ kbItemIds, projectId }: { kbItemIds: string[]; projectId?: string }) {
+  const [rows, setRows] = useState<Array<{ id: string; title: string; content: string }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!projectId || !kbItemIds || kbItemIds.length === 0) { setLoading(false); return; }
+    fetch(`/api/projects/${projectId}/kb-by-ids?ids=${encodeURIComponent(kbItemIds.join(","))}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        const list = (j?.data) as any[];
+        if (Array.isArray(list)) setRows(list);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [projectId, kbItemIds.join(",")]);
+
+  if (loading) return <p className="text-[11px] text-muted-foreground">Loading research findings…</p>;
+  if (rows.length === 0) {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        Research findings live in the Knowledge Base. They are gated until you approve here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Research findings — {rows.length}
+        </span>
+        <span className="text-[9px] text-blue-500/80 font-semibold">All gated until approved</span>
+      </div>
+      <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+        {rows.map(r => (
+          <li key={r.id} className="text-[11px]">
+            <p className="font-semibold text-foreground">{r.title}</p>
+            <p className="text-muted-foreground mt-0.5 line-clamp-2">{r.content}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[10px] text-muted-foreground mt-2">
+        Approve to flip every fact above to <span className="font-semibold text-emerald-500">user_confirmed / HIGH</span> trust. Reject to discard the whole batch.
+      </p>
+    </div>
+  );
+}
+
 function GatePrereqSummary({ projectId, phase }: { projectId?: string; phase?: string }) {
   const [prereqs, setPrereqs] = useState<any[] | null>(null);
   const [phaseObj, setPhaseObj] = useState<any | null>(null);
@@ -543,6 +598,8 @@ export default function ApprovalsPage() {
                         <p className="text-xs text-muted-foreground">
                           {item.type === "PHASE_GATE"
                             ? `Verify the gate prerequisites below before approving. Any unmet mandatory prerequisite (marked *) must be satisfied — either by completing the underlying work or, if the heuristic can't auto-check it, ticking it manually on the PM Tracker. Use "Request Changes" if any artefacts need revision first.`
+                            : item.type === "CHANGE_REQUEST" && item.impact?.subtype === "research_finding"
+                            ? `Research findings from ${item.impact.source || "an external source"} are gated until you approve. Each fact is currently tagged pending_user_confirmation and excluded from artefact-generation prompts. Approve to flip them to user_confirmed/HIGH trust; reject to discard the whole batch.`
                             : item.type === "CHANGE_REQUEST"
                             ? `The proposed change has been assessed as ${riskTier.toLowerCase()} risk (score ${riskScore}/16). Approving applies the change to the project baseline. Rejecting leaves the baseline unchanged.`
                             : item.type === "RISK_RESPONSE"
@@ -555,6 +612,12 @@ export default function ApprovalsPage() {
                           <GatePrereqSummary
                             projectId={item.projectId || item.project?.id}
                             phase={(item.title || "").split(" Gate")[0]?.trim() || undefined}
+                          />
+                        )}
+                        {item.type === "CHANGE_REQUEST" && item.impact?.subtype === "research_finding" && (
+                          <ResearchFindingsPreview
+                            projectId={item.projectId || item.project?.id}
+                            kbItemIds={Array.isArray(item.impact?.kbItemIds) ? item.impact.kbItemIds : []}
                           />
                         )}
                       </div>

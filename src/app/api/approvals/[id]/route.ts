@@ -154,6 +154,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         trackPhaseGateDecision(approval.projectId!, approval.title, null, newStatus as "APPROVED" | "REJECTED", approverName).catch(() => {});
       }
     }).catch(() => {});
+
+    // Research-finding subtype: apply the decision to the linked KB rows.
+    // CHANGE_REQUEST + impact.subtype === "research_finding" carries an array
+    // of KB ids that should flip to user_confirmed/HIGH (approve) or be
+    // deleted entirely (reject). See createResearchApproval().
+    try {
+      const meta = approval.impact as Record<string, unknown> | null;
+      if (meta && meta.subtype === "research_finding") {
+        const { applyResearchApprovalDecision } = await import("@/lib/agents/research-approval");
+        const out = await applyResearchApprovalDecision(
+          { id: approval.id, impact: approval.impact },
+          newStatus as "APPROVED" | "REJECTED",
+        );
+        await db.agentActivity.create({
+          data: {
+            agentId: approval.requestedById,
+            type: "approval",
+            summary: newStatus === "APPROVED"
+              ? `Approved research findings — ${out.applied} fact(s) flipped to trusted KB.`
+              : `Rejected research findings — ${out.applied} fact(s) discarded.`,
+          },
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[approvals] research-finding decision apply failed:", e);
+    }
   }
 
   // Find active deployment for this project
@@ -176,12 +202,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           const project = await db.project.findUnique({ where: { id: deployment.projectId } });
           if (project) {
             const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
-            const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
             const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+            const { markGateApproved } = await import("@/lib/agents/phase-next-action");
 
             const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
             const currentPhase = deployment.currentPhase;
             const nextPhase = currentPhase ? getNextPhase(methodologyId, currentPhase) : null;
+
+            // Audit-trail: record that this phase's gate has been approved by
+            // the user. Read by the phase-next-action resolver to confirm
+            // gate_approval is satisfied before allowing "advance" state.
+            if (currentPhase) {
+              await markGateApproved(deployment.projectId, currentPhase);
+            }
 
             // ── 3-layer completion check ──
             if (currentPhase) {
@@ -246,123 +279,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 },
               });
 
-              // 3b. Scaffold the new phase's PM + delivery tasks. Without
-              // this, the next phase's "Delivery Tasks" pipeline step shows
-              // "No tasks scaffolded" and the 3-layer phase-completion check
-              // has nothing to count, leaving the user unable to satisfy the
-              // gate on the new phase. onPhaseAdvanced also marks any
-              // leftover scaffolded tasks from the previous phase as DONE.
-              try {
-                const { onPhaseAdvanced } = await import("@/lib/agents/task-scaffolding");
-                await onPhaseAdvanced(deployment.agentId, deployment.projectId, currentPhase ?? "", nextPhase);
-              } catch (e) {
-                console.error("[approval] task scaffolding for next phase failed:", e);
-              }
-
-              // 4. Run phase-specific research, then generate artefacts (fire & forget)
-              (async () => {
-                // 4a. Phase research — capture latest context before generating docs
-                try {
-                  await db.agentDeployment.update({
-                    where: { id: deployment.id },
-                    data: { phaseStatus: "researching" },
-                  });
-
-                  const { runPhaseResearch } = await import("@/lib/agents/feasibility-research");
-                  const research = await runPhaseResearch(
-                    deployment.agentId,
-                    deployment.projectId!,
-                    orgId,
-                    nextPhase,
-                  );
-
-                  if (research.factsDiscovered > 0) {
-                    await db.chatMessage.create({
-                      data: {
-                        agentId: deployment.agentId,
-                        role: "agent",
-                        content: "__RESEARCH_FINDINGS__",
-                        metadata: {
-                          type: "research_findings",
-                          projectName: project.name,
-                          factsCount: research.factsDiscovered,
-                          sections: research.sections,
-                          facts: research.facts,
-                          phase: nextPhase,
-                        } as any,
-                      },
-                    }).catch(() => {});
-                  }
-                } catch (e) {
-                  console.error(`[phase-advance] Phase research failed for ${nextPhase}:`, e);
-                }
-
-                // 4b. Clarification — ask user phase-specific questions based on research + KB gaps
-                try {
-                  const nextPhaseRow = await db.phase.findFirst({
-                    where: { projectId: deployment.projectId!, name: nextPhase },
-                    select: { artefacts: true },
-                  });
-                  const artefactNames = Array.isArray(nextPhaseRow?.artefacts) ? (nextPhaseRow.artefacts as string[]) : [];
-                  if (artefactNames.length > 0) {
-                    await db.agentDeployment.update({
-                      where: { id: deployment.id },
-                      data: { phaseStatus: "awaiting_clarification" },
-                    });
-                    const { startClarificationSession } = await import("@/lib/agents/clarification-session");
-                    await startClarificationSession(
-                      deployment.agentId,
-                      deployment.projectId!,
-                      orgId,
-                      artefactNames,
-                    );
-                    // Clarification session will post questions in chat.
-                    // When user answers all questions, the session handler triggers generation.
-                    // So we return here — don't generate artefacts yet.
-                    return;
-                  }
-                } catch (e) {
-                  console.error(`[phase-advance] Clarification for ${nextPhase} failed:`, e);
-                }
-
-                // 4c. Generate artefacts with enriched KB (if no clarification needed)
-                await db.agentDeployment.update({
-                  where: { id: deployment.id },
-                  data: { phaseStatus: "active" },
-                }).catch(() => {});
-
-                const result = await generatePhaseArtefacts(deployment.agentId, deployment.projectId!, nextPhase);
-                if (result.generated > 0) {
-                  // 5. Create the next phase gate approval
-                  const orgOwner = await db.user.findFirst({
-                    where: { orgId, role: { in: ["OWNER", "ADMIN"] } },
-                    select: { id: true },
-                  });
-                  await db.approval.create({
-                    data: {
-                      projectId: deployment.projectId!,
-                      requestedById: orgOwner?.id || (session.user as any).id,
-                      title: `${nextPhase} Gate: Review and approve to advance`,
-                      description: `The agent has completed the ${nextPhase} phase and generated ${result.generated} artefact(s). Review them and approve to advance to the next phase.`,
-                      type: "PHASE_GATE",
-                      status: "PENDING",
-                      impact: { level: "MEDIUM", description: "Phase gate approval" },
-                    },
-                  });
-                  await db.agentActivity.create({
-                    data: {
-                      agentId: deployment.agentId,
-                      type: "approval",
-                      summary: `${nextPhase} gate approval requested — ${result.generated} artefact(s) ready for review`,
-                    },
-                  });
-                  await db.agentDeployment.update({
-                    where: { id: deployment.id },
-                    data: { phaseStatus: "waiting_approval" },
-                  });
-                }
-              })()
-                .catch((e) => console.error(`[phase-advance] artefact generation failed:`, e));
+              // 3b-5. Delegate research → clarification → generation → next-gate
+              // creation to the shared runPhaseAdvanceFlow helper. The
+              // previous inline copy duplicated this logic with subtle
+              // differences (e.g. it caught clarification failures and fell
+              // through to generation, silently skipping clarification on
+              // phases 2+). The shared helper has the discriminated outcome
+              // handling that surfaces failures instead of skipping them.
+              const { runPhaseAdvanceFlow } = await import("@/lib/agents/phase-advance");
+              runPhaseAdvanceFlow({
+                agentId: deployment.agentId,
+                deploymentId: deployment.id,
+                projectId: deployment.projectId!,
+                projectName: project.name,
+                orgId,
+                fromPhase: currentPhase,
+                toPhase: nextPhase,
+                requestedById: (session.user as any).id ?? null,
+              }).catch((e) => console.error(`[approval] runPhaseAdvanceFlow failed:`, e));
             } else {
               // No next phase — project complete!
               await db.agentActivity.create({
