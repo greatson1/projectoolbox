@@ -595,6 +595,23 @@ function AgentChatPage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [activeAgentId, isPaused]);
+
+  // Phase next-action — drives the "what step is next" banner. Fetched once
+  // on agent change and refreshed whenever the messages array grows (which
+  // is a proxy for "something just happened, state may have changed"). The
+  // resolver is the single source of truth for pipeline state.
+  type NextAction = { step: string; reason: string; bannerLabel: string; awaitingUser: boolean; blockedBy: string[] };
+  const [nextAction, setNextAction] = useState<{ currentPhase: string | null; phaseStatus: string | null; nextAction: NextAction | null } | null>(null);
+  const messagesCountForActiveAgent = activeAgentId ? (messagesByAgent[activeAgentId] || []).length : 0;
+  useEffect(() => {
+    if (!activeAgentId || isPaused) { setNextAction(null); return; }
+    let cancelled = false;
+    fetch(`/api/agents/${activeAgentId}/next-action`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j?.data) setNextAction(j.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeAgentId, isPaused, messagesCountForActiveAgent, sending]);
   // Inject live handlers into clarification cards (handlers can't be serialised to state)
   const messages: Message[] = (activeAgentId ? (messagesByAgent[activeAgentId] || []) : []).map(m => {
     if (m.type === "clarification" && m.data && !m.data.onAnswered) {
@@ -1496,6 +1513,46 @@ function AgentChatPage() {
                 {resumeAgent.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
                 Resume agent
               </Button>
+            </div>
+          );
+        })()}
+
+        {/* Pipeline next-step banner — driven by the phase-next-action resolver
+            (single source of truth across the app). Hidden when the agent is
+            paused (the paused banner takes precedence) or when the resolver
+            says the phase is fully complete. Tells the user the EXACT next
+            required step rather than relying on inferred phaseStatus. */}
+        {!isPaused && nextAction?.nextAction && nextAction.nextAction.step !== "complete" && (() => {
+          const na = nextAction.nextAction!;
+          const isActionable = na.awaitingUser; // user must do something
+          const palette = isActionable
+            ? "border-violet-500/30 bg-violet-500/5 text-violet-700 dark:text-violet-400"
+            : "border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-400";
+          const stepLabel: Record<string, string> = {
+            research: "Research",
+            clarification: "Clarification",
+            clarification_in_progress: "Clarification in progress",
+            generation: "Generation",
+            review_artefacts: "Review",
+            delivery_tasks: "Delivery tasks",
+            gate_approval: "Gate approval",
+            advance: "Phase advance",
+          };
+          const label = stepLabel[na.step] || na.step;
+          return (
+            <div className={`mx-4 mt-3 px-3 py-2 rounded-xl border ${palette} flex items-center gap-3`}>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-background/60 flex-shrink-0">
+                {label}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground truncate">{na.bannerLabel}</p>
+                {na.reason && na.reason !== na.bannerLabel && (
+                  <p className="text-[10px] text-muted-foreground truncate">{na.reason}</p>
+                )}
+              </div>
+              <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                {nextAction.currentPhase}
+              </span>
             </div>
           );
         })()}

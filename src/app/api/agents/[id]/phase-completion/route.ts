@@ -66,19 +66,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
-  // Can advance — execute phase transition
+  // Can advance — execute phase transition.
   const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
-  const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
   const methodologyId = (deployment.project.methodology || "traditional").toLowerCase().replace("agile_", "");
   const nextPhase = getNextPhase(methodologyId, deployment.currentPhase);
 
   if (nextPhase) {
+    const fromPhase = deployment.currentPhase;
     await db.agentDeployment.update({
       where: { id: deployment.id },
       data: { currentPhase: nextPhase, phaseStatus: "active", lastCycleAt: new Date(), nextCycleAt: new Date(Date.now() + 2 * 60_000) },
     });
     await db.phase.updateMany({
-      where: { projectId: deployment.projectId, name: deployment.currentPhase },
+      where: { projectId: deployment.projectId, name: fromPhase },
       data: { status: "COMPLETED" },
     });
     await db.phase.updateMany({
@@ -86,16 +86,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: { status: "ACTIVE" },
     });
     await db.agentActivity.create({
-      data: { agentId, type: "approval", summary: `Phase advanced: "${deployment.currentPhase}" → "${nextPhase}". All completion requirements met.` },
+      data: { agentId, type: "approval", summary: `Phase advanced: "${fromPhase}" → "${nextPhase}". All completion requirements met.` },
     });
 
-    // Generate next-phase artefacts
-    generatePhaseArtefacts(agentId, deployment.projectId, nextPhase).catch((e) =>
-      console.error("[phase-advance] artefact generation failed:", e)
-    );
+    // Use the shared phase-advance flow so research + clarification run for
+    // the new phase. The previous version called generatePhaseArtefacts
+    // directly, skipping research and clarification entirely for phases 2+
+    // — every phase after the first inherited zero clarification work via
+    // this endpoint.
+    const project = await db.project.findUnique({
+      where: { id: deployment.projectId },
+      select: { name: true, orgId: true },
+    });
+    const { runPhaseAdvanceFlow } = await import("@/lib/agents/phase-advance");
+    runPhaseAdvanceFlow({
+      agentId,
+      deploymentId: deployment.id,
+      projectId: deployment.projectId,
+      projectName: project?.name || "Project",
+      orgId: project?.orgId || orgId,
+      fromPhase,
+      toPhase: nextPhase,
+      requestedById: session.user.id ?? null,
+    }).catch((e) => console.error("[phase-completion POST] advance flow failed:", e));
 
     return NextResponse.json({
-      data: { advanced: true, from: deployment.currentPhase, to: nextPhase, completion },
+      data: { advanced: true, from: fromPhase, to: nextPhase, completion },
     });
   } else {
     // Final phase — project complete

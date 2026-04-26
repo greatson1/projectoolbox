@@ -428,6 +428,36 @@ export async function getPhaseCompletion(
     blockers.push("Phase has no artefacts, PM tasks, or delivery tasks yet — work must be generated before advancement");
   }
 
+  // Pipeline-step audit gate — research and clarification MUST be marked
+  // complete (or clarification explicitly skipped with an allowed reason)
+  // before the phase can be considered ready to advance. Without this,
+  // older code paths that skipped research/clarification could still let
+  // the gate pass purely on artefact/task counts.
+  try {
+    const phaseAudit = await db.phase.findFirst({
+      where: { projectId, name: phaseName },
+      select: {
+        researchCompletedAt: true,
+        clarificationCompletedAt: true,
+        clarificationSkippedReason: true,
+      },
+    });
+    if (phaseAudit) {
+      if (!phaseAudit.researchCompletedAt) {
+        blockers.push(`Phase research has not been completed — re-run research before advancement.`);
+      }
+      const clarificationSatisfied =
+        !!phaseAudit.clarificationCompletedAt ||
+        phaseAudit.clarificationSkippedReason === "no_questions_needed" ||
+        phaseAudit.clarificationSkippedReason === "user_skipped_explicit";
+      if (!clarificationSatisfied) {
+        blockers.push(`Clarification has not been completed — answer the open questions or explicitly skip.`);
+      }
+    }
+  } catch (e) {
+    console.error("[phase-completion] audit-timestamp gate check failed:", e);
+  }
+
   const canAdvance = blockers.length === 0;
 
   // Weighted overall: only include layers that have content.

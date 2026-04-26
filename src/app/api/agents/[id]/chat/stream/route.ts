@@ -212,15 +212,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const activeSession = await getActiveSession(agentId, dep0.projectId);
         // No active Q&A session → agent is waiting for user to approve generation
         if (!activeSession) {
+          // Approval-phrase detection ONLY fires when the most recent agent
+          // message is one that asked for approval — assumptions card or
+          // clarification-failed retry/skip prompt. Without this gate, any
+          // "yes"/"ok" the user types in an unrelated chat context triggers
+          // a phase-wide artefact generation.
+          const recentAgentMsg = await db.chatMessage.findFirst({
+            where: { agentId, role: "agent" },
+            orderBy: { createdAt: "desc" },
+            select: { metadata: true, content: true, createdAt: true },
+          });
+          const recentMeta = recentAgentMsg?.metadata as Record<string, unknown> | null;
+          const recentType = recentMeta?.type as string | undefined;
+          const isPendingApprovalCard =
+            recentType === "clarification_failed" ||
+            recentType === "assumptions_approval" ||
+            // Backward-compat: the legacy "Ready to Generate Documents" card
+            // doesn't carry a metadata type — sniff its content instead.
+            (recentAgentMsg?.content?.includes("Ready to Generate Documents") ?? false) ||
+            (recentAgentMsg?.content?.includes("Reply") && recentAgentMsg.content.includes("Generate"));
+
+          if (!isPendingApprovalCard) {
+            // Don't treat a stray "yes"/"ok" as approval — fall through to
+            // normal chat handling below.
+          } else {
           const msgLower = message.toLowerCase().trim();
           // Strict approval phrases — require explicit intent to generate
           const exactApprovals = ["go ahead", "generate", "yes", "approve", "do it", "ok", "okay", "sure", "confirmed", "let's go", "go for it"];
-          const phraseApprovals = ["start generating", "create the documents", "create the artefacts", "generate the documents", "generate the artefacts", "proceed with generation", "go ahead and generate"];
+          const phraseApprovals = ["start generating", "create the documents", "create the artefacts", "generate the documents", "generate the artefacts", "proceed with generation", "go ahead and generate", "skip questions and generate", "skip and generate", "skip questions"];
           // Match: either the entire message is an exact approval, or it contains a multi-word phrase approval
           const isExactMatch = exactApprovals.includes(msgLower.replace(/[.!,\s]+$/, ""));
           const isPhraseMatch = phraseApprovals.some(p => msgLower.includes(p));
           const isApproval = isExactMatch || isPhraseMatch;
+          // If the user typed "skip questions and generate" we record the
+          // explicit user-skip reason so the resolver knows clarification
+          // is complete via deliberate user action, not silent fallthrough.
+          const isExplicitSkip = phraseApprovals.slice(-3).some(p => msgLower.includes(p));
           if (isApproval) {
+            if (isExplicitSkip && dep0.currentPhase) {
+              try {
+                const { markClarificationSkipped } = await import("@/lib/agents/phase-next-action");
+                await markClarificationSkipped(dep0.projectId, dep0.currentPhase, "user_skipped_explicit");
+              } catch {}
+            }
             // Trigger generation in background
             (async () => {
               try {
@@ -268,6 +302,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               },
             });
           }
+          } // end of isPendingApprovalCard gate
         }
       }
     } catch {}
@@ -453,6 +488,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   } catch {}
 
+  // Pull the resolver's verdict for the active phase so the LLM knows
+  // exactly what step is next and refuses to skip ahead. Single source of
+  // truth — same data the chat banner + pipeline page consume.
+  let nextActionHint = "";
+  if (deployment?.projectId && deployment.currentPhase) {
+    try {
+      const { getNextRequiredStep } = await import("@/lib/agents/phase-next-action");
+      const nextAction = await getNextRequiredStep({
+        agentId,
+        projectId: deployment.projectId,
+        phaseName: deployment.currentPhase,
+      });
+      nextActionHint = `\n\n## NEXT REQUIRED STEP (binding)\nThe phase-next-action resolver says the next required step on phase "${deployment.currentPhase}" is **${nextAction.step}** (${nextAction.bannerLabel}).\n\nReason: ${nextAction.reason}\n\nYou MUST NOT do work that comes after this step until it is complete. Specifically:\n- If step is "research": do not draft artefacts or ask clarification questions until phase research has run.\n- If step is "clarification" or "clarification_in_progress": do not generate artefacts; either answer the user's questions or ask the user to answer the open ones.\n- If step is "generation": you may draft artefacts now.\n- If step is "review_artefacts": ask the user to review draft artefacts; do not advance the phase.\n- If step is "delivery_tasks": surface the blockers (${nextAction.blockedBy.join(", ") || "—"}); do not advance.\n- If step is "gate_approval": prompt the user to approve the phase gate.\n- If step is "advance" or "complete": phase is ready — congratulate or propose advancement.\n\nWhen the user asks "what's next" or "what should I do", state this step in plain English and link to the relevant surface from the APP SURFACES list below.\n`;
+    } catch (e) {
+      console.error("[chat/stream] next-action resolver failed:", e);
+    }
+  }
+
   const systemPrompt = `You are Agent ${agent.name}, an AI Project Manager deployed through Projectoolbox.
 ${agent.title ? `Your role: ${agent.title}.` : ""}
 ${domainTags.length > 0 ? `Your domain specialisations: ${domainTags.join(", ")}. Apply this expertise to all your recommendations, risk assessments, and artefact content.` : ""}
@@ -516,7 +569,7 @@ You must:
 - **Use your Knowledge Base research**: your KB contains feasibility research from Perplexity AI about this specific project type. Use those facts to give informed, evidence-based advice — not generic PM platitudes.
 - **Challenge the user constructively**: if the user's plan has gaps that your domain knowledge reveals (e.g. insufficient budget for the venue size, missing regulatory requirement), flag it proactively
 - **Speak the language of the domain**: use terminology appropriate to the field, not just generic PM terms
-${clarificationCompleteHint}
+${nextActionHint}${clarificationCompleteHint}
 ## PROJECT CONTEXT
 ${project ? `
 - **Name:** ${project.name}
