@@ -18,6 +18,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
+  // Pause guard — mirrors the streaming route so paused agents stay silent
+  // on both code paths. Without this, the streaming guard would just push
+  // traffic to the fallback endpoint instead of actually blocking it.
+  const agentRow = await db.agent.findUnique({ where: { id: agentId }, select: { status: true, name: true } });
+  if (!agentRow) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  if (agentRow.status === "PAUSED") {
+    return NextResponse.json(
+      {
+        error: "Agent is paused",
+        agentStatus: "PAUSED",
+        message: `${agentRow.name} is paused. Resume the agent to continue the conversation.`,
+      },
+      { status: 423 },
+    );
+  }
+
   // Check credits
   const hasCredits = await CreditService.checkBalance(orgId, 1);
   if (!hasCredits) {

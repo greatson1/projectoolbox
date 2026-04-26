@@ -286,6 +286,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
 
+  // Pause guard — when an operator pauses an agent we want it to go truly
+  // silent, including chat. The Pause endpoint cancels the autonomous job
+  // queue but doesn't gate this route, so without this check a paused agent
+  // would still answer typed messages — which makes pause feel meaningless.
+  // Returning a 423 with a clear status payload lets the client render the
+  // banner / disable the input rather than show a generic error.
+  if (agent.status === "PAUSED") {
+    return NextResponse.json(
+      {
+        error: "Agent is paused",
+        agentStatus: "PAUSED",
+        message: `${agent.name} is paused. Resume the agent to continue the conversation.`,
+      },
+      { status: 423 },
+    );
+  }
+
   const deployment = agent.deployments[0];
   const project = deployment?.project;
   const personality = (agent.personality as any) || {};

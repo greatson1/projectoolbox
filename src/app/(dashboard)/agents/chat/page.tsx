@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { useAgents } from "@/hooks/use-api";
+import { useAgents, useResumeAgent } from "@/hooks/use-api";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
 import { useQueryClient } from "@tanstack/react-query";
@@ -534,6 +534,7 @@ function AgentChatPage() {
   const agents = agentData?.agents || [];
   const currency = useOrgCurrency();
   const queryClient = useQueryClient();
+  const resumeAgent = useResumeAgent();
 
   usePageTitle("Chat with Agent");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(searchParams.get("agent"));
@@ -558,6 +559,7 @@ function AgentChatPage() {
   }, [agents, activeAgentId]);
 
   const activeAgent = agents.find((a: any) => a.id === activeAgentId);
+  const isPaused = activeAgent?.status === "PAUSED";
   // Inject live handlers into clarification cards (handlers can't be serialised to state)
   const messages: Message[] = (activeAgentId ? (messagesByAgent[activeAgentId] || []) : []).map(m => {
     if (m.type === "clarification" && m.data && !m.data.onAnswered) {
@@ -994,6 +996,14 @@ function AgentChatPage() {
     const msg = text || input.trim();
     if (!msg || !activeAgentId) return;
 
+    // Defence-in-depth: even though the input is disabled when paused, an
+    // answer-card click or a programmatic send could still bypass the UI.
+    // Bail out with a friendly toast rather than firing a request that 423s.
+    if (isPaused) {
+      toast.error(`${activeAgent?.name} is paused — resume the agent to send messages`);
+      return;
+    }
+
     const userMsg: Message = { id: `u-${Date.now()}`, role: "user", type: "text", content: msg, timestamp: new Date() };
     setMessagesByAgent(prev => ({ ...prev, [activeAgentId!]: [...(prev[activeAgentId!] || []), userMsg] }));
     setInput("");
@@ -1284,10 +1294,17 @@ function AgentChatPage() {
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
           {activeAgent ? (
             <>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white relative ${isPaused ? "grayscale opacity-60" : ""}`}
                 style={{ background: activeAgent.gradient || "#6366F1" }}>{activeAgent.name?.[0] ?? "A"}</div>
               <div className="flex-1">
-                <p className="text-sm font-semibold">Agent {activeAgent.name}</p>
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  Agent {activeAgent.name}
+                  {isPaused && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                      Paused
+                    </span>
+                  )}
+                </p>
                 <p className="text-[10px] text-muted-foreground">L{activeAgent.autonomyLevel} · {activeAgent.deployments?.[0]?.project?.name || "No project"} · {activeAgent.status}</p>
               </div>
               <span className={`w-2 h-2 rounded-full ${activeAgent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
@@ -1331,6 +1348,41 @@ function AgentChatPage() {
               placeholder="Search messages..."
               className="w-full px-3 py-1.5 rounded-lg text-xs bg-muted border border-border outline-none focus:border-primary"
               autoFocus />
+          </div>
+        )}
+
+        {/* Paused banner — when the operator has paused this agent we make the
+            state impossible to miss. Backend chat routes return 423 for paused
+            agents so messages won't go through anyway; this banner explains
+            why and offers one-click resume so the user isn't stuck. */}
+        {isPaused && activeAgentId && (
+          <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+              <Circle className="w-4 h-4 text-amber-600 dark:text-amber-400 fill-current" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                Agent paused
+              </p>
+              <p className="text-xs text-foreground">
+                {activeAgent?.name} won&apos;t reply to chat or run autonomous cycles until you resume.
+                Existing meetings + webhooks still process.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-[11px] flex-shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={resumeAgent.isPending}
+              onClick={() => {
+                resumeAgent.mutate(activeAgentId, {
+                  onSuccess: () => toast.success(`${activeAgent?.name} resumed — agent is active again`),
+                  onError: (e: any) => toast.error(e?.message || "Resume failed"),
+                });
+              }}
+            >
+              {resumeAgent.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+              Resume agent
+            </Button>
           </div>
         )}
 
@@ -1498,7 +1550,7 @@ function AgentChatPage() {
           )}
           <form onSubmit={e => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
             {/* File upload button */}
-            <Button variant="ghost" size="sm" type="button" className="flex-shrink-0" onClick={() => fileInputRef.current?.click()}>
+            <Button variant="ghost" size="sm" type="button" className="flex-shrink-0" disabled={isPaused} onClick={() => fileInputRef.current?.click()}>
               <Paperclip className="w-4 h-4" />
             </Button>
             <input ref={fileInputRef} type="file" className="hidden"
@@ -1522,11 +1574,15 @@ function AgentChatPage() {
                 e.target.value = "";
               }} />
             <input value={input} onChange={e => setInput(e.target.value)}
-              placeholder={activeAgent ? `Message Agent ${activeAgent.name}...` : "Select an agent"}
-              disabled={!activeAgent || sending}
-              className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border outline-none focus:border-primary transition-colors"
+              placeholder={
+                isPaused ? `Agent ${activeAgent?.name} is paused — resume to send messages`
+                : activeAgent ? `Message Agent ${activeAgent.name}...`
+                : "Select an agent"
+              }
+              disabled={!activeAgent || sending || isPaused}
+              className="flex-1 px-3 py-2 rounded-lg text-sm bg-muted border border-border outline-none focus:border-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} />
-            <Button type="submit" disabled={!input.trim() || !activeAgent || sending} size="sm"><Send className="w-4 h-4" /></Button>
+            <Button type="submit" disabled={!input.trim() || !activeAgent || sending || isPaused} size="sm"><Send className="w-4 h-4" /></Button>
           </form>
         </div>
       </div>
