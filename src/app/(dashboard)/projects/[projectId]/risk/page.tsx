@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/source-prefix";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProjectRisks } from "@/hooks/use-api";
@@ -564,26 +565,40 @@ export default function RiskRegisterPage() {
                             onChange={e => setForm(f => ({ ...f, mitigation: e.target.value }))} />
                         </div>
                       </div>
-                    ) : (
-                      <>
-                        <p className="font-medium">{selectedRisk.title}</p>
-                        {selectedRisk.description && <p className="text-xs text-muted-foreground">{selectedRisk.description}</p>}
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div><span className="text-muted-foreground">Probability:</span> <strong>{selectedRisk.probability}/5</strong></div>
-                          <div><span className="text-muted-foreground">Impact:</span> <strong>{selectedRisk.impact}/5</strong></div>
-                          <div><span className="text-muted-foreground">Score:</span> <strong className={scoreColour(selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact)}>{selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact}</strong></div>
-                          <div><span className="text-muted-foreground">Status:</span> <Badge variant={STATUS_VARIANT[selectedRisk.status] || "outline"} className="text-[9px]">{selectedRisk.status}</Badge></div>
-                          <div><span className="text-muted-foreground">Category:</span> <strong>{selectedRisk.category || "—"}</strong></div>
-                          <div><span className="text-muted-foreground">Owner:</span> <strong>{selectedRisk.owner || "—"}</strong></div>
-                        </div>
-                        {selectedRisk.mitigation && (
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mitigation Summary</p>
-                            <p className="text-xs text-muted-foreground">{selectedRisk.mitigation}</p>
+                    ) : (() => {
+                      // Parse the source prefix the agent embeds in mitigation
+                      // (or description as fallback) so we can show "Why this
+                      // risk + this severity?" in the detail panel.
+                      const parsed = parseSource(selectedRisk.mitigation || selectedRisk.description);
+                      return (
+                        <>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium">{selectedRisk.title}</p>
+                            {parsed.kind !== "unknown" && <SourceBadge kind={parsed.kind} />}
                           </div>
-                        )}
-                      </>
-                    )}
+                          {selectedRisk.description && <p className="text-xs text-muted-foreground">{selectedRisk.description}</p>}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div><span className="text-muted-foreground">Probability:</span> <strong>{selectedRisk.probability}/5</strong></div>
+                            <div><span className="text-muted-foreground">Impact:</span> <strong>{selectedRisk.impact}/5</strong></div>
+                            <div><span className="text-muted-foreground">Score:</span> <strong className={scoreColour(selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact)}>{selectedRisk.score ?? selectedRisk.probability * selectedRisk.impact}</strong></div>
+                            <div><span className="text-muted-foreground">Status:</span> <Badge variant={STATUS_VARIANT[selectedRisk.status] || "outline"} className="text-[9px]">{selectedRisk.status}</Badge></div>
+                            <div><span className="text-muted-foreground">Category:</span> <strong>{selectedRisk.category || "—"}</strong></div>
+                            <div><span className="text-muted-foreground">Owner:</span> <strong>{selectedRisk.owner || "—"}</strong></div>
+                          </div>
+                          {selectedRisk.mitigation && (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mitigation Summary</p>
+                              <p className="text-xs text-muted-foreground">{parsed.kind === "unknown" ? selectedRisk.mitigation : (parsed.reasoning || "—")}</p>
+                            </div>
+                          )}
+                          {parsed.kind !== "unknown" && (parsed.reasoning || parsed.alternatives.length > 0) && (
+                            <div className="pt-2 mt-2 border-t border-border/40">
+                              <RowReasoning source={parsed} label="Why this risk + this severity?" />
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
 

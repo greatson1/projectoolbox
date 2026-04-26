@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { useProjectStakeholders } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { parseSource, SourceBadge, RowReasoning, ExpandChevron } from "@/components/artefacts/source-prefix";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, Plus, ShieldAlert, Heart, Eye, Download } from "lucide-react";
@@ -22,6 +23,7 @@ interface Stakeholder {
   email: string;
   lastContact: string;
   influence: string;
+  notes: string;
 }
 
 function mapStakeholder(s: any, idx: number): Stakeholder {
@@ -29,13 +31,14 @@ function mapStakeholder(s: any, idx: number): Stakeholder {
     id: s.id || `s${idx}`,
     name: s.name || "Unnamed",
     role: s.role || "",
-    org: s.org || s.organization || "",
+    org: s.org || s.organization || s.organisation || "",
     power: s.power ?? 3,
     interest: s.interest ?? 3,
     sentiment: s.sentiment || "unknown",
     email: s.email || "",
     lastContact: s.lastContact || s.last_contact || "",
     influence: s.influence || "",
+    notes: s.notes || "",
   };
 }
 
@@ -50,6 +53,7 @@ export default function StakeholdersPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: raw, isLoading, refetch } = useProjectStakeholders(projectId);
   const [adding, setAdding] = useState(false);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const stakeholders: Stakeholder[] = (raw ?? []).map(mapStakeholder);
 
@@ -254,44 +258,67 @@ export default function StakeholdersPage() {
             </tr>
           </thead>
           <tbody>
-            {stakeholders.map(s => (
-              <tr key={s.id} className="border-b border-border hover:bg-muted/50 transition-colors">
-                <td className="px-4 py-3">
-                  <div>
-                    <p className="font-medium">{s.name}</p>
-                    {s.email && <p className="text-[10px] text-muted-foreground">{s.email}</p>}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{s.role || "-"}</td>
-                <td className="px-4 py-3 text-muted-foreground">{s.org || "-"}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-0.5">
-                    {Array.from({ length: 5 }, (_, i) => (
-                      <span
-                        key={i}
-                        className={`w-2.5 h-2.5 rounded-sm ${i < s.power ? "bg-primary" : "bg-border"}`}
-                      />
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-0.5">
-                    {Array.from({ length: 5 }, (_, i) => (
-                      <span
-                        key={i}
-                        className={`w-2.5 h-2.5 rounded-sm ${i < s.interest ? "bg-cyan-400" : "bg-border"}`}
-                      />
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant={SENTIMENT_BADGE[s.sentiment] ?? "outline"} className="capitalize text-[10px]">
-                    {s.sentiment}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{s.lastContact || "-"}</td>
-              </tr>
-            ))}
+            {stakeholders.map(s => {
+              const parsed = parseSource(s.notes);
+              const hasReasoning = parsed.kind !== "unknown" && (!!parsed.reasoning || parsed.alternatives.length > 0);
+              const isExpanded = expandedRow === s.id;
+              return (
+                <React.Fragment key={s.id}>
+                  <tr
+                    className={`border-b border-border hover:bg-muted/50 transition-colors ${hasReasoning ? "cursor-pointer" : ""}`}
+                    onClick={() => hasReasoning && setExpandedRow(isExpanded ? null : s.id)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-start gap-2">
+                        {hasReasoning && <span className="mt-1"><ExpandChevron expanded={isExpanded} /></span>}
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium">{s.name}</p>
+                            {parsed.kind !== "unknown" && <SourceBadge kind={parsed.kind} />}
+                          </div>
+                          {s.email && <p className="text-[10px] text-muted-foreground">{s.email}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{s.role || "-"}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{s.org || "-"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-0.5">
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <span
+                            key={i}
+                            className={`w-2.5 h-2.5 rounded-sm ${i < s.power ? "bg-primary" : "bg-border"}`}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-0.5">
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <span
+                            key={i}
+                            className={`w-2.5 h-2.5 rounded-sm ${i < s.interest ? "bg-cyan-400" : "bg-border"}`}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={SENTIMENT_BADGE[s.sentiment] ?? "outline"} className="capitalize text-[10px]">
+                        {s.sentiment}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{s.lastContact || "-"}</td>
+                  </tr>
+                  {isExpanded && hasReasoning && (
+                    <tr className="bg-muted/10 border-b border-border/30">
+                      <td colSpan={7} className="py-3 px-6">
+                        <RowReasoning source={parsed} label="Why this stakeholder + this engagement strategy?" />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </Card>

@@ -867,6 +867,37 @@ RULES: comma-separated, quote any field containing a comma with double-quotes, N
 ⚠️ ABSOLUTE RULE — READ BEFORE ANYTHING ELSE:
 NEVER invent personal names (e.g. "John Doe", "Sarah Mitchell"). Use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor") or "TBC". NEVER invent company names, vendor names, contact details, or booking references. Use "TBC" for ANY fact not in the project description below.
 
+⚠️ UNIVERSAL SOURCE-PREFIX RULE (applies to EVERY artefact you generate):
+The Notes / Comments / Notes/Key Concerns / Mitigations column on EVERY row MUST start with one of these prefixes so the user can see at a glance where each value came from. This is non-negotiable — the UI parses the prefix to render the source badge and the "Why this number?" / "Why this row?" expansion.
+
+  • "Research-anchored: <reasoning> (also considered: <alt1>, <alt2>)"
+      Use when the value is drawn from feasibility/phase research in the
+      knowledge base above. ALWAYS list 1–2 nearby alternatives the user
+      could swap to so they can see the trade-offs without leaving the page.
+
+  • "User-confirmed: <quoted answer>"
+      Use when the value comes from a user_confirmed clarification answer.
+      Quote the user's words.
+
+  • "Default-template — TBC: <what's needed>"
+      Use when neither research nor user input exists for this row.
+      Name the specific gap so the user knows what to confirm to refine it.
+
+  • "Research-thin — TBC: <what's missing>"
+      Use when research was attempted but couldn't surface a concrete value
+      (e.g. no quotes for a specific date / niche destination).
+
+  • "Reserved — do not consume"
+      Reserved-for-emergency lines (Contingency Reserve, Buffer, etc).
+
+When research surfaces multiple options for a single row (e.g. three vendors,
+three risk severity bands, three engagement strategies), apply this priority:
+  a. User-confirmed wins absolutely.
+  b. Otherwise pick the option that fits the project envelope (budget /
+     timeline / risk appetite). Don't default to the cheapest or the most
+     expensive without a reason.
+  c. ALWAYS cite the chosen option AND 1–2 rejected alternatives.
+
 TODAY'S DATE: ${today}
 
 PROJECT: ${project.name}
