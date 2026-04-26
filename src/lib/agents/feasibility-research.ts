@@ -272,9 +272,77 @@ Return ONLY the JSON array, no other text.`,
     return 0;
   }
 
-  // Store each fact to KB
+  // ── Confidence cross-check (validation pass) ───────────────────────────
+  // Before storing, ask Claude a second time to flag any extracted fact
+  // that (a) contradicts an existing HIGH_TRUST KB item or (b) is
+  // suspiciously specific without sourcing in the research text. Flagged
+  // facts get tagged "pending_user_confirmation" so they're EXCLUDED from
+  // artefact generation until the user confirms in chat. Untagged facts
+  // proceed straight in as STANDARD trust (existing behaviour).
+  const flaggedTitles = new Set<string>();
+  try {
+    const existingHighTrust = await db.knowledgeBaseItem.findMany({
+      where: { agentId, projectId, trustLevel: "HIGH_TRUST" },
+      select: { title: true, content: true },
+      take: 30,
+    });
+    if (facts.length > 0) {
+      const validationPrompt = `You are validating research-extracted facts against existing project knowledge.
+
+EXISTING USER-CONFIRMED / HIGH-TRUST FACTS:
+${existingHighTrust.length > 0 ? existingHighTrust.map(f => `• ${f.title}: ${f.content.slice(0, 200)}`).join("\n") : "(none yet)"}
+
+NEW RESEARCH-EXTRACTED FACTS (need validation):
+${facts.slice(0, 20).map((f, i) => `${i + 1}. ${f.title}: ${f.content.slice(0, 240)}`).join("\n")}
+
+ORIGINAL RESEARCH TEXT (for verification):
+${researchText.slice(0, 3000)}
+
+For each NEW fact, decide if it should be flagged for user confirmation. Flag if ANY of:
+  • The fact contradicts an existing HIGH_TRUST fact
+  • The fact is suspiciously specific (a price, name, date, or stat) but is NOT clearly stated in the original research text
+  • The fact makes a strong claim ("X is the best", "Y is impossible") without supporting evidence in the research
+
+Return ONLY a JSON array of the 1-based indices to flag, e.g. [2, 5, 7]. If none should be flagged, return []. Do not return any other text.`;
+
+      const validationResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY!,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 200,
+          messages: [{ role: "user", content: validationPrompt }],
+        }),
+      }).catch(() => null);
+
+      if (validationResponse?.ok) {
+        const vData = await validationResponse.json();
+        const vText = (vData.content?.[0]?.text || "").trim();
+        try {
+          const flaggedIdx: number[] = JSON.parse(vText.replace(/^```json?\s*/i, "").replace(/\s*```$/i, "").trim());
+          if (Array.isArray(flaggedIdx)) {
+            for (const i of flaggedIdx) {
+              const fact = facts[i - 1];
+              if (fact?.title) flaggedTitles.add(fact.title);
+            }
+          }
+        } catch { /* if parsing fails, all facts proceed un-flagged */ }
+      }
+    }
+  } catch (e) {
+    console.error("[research-validation] cross-check failed (storing all as STANDARD):", e);
+  }
+
+  // Store each fact to KB. Flagged facts get pending_user_confirmation so
+  // getProjectKnowledgeContext excludes them from prompts until the user
+  // explicitly confirms.
   let stored = 0;
-  for (const fact of facts.slice(0, 20)) { // Cap at 20 facts per query
+  let flaggedCount = 0;
+  for (const fact of facts.slice(0, 20)) {
     if (!fact.title || !fact.content) continue;
     try {
       const existing = await db.knowledgeBaseItem.findFirst({
@@ -283,6 +351,7 @@ Return ONLY the JSON array, no other text.`,
       });
       if (existing) continue; // Don't duplicate
 
+      const isFlagged = flaggedTitles.has(fact.title);
       await db.knowledgeBaseItem.create({
         data: {
           orgId,
@@ -291,14 +360,33 @@ Return ONLY the JSON array, no other text.`,
           layer: "PROJECT",
           type: "TEXT",
           title: fact.title,
-          content: `[Research — ${queryLabel}] ${fact.content}`,
-          trustLevel: "STANDARD", // Research is STANDARD, not HIGH_TRUST (user hasn't confirmed)
-          tags: ["research", "feasibility", "perplexity", queryLabel.toLowerCase().replace(/\s+/g, "_")],
-          metadata: { source: "perplexity_research", extractedAt: new Date().toISOString() } as any,
+          content: `[Research — ${queryLabel}${isFlagged ? " · NEEDS REVIEW" : ""}] ${fact.content}`,
+          trustLevel: "STANDARD",
+          tags: [
+            "research",
+            "feasibility",
+            "perplexity",
+            queryLabel.toLowerCase().replace(/\s+/g, "_"),
+            ...(isFlagged ? ["pending_user_confirmation", "needs_review"] : []),
+          ],
+          metadata: { source: "perplexity_research", extractedAt: new Date().toISOString(), flaggedForReview: isFlagged } as any,
         },
       });
       stored++;
+      if (isFlagged) flaggedCount++;
     } catch {}
+  }
+
+  // Surface a chat message when any fact is flagged so the user knows to
+  // confirm — otherwise these facts sit invisible until manually reviewed.
+  if (flaggedCount > 0) {
+    await db.chatMessage.create({
+      data: {
+        agentId,
+        role: "agent",
+        content: `Research returned ${stored} fact${stored !== 1 ? "s" : ""} (${queryLabel}). I've flagged **${flaggedCount}** for your confirmation — they conflict with what we already know, or were specific claims I couldn't verify in the source. Visit the Knowledge Base to review and confirm or edit them. Until then I won't use them to generate artefacts.`,
+      },
+    }).catch(() => {});
   }
 
   return stored;

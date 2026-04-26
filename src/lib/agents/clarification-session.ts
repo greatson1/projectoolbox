@@ -218,7 +218,7 @@ ${isTravel ? `TRAVEL PROJECT QUESTION HINTS — prioritise these types of questi
 - Number of travellers (number)
 - Purpose of trip (choice: Business meetings / Leisure / Both)
 - Any visa requirements confirmed? (yesno)` : `PROJECT QUESTION HINTS:
-- Project methodology (choice: PRINCE2 / Agile / Waterfall / SAFe / Hybrid / Other)
+- Project methodology (choice: Traditional (PMI-Style) / Agile / Waterfall / SAFe / Hybrid / Other)
 - Has a project sponsor been identified? (yesno)
 - Team size (number)
 - Key delivery approach (choice: Phased / Big bang / Iterative / Pilot then rollout / Other)

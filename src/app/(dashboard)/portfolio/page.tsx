@@ -21,8 +21,10 @@ import { PageHeader } from "@/components/layout/page-header";
 // ── Helpers ──
 
 const METHOD_LABEL: Record<string, string> = {
-  PRINCE2: "PRINCE2", WATERFALL: "Waterfall", AGILE_SCRUM: "Scrum",
-  AGILE_KANBAN: "Kanban", HYBRID: "Hybrid", SAFE: "SAFe",
+  PRINCE2: "Traditional", traditional: "Traditional", TRADITIONAL: "Traditional",
+  WATERFALL: "Waterfall", waterfall: "Waterfall", AGILE_SCRUM: "Scrum", scrum: "Scrum",
+  AGILE_KANBAN: "Kanban", kanban: "Kanban", HYBRID: "Hybrid", hybrid: "Hybrid",
+  SAFE: "SAFe", safe: "SAFe",
 };
 
 function healthColor(h: string) {

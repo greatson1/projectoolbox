@@ -619,7 +619,7 @@ PROJECT DETAILS
 - Name: ${project.name}
 - Description: ${project.description || "No description provided"}
 - Budget: £${budget}
-- Methodology: ${project.methodology || "PRINCE2"}
+- Methodology: ${project.methodology || "Traditional (PMI-Style)"}
 - Category: ${project.category || "general"}
 - Timeline: ${startDate} → ${endDate}
 ${knowledgeSection}

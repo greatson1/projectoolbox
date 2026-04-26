@@ -73,7 +73,7 @@ export async function POST(
 
     // ── Step 4: Re-create phases and set deployment state ──
     const { getMethodology } = await import("@/lib/methodology-definitions");
-    const effectiveMethodology = methodology || project.methodology || "PRINCE2";
+    const effectiveMethodology = methodology || project.methodology || "traditional";
     const methodologyId = effectiveMethodology.toLowerCase().replace("agile_", "");
     const methodologyDef = getMethodology(methodologyId);
     const firstPhase = methodologyDef.phases[0];

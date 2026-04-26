@@ -179,7 +179,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
             const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
 
-            const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+            const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
             const currentPhase = deployment.currentPhase;
             const nextPhase = currentPhase ? getNextPhase(methodologyId, currentPhase) : null;
 

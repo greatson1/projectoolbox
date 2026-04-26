@@ -153,9 +153,58 @@ export async function getProjectKnowledgeContext(
       }),
     ]);
 
-    // Separate user-confirmed answers from other KB items for emphasis
+    // ── Cross-project priors ────────────────────────────────────────────
+    // Pull HIGH_TRUST KB items from the top 3 most-similar past projects in
+    // the same org. Same idea as the dashboard's similar-projects widget,
+    // but feeding the agent's prompt instead of just the UI. Items are
+    // tagged with the source project name in the rendered context so the
+    // agent can cite them as priors rather than treating them as facts
+    // about the current project.
+    let crossProjectPriors: { sourceProject: string; title: string; content: string; trustLevel: string }[] = [];
+    try {
+      const { findSimilarProjects } = await import("@/lib/ml/similar-projects");
+      const similar = await findSimilarProjects(projectId, 3);
+      const validSimilar = similar.filter((s: any) => s.similarity >= 0.55).slice(0, 3);
+      if (validSimilar.length > 0) {
+        const priorItems = await db.knowledgeBaseItem.findMany({
+          where: {
+            orgId,
+            projectId: { in: validSimilar.map((s: any) => s.projectId) },
+            trustLevel: "HIGH_TRUST",
+            confidential: false,
+            NOT: [
+              { title: { startsWith: "__" } },
+              { tags: { has: "pending_user_confirmation" } },
+            ],
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 12,
+          select: { title: true, content: true, trustLevel: true, projectId: true },
+        });
+        const projectNameById = new Map(validSimilar.map((s: any) => [s.projectId, s.name]));
+        crossProjectPriors = priorItems.map((p) => ({
+          sourceProject: projectNameById.get(p.projectId) || "past project",
+          title: p.title,
+          content: p.content,
+          trustLevel: p.trustLevel,
+        }));
+      }
+    } catch (e) {
+      // Cross-project priors are a nice-to-have; never block generation on failure
+      console.error("[artefact-learning] cross-project priors lookup failed:", e);
+    }
+
+    // ── Bucket items by trust level so the prompt can weight them ────────
+    // Previously every KB item rendered in one flat list with no indication
+    // of how reliable it was — a STANDARD Perplexity hunch sat next to a
+    // HIGH_TRUST user-confirmed fact and the LLM had no signal to prefer
+    // one over the other. Split into three explicit tiers and tell the
+    // agent in the prompt how to use them.
     const userAnswers = projectItems.filter(i => i.tags.includes("user_confirmed") || i.tags.includes("user_answer"));
-    const otherItems = projectItems.filter(i => !userAnswers.includes(i));
+    const highTrustNonUser = projectItems.filter(i => i.trustLevel === "HIGH_TRUST" && !userAnswers.includes(i));
+    const standardItems = projectItems.filter(i => i.trustLevel === "STANDARD" && !userAnswers.includes(i));
+    const referenceItems = projectItems.filter(i => i.trustLevel === "REFERENCE_ONLY");
+    const otherItems = projectItems.filter(i => !userAnswers.includes(i) && !highTrustNonUser.includes(i) && !standardItems.includes(i) && !referenceItems.includes(i));
 
     const lines: string[] = [
       "━━━ PROJECT KNOWLEDGE BASE (use this information — do NOT invent alternatives) ━━━",
@@ -218,13 +267,22 @@ export async function getProjectKnowledgeContext(
       lines.push("");
     }
 
-    // Group remaining items by tag category for readability
-    const stakeholderItems = otherItems.filter(i => i.tags.includes("stakeholders") || i.tags.includes("stakeholder-register"));
-    const policyItems = [...otherItems, ...workspaceItems].filter(i => i.tags.includes("policy") || i.tags.includes("template") || i.tags.includes("org-standard"));
-    const factItems = otherItems.filter(i => !stakeholderItems.includes(i) && !policyItems.includes(i));
+    // ── HIGH_TRUST research / verified facts (system-classified, not user-spoken) ──
+    if (highTrustNonUser.length > 0) {
+      lines.push("── HIGH_TRUST FACTS (verified by source — treat as authoritative unless they conflict with USER-CONFIRMED above) ──");
+      for (const item of highTrustNonUser) {
+        lines.push(`• ${item.title}: ${truncate(item.content, 400)}`);
+      }
+      lines.push("");
+    }
+
+    // Group remaining STANDARD items by tag category for readability
+    const stakeholderItems = standardItems.filter(i => i.tags.includes("stakeholders") || i.tags.includes("stakeholder-register"));
+    const policyItems = [...standardItems, ...otherItems, ...workspaceItems].filter(i => i.tags.includes("policy") || i.tags.includes("template") || i.tags.includes("org-standard"));
+    const factItems = [...standardItems, ...otherItems].filter(i => !stakeholderItems.includes(i) && !policyItems.includes(i));
 
     if (stakeholderItems.length > 0) {
-      lines.push("── EXTRACTED STAKEHOLDER FACTS ──");
+      lines.push("── EXTRACTED STAKEHOLDER FACTS (STANDARD trust — verify if critical) ──");
       for (const item of stakeholderItems) {
         lines.push(`• ${item.title}: ${truncate(item.content, 400)}`);
       }
@@ -240,13 +298,45 @@ export async function getProjectKnowledgeContext(
     }
 
     if (factItems.length > 0) {
-      lines.push("── PROJECT FACTS, DECISIONS & CONSTRAINTS ──");
+      lines.push("── STANDARD-TRUST FACTS, DECISIONS & CONSTRAINTS (best-effort — do NOT use to contradict USER-CONFIRMED or HIGH_TRUST above) ──");
       for (const item of factItems) {
         lines.push(`• ${item.title}: ${truncate(item.content, 300)}`);
       }
       lines.push("");
     }
 
+    // ── REFERENCE_ONLY items (raw transcripts etc.) — listed last, with a
+    // strong "lookup-only" caveat. The agent shouldn't quote these as
+    // facts; they exist so it knows what was discussed in raw form.
+    if (referenceItems.length > 0) {
+      lines.push("── REFERENCE-ONLY MATERIAL (raw source — do NOT cite as fact, lookup only) ──");
+      for (const item of referenceItems) {
+        lines.push(`• ${item.title}: ${truncate(item.content, 200)}`);
+      }
+      lines.push("");
+    }
+
+    // ── Cross-project priors ──
+    // Render last (lowest priority among real signals). Marked clearly so
+    // the agent knows these came from a SIBLING project — useful as a
+    // template / "how it was handled before" but never canonical for the
+    // current project.
+    if (crossProjectPriors.length > 0) {
+      lines.push("── PRIORS FROM SIMILAR PAST PROJECTS (use as templates / reference only — they are NOT facts about THIS project) ──");
+      for (const p of crossProjectPriors) {
+        lines.push(`• [from past project: ${p.sourceProject}] ${p.title}: ${truncate(p.content, 250)}`);
+      }
+      lines.push("");
+    }
+
+    // ── Trust-tier guidance — restate at the bottom so it's the last
+    // thing the agent reads before generating. Order is intentional and
+    // the LLM is told to honour it explicitly. ──
+    lines.push("── HOW TO USE THIS KNOWLEDGE ──");
+    lines.push("Trust order (highest → lowest): USER-CONFIRMED > HIGH_TRUST > STANDARD > REFERENCE-ONLY > PRIORS-FROM-PAST-PROJECTS.");
+    lines.push("If two facts conflict, the higher-trust one wins. NEVER let a STANDARD or PAST-PROJECT fact override a USER-CONFIRMED fact.");
+    lines.push("If a needed fact is not in any tier above, write [TBC — what's needed] — do NOT invent.");
+    lines.push("");
     lines.push("━━━ END KNOWLEDGE BASE ━━━");
     lines.push("");
 

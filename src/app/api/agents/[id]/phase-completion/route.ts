@@ -69,7 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Can advance — execute phase transition
   const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
   const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
-  const methodologyId = (deployment.project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+  const methodologyId = (deployment.project.methodology || "traditional").toLowerCase().replace("agile_", "");
   const nextPhase = getNextPhase(methodologyId, deployment.currentPhase);
 
   if (nextPhase) {

@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   });
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+  const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
   const methodology = getMethodology(methodologyId);
 
   const deployment = await db.agentDeployment.findFirst({

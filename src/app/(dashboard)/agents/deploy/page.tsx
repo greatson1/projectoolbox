@@ -92,7 +92,7 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
 const METHODOLOGIES = [
   { id: "scrum", name: "Scrum", icon: "🔄", desc: "Iterative sprints with ceremonies and retrospectives", bestFor: "Software teams needing fast feedback loops", rec: false },
   { id: "kanban", name: "Kanban", icon: "📋", desc: "Continuous flow with WIP limits and visual boards", bestFor: "Support teams, ongoing work with variable priority", rec: false },
-  { id: "prince2", name: "Traditional (PMI-Style)", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
+  { id: "traditional", name: "Traditional (PMI-Style)", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
   { id: "safe", name: "SAFe", icon: "🏢", desc: "Scaled agile for enterprise-level programme coordination", bestFor: "Multiple teams, cross-functional dependencies, portfolios", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },
@@ -135,7 +135,7 @@ const ARTEFACT_APP_FEATURES: Record<string, string> = {
 
 // Short descriptions for each artefact type — shown as a tooltip in the wizard
 const ARTEFACT_DESCRIPTIONS: Record<string, string> = {
-  // PRINCE2 / Traditional
+  // Traditional (PMI-Style)
   "Problem Statement": "Define the business problem or opportunity this project addresses",
   "Options Analysis": "Compare the available options for solving the problem with costs and benefits",
   "Outline Business Case": "High-level justification: why this project, what value it delivers",
@@ -313,12 +313,12 @@ export default function ProjectWizardPage() {
     }
 
     // Budget signals (apply to any category)
-    if (budget > 1000000) return "prince2";  // Very large budget → formal governance
-    if (budget > 500000) return "prince2";
+    if (budget > 1000000) return "traditional";  // Very large budget → formal governance
+    if (budget > 500000) return "traditional";
 
     // Keyword signals in project name / description
     if (/\b(sprint|agile|mvp|iteration|backlog|epic)\b/.test(text)) return "scrum";
-    if (/\b(compliance|audit|regul|govern|formal|gate)\b/.test(text)) return "prince2";
+    if (/\b(compliance|audit|regul|govern|formal|gate)\b/.test(text)) return "traditional";
     if (/\b(flow|support|maintenance|ongoing|continuous)\b/.test(text)) return "kanban";
     if (/\b(construction|build|civil|infra|infrastructure)\b/.test(text)) return "waterfall";
     if (/\b(enterprise|programme|portfolio|transformation)\b/.test(text)) return "safe";
@@ -327,7 +327,7 @@ export default function ProjectWizardPage() {
     if (durationDays) {
       if (durationDays <= 14) return "kanban";   // short bursts → Kanban
       if (durationDays <= 90) return "scrum";    // 2 weeks–3 months → Scrum
-      if (durationDays > 365) return "prince2";  // 1 year+ → formal governance
+      if (durationDays > 365) return "traditional";  // 1 year+ → formal governance
     }
 
     return "hybrid"; // Sensible default
@@ -661,7 +661,7 @@ export default function ProjectWizardPage() {
                       scrum: "Iterative sprints with short feedback loops suit this type of work — the agent delivers in 2-week cycles with regular reviews.",
                       kanban: "A visual flow board without fixed sprints is ideal for short or ongoing work — focuses on throughput and reduces overhead.",
                       waterfall: "Sequential phases with clear gates suit projects with fixed scope and well-defined requirements upfront.",
-                      prince2: "Formal governance with stage-gate controls provides the rigour needed for projects of this scale and complexity.",
+                      traditional: "Formal governance with stage-gate controls provides the rigour needed for projects of this scale and complexity.",
                       hybrid: "Combines structured planning phases (requirements, feasibility) with flexible delivery — gives you governance without excessive ceremony.",
                       safe: "Enterprise-level programme coordination across multiple teams and workstreams — structured scaling of agile practices.",
                     };
@@ -722,7 +722,7 @@ export default function ProjectWizardPage() {
                             scrum: "iterative sprints suit this type of work well, letting the agent deliver in short feedback loops.",
                             kanban: "a visual flow board with no fixed sprints is ideal for short or ongoing work like this.",
                             waterfall: "sequential phases with clear gates suit this project's fixed scope and requirements.",
-                            prince2: "formal governance and stage-gate controls are warranted at this budget scale.",
+                            traditional: "formal governance and stage-gate controls are warranted at this budget scale.",
                             hybrid: "a mix of upfront planning and agile delivery gives you structure without overhead.",
                             safe: "enterprise-level programme coordination across multiple teams is best handled by SAFe.",
                           };

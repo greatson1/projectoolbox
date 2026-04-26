@@ -27,6 +27,88 @@ function ApprovalLikelihoodRow({ type, urgency, projectId }: { type: string; urg
   );
 }
 
+/**
+ * Embedded prereq summary on PHASE_GATE approval cards. Reaches into the
+ * phase-tracker API and shows whether every gate prerequisite is satisfied.
+ * Stops the user from approving a gate when state still has open blockers
+ * — the previous static recommendation copy claimed "all criteria met"
+ * regardless of reality.
+ */
+function GatePrereqSummary({ projectId, phase }: { projectId?: string; phase?: string }) {
+  const [prereqs, setPrereqs] = useState<any[] | null>(null);
+  const [phaseObj, setPhaseObj] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!projectId) { setLoading(false); return; }
+    fetch(`/api/projects/${projectId}/phase-tracker`)
+      .then(r => r.json())
+      .then(j => {
+        const phases = j?.data?.phases || [];
+        const target = phase
+          ? phases.find((p: any) => p.name === phase) || phases.find((p: any) => p.isCurrent)
+          : phases.find((p: any) => p.isCurrent);
+        if (target) {
+          setPhaseObj(target);
+          setPrereqs(target.gate?.prerequisites || []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [projectId, phase]);
+
+  if (!projectId) return null;
+  if (loading) return <p className="text-[11px] text-muted-foreground">Loading gate prerequisites…</p>;
+  if (!prereqs || prereqs.length === 0) return null;
+
+  const summary = phaseObj?.gate?.summary;
+  const allMet = !!summary?.canAdvance;
+
+  return (
+    <div className={`mt-2 px-3 py-2 rounded-lg border ${allMet ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          {phaseObj?.name} gate prerequisites
+        </span>
+        <span className={`text-[10px] font-semibold ${allMet ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+          {summary?.met}/{summary?.total} met
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {prereqs.map((p: any, i: number) => {
+          const tone =
+            p.state === "met" ? "text-foreground/70 line-through"
+            : p.state === "rejected" ? "text-red-600 dark:text-red-400"
+            : p.state === "draft" ? "text-amber-600 dark:text-amber-400"
+            : p.state === "manual" ? "text-blue-600 dark:text-blue-400"
+            : "text-foreground";
+          const icon =
+            p.state === "met" ? "✓"
+            : p.state === "rejected" ? "✗"
+            : p.state === "draft" ? "!"
+            : p.state === "manual" ? "○"
+            : "·";
+          return (
+            <li key={i} className={`text-[11px] flex items-start gap-1.5 ${tone}`}>
+              <span className="font-bold w-3 text-center flex-shrink-0">{icon}</span>
+              <span className="flex-1">
+                {p.description}
+                {p.isMandatory && <span className="ml-1 text-red-500/70">*</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <a
+        href={`/projects/${projectId}/pm-tracker`}
+        className="inline-flex items-center gap-1 mt-2 text-[10px] font-semibold text-primary hover:underline"
+      >
+        Open PM Tracker → tick manual prereqs
+      </a>
+    </div>
+  );
+}
+
 function ImpactCalibrationHint({ type }: { type: string }) {
   const { data } = useMLPrediction<any>("impact_calibration", { type }, !!type);
   if (!data || !data.sampleSize || data.sampleSize < 3) return null;

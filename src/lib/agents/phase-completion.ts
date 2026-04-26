@@ -352,6 +352,76 @@ export async function getPhaseCompletion(
   // KB-informed blockers
   blockers.push(...kbBlockers);
 
+  // ── Methodology gate prerequisites ──────────────────────────────────────
+  // Heuristic evaluator + manual confirmations. Without this, the phase
+  // could advance even though a mandatory prereq from methodology-definitions
+  // (e.g. "Sponsor identified", "Funding confirmed") had not been satisfied.
+  // The PM Tracker UI was already showing these — now they actually block.
+  try {
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { methodology: true, orgId: true },
+    });
+    if (project?.orgId) {
+      const { getMethodology } = await import("@/lib/methodology-definitions");
+      const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
+      const methodology = getMethodology(methodologyId);
+      const phaseDef = methodology.phases.find(p => p.name === phaseName);
+      if (phaseDef && phaseDef.gate.preRequisites.length > 0) {
+        const [allArtefacts, stakeholders, gateApprovals, riskCount, manualConfirmations] = await Promise.all([
+          db.agentArtefact.findMany({ where: { projectId }, select: { name: true, status: true } }),
+          db.stakeholder.findMany({ where: { projectId }, select: { role: true } }),
+          db.approval.findMany({
+            where: { projectId, type: "PHASE_GATE", status: "APPROVED" },
+            select: { title: true },
+          }),
+          db.risk.count({ where: { projectId } }),
+          db.knowledgeBaseItem.findMany({
+            where: { projectId, orgId: project.orgId, tags: { has: "prereq_confirmation" } },
+            select: { metadata: true },
+          }),
+        ]);
+        const { evaluatePrerequisites, summarisePrerequisites, manualKey } =
+          await import("@/lib/agents/phase-prerequisites");
+        const manuallyConfirmed = new Set<string>();
+        for (const row of manualConfirmations) {
+          const meta = (row.metadata as Record<string, unknown>) || {};
+          if (typeof meta.phase === "string" && typeof meta.prereq === "string") {
+            manuallyConfirmed.add(manualKey(meta.phase, meta.prereq));
+          }
+        }
+        const evaluated = evaluatePrerequisites(phaseDef.gate.preRequisites, {
+          approvedArtefactNames: allArtefacts.filter(a => a.status === "APPROVED").map(a => a.name),
+          rejectedArtefactNames: allArtefacts.filter(a => a.status === "REJECTED").map(a => a.name),
+          draftArtefactNames: allArtefacts
+            .filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW")
+            .map(a => a.name),
+          stakeholderRoles: stakeholders.map(s => s.role || "").filter(Boolean),
+          approvedPhaseGateNames: gateApprovals.map(a => a.title || ""),
+          hasRisks: riskCount > 0,
+          manuallyConfirmed,
+          phaseName,
+        });
+        const summary = summarisePrerequisites(evaluated);
+        if (!summary.canAdvance) {
+          // Add one blocker per unmet mandatory prereq, with hint where to fix it
+          for (const p of evaluated) {
+            if (p.state === "met") continue;
+            if (!p.isMandatory) continue;
+            const where =
+              p.state === "manual" ? "tick it on the PM Tracker"
+              : p.state === "draft" ? "approve the referenced artefact"
+              : p.state === "rejected" ? "regenerate and approve the referenced artefact"
+              : "complete the referenced work or tick manually on the PM Tracker";
+            blockers.push(`Gate prereq unmet: "${p.description}" — ${where}`);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[phase-completion] gate prerequisite evaluation failed:", e);
+  }
+
   // If no artefacts AND no tasks exist at all, phase hasn't started — can't advance
   const hasAnyWork = artefactsTotal > 0 || pmTasksTotal > 0 || deliveryTotal > 0;
   if (!hasAnyWork) {

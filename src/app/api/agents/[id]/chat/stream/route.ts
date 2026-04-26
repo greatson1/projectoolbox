@@ -515,7 +515,7 @@ ${await (async () => {
     const projForMeth = deployment?.projectId
       ? await db.project.findUnique({ where: { id: deployment.projectId }, select: { methodology: true } })
       : null;
-    const methodologyId = (projForMeth?.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+    const methodologyId = (projForMeth?.methodology || "traditional").toLowerCase().replace("agile_", "");
     const methodology = getMethodology(methodologyId);
     const phaseDef = methodology.phases.find(p => p.name === currentPhase.name);
     if (!phaseDef) return "Phase definition not found.";

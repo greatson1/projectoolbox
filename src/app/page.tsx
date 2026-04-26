@@ -21,7 +21,7 @@ const FEATURES = [
   { icon: Mic, title: "Meeting Intelligence", desc: "Your agent joins calls, transcribes, extracts actions, logs decisions, and updates the plan before the call ends." },
   { icon: Brain, title: "Living Knowledge Base", desc: "Every risk, decision, artefact, and stakeholder is connected. Nothing falls through the cracks." },
   { icon: TrendingUp, title: "Earned Value & Schedule Control", desc: "Real-time EVM with SPI, CPI, and forecasts. Your agent spots cost and schedule variance before it becomes a problem." },
-  { icon: Zap, title: "Any Methodology, One Platform", desc: "PRINCE2, Agile, Waterfall, SAFe, Kanban, or Hybrid — your agent adapts its governance to match how you work." },
+  { icon: Zap, title: "Any Methodology, One Platform", desc: "Traditional (PMI-Style), Scrum, Waterfall, SAFe, Kanban, or Hybrid — your agent adapts its governance to match how you work." },
 ];
 
 const STEPS = [
@@ -50,7 +50,7 @@ const FAQS = [
   { q: "Is my project data secure?", a: "All data is encrypted at rest and in transit. We're SOC 2 compliant, GDPR-ready, and offer single-tenant deployment for Enterprise customers. Your data is never used to train AI models." },
   { q: "Can agents join my actual meetings?", a: "Yes. Using Recall.ai (included from Professional), your agent joins Google Meet, Zoom, or Teams as a participant. It transcribes, extracts actions, logs decisions, and updates your project plan automatically." },
   { q: "Do I need to change my existing tools?", a: "No. Projectoolbox connects to Jira, GitHub, Slack, Teams, MS Project, and more. Your agent works alongside your existing stack — no migration, no disruption." },
-  { q: "What sectors and methodologies are supported?", a: "Agents are tailored for construction, pharma, IT, defence, infrastructure, consulting, and finance. Supported methodologies include PRINCE2, PRINCE2 Agile, Scrum, SAFe, Waterfall, and Hybrid." },
+  { q: "What sectors and methodologies are supported?", a: "Agents are tailored for construction, pharma, IT, defence, infrastructure, consulting, and finance. Supported methodologies include Traditional (PMI-Style), Scrum, Kanban, SAFe, Waterfall, and Hybrid." },
 ];
 
 const LOGOS = [
@@ -295,7 +295,7 @@ export default function LandingPage() {
                           <span className="text-[10px] font-bold text-white">Agent Alpha</span>
                           <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/20">Active</span>
                         </div>
-                        <p className="text-[8px]" style={{ color: "#ffffff50" }}>PRINCE2 · Defence</p>
+                        <p className="text-[8px]" style={{ color: "#ffffff50" }}>Traditional · Defence</p>
                       </div>
                     </div>
                     {[

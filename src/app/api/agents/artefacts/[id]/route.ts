@@ -299,7 +299,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             if (!existingGate) {
               const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { methodology: true } });
               const { getMethodology } = await import("@/lib/methodology-definitions");
-              const methodology = getMethodology((project?.methodology || "PRINCE2").toLowerCase().replace("agile_", ""));
+              const methodology = getMethodology((project?.methodology || "traditional").toLowerCase().replace("agile_", ""));
               const phases = methodology.phases;
               const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
               const nextPhase = currentIdx >= 0 && currentIdx < phases.length - 1 ? phases[currentIdx + 1] : null;

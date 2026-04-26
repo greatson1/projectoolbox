@@ -11,7 +11,7 @@
 // ─── Types ───
 
 export type MethodologyId =
-  | "prince2"
+  | "traditional"
   | "waterfall"
   | "scrum"
   | "kanban"
@@ -69,8 +69,8 @@ export interface MethodologyDefinition {
 
 // ─── Definitions ───
 
-const PRINCE2: MethodologyDefinition = {
-  id: "prince2",
+const TRADITIONAL: MethodologyDefinition = {
+  id: "traditional",
   name: "Traditional (PMI-Style)",
   framework: "traditional",
   description: "Structured project management with phase gates and controlled stages",
@@ -123,11 +123,13 @@ const PRINCE2: MethodologyDefinition = {
       color: "#22D3EE",
       artefacts: [
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
-        { name: "Budget Breakdown", required: true, aiGeneratable: true },
-        { name: "Schedule Baseline", required: false, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
+        { name: "Schedule with Dependencies", required: false, aiGeneratable: true },
         { name: "Risk Management Plan", required: false, aiGeneratable: true },
-        { name: "Quality Plan", required: false, aiGeneratable: true },
-        { name: "Resource Plan", required: false, aiGeneratable: true },
+        { name: "Quality Management Plan", required: false, aiGeneratable: true },
+        { name: "Resource Management Plan", required: false, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
+        { name: "RACI Matrix", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Planning Approval",
@@ -168,9 +170,9 @@ const PRINCE2: MethodologyDefinition = {
       color: "#F59E0B",
       artefacts: [
         { name: "Acceptance Certificate", required: false, aiGeneratable: true },
-        { name: "End Project Report", required: false, aiGeneratable: true },
         { name: "Lessons Learned", required: false, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
+        { name: "Handover Documentation", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Closure Approval",
@@ -314,12 +316,13 @@ const SCRUM: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Budget Breakdown", required: true, aiGeneratable: true },
-        { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
+        { name: "Initial Product Backlog", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Product Vision", required: false, aiGeneratable: true },
         { name: "Definition of Done", required: false, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Sprint Zero Complete",
@@ -386,12 +389,13 @@ const KANBAN: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Budget Breakdown", required: true, aiGeneratable: true },
-        { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
+        { name: "Initial Product Backlog", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Board Configuration", required: false, aiGeneratable: true },
         { name: "WIP Policies", required: false, aiGeneratable: true },
         { name: "Service Level Agreement", required: false, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Board Live",
@@ -455,14 +459,15 @@ const SAFE: MethodologyDefinition = {
       color: "#6366F1",
       artefacts: [
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
-        { name: "Budget Breakdown", required: true, aiGeneratable: true },
-        { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
+        { name: "Initial Product Backlog", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "PI Objectives", required: false, aiGeneratable: true },
         { name: "Programme Board", required: false, aiGeneratable: true },
         { name: "Solution Vision", required: false, aiGeneratable: true },
         { name: "Architectural Runway", required: false, aiGeneratable: true },
         { name: "Team Topologies", required: false, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "PI Commitment",
@@ -524,10 +529,10 @@ const HYBRID: MethodologyDefinition = {
       description: "Project charter, hybrid delivery approach, WBS for governance, backlog for delivery",
       color: "#6366F1",
       artefacts: [
-        { name: "Risk Register", required: true, aiGeneratable: true },
-        { name: "Budget Breakdown", required: true, aiGeneratable: true },
+        { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
-        { name: "Charter", required: false, aiGeneratable: true },
+        { name: "Project Charter", required: false, aiGeneratable: true },
         { name: "Delivery Approach", required: false, aiGeneratable: true },
         { name: "Roadmap", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
@@ -538,7 +543,7 @@ const HYBRID: MethodologyDefinition = {
         name: "Foundation Approval",
         criteria: "Approach approved, team formed",
         preRequisites: [
-          { description: "Charter approved", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Project Charter approved", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
           { description: "Hybrid plan defined", category: "document", isMandatory: true, requiresHumanApproval: false },
           { description: "Risk register populated", category: "document", isMandatory: true, requiresHumanApproval: false },
         ],
@@ -551,12 +556,12 @@ const HYBRID: MethodologyDefinition = {
       artefacts: [
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
         { name: "Risk Management Plan", required: false, aiGeneratable: true },
-        { name: "Schedule Baseline", required: false, aiGeneratable: true },
-        { name: "Resource Plan", required: false, aiGeneratable: true },
-        { name: "Backlog", required: false, aiGeneratable: true },
-        { name: "Quality Plan", required: false, aiGeneratable: true },
+        { name: "Schedule with Dependencies", required: false, aiGeneratable: true },
+        { name: "Resource Management Plan", required: false, aiGeneratable: true },
+        { name: "Initial Product Backlog", required: false, aiGeneratable: true },
+        { name: "Quality Management Plan", required: false, aiGeneratable: true },
         { name: "Change Control Plan", required: false, aiGeneratable: true },
-        { name: "Gate Criteria", required: false, aiGeneratable: true },
+        { name: "Definition of Done", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Planning Approval",
@@ -595,7 +600,7 @@ const HYBRID: MethodologyDefinition = {
       description: "Formal closure covering governance outcomes and iterative delivery metrics",
       color: "#F59E0B",
       artefacts: [
-        { name: "Acceptance", required: false, aiGeneratable: true },
+        { name: "Acceptance Certificate", required: false, aiGeneratable: true },
         { name: "Lessons Learned", required: false, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
       ],
@@ -614,7 +619,7 @@ const HYBRID: MethodologyDefinition = {
 // ─── Registry ───
 
 export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
-  prince2: PRINCE2,
+  traditional: TRADITIONAL,
   waterfall: WATERFALL,
   scrum: SCRUM,
   kanban: KANBAN,
@@ -626,15 +631,20 @@ export const METHODOLOGY_LIST: MethodologyDefinition[] = Object.values(METHODOLO
 
 /**
  * Get a methodology definition by ID (case-insensitive).
- * Falls back to PRINCE2 if not found.
+ * Falls back to Traditional if not found.
+ *
+ * Backward-compat: legacy projects with methodology="prince2" stored
+ * in the DB still resolve to the Traditional definition. Once a future
+ * PRINCE2 methodology is added back, change the alias to point at it.
  */
 export function getMethodology(id: string): MethodologyDefinition {
   const raw = id.toLowerCase().replace(/[^a-z0-9]/g, "");
   // Handle aliases before casting to MethodologyId
   if (raw === "agile" || raw === "agilescrum") return METHODOLOGIES.scrum;
   if (raw === "agilekanban") return METHODOLOGIES.kanban;
+  if (raw === "prince2") return METHODOLOGIES.traditional; // legacy alias
   const key = raw as MethodologyId;
-  return METHODOLOGIES[key] || METHODOLOGIES.prince2;
+  return METHODOLOGIES[key] || METHODOLOGIES.traditional;
 }
 
 /**

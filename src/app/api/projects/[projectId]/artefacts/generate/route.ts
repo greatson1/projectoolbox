@@ -71,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       }
       const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
       const { getNextPhase } = await import("@/lib/agents/methodology-playbooks");
-      const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+      const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
       const playbookNext = deployment.currentPhase ? getNextPhase(methodologyId, deployment.currentPhase) : null;
 
       // The methodology playbook can return null when the project's stored

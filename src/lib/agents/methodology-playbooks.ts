@@ -32,7 +32,7 @@ interface PlaybookAction {
   riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 }
 
-const PRINCE2_PLAYBOOK: PhasePlaybook[] = [
+const TRADITIONAL_PLAYBOOK: PhasePlaybook[] = [
   {
     name: "Pre-Project",
     actions: [
@@ -310,15 +310,17 @@ const HYBRID_PLAYBOOK: PhasePlaybook[] = [
 
 const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
   // Canonical keys (lowercase — match MethodologyId)
-  prince2: PRINCE2_PLAYBOOK,
+  traditional: TRADITIONAL_PLAYBOOK,
   waterfall: WATERFALL_PLAYBOOK,
   scrum: SCRUM_PLAYBOOK,
   kanban: KANBAN_PLAYBOOK,
   safe: SAFE_PLAYBOOK,
   hybrid: HYBRID_PLAYBOOK,
-  // Legacy uppercase aliases (for VPS agent compatibility)
+  // Legacy aliases — old DB rows / VPS agent payloads use these
+  prince2: TRADITIONAL_PLAYBOOK,
+  PRINCE2: TRADITIONAL_PLAYBOOK,
+  TRADITIONAL: TRADITIONAL_PLAYBOOK,
   WATERFALL: WATERFALL_PLAYBOOK,
-  PRINCE2: PRINCE2_PLAYBOOK,
   AGILE_SCRUM: SCRUM_PLAYBOOK,
   AGILE_KANBAN: KANBAN_PLAYBOOK,
   SAFE: SAFE_PLAYBOOK,
@@ -330,7 +332,7 @@ const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
  */
 export function getPlaybook(methodology: string): PhasePlaybook[] {
   // Try exact match first, then lowercase, then uppercase
-  return PLAYBOOKS[methodology] || PLAYBOOKS[methodology.toLowerCase()] || PLAYBOOKS[methodology.toUpperCase()] || PRINCE2_PLAYBOOK;
+  return PLAYBOOKS[methodology] || PLAYBOOKS[methodology.toLowerCase()] || PLAYBOOKS[methodology.toUpperCase()] || TRADITIONAL_PLAYBOOK;
 }
 
 /**

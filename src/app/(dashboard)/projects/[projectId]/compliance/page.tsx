@@ -27,7 +27,7 @@ export default function CompliancePage() {
     );
   }
 
-  const methodology = getMethodology(project?.methodology || "prince2");
+  const methodology = getMethodology(project?.methodology || "traditional");
   const phases = methodology.phases || [];
 
   // Determine gate status from project phases data if available

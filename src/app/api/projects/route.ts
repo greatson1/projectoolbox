@@ -38,12 +38,17 @@ export async function POST(req: NextRequest) {
 
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-    // Map methodology keys to Prisma enum values (handles any casing from the deploy wizard)
+    // Map methodology keys to Prisma enum values (handles any casing from the deploy wizard).
+    // The DB enum value PRINCE2 is kept for backward-compat — internally we
+    // resolve it via getMethodology() to the Traditional (PMI-Style) definition.
+    // The deploy wizard now sends "traditional"; older payloads still send "prince2".
     const METHODOLOGY_MAP: Record<string, string> = {
-      prince2: "PRINCE2", waterfall: "WATERFALL", scrum: "AGILE_SCRUM",
+      traditional: "PRINCE2", prince2: "PRINCE2",
+      waterfall: "WATERFALL", scrum: "AGILE_SCRUM",
       kanban: "AGILE_KANBAN", safe: "SAFE", hybrid: "HYBRID",
       // Uppercase variants (deploy wizard sends .toUpperCase())
-      PRINCE2: "PRINCE2", WATERFALL: "WATERFALL", SCRUM: "AGILE_SCRUM",
+      TRADITIONAL: "PRINCE2", PRINCE2: "PRINCE2",
+      WATERFALL: "WATERFALL", SCRUM: "AGILE_SCRUM",
       KANBAN: "AGILE_KANBAN", SAFE: "SAFE", HYBRID: "HYBRID",
       // Already-mapped enum values (idempotent)
       AGILE_SCRUM: "AGILE_SCRUM", AGILE_KANBAN: "AGILE_KANBAN",
