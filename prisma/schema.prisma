@@ -354,6 +354,20 @@ model Phase {
   criteria    String?
   startDate   DateTime?
   endDate     DateTime?
+  // ── Pipeline-step audit fields ─────────────────────────────────────────
+  // Authoritative timestamps for the canonical phase-step sequence so the
+  // single phase-next-action resolver can decide "what must happen next"
+  // without relying on inferring state from phaseStatus + KB tag heuristics
+  // (which produced silent step-skip bugs).
+  researchCompletedAt        DateTime?
+  clarificationCompletedAt   DateTime?
+  // Why clarification was skipped, if it was. Only two values allowed at
+  // write-time: "no_questions_needed" (KB rich enough or LLM returned []),
+  // "user_skipped_explicit" (user clicked Generate-without-asking). Any
+  // other reason — API failure, parse error, etc — must NOT skip; the
+  // resolver must require a retry instead.
+  clarificationSkippedReason String?
+  gateApprovedAt             DateTime?
 }
 
 model Sprint {

@@ -30,6 +30,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, LineChart, Line,
 } from "recharts";
+import { Columns3 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES

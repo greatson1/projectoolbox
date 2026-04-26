@@ -12,6 +12,8 @@
  */
 
 import { db } from "@/lib/db";
+import { looksLikeFabricatedName } from "./fabricated-names-pure";
+import { summariseArtefactSource, trustFromArtefactSource } from "./source-prefix-pure";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,11 @@ interface KBFact {
   title: string;
   content: string;
   tags: string[];
+  // Per-fact trust override. If unset, the artefact-wide source trust applies.
+  // Use this to downgrade an individual fact below the artefact average — e.g.
+  // skipping a stakeholder list whose names look fabricated even when the rest
+  // of the artefact is research-anchored.
+  trust?: "HIGH_TRUST" | "STANDARD" | "REFERENCE_ONLY";
 }
 
 // ─── Extraction dispatcher ────────────────────────────────────────────────────
@@ -46,7 +53,18 @@ export async function extractAndStoreArtefactKnowledge(
     const facts = await extractFacts(artefact);
     if (facts.length === 0) return;
 
+    // Trust level is derived from the artefact's universal source prefix
+    // (Research-anchored / User-confirmed → HIGH_TRUST, Default-template /
+    // Research-thin → REFERENCE_ONLY, mixed/unknown → STANDARD). This stops
+    // approved-but-fabricated content from poisoning downstream generations.
+    // Individual facts can override via fact.trust when the extractor knows
+    // a specific row is unsafe (e.g. a fabricated stakeholder list inside an
+    // otherwise research-anchored artefact).
+    const sourceSummary = summariseArtefactSource(artefact.content);
+    const artefactTrust = trustFromArtefactSource(sourceSummary);
+
     for (const fact of facts) {
+      const trustLevel = fact.trust ?? artefactTrust;
       // Upsert by title — prevents duplicates on repeated saves
       const existing = await db.knowledgeBaseItem.findFirst({
         where: { agentId, projectId, title: fact.title },
@@ -56,7 +74,7 @@ export async function extractAndStoreArtefactKnowledge(
       if (existing) {
         await db.knowledgeBaseItem.update({
           where: { id: existing.id },
-          data: { content: fact.content, updatedAt: new Date(), tags: fact.tags },
+          data: { content: fact.content, updatedAt: new Date(), tags: fact.tags, trustLevel },
         });
       } else {
         await db.knowledgeBaseItem.create({
@@ -68,11 +86,12 @@ export async function extractAndStoreArtefactKnowledge(
             type: "TEXT",
             title: fact.title,
             content: fact.content,
-            trustLevel: "HIGH_TRUST",   // user-edited content = highest trust
+            trustLevel,
             tags: fact.tags,
             metadata: {
               sourceArtefact: artefact.id,
               sourceArtefactName: artefact.name,
+              sourceSummary,
               extractedAt: new Date().toISOString(),
             },
           },
@@ -256,15 +275,36 @@ export async function getProjectKnowledgeContext(
     }
 
     // ── Approved artefacts — let the agent see what was already documented ──
+    // Split into canonical vs placeholder-heavy so default-template artefacts
+    // (often approved without anyone noticing the names are fabricated) don't
+    // get injected as "do not contradict" canonical content. They still appear
+    // in a flagged section so the agent knows they exist but won't cite them.
     if (approvedArtefacts.length > 0) {
-      lines.push("── PREVIOUSLY APPROVED ARTEFACTS (canonical content — do not contradict) ──");
+      const canonical: typeof approvedArtefacts = [];
+      const placeholderHeavy: typeof approvedArtefacts = [];
       for (const a of approvedArtefacts) {
-        const preview = a.format === "csv"
-          ? truncate(a.content, 600)
-          : truncate(stripHtml(a.content), 600);
-        lines.push(`• ${a.name} [approved ${new Date(a.updatedAt).toLocaleDateString("en-GB")}]:\n  ${preview.replace(/\n/g, "\n  ")}`);
+        if (summariseArtefactSource(a.content) === "low") placeholderHeavy.push(a);
+        else canonical.push(a);
       }
-      lines.push("");
+
+      if (canonical.length > 0) {
+        lines.push("── PREVIOUSLY APPROVED ARTEFACTS (canonical content — do not contradict) ──");
+        for (const a of canonical) {
+          const preview = a.format === "csv"
+            ? truncate(a.content, 600)
+            : truncate(stripHtml(a.content), 600);
+          lines.push(`• ${a.name} [approved ${new Date(a.updatedAt).toLocaleDateString("en-GB")}]:\n  ${preview.replace(/\n/g, "\n  ")}`);
+        }
+        lines.push("");
+      }
+
+      if (placeholderHeavy.length > 0) {
+        lines.push("── APPROVED-BUT-PLACEHOLDER ARTEFACTS (names/values are default templates — confirm with user before citing) ──");
+        for (const a of placeholderHeavy) {
+          lines.push(`• ${a.name} — needs real names/values, do NOT quote contents as facts`);
+        }
+        lines.push("");
+      }
     }
 
     // ── HIGH_TRUST research / verified facts (system-classified, not user-spoken) ──
@@ -383,50 +423,79 @@ function extractStakeholderFacts(artefact: ArtefactRecord): KBFact[] {
   const facts: KBFact[] = [];
   const content = artefact.content;
 
+  // Collect raw names + roles, then filter out fabricated placeholders before
+  // promoting any of them into KB. We only emit the per-name "Stakeholder List"
+  // fact when we have at least one real-looking name; if every row looks
+  // fabricated we skip the list entirely so default-template stakeholders
+  // (Sarah Mitchell, Marcus Chen, Westminster Council) never get cited as
+  // confirmed stakeholders downstream.
+  let rawCount = 0;
+  const realPeople: string[] = [];
+  const fabricatedPeople: string[] = [];
+
   if (artefact.format === "csv") {
-    // Parse CSV rows — columns: ID, Name, Role/Type, ...
     const rows = parseCSV(content);
     if (rows.length > 1) {
       const header = rows[0].map(h => h.toLowerCase().trim());
       const nameIdx = header.findIndex(h => h.includes("name") || h.includes("person"));
       const roleIdx = header.findIndex(h => h.includes("role") || h.includes("type") || h.includes("organisation"));
-      const interestIdx = header.findIndex(h => h.includes("interest") || h.includes("influence"));
 
-      const people: string[] = [];
       for (const row of rows.slice(1)) {
         if (!row.length) continue;
         const name = nameIdx >= 0 ? row[nameIdx]?.trim() : "";
         const role = roleIdx >= 0 ? row[roleIdx]?.trim() : "";
-        if (name && name !== "TBD" && name.length > 1) {
-          people.push(role ? `${name} (${role})` : name);
-        }
-      }
-
-      if (people.length > 0) {
-        facts.push({
-          title: `Stakeholder List — ${artefact.name}`,
-          content: `Known stakeholders for this project:\n${people.map(p => `• ${p}`).join("\n")}`,
-          tags: ["stakeholders", "stakeholder-register", "people", "auto-extracted"],
-        });
+        if (!name || name === "TBD" || name.length <= 1) continue;
+        rawCount++;
+        const display = role ? `${name} (${role})` : name;
+        if (looksLikeFabricatedName(name)) fabricatedPeople.push(display);
+        else realPeople.push(display);
       }
     }
   } else {
-    // HTML/markdown — extract names from table cells or lines
     const names = extractNamesFromText(content);
-    if (names.length > 0) {
-      facts.push({
-        title: `Stakeholder List — ${artefact.name}`,
-        content: `Known stakeholders for this project:\n${names.map(n => `• ${n}`).join("\n")}`,
-        tags: ["stakeholders", "stakeholder-register", "people", "auto-extracted"],
-      });
+    rawCount = names.length;
+    for (const n of names) {
+      if (looksLikeFabricatedName(n)) fabricatedPeople.push(n);
+      else realPeople.push(n);
     }
   }
 
-  // Store the full approved content as a high-trust reference
+  if (realPeople.length > 0) {
+    facts.push({
+      title: `Stakeholder List — ${artefact.name}`,
+      content: `Known stakeholders for this project:\n${realPeople.map(p => `• ${p}`).join("\n")}`,
+      tags: ["stakeholders", "stakeholder-register", "people", "auto-extracted"],
+    });
+  }
+
+  // If most rows were fabricated, surface a low-trust flag so the agent and
+  // human reviewers can see the artefact still needs real names. We never
+  // promote the fabricated names themselves — REFERENCE_ONLY items are
+  // excluded from generation context in getProjectKnowledgeContext.
+  if (fabricatedPeople.length > 0 && fabricatedPeople.length >= rawCount * 0.5) {
+    facts.push({
+      title: `Stakeholder List (placeholders only) — ${artefact.name}`,
+      content:
+        `Stakeholder register currently uses placeholder names — confirm with the user before relying on these:\n` +
+        fabricatedPeople.map(p => `• ${p}`).join("\n"),
+      tags: ["stakeholders", "stakeholder-register", "placeholder", "needs-confirmation", "auto-extracted"],
+      trust: "REFERENCE_ONLY",
+    });
+  }
+
+  // Store the full approved content as a reference. Trust defaults to the
+  // artefact-wide source summary, but if half-or-more of the names look
+  // fabricated we hard-cap it to REFERENCE_ONLY — the artefact's own source
+  // prefixes can lie ("User-confirmed — Sarah Mitchell" written by a default
+  // template), so we trust the per-row name detector over the prefix here.
+  const placeholderHeavy = fabricatedPeople.length > 0 && fabricatedPeople.length >= rawCount * 0.5;
   facts.push({
     title: `Approved: ${artefact.name}`,
     content: truncate(stripHtml(content), 3000),
-    tags: ["stakeholder-register", "approved-artefact", "auto-extracted"],
+    tags: placeholderHeavy
+      ? ["stakeholder-register", "approved-artefact", "placeholder", "needs-confirmation", "auto-extracted"]
+      : ["stakeholder-register", "approved-artefact", "auto-extracted"],
+    ...(placeholderHeavy ? { trust: "REFERENCE_ONLY" as const } : {}),
   });
 
   return facts;
@@ -438,6 +507,10 @@ function extractResourceFacts(artefact: ArtefactRecord): KBFact[] {
   const facts: KBFact[] = [];
   const content = artefact.content;
 
+  let rawCount = 0;
+  const realPeople: string[] = [];
+  const fabricatedPeople: string[] = [];
+
   if (artefact.format === "csv") {
     const rows = parseCSV(content);
     if (rows.length > 1) {
@@ -445,30 +518,35 @@ function extractResourceFacts(artefact: ArtefactRecord): KBFact[] {
       const nameIdx = header.findIndex(h => h.includes("name") || h.includes("person"));
       const roleIdx = header.findIndex(h => h.includes("role"));
 
-      const people: string[] = [];
       for (const row of rows.slice(1)) {
         if (!row.length) continue;
         const name = nameIdx >= 0 ? row[nameIdx]?.trim() : "";
         const role = roleIdx >= 0 ? row[roleIdx]?.trim() : "";
-        if (name && !name.toLowerCase().startsWith("tbd") && name.length > 2) {
-          people.push(role ? `${role}: ${name}` : name);
-        }
+        if (!name || name.toLowerCase().startsWith("tbd") || name.length <= 2) continue;
+        rawCount++;
+        const display = role ? `${role}: ${name}` : name;
+        if (looksLikeFabricatedName(name)) fabricatedPeople.push(display);
+        else realPeople.push(display);
       }
 
-      if (people.length > 0) {
+      if (realPeople.length > 0) {
         facts.push({
           title: `Resource Assignments — ${artefact.name}`,
-          content: `Named resources assigned to this project:\n${people.map(p => `• ${p}`).join("\n")}`,
+          content: `Named resources assigned to this project:\n${realPeople.map(p => `• ${p}`).join("\n")}`,
           tags: ["resources", "people", "assignments", "auto-extracted"],
         });
       }
     }
   }
 
+  const placeholderHeavy = fabricatedPeople.length > 0 && fabricatedPeople.length >= rawCount * 0.5;
   facts.push({
     title: `Approved: ${artefact.name}`,
     content: truncate(stripHtml(content), 3000),
-    tags: ["resource-plan", "approved-artefact", "auto-extracted"],
+    tags: placeholderHeavy
+      ? ["resource-plan", "approved-artefact", "placeholder", "needs-confirmation", "auto-extracted"]
+      : ["resource-plan", "approved-artefact", "auto-extracted"],
+    ...(placeholderHeavy ? { trust: "REFERENCE_ONLY" as const } : {}),
   });
 
   return facts;
