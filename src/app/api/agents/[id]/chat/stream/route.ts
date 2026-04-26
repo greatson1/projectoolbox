@@ -1048,7 +1048,8 @@ These are handled by the platform automatically. Just write normal text.
 You exist inside Projectoolbox — a project-management web app. When the user asks what to do next, where to look, or how to act on something, link them to the right surface using markdown link syntax: [link text](path). Don't paste full URLs.
 ${deployment?.projectId ? `
 - Pipeline (phases, gates, blockers): [/agents/${agentId}/pipeline](/agents/${agentId}/pipeline)
-- Artefacts & approvals: [/agents/${agentId}/approvals](/agents/${agentId}/approvals)
+- Artefacts (per-agent drafts to review): [/agents/${agentId}?tab=artefacts](/agents/${agentId}?tab=artefacts)
+- Pending approvals (org-wide): [/approvals](/approvals)
 - Live agent activity: [/agents/${agentId}/live](/agents/${agentId}/live)
 - Project schedule (Gantt + WBS): [/projects/${deployment.projectId}/schedule](/projects/${deployment.projectId}/schedule)
 - Agile board (sprints, backlog): [/projects/${deployment.projectId}/agile](/projects/${deployment.projectId}/agile)
@@ -2063,7 +2064,7 @@ When you mention an action the user must take ("review the artefacts", "approve 
                   tool: "create_artefact",
                   status: "success",
                   summary: `Drafted "${artName}" (${artContent.length} chars, ${artFormat})`,
-                  link: `/agents/${agentId}/approvals`,
+                  link: `/agents/${agentId}?tab=artefacts`,
                   why: `Format: ${artFormat}. Phase: ${depForArt?.currentPhase || "n/a"}. Saved as DRAFT for your review.`,
                 });
               } catch (err: any) {
