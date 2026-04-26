@@ -823,24 +823,33 @@ export default function ProjectWizardPage() {
                           return (
                             <label
                               key={ai}
-                              className={`flex items-start gap-2.5 p-2.5 rounded-[8px] transition-all select-none ${isLocked ? "cursor-default" : "cursor-pointer"}`}
+                              title={isLocked ? `${a.name} is required by the ${data.methodology} methodology — it cannot be deselected.` : a.name}
+                              className={`flex items-start gap-2.5 p-2.5 rounded-[8px] transition-all select-none ${isLocked ? "cursor-not-allowed" : "cursor-pointer"}`}
                               style={{
                                 background: a.required ? `${g.color}10` : "hsl(var(--muted)/0.3)",
                                 border: `1px solid ${a.required ? g.color + "30" : "hsl(var(--border)/0.5)"}`,
-                                opacity: isLocked && !a.required ? 0.6 : 1,
+                                // Locked + required = full opacity (it's the canonical state).
+                                // Locked + not required would be a bug — methodology forces required=true on these.
+                                opacity: 1,
                               }}
                             >
-                              {/* Custom checkbox */}
+                              {/* Custom checkbox — locked variant shows a small padlock instead of a tickbox so it's unmistakably non-interactive */}
                               <div className="mt-0.5 shrink-0 w-4 h-4 rounded-[4px] flex items-center justify-center transition-all"
                                 style={{
                                   background: a.required ? g.color : "transparent",
                                   border: `1.5px solid ${a.required ? g.color : "hsl(var(--border))"}`,
                                 }}>
-                                {a.required && (
+                                {isLocked ? (
+                                  // Lock glyph: shackle + body
+                                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                                    <path d="M3 4V3a2 2 0 0 1 4 0v1" stroke="white" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+                                    <rect x="2" y="4" width="6" height="5" rx="1" fill="white" />
+                                  </svg>
+                                ) : a.required ? (
                                   <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
                                     <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                                   </svg>
-                                )}
+                                ) : null}
                               </div>
                               <input type="checkbox" className="hidden" checked={a.required}
                                 disabled={isLocked}
@@ -851,12 +860,18 @@ export default function ProjectWizardPage() {
                                   upd({ phases });
                                 }} />
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <p className="text-[12px] font-semibold leading-tight" style={{ color: a.required ? "var(--foreground)" : "var(--muted-foreground)" }}>
                                     {a.name}
                                   </p>
                                   {isLocked && (
-                                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold uppercase tracking-wider">Required</span>
+                                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <svg width="7" height="8" viewBox="0 0 10 10" fill="none">
+                                        <path d="M3 4V3a2 2 0 0 1 4 0v1" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+                                        <rect x="2" y="4" width="6" height="5" rx="1" fill="currentColor" />
+                                      </svg>
+                                      Required
+                                    </span>
                                   )}
                                 </div>
                                 {desc && (
