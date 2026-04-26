@@ -30,14 +30,17 @@ export async function generatePhaseArtefacts(
    */
   priorFeedback?: Record<string, string>,
   /**
-   * When true, skip the lifecycle gate that blocks generation while the
-   * deployment is in `researching`/`awaiting_clarification` or has an active
-   * clarification session. Used by the user-initiated regenerate endpoints —
-   * the user has explicitly asked to replace a draft/rejected artefact and
-   * should not be blocked by the onboarding flow gate.
+   * When provided with an allowed reason, skip the lifecycle gate that blocks
+   * generation while the deployment is in `researching`/`awaiting_clarification`
+   * or has an active clarification session. Allowed reasons:
+   *   - "user_regenerate"   : caller is the user-initiated regenerate endpoint
+   *   - "post_clarification": caller is the clarification-session-complete handler
+   * Any other value is treated as the gate being active. Replaces the prior
+   * `force?: boolean` which had no audit trail and was easy to mis-call.
    */
-  force?: boolean,
+  bypassReason?: "user_regenerate" | "post_clarification",
 ): Promise<{ generated: number; skipped: number; phase: string; missing?: string[] }> {
+  const force = bypassReason === "user_regenerate" || bypassReason === "post_clarification";
   const [agent, project] = await Promise.all([
     db.agent.findUnique({ where: { id: agentId } }),
     db.project.findUnique({ where: { id: projectId } }),
@@ -518,22 +521,76 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       });
 
       // ── 3d: Start clarification session (informed by research) ──
+      // Discriminated outcome — replaces the boolean return that allowed
+      // silent fall-through on API failures (the original Birmingham-class
+      // bug). Each branch is handled explicitly; "failed" never proceeds.
+      const { startClarificationSession } = await import("@/lib/agents/clarification-session");
+      const { markClarificationSkipped } = await import("@/lib/agents/phase-next-action");
       let sessionStarted = false;
+      let clarificationOutcome: Awaited<ReturnType<typeof startClarificationSession>> | null = null;
       try {
-        const { startClarificationSession } = await import("@/lib/agents/clarification-session");
-        sessionStarted = await startClarificationSession(agentId, project.id, agent.orgId, artefactNames, researchSummary);
-        if (sessionStarted) {
-          await db.agentActivity.create({
-            data: { agentId, type: "chat", summary: `Research complete (${researchFacts} facts). Clarification questions posted — artefacts will generate after you answer.` },
-          }).catch(() => {});
-        }
-      } catch (e) {
-        console.error("[runLifecycleInit] clarification session failed:", e);
+        clarificationOutcome = await startClarificationSession(agentId, project.id, agent.orgId, artefactNames, researchSummary);
+      } catch (e: any) {
+        clarificationOutcome = { outcome: "failed", reason: `Threw: ${e?.message || "unknown"}` };
       }
 
-      // ── 3e: If clarification didn't start, present assumptions and ask for approval ──
-      // Instead of auto-generating artefacts, we inform the user what we know and
-      // what we'll assume, then wait for them to approve before generating.
+      if (clarificationOutcome.outcome === "started" || clarificationOutcome.outcome === "already_active") {
+        sessionStarted = true;
+        await db.agentActivity.create({
+          data: { agentId, type: "chat", summary: `Research complete (${researchFacts} facts). Clarification questions posted — artefacts will generate after you answer.` },
+        }).catch(() => {});
+      } else if (clarificationOutcome.outcome === "no_questions") {
+        // Genuine "nothing to ask" — record the skip with the reason so the
+        // resolver knows clarification is legitimately complete for this
+        // phase. THIS is the only path that's allowed to proceed without
+        // user input.
+        await markClarificationSkipped(project.id, firstPhase.name, "no_questions_needed");
+        await db.agentActivity.create({
+          data: { agentId, type: "chat", summary: `Clarification skipped: ${clarificationOutcome.reason} — proceeding to generation.` },
+        }).catch(() => {});
+        // Fall through to assumption-approval card so user can still review
+        // before generation starts.
+      } else {
+        // outcome === "failed" — DO NOT silently fall through. Surface the
+        // failure to the user and require an explicit retry. Artefact
+        // generation is blocked until clarification is either completed or
+        // skipped via the explicit user action.
+        console.error(`[runLifecycleInit] clarification session FAILED: ${clarificationOutcome.reason}`);
+        await db.chatMessage.create({
+          data: {
+            agentId,
+            role: "agent",
+            content: [
+              `## Clarification setup hit a snag`,
+              ``,
+              `I couldn't generate clarification questions for **${project.name}** automatically. Reason: \`${clarificationOutcome.reason}\``,
+              ``,
+              `**Two options:**`,
+              `1. Reply with anything you'd like me to know about the project (budget, timeline, attendees, constraints) and I'll save it as a fact.`,
+              `2. Reply **"Skip questions and generate"** if you'd rather I draft documents using only what I already know — every gap will be marked **[TBC]** for you to fill in afterwards.`,
+              ``,
+              `I won't generate until you choose one — I'd rather pause than draft on incomplete info.`,
+            ].join("\n"),
+            metadata: {
+              type: "clarification_failed",
+              reason: clarificationOutcome.reason,
+              phase: firstPhase.name,
+            } as any,
+          },
+        }).catch(() => {});
+        await db.agentDeployment.update({
+          where: { id: deploymentId },
+          data: { phaseStatus: "awaiting_clarification" },
+        }).catch(() => {});
+        await db.agentActivity.create({
+          data: { agentId, type: "chat", summary: `Clarification FAILED (${clarificationOutcome.reason}) — user prompted to retry or explicitly skip` },
+        }).catch(() => {});
+        return;
+      }
+
+      // ── 3e: If clarification didn't start (no_questions branch), present
+      // assumptions and ask for approval. Started/active branches return
+      // earlier — only the "no_questions" path falls through here.
       if (!sessionStarted) {
         // Fetch what the agent knows from KB to present as assumptions
         const kbItems = await db.knowledgeBaseItem.findMany({

@@ -404,10 +404,33 @@ Be strict: only mark as answered if the confirmed facts clearly contain the spec
 // ─── Session start ────────────────────────────────────────────────────────────
 
 /**
+ * Discriminated outcome of a clarification-session start attempt. Replaces
+ * the boolean return that produced the silent-skip bug — every caller MUST
+ * branch on `outcome` so a failed Q-generation never silently falls through
+ * to "proceed with generation".
+ *
+ *   - "started"          : a new session was posted to chat; defer generation
+ *   - "already_active"   : a session was already in flight; defer generation
+ *   - "no_questions"     : KB is rich enough OR Claude returned 0 — safe to
+ *                          generate directly. Caller MUST record this with
+ *                          markClarificationSkipped("no_questions_needed").
+ *   - "failed"           : LLM API/parse error. DO NOT generate. Caller MUST
+ *                          surface the error to the user and require an
+ *                          explicit retry or skip.
+ */
+export type ClarificationStartOutcome =
+  | { outcome: "started"; sessionId: string; questionCount: number }
+  | { outcome: "already_active"; sessionId: string }
+  | { outcome: "no_questions"; reason: "kb_rich" | "llm_zero_questions" | "all_dedup_filtered" }
+  | { outcome: "failed"; reason: string };
+
+/**
  * Main entry point — called from generatePhaseArtefacts when KB is sparse.
  * Generates targeted questions, posts them to the chat, saves session state.
- * Returns true if a session was started (generation should be deferred),
- * false if KB already has enough information (generation should proceed).
+ *
+ * Returns a discriminated outcome (see ClarificationStartOutcome). Callers
+ * MUST handle the "failed" branch explicitly — a falsy return no longer
+ * means "safe to generate".
  */
 export async function startClarificationSession(
   agentId: string,
@@ -415,10 +438,10 @@ export async function startClarificationSession(
   orgId: string,
   artefactNames: string[],
   researchContext?: string,
-): Promise<boolean> {
+): Promise<ClarificationStartOutcome> {
   // Don't start a new session if one is already active
   const existing = await getActiveSession(agentId, projectId);
-  if (existing) return true;
+  if (existing) return { outcome: "already_active", sessionId: existing.sessionId };
 
   // Load project + KB context (includes research facts stored by feasibility-research)
   const [project, kbItems] = await Promise.all([
@@ -430,17 +453,30 @@ export async function startClarificationSession(
       take: 30,
     }),
   ]);
-  if (!project) return false;
+  if (!project) return { outcome: "failed", reason: "Project not found" };
 
   // If we already have 15+ confirmed facts, KB is probably rich enough — generate directly
   const confirmedFacts = kbItems.filter(i => i.trustLevel === "HIGH_TRUST");
-  if (confirmedFacts.length >= 15) return false;
+  if (confirmedFacts.length >= 15) return { outcome: "no_questions", reason: "kb_rich" };
 
   const kbContext = kbItems.map(i => `[${i.trustLevel}] ${i.title}: ${i.content}`).join("\n");
-  const rawQuestions = await generateQuestions(project, artefactNames, kbContext, researchContext);
 
-  // If Claude found nothing to ask, proceed with generation
-  if (rawQuestions.length === 0) return false;
+  // generateQuestions returns [] on either "no questions needed" OR API
+  // failure — disambiguate by checking ANTHROPIC_API_KEY presence first
+  // and surfacing API errors via try/catch instead of silent empty array.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { outcome: "failed", reason: "ANTHROPIC_API_KEY not configured" };
+  }
+  let rawQuestions: ClarificationQuestion[];
+  try {
+    rawQuestions = await generateQuestions(project, artefactNames, kbContext, researchContext);
+  } catch (e: any) {
+    return { outcome: "failed", reason: `Question generation threw: ${e?.message || "unknown error"}` };
+  }
+
+  // If Claude returned an empty array, that's a legitimate "no questions" —
+  // generation is safe to proceed. (Distinguished from API failure above.)
+  if (rawQuestions.length === 0) return { outcome: "no_questions", reason: "llm_zero_questions" };
 
   // ── Second-pass dedup: drop any question already answered by KB ────────────
   // The generation prompt tells Claude to skip known facts, but phrasing can
@@ -450,7 +486,7 @@ export async function startClarificationSession(
     ? await filterAlreadyAnsweredQuestions(rawQuestions, confirmedFacts, project)
     : rawQuestions;
 
-  if (questions.length === 0) return false;
+  if (questions.length === 0) return { outcome: "no_questions", reason: "all_dedup_filtered" };
 
   // Build the session
   const session: ClarificationSession = {
@@ -514,7 +550,7 @@ export async function startClarificationSession(
     }
   } catch {}
 
-  return true; // session started — defer generation
+  return { outcome: "started", sessionId: session.sessionId, questionCount: questions.length };
 }
 
 // ─── TBC Clarification Session ───────────────────────────────────────────────
@@ -635,6 +671,20 @@ export async function answerQuestionInSession(
     session.status = "complete";
     session.completedAt = new Date().toISOString();
     await saveSession(agentId, projectId, orgId, session);
+
+    // Audit-trail mark for the phase-next-action resolver.
+    try {
+      const deploymentForPhase = await db.agentDeployment.findFirst({
+        where: { agentId, projectId, isActive: true },
+        select: { currentPhase: true },
+      });
+      if (deploymentForPhase?.currentPhase) {
+        const { markClarificationComplete } = await import("@/lib/agents/phase-next-action");
+        await markClarificationComplete(projectId, deploymentForPhase.currentPhase);
+      }
+    } catch (e) {
+      console.error("[clarification] markClarificationComplete failed:", e);
+    }
 
     // Post completion card to chat
     await db.chatMessage.create({
@@ -776,6 +826,7 @@ export async function answerQuestionInSession(
             deployment.projectId,
             deployment.currentPhase ?? undefined,
             Object.keys(postClarFeedback).length > 0 ? postClarFeedback : undefined,
+            "post_clarification",
           );
           if (result.generated > 0) {
             await db.chatMessage.create({

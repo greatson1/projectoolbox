@@ -92,9 +92,37 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
         data: { phaseStatus: "awaiting_clarification" },
       }).catch(() => {});
       const { startClarificationSession } = await import("@/lib/agents/clarification-session");
-      await startClarificationSession(ctx.agentId, ctx.projectId, ctx.orgId, artefactNames);
-      // Clarification session-complete handler triggers artefact generation.
-      return;
+      const { markClarificationSkipped } = await import("@/lib/agents/phase-next-action");
+      const outcome = await startClarificationSession(ctx.agentId, ctx.projectId, ctx.orgId, artefactNames);
+      // Discriminated handling — never silently skip on failure. The
+      // "started"/"already_active" branches defer to the session-complete
+      // handler. "no_questions" records the legitimate skip and falls
+      // through to direct generation. "failed" surfaces a chat message
+      // and stops here so the user can retry.
+      if (outcome.outcome === "started" || outcome.outcome === "already_active") {
+        return;
+      }
+      if (outcome.outcome === "no_questions") {
+        await markClarificationSkipped(ctx.projectId, ctx.toPhase, "no_questions_needed");
+        // fall through to step 3 (generation)
+      } else {
+        console.error(`[phase-advance:${ctx.toPhase}] clarification FAILED: ${outcome.reason}`);
+        await db.chatMessage.create({
+          data: {
+            agentId: ctx.agentId,
+            role: "agent",
+            content: [
+              `## Clarification for ${ctx.toPhase} hit a snag`,
+              ``,
+              `I couldn't generate clarification questions for the new phase. Reason: \`${outcome.reason}\``,
+              ``,
+              `Reply **"Skip questions and generate"** to proceed with [TBC] markers, or send me what you'd like me to know about ${ctx.toPhase} and I'll save it as a fact.`,
+            ].join("\n"),
+            metadata: { type: "clarification_failed", reason: outcome.reason, phase: ctx.toPhase } as any,
+          },
+        }).catch(() => {});
+        return;
+      }
     }
   } catch (e) {
     console.error(`[phase-advance:${ctx.toPhase}] clarification failed:`, e);
