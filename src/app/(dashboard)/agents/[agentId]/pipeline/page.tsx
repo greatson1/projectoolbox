@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1232,12 +1233,24 @@ export default function AgentPipelinePage() {
                       const res = await fetch(`/api/agents/${data.agentId}/phase-completion`, { method: "POST" });
                       const json = await res.json();
                       if (json.data?.advanced) {
-                        window.location.reload();
+                        toast.success(`Advanced to ${json.data.to || "next phase"}`, { duration: 3000 });
+                        setTimeout(() => window.location.reload(), 800);
                       } else {
-                        alert(json.message || "Still blocked — complete outstanding items first.");
+                        // Show the actual blocker list so the user knows what's left.
+                        const blockers: string[] = json?.data?.completion?.blockers || [];
+                        if (blockers.length > 0) {
+                          const top = blockers.slice(0, 3).map((b: string) => `• ${b}`).join("\n");
+                          const more = blockers.length > 3 ? `\n…and ${blockers.length - 3} more` : "";
+                          toast.error(`Still blocked:\n${top}${more}`, {
+                            duration: 8000,
+                            description: data.projectId ? "Open the PM Tracker to resolve them." : undefined,
+                          });
+                        } else {
+                          toast.error(json.message || "Still blocked — complete outstanding items first.");
+                        }
                       }
                     } catch {
-                      alert("Failed to re-check. Please try again.");
+                      toast.error("Failed to re-check. Please try again.");
                     }
                   }}
                   className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors flex items-center gap-1.5"
