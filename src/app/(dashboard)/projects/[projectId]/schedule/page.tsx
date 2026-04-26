@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/source-prefix";
 
 import { useParams } from "next/navigation";
 import { useProjectTasks, useProject, useUpdateTask } from "@/hooks/use-api";
@@ -35,6 +36,10 @@ interface ScheduleTask {
   assignee?: string;
   isMilestone?: boolean;
   isCriticalPath?: boolean;
+  /** Free-text description from the underlying Task row — carries any
+   *  source-prefix the agent embedded ("Research-anchored: …") so we
+   *  can render the SourceBadge + RowReasoning in the detail panel. */
+  description?: string;
 }
 
 // No mock data — everything is derived from API tasks
@@ -136,6 +141,7 @@ export default function SchedulePage() {
         assignee: t.assigneeName || t.assignee || "",
         isMilestone: false, // no isMilestone field in Task schema
         isCriticalPath: t.isCriticalPath || false,
+        description: t.description || "",
       };
     });
   }, [apiTasks, phaseLookup]);
@@ -567,10 +573,28 @@ export default function SchedulePage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Task Detail</p>
-              <h2 className="text-[15px] font-bold mt-1" style={{ color: "var(--foreground)", lineHeight: 1.3 }}>{selectedTask.name}</h2>
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                <h2 className="text-[15px] font-bold" style={{ color: "var(--foreground)", lineHeight: 1.3 }}>{selectedTask.name}</h2>
+                {(() => {
+                  const parsed = parseSource(selectedTask.description);
+                  return parsed.kind !== "unknown" ? <SourceBadge kind={parsed.kind} /> : null;
+                })()}
+              </div>
             </div>
             <button onClick={() => handleSelectTask(null)} className="w-7 h-7 rounded-full flex items-center justify-center hover:opacity-70 flex-shrink-0" style={{ background: "var(--muted)", color: "var(--muted-foreground)", border: "none", cursor: "pointer", fontSize: 16 }}>×</button>
           </div>
+
+          {/* Why this task? — only renders when the description carries a parseable
+              source prefix (Research-anchored / User-confirmed / Default-template / etc). */}
+          {(() => {
+            const parsed = parseSource(selectedTask.description);
+            if (parsed.kind === "unknown" || (!parsed.reasoning && parsed.alternatives.length === 0)) return null;
+            return (
+              <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                <RowReasoning source={parsed} label="Why this task?" />
+              </div>
+            );
+          })()}
 
           {/* WBS + Phase */}
           <div className="grid grid-cols-2 gap-3">

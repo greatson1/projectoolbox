@@ -868,7 +868,9 @@ RULES: comma-separated, quote any field containing a comma with double-quotes, N
 NEVER invent personal names (e.g. "John Doe", "Sarah Mitchell"). Use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor") or "TBC". NEVER invent company names, vendor names, contact details, or booking references. Use "TBC" for ANY fact not in the project description below.
 
 ⚠️ UNIVERSAL SOURCE-PREFIX RULE (applies to EVERY artefact you generate):
-The Notes / Comments / Notes/Key Concerns / Mitigations column on EVERY row MUST start with one of these prefixes so the user can see at a glance where each value came from. This is non-negotiable — the UI parses the prefix to render the source badge and the "Why this number?" / "Why this row?" expansion.
+On EVERY row, the rationale-column MUST start with one of the prefixes below. Use the row's most narrative column — pick the first that exists in the artefact's header:
+  Notes → Comments → Notes/Key Concerns → Mitigations → Mitigation Strategy → Description → Acceptance Criteria
+This is non-negotiable — the UI parses the prefix to render the source badge and the "Why this number?" / "Why this row?" expansion.
 
   • "Research-anchored: <reasoning> (also considered: <alt1>, <alt2>)"
       Use when the value is drawn from feasibility/phase research in the
