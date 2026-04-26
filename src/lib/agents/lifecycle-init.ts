@@ -827,6 +827,14 @@ ${isTravel ? `   For TRAVEL projects: the feasibility research at deploy time WA
    - "Default-percentage — TBC" when neither source has a concrete number
    - "Reserved — do not consume" for the Contingency line
 
+⚠️ SELECTION RULE WHEN RESEARCH OFFERS MULTIPLE OPTIONS:
+The research often surfaces a range or a list (e.g. "4-star Dubai £200, 5-star £450, 7-star £1200" / "Emirates £700, BA £650, FlyDubai £500"). Use this priority:
+
+  a. **User-confirmed wins absolutely.** If the user named a specific supplier/price/class in clarification (e.g. "we want Atlantis", "premium economy"), use that exact one — even if it's expensive — and mark "User-confirmed".
+  b. **Otherwise pick the option that fits the budget envelope.** Compute the per-line target from the percentage skeleton (e.g. Accommodation = 25% × £${budget} = £${Math.round(budget*0.25)}). Divide by trip duration × rooms/people to get a per-night/per-person target. Pick the research option closest to that target. Don't default to the cheapest (false economy) or the most expensive (overspend).
+  c. **List the rejected alternatives in Notes.** Always cite the chosen option AND list 1-2 nearby alternatives the user could swap to. Format: "Research-anchored: <chosen> @ £X/unit (also considered: <alt1> £Y, <alt2> £Z)". This lets the user see at a glance what their other options are without going to chat.
+  d. **If the research is genuinely ambiguous** (e.g. no flight quotes for the specific date) flag it in Notes as "Research-thin — TBC: <what's missing>" and use the percentage default for the number.
+
 ${percentageHints}
 Total Planned Cost across all rows MUST sum to approximately £${budgetStr}.
 Output 7-9 rows for travel/event projects, 5-7 for general projects.
