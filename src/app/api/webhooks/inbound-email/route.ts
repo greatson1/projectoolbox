@@ -261,21 +261,79 @@ export async function POST(req: NextRequest) {
 
     // ── Verification gate ────────────────────────────────────────────────
     // Post a chat message asking the user to confirm the claims in the email
-    // before we trust them as project facts. The chat flow already knows how
-    // to extract user-confirmed answers and write them back to KB with the
-    // user_confirmed tag — this just routes the email's content through that
-    // same human-in-the-loop pipeline.
+    // before we trust them as project facts. We additionally run an LLM
+    // extraction pass to pull atomic facts (deadline change, sponsor swap,
+    // budget tweak…) so the user sees exactly what would land in the KB.
+    // Each fact gets its own KB row tagged pending_user_confirmation; a
+    // single chat reply (confirm/reject/edit) applies to the whole bundle.
+    let factKbIds: string[] = [];
+    let extractedFactsForCard: Array<{ id: string; claim: string; category: string }> = [];
     if (activeProject && emailContent.length > 50) {
+      try {
+        const { extractEmailFacts } = await import("@/lib/agents/email-fact-extractor");
+        const projectMeta = await db.project.findUnique({
+          where: { id: activeProject.id },
+          select: { name: true, description: true },
+        });
+        const facts = await extractEmailFacts({
+          subject,
+          body: emailContent,
+          senderEmail,
+          projectName: projectMeta?.name,
+          projectDescription: projectMeta?.description ?? undefined,
+        });
+        for (const f of facts) {
+          try {
+            const factItem = await db.knowledgeBaseItem.create({
+              data: {
+                orgId,
+                agentId: agent.id,
+                projectId: activeProject.id,
+                layer: "PROJECT",
+                type: "TEXT",
+                title: `Email claim (${f.category}): ${f.claim.slice(0, 80)}`,
+                content: f.quote ? `${f.claim}\n\nVerbatim from email: "${f.quote}"` : f.claim,
+                tags: ["email", "extracted_fact", "pending_user_confirmation", f.category],
+                metadata: {
+                  from: senderEmail,
+                  subject,
+                  inboxMessageId: inboxMsg.id,
+                  parentKbItemId: kbItemId,
+                  category: f.category,
+                } as any,
+              },
+            });
+            factKbIds.push(factItem.id);
+            extractedFactsForCard.push({ id: factItem.id, claim: f.claim, category: f.category });
+          } catch (e) {
+            console.error("[inbound-email] fact KB create failed:", e);
+          }
+        }
+      } catch (e) {
+        console.error("[inbound-email] fact extraction failed (will use whole-email fallback):", e);
+      }
+
+      // Build the verification card. If facts were extracted, list them
+      // numbered; otherwise fall back to the whole-email body so the user
+      // can still confirm/reject the email itself.
+      const factsBlock = extractedFactsForCard.length > 0
+        ? "Extracted claims:\n" + extractedFactsForCard.map((f, i) => `${i + 1}. _(${f.category})_ ${f.claim}`).join("\n")
+        : `${emailContent.slice(0, 1500)}${emailContent.length > 1500 ? "\n\n…(truncated)" : ""}`;
+
+      const allKbItemIds = [kbItemId, ...factKbIds].filter(Boolean) as string[];
+
       try {
         await db.chatMessage.create({
           data: {
             agentId: agent.id,
             role: "agent",
-            content: `📧 **New email — please verify before I act on it**\n\nFrom: ${senderEmail}\nSubject: ${subject}\n\n---\n\n${emailContent.slice(0, 1500)}${emailContent.length > 1500 ? "\n\n…(truncated)" : ""}\n\n---\n\nReply with **confirm**, **reject**, or **edit:<your correction>** to tell me whether to use this in the project. I won't update any artefacts or registers until you respond.`,
+            content: `📧 **New email — please verify before I act on it**\n\nFrom: ${senderEmail}\nSubject: ${subject}\n\n---\n\n${factsBlock}\n\n---\n\nReply **confirm** to apply all of these to the project, **reject** to discard, or **edit:<your correction>** to replace the whole record with your wording. I won't update any artefacts or registers until you respond.`,
             metadata: {
               type: "email_verification_required",
               inboxMessageId: inboxMsg.id,
               kbItemId,
+              kbItemIds: allKbItemIds, // chat-stream uses this to confirm all in one go
+              extractedFactCount: extractedFactsForCard.length,
               senderEmail,
               subject,
             } as any,

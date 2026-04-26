@@ -53,46 +53,62 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         orderBy: { createdAt: "desc" },
       });
       const meta = recentAgentMsg?.metadata as Record<string, unknown> | null;
-      if (meta?.type === "email_verification_required" && typeof meta.kbItemId === "string") {
-        const kbItemId = meta.kbItemId;
-        if (isReject) {
-          await db.knowledgeBaseItem.delete({ where: { id: kbItemId } }).catch(() => {});
+      if (meta?.type === "email_verification_required") {
+        // Resolve the bundle of KB rows tied to this email — webhook now
+        // writes one row for the whole email plus one per extracted fact.
+        // Older messages predate fact extraction and only have kbItemId.
+        const ids: string[] = [];
+        if (Array.isArray(meta.kbItemIds)) {
+          for (const v of meta.kbItemIds) if (typeof v === "string") ids.push(v);
+        }
+        if (typeof meta.kbItemId === "string" && !ids.includes(meta.kbItemId)) ids.unshift(meta.kbItemId);
+        if (ids.length === 0) {
+          // Nothing to act on — let it fall through to normal LLM handling.
+        } else if (isReject) {
+          await db.knowledgeBaseItem.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
           await db.chatMessage.create({
             data: {
               agentId, conversationId, role: "agent",
-              content: `✓ Discarded the email from ${meta.senderEmail || "sender"}. I won't use any of its content in this project.`,
+              content: `✓ Discarded the email from ${meta.senderEmail || "sender"} and ${ids.length - 1 > 0 ? `${ids.length - 1} extracted claim${ids.length - 1 === 1 ? "" : "s"}` : "its claims"}. I won't use any of its content in this project.`,
             },
           });
+          return new NextResponse(null, { status: 204 });
         } else {
-          // confirm or edit — flip pending → user_confirmed and (if edit)
-          // replace the content so the user's correction is what we trust.
-          const existing = await db.knowledgeBaseItem.findUnique({
-            where: { id: kbItemId },
-            select: { tags: true, content: true },
+          // confirm or edit — flip pending → user_confirmed across the
+          // whole bundle. For "edit", we replace the WHOLE-EMAIL row's
+          // content with the user's correction (kbItemId is the parent
+          // row), and confirm the extracted-fact rows as-is.
+          const existing = await db.knowledgeBaseItem.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, tags: true, content: true },
           });
-          if (existing) {
-            const newTags = (existing.tags || [])
+          for (const row of existing) {
+            const newTags = (row.tags || [])
               .filter((t) => t !== "pending_user_confirmation")
               .concat("user_confirmed");
+            const isWholeEmailRow = row.id === meta.kbItemId;
             await db.knowledgeBaseItem.update({
-              where: { id: kbItemId },
+              where: { id: row.id },
               data: {
                 tags: { set: newTags },
-                content: editMatch ? editMatch[1].trim() : existing.content,
+                content: editMatch && isWholeEmailRow ? editMatch[1].trim() : row.content,
                 trustLevel: "HIGH",
               },
             });
           }
+          const factCount = ids.length - (typeof meta.kbItemId === "string" ? 1 : 0);
           await db.chatMessage.create({
             data: {
               agentId, conversationId, role: "agent",
               content: editMatch
-                ? `✓ Confirmed with your edit. I'll use this in the project: "${editMatch[1].trim().slice(0, 200)}${editMatch[1].length > 200 ? "…" : ""}"`
-                : `✓ Confirmed. The email content is now trusted project knowledge and will be used when generating or updating artefacts.`,
+                ? `✓ Confirmed with your edit. I'll use this in the project: "${editMatch[1].trim().slice(0, 200)}${editMatch[1].length > 200 ? "…" : ""}"${factCount > 0 ? ` Plus ${factCount} extracted claim${factCount === 1 ? "" : "s"} confirmed.` : ""}`
+                : factCount > 0
+                  ? `✓ Confirmed. ${factCount} extracted claim${factCount === 1 ? "" : "s"} plus the source email are now trusted project knowledge and will be used when generating or updating artefacts.`
+                  : `✓ Confirmed. The email content is now trusted project knowledge and will be used when generating or updating artefacts.`,
             },
           });
+          return new NextResponse(null, { status: 204 });
         }
-        return new NextResponse(null, { status: 204 });
       }
     }
   } catch (e) {
