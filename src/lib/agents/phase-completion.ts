@@ -178,7 +178,7 @@ export async function getPhaseCompletion(
   let missingRequired: string[] = [];
   try {
     const { getMethodology } = await import("@/lib/methodology-definitions");
-    const methodologyId = (projectForMethodology?.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+    const methodologyId = (projectForMethodology?.methodology || "traditional").toLowerCase().replace("agile_", "");
     const methodology = getMethodology(methodologyId);
     const phaseDef = methodology.phases.find(p => p.name === phaseName);
     if (phaseDef) {

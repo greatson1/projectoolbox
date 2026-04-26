@@ -645,7 +645,7 @@ function AgentStatusBanner({
       badgeText: "Rejected — action needed",
       icon: <AlertCircle className="w-4 h-4" />,
       headline: `${rejected} document${rejected === 1 ? "" : "s"} rejected — regenerate before advancing`,
-      sub: `${approved}/${total} approved, ${rejected} rejected. Open each rejected document, regenerate or edit it, then re-approve. The ${nextPhase ? nextPhase.name : "next"} phase cannot start until all documents are approved.`,
+      sub: `${approved}/${total} approved, ${rejected} rejected. Open each rejected document, regenerate or edit it, then re-approve. Once approved, check the PM Tracker — gate prerequisites and manual confirmations also need to be in place before the ${nextPhase ? nextPhase.name : "next"} phase can start.`,
     },
     complete: {
       border: "border-emerald-500/30 bg-emerald-500/5",
@@ -654,7 +654,7 @@ function AgentStatusBanner({
       icon: <CheckCircle2 className="w-4 h-4" />,
       headline: `${phaseName} phase complete — all ${total} documents approved`,
       sub: nextPhase
-        ? `Your agent is ready to start the ${nextPhase.name} phase. Click "Generate Next Phase" to continue.`
+        ? `All artefacts approved. Confirm the gate prerequisites are also satisfied on the PM Tracker, then click "Generate Next Phase".`
         : "All project phases complete. Your full document set is approved.",
     },
     empty: {

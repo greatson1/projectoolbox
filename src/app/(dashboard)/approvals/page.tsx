@@ -542,7 +542,7 @@ export default function ApprovalsPage() {
                         <p className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs mb-1">Agent recommends: Approve</p>
                         <p className="text-xs text-muted-foreground">
                           {item.type === "PHASE_GATE"
-                            ? `All gate criteria for this phase have been met. Approving advances the project to the next phase. Use "Request Changes" if any artefacts need revision first.`
+                            ? `Verify the gate prerequisites below before approving. Any unmet mandatory prerequisite (marked *) must be satisfied — either by completing the underlying work or, if the heuristic can't auto-check it, ticking it manually on the PM Tracker. Use "Request Changes" if any artefacts need revision first.`
                             : item.type === "CHANGE_REQUEST"
                             ? `The proposed change has been assessed as ${riskTier.toLowerCase()} risk (score ${riskScore}/16). Approving applies the change to the project baseline. Rejecting leaves the baseline unchanged.`
                             : item.type === "RISK_RESPONSE"
@@ -551,6 +551,12 @@ export default function ApprovalsPage() {
                             ? `This budget action has been assessed as ${riskTier.toLowerCase()} risk. Approving authorises the agent to proceed. No financial commitment is made without this approval.`
                             : `Approving allows the agent to proceed with: "${item.title}". The output will be created as a DRAFT for your review — nothing is finalised without a second approval from you. If the result isn't right, use "Request Changes" with specific feedback.`}
                         </p>
+                        {item.type === "PHASE_GATE" && (
+                          <GatePrereqSummary
+                            projectId={item.projectId || item.project?.id}
+                            phase={(item.title || "").split(" Gate")[0]?.trim() || undefined}
+                          />
+                        )}
                       </div>
                     </div>
 
