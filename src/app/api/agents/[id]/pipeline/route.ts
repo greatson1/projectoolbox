@@ -471,9 +471,15 @@ export async function GET(
     const minutesSinceLastArtefact = (now - lastArtefactAt) / 60_000;
 
     if (expectedArtefacts > 0 && generatedCount >= expectedArtefacts) {
-      // All expected artefacts generated
+      // All expected artefacts generated. We still call this step "done" — its
+      // job is generation, not approval — but spell out that approval is the
+      // next step so the user doesn't read this single green tick as "phase
+      // complete". The Review & Approve step holds the real next action.
+      const approvedSoFar = currentPhaseArtefacts.filter((a) => a.status === "APPROVED").length;
       status = "done";
-      details = `${expectedVsGenerated} artefacts generated`;
+      details = approvedSoFar < generatedCount
+        ? `${expectedVsGenerated} generated — ${approvedSoFar}/${generatedCount} approved on the next step`
+        : `${expectedVsGenerated} artefacts generated`;
     } else if (generatedCount > 0 && phaseStatus === "active") {
       // Partially generated — still running if recent activity, else stalled
       if (minutesSinceLastArtefact <= timeoutMins) {
