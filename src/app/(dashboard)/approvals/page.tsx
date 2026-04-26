@@ -601,8 +601,13 @@ export default function ApprovalsPage() {
                       </div>
                     )}
 
-                    {/* ── 3. WHAT WILL CHANGE ── */}
-                    {Array.isArray(item.affectedItems) && (item.affectedItems as any[]).length > 0 && (
+                    {/* ── 3. WHAT WILL CHANGE ──
+                        Hidden for research-finding approvals — that subtype
+                        renders its own dedicated checklist below in the
+                        Recommendation block (ResearchFindingsPreview), and
+                        an Affected Items table here would duplicate it
+                        with a misleading "—" Change column. */}
+                    {Array.isArray(item.affectedItems) && (item.affectedItems as any[]).length > 0 && item.impact?.subtype !== "research_finding" && (
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">3. Affected Items</p>
                         <div className="rounded-lg border border-border overflow-hidden">
@@ -615,30 +620,47 @@ export default function ApprovalsPage() {
                               </tr>
                             </thead>
                             <tbody>
-                              {(item.affectedItems as any[]).map((ai: any, idx: number) => (
-                                <tr key={idx} className="border-t border-border/50">
-                                  <td className="px-3 py-2 text-center">{ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : ai.type === "phase" ? "🔄" : "📄"}</td>
-                                  <td className="px-3 py-2 font-medium">{ai.title}</td>
-                                  <td className="px-3 py-2">
-                                    {ai.from && ai.to ? (
-                                      <span>
-                                        <span className="text-muted-foreground">{ai.field}: </span>
-                                        <span className="text-red-400 line-through">{ai.from}</span>
-                                        <span className="text-muted-foreground mx-1">→</span>
-                                        <span className="text-emerald-500 font-semibold">{ai.to}</span>
-                                      </span>
-                                    ) : <span className="text-muted-foreground">—</span>}
-                                  </td>
-                                </tr>
-                              ))}
+                              {(item.affectedItems as any[]).map((ai: any, idx: number) => {
+                                // "—" reads like a bug. Fall back to a verb
+                                // describing what the approval does to this
+                                // item when the explicit from→to delta is
+                                // missing (most subtypes don't emit one).
+                                const fallbackVerb =
+                                  item.type === "RISK_RESPONSE" ? "Mitigation logged on approval"
+                                  : item.type === "BUDGET" ? "Authorised on approval"
+                                  : item.type === "PHASE_GATE" ? "Phase advances on approval"
+                                  : "Created / updated on approval";
+                                return (
+                                  <tr key={idx} className="border-t border-border/50">
+                                    <td className="px-3 py-2 text-center">{ai.type === "task" ? "📋" : ai.type === "risk" ? "⚠️" : ai.type === "phase" ? "🔄" : "📄"}</td>
+                                    <td className="px-3 py-2 font-medium">{ai.title}</td>
+                                    <td className="px-3 py-2">
+                                      {ai.from && ai.to ? (
+                                        <span>
+                                          <span className="text-muted-foreground">{ai.field}: </span>
+                                          <span className="text-red-400 line-through">{ai.from}</span>
+                                          <span className="text-muted-foreground mx-1">→</span>
+                                          <span className="text-emerald-500 font-semibold">{ai.to}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground italic">{fallbackVerb}</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       </div>
                     )}
 
-                    {/* ── 4. IMPACT ASSESSMENT ── */}
-                    {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && (
+                    {/* ── 4. IMPACT ASSESSMENT ──
+                        Schedule/Cost/Scope/Stakeholder scoring is meaningful
+                        for change-control + risk-response decisions; for
+                        research-finding approvals it's noise (a fact is just
+                        a fact, no schedule/cost impact), so hide. */}
+                    {(scores.schedule || scores.cost || scores.scope || scores.stakeholder) && item.impact?.subtype !== "research_finding" && (
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">4. Impact Assessment</p>
