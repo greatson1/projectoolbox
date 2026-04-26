@@ -74,6 +74,8 @@ export async function seedArtefactData(
     lname.includes("sprint plan") ||
     lname.includes("iteration plan") ||
     lname.includes("sprint backlog") ||
+    lname.includes("product backlog") ||           // Initial Product Backlog (Scrum, Kanban, SAFe)
+    lname.includes("initial backlog") ||           // legacy alias
     (lname === "backlog")
   ) {
     await seedSprintTasks(artefact, agentId);
