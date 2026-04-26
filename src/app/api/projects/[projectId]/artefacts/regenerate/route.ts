@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { looksLikeFabricatedName } from "@/lib/agents/fabricated-names";
+import { ensureProjectMutable } from "@/lib/archive-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min for Claude regeneration
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     select: { id: true },
   });
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+  const blocked = await ensureProjectMutable(projectId);
+  if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
 
   let requestedPhase: string | undefined;
   let inlinePriorFeedback: Record<string, string> | undefined;

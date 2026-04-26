@@ -289,7 +289,9 @@ export function AgentStatusBar() {
 
       const rawAgents: any[] = fleetData.agents ?? [];
       const deployed = rawAgents.filter(a =>
-        a.deployments?.length > 0 && a.status !== "DECOMMISSIONED"
+        a.deployments?.length > 0 &&
+        a.status !== "DECOMMISSIONED" &&
+        a.status !== "ARCHIVED"
       );
       if (deployed.length === 0) { setSlots([]); return; }
 

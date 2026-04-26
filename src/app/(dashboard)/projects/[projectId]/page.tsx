@@ -15,8 +15,9 @@ import { useAppStore } from "@/stores/app";
 import {
   Calendar, Columns3, Timer, Target, DollarSign, Users, ShieldAlert,
   AlertTriangle, GitPullRequest, TestTube2, TrendingUp, FileText, Bot,
-  ArrowRight, Sheet, FileCheck2, Download,
+  ArrowRight, Sheet, FileCheck2, Download, Archive, ArchiveRestore,
 } from "lucide-react";
+import { toast } from "sonner";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 
 const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
@@ -68,7 +69,10 @@ export default function ProjectOverviewPage() {
             <h1 className="text-2xl font-bold">{project.name}</h1>
             <div className="flex items-center gap-2 mt-2">
               <Badge variant="outline">{METHOD_LABEL[project.methodology] || project.methodology}</Badge>
-              <Badge variant={project.status === "ACTIVE" ? "default" : "secondary"}>{project.status}</Badge>
+              <Badge variant={project.status === "ACTIVE" ? "default" : project.status === "ARCHIVED" ? "outline" : "secondary"}
+                className={project.status === "ARCHIVED" ? "border-slate-500/40 text-slate-400" : ""}>
+                {project.status}
+              </Badge>
               {project.tier && <Badge variant="secondary" className="text-[9px]">{project.tier === "TASK" ? "Quick Task" : project.tier === "LIGHTWEIGHT" ? "Lightweight" : project.tier === "STANDARD" ? "Standard" : "Complex"}</Badge>}
               {project.priority && <Badge variant={project.priority === "high" ? "destructive" : "secondary"}>{project.priority}</Badge>}
             </div>
@@ -85,6 +89,53 @@ export default function ProjectOverviewPage() {
               <Download className="w-3.5 h-3.5 mr-1" />
               Export
             </Button>
+            {project.status === "ARCHIVED" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-sky-500/40 text-sky-500 hover:bg-sky-500/10"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/projects/${projectId}/unarchive`, { method: "POST" });
+                    if (!res.ok) throw new Error("Failed");
+                    toast.success("Project unarchived");
+                    window.location.reload();
+                  } catch { toast.error("Failed to unarchive"); }
+                }}
+              >
+                <ArchiveRestore className="w-3.5 h-3.5 mr-1" />
+                Unarchive
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-slate-500/40 text-slate-300 hover:bg-slate-500/10"
+                onClick={async () => {
+                  const reason = window.prompt(
+                    `Archive "${project.name}"?\n\nThis stops the agent and locks all artefacts (read-only).\nThe full audit trail remains accessible. You can unarchive later.\n\nReason (e.g. completed, cancelled, on-hold):`,
+                    "completed",
+                  );
+                  if (reason === null) return;
+                  try {
+                    const res = await fetch(`/api/projects/${projectId}/archive`, {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ reason }),
+                    });
+                    if (!res.ok) throw new Error("Failed");
+                    const json = await res.json();
+                    toast.success(
+                      `Project archived${json.archivedAgents > 0 ? ` — ${json.archivedAgents} agent${json.archivedAgents === 1 ? "" : "s"} stopped` : ""}`,
+                    );
+                    window.location.reload();
+                  } catch { toast.error("Failed to archive"); }
+                }}
+              >
+                <Archive className="w-3.5 h-3.5 mr-1" />
+                Archive
+              </Button>
+            )}
             {agent && (
               <div className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"

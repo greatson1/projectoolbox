@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { ensureAgentMutable } from "@/lib/archive-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     select: { id: true },
   });
   if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+
+  const blocked = await ensureAgentMutable(agentId);
+  if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
 
   const deployment = await db.agentDeployment.findFirst({
     where: { agentId, isActive: true },

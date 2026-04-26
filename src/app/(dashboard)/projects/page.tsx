@@ -20,10 +20,11 @@ const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: 
 export default function ProjectsPage() {
   usePageTitle("Projects");
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"active" | "archived">("active");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const { setActiveProject, activeProjectId, setActiveProject: clearProject } = useAppStore();
-  const { data: projects, isLoading } = useProjects();
+  const { data: projects, isLoading } = useProjects(tab === "archived" ? { include: "only-archived" } : undefined);
   const qc = useQueryClient();
 
   const deleteProject = async (id: string, name: string) => {
@@ -59,23 +60,51 @@ export default function ProjectsPage() {
     <div className="space-y-6 max-w-[1400px]">
       <PageHeader
         title="Projects"
-        subtitle={`${(projects || []).length} projects · ${(projects || []).filter((p: any) => p.status === "ACTIVE").length} active`}
+        subtitle={
+          tab === "archived"
+            ? `${(projects || []).length} archived projects`
+            : `${(projects || []).length} projects · ${(projects || []).filter((p: any) => p.status === "ACTIVE").length} active`
+        }
         icon={<FolderKanban className="w-5 h-5" />}
         actions={<Link href="/agents/deploy"><Button><Plus className="w-4 h-4 mr-1" /> New Project</Button></Link>}
       />
 
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border w-full sm:max-w-md">
-        <Search className="w-4 h-4 text-muted-foreground" />
-        <input className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
-          placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/40 border border-border">
+          <button
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${tab === "active" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setTab("active")}
+          >
+            Active
+          </button>
+          <button
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${tab === "archived" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setTab("archived")}
+          >
+            Archived
+          </button>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border flex-1 sm:max-w-md">
+          <Search className="w-4 h-4 text-muted-foreground" />
+          <input className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
+            placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
       </div>
 
       {filtered.length === 0 ? (
         <div className="text-center py-20">
           <FolderKanban className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-lg font-bold mb-2">{search ? "No matching projects" : "No projects yet"}</h2>
-          <p className="text-sm text-muted-foreground mb-4">{search ? "Try a different search term" : "Deploy an agent to create your first project"}</p>
-          {!search && <Link href="/agents/deploy"><Button>Create First Project</Button></Link>}
+          <h2 className="text-lg font-bold mb-2">
+            {search ? "No matching projects" : tab === "archived" ? "No archived projects" : "No projects yet"}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {search
+              ? "Try a different search term"
+              : tab === "archived"
+                ? "Archived projects appear here once you archive them. The audit trail stays accessible."
+                : "Deploy an agent to create your first project"}
+          </p>
+          {!search && tab === "active" && <Link href="/agents/deploy"><Button>Create First Project</Button></Link>}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
@@ -91,7 +120,8 @@ export default function ProjectsPage() {
                         <h3 className="text-[15px] font-bold truncate">{p.name}</h3>
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="outline" className="text-[9px]">{METHOD_LABEL[p.methodology] || p.methodology}</Badge>
-                          <Badge variant={p.status === "ACTIVE" ? "default" : "secondary"} className="text-[9px]">{p.status}</Badge>
+                          <Badge variant={p.status === "ACTIVE" ? "default" : p.status === "ARCHIVED" ? "outline" : "secondary"}
+                            className={`text-[9px] ${p.status === "ARCHIVED" ? "border-slate-500/40 text-slate-400" : ""}`}>{p.status}</Badge>
                         </div>
                       </div>
                     </div>

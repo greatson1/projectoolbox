@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { ensureProjectMutable } from "@/lib/archive-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 
   const { projectId } = await params;
   const body = await req.json();
+
+  const blocked = await ensureProjectMutable(projectId);
+  if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
+
   const stakeholder = await db.stakeholder.create({ data: { ...body, projectId } });
 
   // Track new stakeholder in KB

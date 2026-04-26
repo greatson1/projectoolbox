@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { ensureProjectMutable } from "@/lib/archive-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   const { projectId, taskId } = await params;
   const body = await req.json();
+
+  const archiveBlock = await ensureProjectMutable(projectId);
+  if (archiveBlock) return NextResponse.json({ error: archiveBlock.error, reason: archiveBlock.reason }, { status: archiveBlock.status });
 
   // Whitelist updatable fields — prevents accidental projectId/createdBy overwrite
   const {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { after as waitUntil } from "next/server";
+import { ensureProjectMutable } from "@/lib/archive-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -82,6 +83,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     where: { id },
     select: { metadata: true, status: true, content: true, name: true, projectId: true },
   });
+
+  // Block edits on artefacts that belong to an archived project — but allow
+  // GET to keep them readable for audit. Approvals are blocked too, since the
+  // governance trail freezes at archive time.
+  if (existing?.projectId) {
+    const blocked = await ensureProjectMutable(existing.projectId);
+    if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
+  }
 
   // ── Edit-after-approval guard ────────────────────────────────────────────
   // If the caller is changing the content of an APPROVED artefact without

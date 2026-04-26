@@ -302,6 +302,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       { status: 423 },
     );
   }
+  if (agent.status === "ARCHIVED") {
+    return NextResponse.json(
+      {
+        error: "Agent is archived",
+        agentStatus: "ARCHIVED",
+        message: `${agent.name} is archived (read-only). Unarchive the agent to resume the conversation.`,
+      },
+      { status: 423 },
+    );
+  }
 
   const deployment = agent.deployments[0];
   const project = deployment?.project;

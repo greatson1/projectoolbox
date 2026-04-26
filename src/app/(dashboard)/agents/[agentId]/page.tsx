@@ -269,7 +269,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
       color: apiAgent.gradient ? "#6366F1" : AGENT_DEFAULTS.color,
       project: project?.name || "No project assigned",
       methodology: project?.methodology || "",
-      status: (apiAgent.status?.toLowerCase() || AGENT_DEFAULTS.status) as "active" | "paused" | "idle" | "error",
+      status: (apiAgent.status?.toLowerCase() || AGENT_DEFAULTS.status) as "active" | "paused" | "idle" | "error" | "archived" | "decommissioned",
       autonomyLevel: apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel,
       autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous"][apiAgent.autonomyLevel || AGENT_DEFAULTS.autonomyLevel],
       performanceScore: apiAgent.performanceScore || 0,
@@ -456,7 +456,11 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             </div>
             {/* Actions */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              {AGENT_RESOLVED.status === "paused" ? (
+              {AGENT_RESOLVED.status === "archived" ? (
+                <span className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-slate-500/40 bg-slate-500/10 text-slate-400">
+                  Archived · read-only
+                </span>
+              ) : AGENT_RESOLVED.status === "paused" ? (
                 <Button
                   variant="default"
                   size="sm"
@@ -1839,10 +1843,53 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   <RefreshCw className="mr-1 size-3" /> Reassign
                 </Button>
               </div>
+              {AGENT_RESOLVED.status === "archived" ? (
+                <div className="min-w-[200px] flex-1 rounded-[10px] border border-sky-500/30 bg-sky-500/5 p-3">
+                  <p className="mb-1 text-xs font-semibold text-sky-500">Unarchive Agent</p>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    Currently archived (read-only). Restore to paused so you can review or resume.
+                  </p>
+                  <Button variant="outline" size="sm" className="border-sky-500/40 text-sky-500 hover:bg-sky-500/10"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}/unarchive`, { method: "POST" });
+                        if (!res.ok) throw new Error("Failed");
+                        toast.success("Agent unarchived — restored to paused");
+                        window.location.reload();
+                      } catch { toast.error("Failed to unarchive"); }
+                    }}>
+                    Unarchive
+                  </Button>
+                </div>
+              ) : (
+                <div className="min-w-[200px] flex-1 rounded-[10px] border border-slate-500/20 bg-slate-500/5 p-3">
+                  <p className="mb-1 text-xs font-semibold text-slate-400">Archive Agent</p>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    Stops all activity and locks the audit trail (read-only). Reversible — unarchive at any time.
+                  </p>
+                  <Button variant="outline" size="sm" className="border-slate-500/40 text-slate-300 hover:bg-slate-500/10"
+                    onClick={async () => {
+                      const reason = window.prompt("Reason for archiving (e.g. completed, cancelled, on-hold):", "completed");
+                      if (reason === null) return;
+                      try {
+                        const res = await fetch(`/api/agents/${AGENT_RESOLVED.id}/archive`, {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({ reason }),
+                        });
+                        if (!res.ok) throw new Error("Failed");
+                        toast.success("Agent archived — audit trail preserved");
+                        window.location.reload();
+                      } catch { toast.error("Failed to archive"); }
+                    }}>
+                    Archive
+                  </Button>
+                </div>
+              )}
               <div className="min-w-[200px] flex-1 rounded-[10px] border border-destructive/20 bg-destructive/5 p-3">
                 <p className="mb-1 text-xs font-semibold text-destructive">Decommission Agent</p>
                 <p className="mb-2 text-[11px] text-muted-foreground">
-                  Stops all activity. Agent is archived — data preserved. Can be viewed but not restarted.
+                  Stops all activity. Agent is decommissioned — data preserved. Cannot be restarted.
                 </p>
                 <Button variant="outline" size="sm" className="border-destructive/40 text-destructive hover:bg-destructive/10"
                   onClick={() => { setDeleteModal("decommission"); setDeleteConfirmText(""); }}>

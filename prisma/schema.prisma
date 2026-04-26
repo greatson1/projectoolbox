@@ -189,6 +189,12 @@ model Project {
   sprints        Sprint[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+  // Archive metadata — soft-archive preserves the audit trail while marking
+  // the project as read-only. archivedAt is the canonical "is archived" signal
+  // in API checks (independent of status, so legacy rows still resolve).
+  archivedAt     DateTime?
+  archivedBy     String?
+  archiveReason  String?
 }
 
 model ProjectMember {
@@ -232,6 +238,13 @@ model Agent {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   decommissionedAt DateTime?
+  // Archive metadata — soft-archive flag preserves the full audit trail while
+  // stopping all autonomous activity. archivedAt is the canonical "is archived"
+  // signal in API checks (independent of status, so legacy ARCHIVED rows
+  // without status update still resolve correctly).
+  archivedAt       DateTime?
+  archivedBy       String?
+  archiveReason    String?
 }
 
 model AgentDeployment {
@@ -1038,6 +1051,7 @@ enum AgentStatus {
   PAUSED
   ERROR
   DECOMMISSIONED
+  ARCHIVED
 }
 
 enum DecisionType {

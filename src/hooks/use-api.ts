@@ -28,10 +28,11 @@ export function useDashboard() {
 
 // ── Projects ──
 
-export function useProjects() {
+export function useProjects(opts?: { include?: "archived" | "only-archived" }) {
+  const qs = opts?.include ? `?include=${opts.include}` : "";
   return useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api<any[]>("/api/projects"),
+    queryKey: ["projects", opts?.include ?? "default"],
+    queryFn: () => api<any[]>(`/api/projects${qs}`),
     // no polling — uses staleTime from QueryClient defaults
   });
 }

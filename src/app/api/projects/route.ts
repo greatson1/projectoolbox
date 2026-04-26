@@ -5,15 +5,24 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 // GET /api/projects — List org projects
-export async function GET() {
+// Defaults to ACTIVE/PAUSED/COMPLETED. Pass ?include=archived to also include
+// archived projects (e.g. an "Archived" tab on the projects page).
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const orgId = (session.user as any).orgId;
   if (!orgId) return NextResponse.json({ error: "No organisation — session may still be loading" }, { status: 403 });
 
+  const url = new URL(req.url);
+  const filter = url.searchParams.get("include"); // null | "archived" | "only-archived"
+
+  const where: any = { orgId };
+  if (filter === "only-archived") where.status = "ARCHIVED";
+  else if (filter !== "archived") where.status = { not: "ARCHIVED" };
+
   const projects = await db.project.findMany({
-    where: { orgId },
+    where,
     include: {
       agents: { include: { agent: true } },
       _count: { select: { tasks: true, risks: true, approvals: { where: { status: "PENDING" } } } },
