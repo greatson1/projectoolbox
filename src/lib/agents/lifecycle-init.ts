@@ -772,7 +772,11 @@ ${stRows}
 5. The seeder will REJECT any stakeholder row that looks like a fabricated personal name. Do not waste rows on names that will be filtered out.
 Quote fields containing commas.`;
     } else if (lname.includes("budget") || lname.includes("cost management")) {
-      let budgetRows = "";
+      // Default percentage allocations — used as a STARTING POINT only.
+      // The agent should override these with research-anchored numbers
+      // when the feasibility research above (in knowledgeContext) provides
+      // concrete unit prices for this destination/period.
+      let percentageHints = "";
       if (isTravel && budget > 0) {
         const flights = Math.round(budget * 0.35);
         const accomm = Math.round(budget * 0.25);
@@ -780,23 +784,53 @@ Quote fields containing commas.`;
         const meals = Math.round(budget * 0.12);
         const activities = Math.round(budget * 0.08);
         const health = Math.round(budget * 0.04);
-        const contingency = budget - flights - accomm - transfers - meals - activities - health;
-        budgetRows = `"Flights","Return flights — TBC — confirm route and airports","${flights}","0","${-flights}","0","${Math.round(flights/budget*100)}","Not Booked","TBC — confirm departure/arrival airports and preferred airline"
-"Accommodation","Hotel in Lagos — TBC — confirm area and star rating","${accomm}","0","${-accomm}","0","${Math.round(accomm/budget*100)}","Not Booked","TBC — confirm hotel name, generator backup and location"
-"Transfers","Airport transfer and local transport — TBC — confirm provider","${transfers}","0","${-transfers}","0","${Math.round(transfers/budget*100)}","Not Arranged","TBC — confirm airport transfer provider and pickup arrangements"
-"Meals & Dining","All meals and drinks for trip duration — estimate","${meals}","0","${-meals}","0","${Math.round(meals/budget*100)}","Estimated","TBC — confirm meal allowance per day"
-"Activities","Excursions and activities — TBC — confirm planned activities","${activities}","0","${-activities}","0","${Math.round(activities/budget*100)}","TBC","TBC — confirm which activities are planned"
-"Health & Vaccinations","Yellow fever, malaria prophylaxis, travel health kit and GP appointments","${health}","0","${-health}","0","${Math.round(health/budget*100)}","Not Started","PRIORITY — book GP appointment. TBC — confirm vaccinations needed"
-"Documentation & Insurance","Travel insurance, visa fees, FCDO registration","0","0","0","0","0","TBC","TBC — confirm visa requirements and insurance provider"
-"Contingency Reserve","Emergency reserve — requires PM approval to release","${contingency}","0","${-contingency}","0","${Math.round(contingency/budget*100)}","Reserved","Not to be used without explicit approval"`;
+        const docs = Math.round(budget * 0.02);
+        const contingency = budget - flights - accomm - transfers - meals - activities - health - docs;
+        percentageHints = `Default percentage skeleton (use ONLY when research has no concrete number for that line):
+  • Flights ~35% (£${flights})
+  • Accommodation ~25% (£${accomm})
+  • Transfers ~10% (£${transfers})
+  • Meals & Dining ~12% (£${meals})
+  • Activities ~8% (£${activities})
+  • Health & Vaccinations ~4% (£${health})
+  • Documentation & Insurance ~2% (£${docs}) — typically covers visas, travel insurance, FCDO registration
+  • Contingency Reserve ~${Math.round(contingency/budget*100)}% (£${contingency}) — required, do not consume
+`;
       } else {
-        budgetRows = `"Labour","Project team time and effort","[per resource plan]","0","0","0","0","On Budget","See Resource Management Plan"
-"External Services","Contracted external services","[as per contracts]","0","0","0","0","On Budget","Procurement per schedule"
-"Materials & Equipment","Physical materials and equipment","[as specified]","0","0","0","0","On Budget","See WBS"
-"Travel & Expenses","Project-related travel and expenses","[estimate]","0","0","0","0","On Budget","Approved per policy"
-"Contingency Reserve","10-15% of total budget — requires PM approval","[reserve]","0","0","0","0","Reserved","Not to be used without approval"`;
+        percentageHints = `Default category split (use ONLY when research has no concrete number for that line):
+  • Labour 50-60% (per Resource Management Plan)
+  • External Services 15-25% (per contracts/procurement)
+  • Materials & Equipment 10-20% (per WBS)
+  • Travel & Expenses 2-5%
+  • Contingency Reserve 10-15% (required, do not consume)
+`;
       }
-      dataInstructions = `Use these exact data rows (costs in £):\n${budgetRows}\nQuote fields containing commas. Ensure Planned Cost column values sum to approximately ${budgetStr}.`;
+
+      dataInstructions = `Generate the budget rows for this project's Cost Management Plan.
+
+⚠️ HOW TO ESTIMATE EACH LINE — read this carefully:
+
+1. RESEARCH FIRST. Scan the PROJECT KNOWLEDGE BASE above for any feasibility research, phase research, or KB facts that contain CONCRETE PRICES for the line you're writing. Examples:
+   - "Atlantis The Palm — £350/night" → use this for Accommodation
+   - "Return flights LHR-DXB May 2026 — £450-£700 economy" → use the midpoint × number of travellers for Flights
+   - "UAE eVisa for UK passport holders — £75 per person" → use this × travellers for Documentation & Insurance
+   - "Airport transfer Dubai — £40-£80" → use a midpoint for Transfers
+${isTravel ? `   For TRAVEL projects: the feasibility research at deploy time WAS ASKED to surface accommodation cost ranges, transport costs, and visa fees as of the current year. If it produced numbers, USE THEM.` : ""}
+
+2. IF RESEARCH HAS NO CONCRETE NUMBER for that line, fall back to the percentage skeleton below. Mark the row's Notes with "Default-percentage — TBC".
+
+3. IF THE USER HAS CONFIRMED A SPECIFIC NUMBER (look for user_confirmed KB items), use that and mark Notes with "User-confirmed: <citation>".
+
+4. THE NOTES COLUMN MUST BE PREFIXED with the source for traceability:
+   - "Research-anchored: <quoted figure / source if cited>" when from feasibility/phase research
+   - "User-confirmed: <quoted answer>" when from clarification answers
+   - "Default-percentage — TBC" when neither source has a concrete number
+   - "Reserved — do not consume" for the Contingency line
+
+${percentageHints}
+Total Planned Cost across all rows MUST sum to approximately £${budgetStr}.
+Output 7-9 rows for travel/event projects, 5-7 for general projects.
+Quote any field containing commas. Use real numbers, not placeholders, in the Planned Cost column.`;
     } else {
       dataInstructions = `Generate 8-15 relevant data rows specific to this project (${project.name}).
 Use real dates between ${startDate} and ${endDate}.
