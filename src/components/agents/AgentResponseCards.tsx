@@ -33,6 +33,14 @@ export interface AgentQuestionCardProps {
   question: AgentQuestion;
   onAnswered: (answer: string) => void;
   isSubmitting?: boolean;
+  /**
+   * If this question was already answered in a previous session, the chat
+   * page passes the prior answer here. The card then renders in the
+   * "answered" state on first paint instead of looking like an open
+   * question — fixes the "did my answer get lost?" feeling on chat reload
+   * and stops the open-questions counter from over-counting.
+   */
+  priorAnswer?: string | null;
 }
 
 interface StatusPhase {
@@ -109,10 +117,12 @@ function YesNoButtons({ onSelect, disabled }: { onSelect: (v: string) => void; d
 
 // ─── AgentQuestionCard ────────────────────────────────────────────────────────
 
-export function AgentQuestionCard({ question, onAnswered, isSubmitting = false }: AgentQuestionCardProps) {
+export function AgentQuestionCard({ question, onAnswered, isSubmitting = false, priorAnswer = null }: AgentQuestionCardProps) {
   const [textValue, setTextValue] = useState("");
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
-  const [pendingAnswer, setPendingAnswer] = useState<string | null>(null);
+  // Seed pendingAnswer from priorAnswer so the card renders pre-answered
+  // when the user reopens chat for a question they already responded to.
+  const [pendingAnswer, setPendingAnswer] = useState<string | null>(priorAnswer);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = (answer: string) => {

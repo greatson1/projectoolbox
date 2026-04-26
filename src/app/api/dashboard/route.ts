@@ -44,6 +44,74 @@ export async function GET() {
   const totalTasks = await db.task.count({ where: { project: { orgId } } });
   const openRisks = await db.risk.count({ where: { project: { orgId }, status: "OPEN" } });
 
+  // ── Stuck conversations ────────────────────────────────────────────────────
+  // Find agent_question / clarification_question chat messages older than 4
+  // hours that the user has not answered yet. We treat "answered" as: a user
+  // chat message exists for the same agent with createdAt > question.createdAt.
+  // Surfaces in the dashboard nudge so questions don't quietly age out of
+  // sight when the user closes the chat tab.
+  const FOUR_HOURS_AGO = new Date(Date.now() - 4 * 60 * 60 * 1000);
+  const orgAgentIds = agents.map(a => a.id);
+  const oldQuestionMsgs = orgAgentIds.length === 0 ? [] : await db.chatMessage.findMany({
+    where: {
+      agentId: { in: orgAgentIds },
+      role: "agent",
+      content: { in: ["__AGENT_QUESTION__", "__CLARIFICATION_SESSION__"] },
+      createdAt: { lt: FOUR_HOURS_AGO },
+    },
+    select: { id: true, agentId: true, createdAt: true, metadata: true },
+    orderBy: { createdAt: "desc" },
+  });
+  // Group questions by agent and find the latest user reply per agent.
+  const lastUserReplyByAgent = new Map<string, Date>();
+  if (orgAgentIds.length > 0 && oldQuestionMsgs.length > 0) {
+    const replies = await db.chatMessage.findMany({
+      where: {
+        agentId: { in: Array.from(new Set(oldQuestionMsgs.map(q => q.agentId).filter((x): x is string => !!x))) },
+        role: "user",
+      },
+      select: { agentId: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    for (const r of replies) {
+      if (r.agentId && !lastUserReplyByAgent.has(r.agentId)) {
+        lastUserReplyByAgent.set(r.agentId, r.createdAt);
+      }
+    }
+  }
+  // For each agent, count unanswered old questions (oldest one wins for the
+  // surfaced excerpt). This collapses the noise so we show one nudge per agent.
+  const stuckConversationsByAgent = new Map<string, { agentId: string; oldestAt: Date; count: number; sampleText: string }>();
+  for (const q of oldQuestionMsgs) {
+    if (!q.agentId) continue;
+    const lastReply = lastUserReplyByAgent.get(q.agentId);
+    if (lastReply && lastReply > q.createdAt) continue; // user has replied since this question
+    const meta = q.metadata as any;
+    const sampleText = meta?.question?.question || meta?.question?.text || "(question text missing)";
+    const existing = stuckConversationsByAgent.get(q.agentId);
+    if (!existing || q.createdAt < existing.oldestAt) {
+      stuckConversationsByAgent.set(q.agentId, {
+        agentId: q.agentId,
+        oldestAt: q.createdAt,
+        count: (existing?.count || 0) + 1,
+        sampleText,
+      });
+    } else {
+      existing.count += 1;
+    }
+  }
+  const stuckConversations = Array.from(stuckConversationsByAgent.values()).map(s => {
+    const ag = agents.find(a => a.id === s.agentId);
+    return {
+      agentId: s.agentId,
+      agentName: ag?.name || "Agent",
+      agentGradient: ag?.gradient || null,
+      oldestAt: s.oldestAt,
+      count: s.count,
+      sampleText: s.sampleText.slice(0, 160),
+    };
+  });
+
   return NextResponse.json({
     data: {
       stats: {
@@ -75,6 +143,7 @@ export async function GET() {
         agentGradient: a.agent.gradient,
         createdAt: a.createdAt,
       })),
+      stuckConversations,
     },
   });
   } catch (err: any) {

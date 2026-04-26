@@ -90,8 +90,44 @@ export default function DashboardPage() {
     );
   });
 
+  // Stuck conversations — questions the agent asked >4h ago that you haven't
+  // answered. Distinct from stuckAgents above (which is phaseStatus-driven).
+  const stuckConversations: any[] = dash?.stuckConversations || [];
+
   return (
     <div className="space-y-6 max-w-[1400px]">
+
+      {/* ── Stuck Conversation Nudges ── */}
+      {/* Surfaces agent questions you haven't answered in 4+ hours so they
+          don't quietly age out of sight when you close the chat tab. */}
+      {stuckConversations.length > 0 && (
+        <div className="space-y-2">
+          {stuckConversations.map((s: any) => {
+            const hours = Math.round((Date.now() - new Date(s.oldestAt).getTime()) / (1000 * 60 * 60));
+            return (
+              <div key={s.agentId} className="flex items-center gap-4 px-5 py-3 rounded-xl border border-violet-500/30 bg-violet-500/5">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                  style={{ background: s.agentGradient || "#8B5CF6" }}>
+                  {s.agentName?.[0] || "A"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-violet-600 dark:text-violet-400">
+                    {s.agentName} is waiting on {s.count === 1 ? "an answer" : `${s.count} answers`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    Asked {hours}h ago: &ldquo;{s.sampleText}&rdquo;
+                  </p>
+                </div>
+                <Link href={`/agents/chat?agent=${s.agentId}`}>
+                  <Button size="sm" variant="outline" className="border-violet-500/30 text-violet-600 hover:bg-violet-500/10 flex-shrink-0">
+                    Answer now
+                  </Button>
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Stuck Agent Alerts ── */}
       {stuckAgents.length > 0 && (

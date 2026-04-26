@@ -389,6 +389,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
             question={msg.data.question}
             onAnswered={msg.data.onAnswered || (() => {})}
             isSubmitting={msg.data.isSubmitting || false}
+            priorAnswer={msg.data.priorAnswer ?? null}
           />
         </div>
       </div>
@@ -566,6 +567,9 @@ function AgentChatPage() {
       return { ...m, data: { ...m.data, onGenerate: () => handleGenerateDocuments(), isGenerating: generatingDocs } };
     }
     if (m.type === "agent_question" && m.data && !m.data.onAnswered) {
+      // Don't re-wire the live answer handler on cards that were already
+      // answered in a previous session — they're historical, not actionable.
+      if (m.data.priorAnswer) return m;
       return { ...m, data: { ...m.data, onAnswered: (ans: string) => handleAgentQuestionAnswer(m.id, ans), isSubmitting: agentQuestionSubmitting } };
     }
     return m;
@@ -581,7 +585,13 @@ function AgentChatPage() {
   //   - Resume banner (shown when reopening chat with a stale unanswered card)
   const openQuestions = useMemo(() => {
     return messages.filter(m => {
-      if (m.type === "agent_question" && m.data?.onAnswered !== null) return true;
+      // Pre-answered cards (priorAnswer hydrated from history) are
+      // historical, not open — exclude them so the badge doesn't
+      // double-count answered questions across reloads.
+      if (m.type === "agent_question") {
+        if (m.data?.priorAnswer) return false;
+        return m.data?.onAnswered !== null;
+      }
       if (m.type === "clarification" && m.data?.onAnswered !== null) return true;
       // change_proposal and pending_decision don't carry an onAnswered handler
       // so we fall back to the timestamp heuristic — they're "open" until the
@@ -677,6 +687,27 @@ function AgentChatPage() {
           }
 
           if (meta?.type === "agent_question" && meta.question) {
+            // Find the user reply that immediately followed this question.
+            // The next user message (before any subsequent agent_question /
+            // sentinel card) is the answer the user previously gave. This
+            // restores the "answered" state on chat reload so the card
+            // doesn't look unresolved.
+            const myIdx = filtered.findIndex((x: any) => x.id === m.id);
+            let priorAnswer: string | null = null;
+            if (myIdx >= 0) {
+              for (let j = myIdx + 1; j < filtered.length; j++) {
+                const next = filtered[j];
+                const nMeta = next.metadata as any;
+                // Stop if we hit another structured card before any user reply
+                if (next.role === "agent" && (nMeta?.type === "agent_question" || nMeta?.type === "clarification_question")) {
+                  break;
+                }
+                if (next.role === "user" && next.content && !next.content.startsWith("__") && !next.content.startsWith("SYSTEM_KICKOFF:") && !next.content.startsWith("KICKOFF:")) {
+                  priorAnswer = next.content.length > 200 ? `${next.content.slice(0, 200)}…` : next.content;
+                  break;
+                }
+              }
+            }
             return {
               id: m.id,
               role: "agent" as const,
@@ -689,6 +720,7 @@ function AgentChatPage() {
                 totalQuestions: meta.totalQuestions ?? 1,
                 onAnswered: null,   // injected below
                 isSubmitting: false,
+                priorAnswer,
               },
             };
           }
@@ -937,14 +969,18 @@ function AgentChatPage() {
       // Store the answer to KB directly (zero-credit) before sending to chat
       const questionData = messagesByAgent[activeAgentId!]?.find(m => m.id === messageId)?.data;
       if (questionData?.question) {
+        const qText = questionData.question.question?.slice(0, 80) || questionData.question.id || "User answer";
         fetch(`/api/agents/${activeAgentId}/kb/store-fact`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: questionData.question.question?.slice(0, 80) || questionData.question.id || "User answer",
-            content: answer,
-          }),
-        }).catch(() => {}); // Non-blocking — don't fail if KB store fails
+          body: JSON.stringify({ title: qText, content: answer }),
+        })
+          // Toast acknowledges the answer was captured to project memory.
+          // The card itself shows "Answered: X" and the chat is about to
+          // stream a fresh response — this third signal makes it impossible
+          // to think the click was lost.
+          .then((r) => { if (r.ok) toast.success("Saved your answer to project memory"); })
+          .catch(() => { /* Non-blocking — don't fail if KB store fails */ });
       }
 
       // Send the answer as a normal user message — this triggers a full Claude response
