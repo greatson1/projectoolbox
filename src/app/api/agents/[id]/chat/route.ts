@@ -128,6 +128,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     orderBy: { createdAt: "desc" },
     take: 100,
   });
+  const ordered = recent.reverse();
 
-  return NextResponse.json({ data: recent.reverse() });
+  // Pull pause / resume activities that fall inside the chat window so the
+  // client can render faint timeline dividers ("— Agent paused 18:42 —").
+  // Reading old chat later, you can see exactly where the agent went silent
+  // without leaving the thread to dig through the activity log.
+  const oldestTs = ordered[0]?.createdAt;
+  const lifecycle = oldestTs
+    ? await db.agentActivity.findMany({
+        where: {
+          agentId,
+          type: { in: ["paused", "resumed"] },
+          createdAt: { gte: oldestTs },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, type: true, summary: true, createdAt: true },
+      }).catch(() => [])
+    : [];
+
+  return NextResponse.json({ data: ordered, lifecycle });
 }

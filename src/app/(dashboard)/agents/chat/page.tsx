@@ -8,12 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { useAgents, useResumeAgent } from "@/hooks/use-api";
+import { useAgents, useResumeAgent, usePauseAgent } from "@/hooks/use-api";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw, MessageSquare, Info } from "lucide-react";
+import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw, MessageSquare, Info, PauseCircle, PlayCircle } from "lucide-react";
 import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
 import { PendingDecisionCard, ActionSuggestionCard } from "@/components/agents/MeetingDecisionCards";
@@ -65,7 +65,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
 };
 
 // ── Rich message types matching Vite original ──
-type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings" | "pending_decision" | "action_suggestion" | "tool_effects";
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings" | "pending_decision" | "action_suggestion" | "tool_effects" | "lifecycle";
 
 interface Message {
   id: string;
@@ -417,6 +417,26 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
+  // Lifecycle marker — faint divider for pause/resume events. Reads as a
+  // timeline note rather than a real message; click-through to the activity
+  // log feels excessive so it stays informational only.
+  if (msg.type === "lifecycle" && msg.data) {
+    const isPause = msg.data.kind === "paused";
+    const ts = new Date(msg.data.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    return (
+      <div className="flex items-center gap-2 my-1 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+        <div className="flex-1 h-px bg-border/40" />
+        <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${isPause ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+          {isPause
+            ? <PauseCircle className="w-2.5 h-2.5" />
+            : <PlayCircle className="w-2.5 h-2.5" />}
+          {msg.data.summary || (isPause ? "Agent paused" : "Agent resumed")} · {ts}
+        </span>
+        <div className="flex-1 h-px bg-border/40" />
+      </div>
+    );
+  }
+
   // Tool-effects trace — compact "what I just did" card with per-row Why expander
   if (msg.type === "tool_effects" && msg.data) {
     return <ToolEffectsCard avatar={avatar} data={msg.data} />;
@@ -535,6 +555,7 @@ function AgentChatPage() {
   const currency = useOrgCurrency();
   const queryClient = useQueryClient();
   const resumeAgent = useResumeAgent();
+  const pauseAgent = usePauseAgent();
 
   usePageTitle("Chat with Agent");
   const [activeAgentId, setActiveAgentId] = useState<string | null>(searchParams.get("agent"));
@@ -560,6 +581,20 @@ function AgentChatPage() {
 
   const activeAgent = agents.find((a: any) => a.id === activeAgentId);
   const isPaused = activeAgent?.status === "PAUSED";
+  // In-flight summary fetched when the active agent is paused — surfaces
+  // "what's about to re-run when you click Resume" in the banner so the
+  // operator isn't guessing what work was lost. null = not loaded yet,
+  // {pausedAt: null} = not paused or no info available.
+  const [pauseSummary, setPauseSummary] = useState<{ pausedAt: string | null; pausedBy?: string; cancelledJobsCount?: number; countsByType?: Record<string, number> } | null>(null);
+  useEffect(() => {
+    if (!activeAgentId || !isPaused) { setPauseSummary(null); return; }
+    let cancelled = false;
+    fetch(`/api/agents/${activeAgentId}/paused-summary`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j?.data) setPauseSummary(j.data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeAgentId, isPaused]);
   // Inject live handlers into clarification cards (handlers can't be serialised to state)
   const messages: Message[] = (activeAgentId ? (messagesByAgent[activeAgentId] || []) : []).map(m => {
     if (m.type === "clarification" && m.data && !m.data.onAnswered) {
@@ -633,12 +668,23 @@ function AgentChatPage() {
     setHistoryLoading(true);
     fetch(`/api/agents/${activeAgentId}/chat`)
       .then(r => r.json())
-      .then(({ data }) => {
+      .then(({ data, lifecycle }) => {
         if (!Array.isArray(data)) return;
         // Filter out system kickoff messages and raw clarification sentinels
         const filtered = data.filter((m: any) =>
           !(m.role === "user" && (m.content?.startsWith("SYSTEM_KICKOFF:") || m.content?.startsWith("KICKOFF:")))
         );
+        // Pause/resume lifecycle markers — interleaved into the chat stream
+        // by createdAt below so the user sees "— Agent paused 18:42 —" right
+        // where it happened in the conversation.
+        const lifecycleMsgs: Message[] = Array.isArray(lifecycle) ? lifecycle.map((l: any) => ({
+          id: `lifecycle-${l.id}`,
+          role: "agent" as const,
+          type: "lifecycle" as const,
+          content: "",
+          timestamp: new Date(l.createdAt),
+          data: { kind: l.type, summary: l.summary, at: l.createdAt },
+        })) : [];
 
         // Map clarification metadata into interactive card messages
         const loaded: Message[] = filtered.map((m: any) => {
@@ -815,7 +861,13 @@ function AgentChatPage() {
           ));
         });
 
-        setMessagesByAgent(prev => ({ ...prev, [activeAgentId]: loaded }));
+        // Merge lifecycle markers (paused/resumed) into the chat stream by
+        // timestamp so they appear inline where the agent went silent or
+        // came back. Sorted ascending = chronological flow.
+        const merged = [...loaded, ...lifecycleMsgs].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
+        setMessagesByAgent(prev => ({ ...prev, [activeAgentId]: merged }));
         setHistoryLoaded(prev => new Set([...prev, activeAgentId]));
         // Snap to bottom after history loads. A single 150ms timeout wasn't
         // enough for long histories — the DOM hadn't finished laying out all
@@ -1319,8 +1371,44 @@ function AgentChatPage() {
                   {openQuestions.length} {openQuestions.length === 1 ? "question waiting" : "questions waiting"}
                 </button>
               )}
-              {/* Search + Export buttons */}
+              {/* Search + Pause/Resume + Export buttons */}
               <div className={`${openQuestions.length > 0 ? "" : "ml-auto"} flex items-center gap-1`}>
+                {/* Pause / Resume — symmetric with the resume banner so the
+                    operator can toggle agent state without leaving chat. */}
+                {!isPaused ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title={`Pause Agent ${activeAgent.name}`}
+                    disabled={pauseAgent.isPending}
+                    onClick={() => {
+                      if (!confirm(`Pause Agent ${activeAgent.name}?\n\nChat + autonomous cycles will stop. In-flight queued jobs will be cancelled. Resume any time.`)) return;
+                      pauseAgent.mutate(activeAgentId!, {
+                        onSuccess: () => toast.success(`${activeAgent.name} paused`),
+                        onError: (e: any) => toast.error(e?.message || "Pause failed"),
+                      });
+                    }}
+                  >
+                    {pauseAgent.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PauseCircle className="w-3.5 h-3.5" />}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-amber-600"
+                    title={`Resume Agent ${activeAgent.name}`}
+                    disabled={resumeAgent.isPending}
+                    onClick={() => {
+                      resumeAgent.mutate(activeAgentId!, {
+                        onSuccess: () => toast.success(`${activeAgent.name} resumed`),
+                        onError: (e: any) => toast.error(e?.message || "Resume failed"),
+                      });
+                    }}
+                  >
+                    {resumeAgent.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowSearch(!showSearch)} title="Search conversation">
                   <Search className="w-3.5 h-3.5" />
                 </Button>
@@ -1355,36 +1443,62 @@ function AgentChatPage() {
             state impossible to miss. Backend chat routes return 423 for paused
             agents so messages won't go through anyway; this banner explains
             why and offers one-click resume so the user isn't stuck. */}
-        {isPaused && activeAgentId && (
-          <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-              <Circle className="w-4 h-4 text-amber-600 dark:text-amber-400 fill-current" />
+        {isPaused && activeAgentId && (() => {
+          const cancelledCount = pauseSummary?.cancelledJobsCount ?? 0;
+          const counts = pauseSummary?.countsByType || {};
+          const TYPE_LABELS: Record<string, string> = {
+            autonomous_cycle: "autonomous cycle",
+            lifecycle_init: "lifecycle init",
+            approval_resume: "approval resume",
+            report_generate: "report generation",
+            user_edit_reconcile: "user-edit reconcile",
+          };
+          const breakdown = Object.entries(counts)
+            .map(([t, n]) => `${n}× ${TYPE_LABELS[t] || t}`)
+            .join(", ");
+          const pausedAgo = pauseSummary?.pausedAt
+            ? Math.round((Date.now() - new Date(pauseSummary.pausedAt).getTime()) / 60000)
+            : null;
+          return (
+            <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <Circle className="w-4 h-4 text-amber-600 dark:text-amber-400 fill-current" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                  Agent paused{pausedAgo !== null && pausedAgo > 0 ? ` · ${pausedAgo < 60 ? `${pausedAgo}m ago` : `${Math.round(pausedAgo / 60)}h ago`}` : ""}
+                </p>
+                <p className="text-xs text-foreground">
+                  {activeAgent?.name} won&apos;t reply to chat or run autonomous cycles until you resume.
+                  Existing meetings + webhooks still process.
+                </p>
+                {cancelledCount > 0 && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1">
+                    Resuming will re-run {cancelledCount} cancelled job{cancelledCount === 1 ? "" : "s"}{breakdown ? `: ${breakdown}` : ""}.
+                  </p>
+                )}
+              </div>
+              <Button
+                size="sm"
+                className="h-7 text-[11px] flex-shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={resumeAgent.isPending}
+                onClick={() => {
+                  resumeAgent.mutate(activeAgentId, {
+                    onSuccess: () => toast.success(
+                      cancelledCount > 0
+                        ? `${activeAgent?.name} resumed — re-running ${cancelledCount} job${cancelledCount === 1 ? "" : "s"}`
+                        : `${activeAgent?.name} resumed — agent is active again`,
+                    ),
+                    onError: (e: any) => toast.error(e?.message || "Resume failed"),
+                  });
+                }}
+              >
+                {resumeAgent.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                Resume agent
+              </Button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                Agent paused
-              </p>
-              <p className="text-xs text-foreground">
-                {activeAgent?.name} won&apos;t reply to chat or run autonomous cycles until you resume.
-                Existing meetings + webhooks still process.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="h-7 text-[11px] flex-shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
-              disabled={resumeAgent.isPending}
-              onClick={() => {
-                resumeAgent.mutate(activeAgentId, {
-                  onSuccess: () => toast.success(`${activeAgent?.name} resumed — agent is active again`),
-                  onError: (e: any) => toast.error(e?.message || "Resume failed"),
-                });
-              }}
-            >
-              {resumeAgent.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
-              Resume agent
-            </Button>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Resume banner — surfaces stale unresolved questions when you reopen
             chat after a break, so you don't have to scroll to find what the
