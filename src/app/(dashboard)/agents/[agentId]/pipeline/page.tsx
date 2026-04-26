@@ -66,6 +66,7 @@ interface Phase {
 interface PipelineData {
   agentId: string;
   agentName: string;
+  projectId?: string;
   projectName: string;
   currentPhase: string;
   phaseStatus: string;
@@ -854,19 +855,37 @@ export default function AgentPipelinePage() {
               </Link>
             )}
             {currentStep.id === "gate" && currentStep.status === "running" && (
-              <Link href="/approvals">
-                <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0 font-semibold">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                  Approve Phase Gate <ArrowRight className="w-3 h-3 ml-1.5" />
-                </Button>
-              </Link>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {data.projectId && (
+                  <Link href={`/projects/${data.projectId}/pm-tracker`}>
+                    <Button size="sm" variant="outline" className="font-semibold">
+                      <Shield className="w-3.5 h-3.5 mr-1.5" />
+                      Review Prereqs
+                    </Button>
+                  </Link>
+                )}
+                <Link href="/approvals">
+                  <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white font-semibold">
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                    Approve Phase Gate <ArrowRight className="w-3 h-3 ml-1.5" />
+                  </Button>
+                </Link>
+              </div>
             )}
-            {data.phaseStatus === "blocked_tasks_incomplete" && (
-              <Link href={`/projects/${agentId}/agile`}>
-                <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white flex-shrink-0 font-semibold">
-                  Complete Tasks <ArrowRight className="w-3 h-3 ml-1.5" />
-                </Button>
-              </Link>
+            {data.phaseStatus === "blocked_tasks_incomplete" && data.projectId && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Link href={`/projects/${data.projectId}/pm-tracker`}>
+                  <Button size="sm" variant="outline" className="font-semibold">
+                    <Shield className="w-3.5 h-3.5 mr-1.5" />
+                    Open PM Tracker
+                  </Button>
+                </Link>
+                <Link href={`/projects/${data.projectId}/agile`}>
+                  <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white font-semibold">
+                    Complete Tasks <ArrowRight className="w-3 h-3 ml-1.5" />
+                  </Button>
+                </Link>
+              </div>
             )}
           </div>
           );
@@ -1198,25 +1217,35 @@ export default function AgentPipelinePage() {
                   );
                 })()}
               </div>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`/api/agents/${data.agentId}/phase-completion`, { method: "POST" });
-                    const json = await res.json();
-                    if (json.data?.advanced) {
-                      window.location.reload();
-                    } else {
-                      alert(json.message || "Still blocked — complete outstanding items first.");
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {data.projectId && (
+                  <Link href={`/projects/${data.projectId}/pm-tracker`}>
+                    <button className="px-3 py-2 rounded-lg border border-amber-500/40 bg-card text-amber-600 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/10 transition-colors flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5" />
+                      Open PM Tracker
+                    </button>
+                  </Link>
+                )}
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/agents/${data.agentId}/phase-completion`, { method: "POST" });
+                      const json = await res.json();
+                      if (json.data?.advanced) {
+                        window.location.reload();
+                      } else {
+                        alert(json.message || "Still blocked — complete outstanding items first.");
+                      }
+                    } catch {
+                      alert("Failed to re-check. Please try again.");
                     }
-                  } catch {
-                    alert("Failed to re-check. Please try again.");
-                  }
-                }}
-                className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors flex items-center gap-1.5 flex-shrink-0"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Re-check & Advance
-              </button>
+                  }}
+                  className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition-colors flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Re-check & Advance
+                </button>
+              </div>
             </div>
           </div>
         )}

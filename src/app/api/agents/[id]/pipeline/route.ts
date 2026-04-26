@@ -855,6 +855,7 @@ export async function GET(
     data: {
       agentId,
       agentName: deployment.agent.name,
+      projectId: deployment.projectId,
       projectName: deployment.project.name,
       currentPhase: currentPhase || (firstPhase?.name ?? "N/A"),
       phaseStatus,
