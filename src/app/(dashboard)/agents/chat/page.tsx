@@ -45,6 +45,19 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
   ol: ({ children }) => <ol className="mb-2 space-y-0.5 ml-3 list-decimal">{children}</ol>,
   li: ({ children }) => <li className="text-sm leading-relaxed flex gap-1.5"><span className="text-primary mt-1 flex-shrink-0">•</span><span>{children}</span></li>,
   hr: () => <hr className="my-3 border-border/40" />,
+  a: ({ children, href }) => {
+    const isExternal = href?.startsWith("http");
+    return (
+      <a
+        href={href}
+        target={isExternal ? "_blank" : undefined}
+        rel={isExternal ? "noopener noreferrer" : undefined}
+        className="text-primary font-medium underline decoration-primary/50 underline-offset-2 hover:decoration-primary hover:text-primary/90 transition-colors"
+      >
+        {children}
+      </a>
+    );
+  },
   blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/40 pl-3 italic text-muted-foreground my-2">{children}</blockquote>,
   code: ({ children, className }) => {
     const isBlock = className?.includes("language-");
@@ -410,6 +423,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
             pendingApprovals={msg.data.pendingApprovals || 0}
             pendingArtefacts={msg.data.pendingArtefacts || 0}
             pendingQuestions={msg.data.pendingQuestions || 0}
+            incompleteTasks={msg.data.incompleteTasks || 0}
             risks={msg.data.risks || 0}
           />
         </div>

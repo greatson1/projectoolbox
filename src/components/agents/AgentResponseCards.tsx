@@ -57,6 +57,14 @@ export interface ProjectStatusCardProps {
   pendingArtefacts: number;
   pendingQuestions: number;
   risks: number;
+  /**
+   * Incomplete delivery + scaffolded PM tasks for the current phase. When > 0
+   * the card refuses to surface "Generate $nextPhase" as the call-to-action —
+   * the current phase still has open work, so suggesting we move on would
+   * mislead the user into thinking they can advance. We push them to finish
+   * the current phase first instead.
+   */
+  incompleteTasks?: number;
 }
 
 // ─── Option Pills ─────────────────────────────────────────────────────────────
@@ -247,13 +255,21 @@ export function AgentQuestionCard({ question, onAnswered, isSubmitting = false, 
 export function ProjectStatusCard({
   projectName, phase, phases, nextPhase,
   pendingApprovals, pendingArtefacts, pendingQuestions, risks,
+  incompleteTasks = 0,
 }: ProjectStatusCardProps) {
-  // Determine most urgent action
+  // Priority order — tightest gate first. Critically: the "Generate next
+  // phase" CTA only appears when the current phase has nothing outstanding
+  // (no unanswered clarification, no unapproved drafts, no PM/delivery tasks
+  // left). Otherwise we'd be inviting the user to advance prematurely — the
+  // server-side phase-next-action resolver would refuse, but the click would
+  // still feel like a broken promise.
+  const phaseHasOpenWork = pendingQuestions > 0 || pendingApprovals > 0 || pendingArtefacts > 0 || incompleteTasks > 0;
   const urgentAction =
-    pendingQuestions > 0 ? { label: "Answer questions", href: "#", color: "#F97316", icon: <MessageSquare size={11} /> } :
+    pendingQuestions > 0 ? { label: `Answer ${pendingQuestions} question${pendingQuestions === 1 ? "" : "s"}`, href: "#", color: "#F97316", icon: <MessageSquare size={11} /> } :
     pendingApprovals > 0 ? { label: `Review ${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""}`, href: "/approvals", color: "#F59E0B", icon: <AlertCircle size={11} /> } :
     pendingArtefacts > 0 ? { label: `Review ${pendingArtefacts} document${pendingArtefacts > 1 ? "s" : ""}`, href: "#artefacts", color: "#6366F1", icon: <FileText size={11} /> } :
-    nextPhase ? { label: `Generate ${nextPhase}`, href: "#artefacts", color: "#10B981", icon: <Sparkles size={11} /> } :
+    incompleteTasks > 0 ? { label: `Finish ${incompleteTasks} task${incompleteTasks === 1 ? "" : "s"} in ${phase || "current phase"}`, href: "#tasks", color: "#F59E0B", icon: <CheckCircle2 size={11} /> } :
+    nextPhase && !phaseHasOpenWork ? { label: `Generate ${nextPhase}`, href: "#artefacts", color: "#10B981", icon: <Sparkles size={11} /> } :
     null;
 
   const stats = [
