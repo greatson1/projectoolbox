@@ -25,6 +25,7 @@ import {
   ChevronRight,
   X,
   RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -291,11 +292,13 @@ function StepCard({
   step,
   index,
   isSelected,
+  isActiveBlocker,
   onClick,
 }: {
   step: PipelineStep;
   index: number;
   isSelected: boolean;
+  isActiveBlocker?: boolean;
   onClick: () => void;
 }) {
   const colors = statusColor(step.status);
@@ -306,18 +309,30 @@ function StepCard({
       onClick={onClick}
       className={cn(
         "pipeline-step-enter relative flex flex-col items-center gap-2 rounded-xl border-2 p-3 w-[140px] min-w-[140px] cursor-pointer transition-all duration-200",
-        colors.border,
-        colors.bg,
+        // Active blocker overrides normal status colours — red ring + bg
+        isActiveBlocker
+          ? "border-red-500/70 bg-red-500/10"
+          : [colors.border, colors.bg],
         isSelected && "ring-2 ring-primary/50 scale-[1.03]",
-        step.status === "waiting" && "opacity-50",
+        // Done = strong fade + line-through visual cue (already a "done" colour)
+        step.status === "done" && "opacity-90",
+        step.status === "waiting" && !isActiveBlocker && "opacity-45",
       )}
       style={{
         animationDelay: `${index * 60}ms`,
-        animationName: colors.glow || undefined,
-        animationDuration: colors.glow ? "2s" : undefined,
-        animationIterationCount: colors.glow ? "infinite" : undefined,
+        // Active blocker pulses red regardless of internal step status; running
+        // steps still get their blue glow when no blocker is active.
+        animationName: isActiveBlocker ? "pipeline-glow-red" : (colors.glow || undefined),
+        animationDuration: isActiveBlocker || colors.glow ? "2s" : undefined,
+        animationIterationCount: isActiveBlocker || colors.glow ? "infinite" : undefined,
       }}
     >
+      {/* "Action needed" badge for the live blocker step */}
+      {isActiveBlocker && (
+        <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider rounded-full bg-red-500 text-white shadow shadow-red-500/40 whitespace-nowrap">
+          Action needed
+        </span>
+      )}
       {/* Cycle indicator (top-right corner) */}
       {step.cycles && (
         <div
@@ -989,31 +1004,141 @@ export default function AgentPipelinePage() {
                 );
               })()}
             </div>
+
+            {/* ── Active blockers strip — shown when canAdvance is false ── */}
+            {(() => {
+              const currentPhaseData = data.phases.find((p) => p.name === data.currentPhase);
+              const activeBlockers = currentPhaseData?.blockers || [];
+              if (activeBlockers.length === 0) return null;
+              return (
+                <div className="mb-4 mx-1 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">
+                      Why this phase is blocked
+                    </span>
+                  </div>
+                  <ul className="space-y-1">
+                    {activeBlockers.map((b, i) => (
+                      <li key={i} className="text-[11px] text-foreground/80 leading-snug flex items-start gap-1.5">
+                        <span className="text-red-500/60 mt-[1px]">•</span>
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+
             <div className="flex items-start overflow-x-auto pb-4 gap-0">
               {/* Only show cycling steps in the per-phase carousel — one-off
                   steps like "Deploy Agent" belong to project init, not the
                   current phase, so they shouldn't show as the first card in
                   the "Design Phase — Step by Step" strip. */}
-              {data.steps.filter((s) => s.cycles).map((step, i) => (
-                <React.Fragment key={step.id}>
+              {(() => {
+                const cyclingSteps = data.steps.filter((s) => s.cycles);
+                const activeBlockerIdx = cyclingSteps.findIndex(
+                  (s) => s.status !== "done" && s.status !== "skipped",
+                );
+                // Steps that run in PARALLEL once Generate is done — these
+                // are gate-prerequisites that don't need to happen in any
+                // strict order (you can review artefacts while delivery
+                // tasks complete and KB risk-check runs). Group them under
+                // a single "GATE PREREQUISITES" lane so the visualisation
+                // reflects reality, not a fake chain.
+                const PARALLEL_IDS = new Set(["review", "delivery", "kb_check"]);
+                const groups: Array<
+                  | { kind: "single"; step: PipelineStep; idx: number }
+                  | { kind: "parallel"; steps: Array<{ step: PipelineStep; idx: number }> }
+                > = [];
+                let buffer: Array<{ step: PipelineStep; idx: number }> = [];
+                cyclingSteps.forEach((step, i) => {
+                  if (PARALLEL_IDS.has(step.id)) {
+                    buffer.push({ step, idx: i });
+                  } else {
+                    if (buffer.length > 0) {
+                      groups.push({ kind: "parallel", steps: buffer });
+                      buffer = [];
+                    }
+                    groups.push({ kind: "single", step, idx: i });
+                  }
+                });
+                if (buffer.length > 0) groups.push({ kind: "parallel", steps: buffer });
+
+                const renderStep = ({ step, idx }: { step: PipelineStep; idx: number }) => (
                   <StepCard
+                    key={step.id}
                     step={step}
-                    index={i}
+                    index={idx}
                     isSelected={selectedStepId === step.id}
+                    isActiveBlocker={idx === activeBlockerIdx}
                     onClick={() =>
                       setSelectedStepId(
                         selectedStepId === step.id ? null : step.id,
                       )
                     }
                   />
-                  {i < data.steps.length - 1 && (
-                    <Connector
-                      fromStatus={step.status}
-                      toStatus={data.steps[i + 1].status}
-                    />
-                  )}
-                </React.Fragment>
-              ))}
+                );
+
+                return groups.map((g, gi) => {
+                  const isLastGroup = gi === groups.length - 1;
+                  if (g.kind === "single") {
+                    const next = groups[gi + 1];
+                    const nextFirstStatus = next
+                      ? next.kind === "single"
+                        ? next.step.status
+                        : next.steps[0].step.status
+                      : "waiting";
+                    return (
+                      <React.Fragment key={`g-${gi}`}>
+                        {renderStep(g)}
+                        {!isLastGroup && (
+                          <Connector
+                            fromStatus={g.step.status}
+                            toStatus={nextFirstStatus}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  }
+                  // Parallel group — stacked vertically with a lane header
+                  const groupHasActive = g.steps.some(s => s.idx === activeBlockerIdx);
+                  const next = groups[gi + 1];
+                  const nextFirstStatus = next
+                    ? next.kind === "single"
+                      ? next.step.status
+                      : next.steps[0].step.status
+                    : "waiting";
+                  // Connector after the lane uses the worst-status step
+                  const lastStep = g.steps[g.steps.length - 1].step;
+                  return (
+                    <React.Fragment key={`g-${gi}`}>
+                      <div className="flex flex-col items-stretch gap-1.5 self-start">
+                        <div
+                          className={cn(
+                            "text-[8px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md text-center mx-1",
+                            groupHasActive
+                              ? "bg-red-500/15 text-red-500"
+                              : "bg-indigo-500/10 text-indigo-500/80",
+                          )}
+                          title="These steps run in parallel"
+                        >
+                          ⇉ Parallel · Gate Prerequisites
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {g.steps.map(renderStep)}
+                        </div>
+                      </div>
+                      {!isLastGroup && (
+                        <Connector
+                          fromStatus={lastStep.status}
+                          toStatus={nextFirstStatus}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                });
+              })()}
             </div>
           </CardContent>
         </Card>

@@ -193,12 +193,19 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
       return `All ${phase} documents approved. Click Generate to start the ${next} phase.`;
 
     case "blocked_by_tasks": {
-      // Surface the real blockers that getPhaseCompletion identified, instead
-      // of pretending the phase is ready to advance.
-      const headline = slot.blockers.length > 0
-        ? slot.blockers.slice(0, 2).join(" · ")
-        : `${slot.pmTasksDone}/${slot.pmTasksTotal} PM tasks · ${slot.deliveryDone}/${slot.deliveryTotal} delivery tasks`;
-      return `All ${phase} documents approved, but advancement is blocked: ${headline}. Complete the outstanding tasks before generating ${next}.`;
+      // Read the truth from getPhaseCompletion's blockers — the only
+      // canonical "why" source. Don't compose contradictory prefixes
+      // like "All documents approved" because the blocker list often
+      // includes "X artefacts not yet approved" — saying both reads as
+      // a bug to the user.
+      if (slot.blockers.length > 0) {
+        const headline = slot.blockers.slice(0, 2).join(" · ");
+        return `${phase} cannot advance to ${next} yet — ${headline}.`;
+      }
+      // Fallback when blockers haven't loaded yet
+      const pm = `${slot.pmTasksDone}/${slot.pmTasksTotal} PM tasks`;
+      const del = `${slot.deliveryDone}/${slot.deliveryTotal} delivery tasks`;
+      return `${phase} blocked from advancing — ${pm}, ${del}.`;
     }
 
     case "monitoring":
@@ -593,7 +600,7 @@ export function AgentStatusBar() {
                   : slot.state === "review"
                   ? `${slot.pendingCount} document${slot.pendingCount === 1 ? "" : "s"} need your approval before ${slot.agentName} can continue`
                   : slot.state === "blocked_by_tasks"
-                  ? `${slot.currentPhase} documents approved, but ${slot.blockers.slice(0, 2).join(" · ") || `${slot.pmTasksDone}/${slot.pmTasksTotal} PM · ${slot.deliveryDone}/${slot.deliveryTotal} delivery`}`
+                  ? `${slot.currentPhase} cannot advance — ${slot.blockers.slice(0, 2).join(" · ") || `${slot.pmTasksDone}/${slot.pmTasksTotal} PM · ${slot.deliveryDone}/${slot.deliveryTotal} delivery tasks`}`
                   : `${slot.currentPhase} complete — ${slot.agentName} is ready to write ${slot.nextPhase ?? "next"} phase documents`}
               </p>
               <Link href={ctaHref} onClick={() => setExpanded(false)}
