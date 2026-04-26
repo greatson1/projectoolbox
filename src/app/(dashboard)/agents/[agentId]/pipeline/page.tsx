@@ -147,8 +147,12 @@ const PIPELINE_STYLES = `
   50% { box-shadow: 0 0 20px 4px rgba(99,102,241,0.25); }
 }
 @keyframes pipeline-glow-red {
-  0%, 100% { box-shadow: 0 0 8px 0 rgba(239,68,68,0.3); }
-  50% { box-shadow: 0 0 18px 4px rgba(239,68,68,0.2); }
+  0%, 100% { box-shadow: 0 0 12px 2px rgba(239,68,68,0.45); }
+  50% { box-shadow: 0 0 26px 6px rgba(239,68,68,0.35); }
+}
+@keyframes pipeline-pulse-soft {
+  0%, 100% { transform: translate(-50%, 0) scale(1); }
+  50% { transform: translate(-50%, -2px) scale(1.05); }
 }
 @keyframes pipeline-dash {
   to { stroke-dashoffset: -20; }
@@ -311,29 +315,50 @@ function StepCard({
       onClick={onClick}
       className={cn(
         "pipeline-step-enter relative flex flex-col items-center gap-2 rounded-xl border-2 p-3 w-[140px] min-w-[140px] cursor-pointer transition-all duration-200",
-        // Active blocker overrides normal status colours — red ring + bg
+        // Active blocker overrides normal status colours — thicker red ring +
+        // brighter bg + slight scale lift so the eye lands on it immediately.
         isActiveBlocker
-          ? "border-red-500/70 bg-red-500/10"
+          ? "border-red-500 bg-red-500/15 scale-[1.04] shadow-lg shadow-red-500/30"
           : [colors.border, colors.bg],
-        isSelected && "ring-2 ring-primary/50 scale-[1.03]",
-        // Done = strong fade + line-through visual cue (already a "done" colour)
-        step.status === "done" && "opacity-90",
-        step.status === "waiting" && !isActiveBlocker && "opacity-45",
+        isSelected && !isActiveBlocker && "ring-2 ring-primary/50 scale-[1.03]",
+        isSelected && isActiveBlocker && "ring-2 ring-red-500/40",
+        // Done = subtle fade so the eye doesn't linger on completed work
+        step.status === "done" && "opacity-85",
+        // Non-blocker waiting steps fade hard so the active blocker pops more
+        step.status === "waiting" && !isActiveBlocker && "opacity-40",
       )}
       style={{
         animationDelay: `${index * 60}ms`,
         // Active blocker pulses red regardless of internal step status; running
         // steps still get their blue glow when no blocker is active.
         animationName: isActiveBlocker ? "pipeline-glow-red" : (colors.glow || undefined),
-        animationDuration: isActiveBlocker || colors.glow ? "2s" : undefined,
+        animationDuration: isActiveBlocker || colors.glow ? "1.6s" : undefined,
         animationIterationCount: isActiveBlocker || colors.glow ? "infinite" : undefined,
       }}
     >
-      {/* "Action needed" badge for the live blocker step */}
+      {/* "Action needed" badge for the live blocker step — sits ABOVE the
+          card with a downward-pointing tail so it visually points at the
+          card the user needs to act on. Pulses with the same red glow so
+          the badge + card move together. */}
       {isActiveBlocker && (
-        <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider rounded-full bg-red-500 text-white shadow shadow-red-500/40 whitespace-nowrap">
-          Action needed
-        </span>
+        <>
+          <span
+            className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md bg-red-500 text-white shadow-lg shadow-red-500/50 whitespace-nowrap"
+            style={{ animation: "pipeline-pulse-soft 1.4s ease-in-out infinite" }}
+          >
+            <AlertTriangle className="size-3" />
+            Action needed
+          </span>
+          {/* Downward chevron tail pointing at the card */}
+          <span
+            className="absolute -top-1 left-1/2 -translate-x-1/2 z-10 w-0 h-0"
+            style={{
+              borderLeft: "5px solid transparent",
+              borderRight: "5px solid transparent",
+              borderTop: "5px solid #EF4444",
+            }}
+          />
+        </>
       )}
       {/* Cycle indicator (top-right corner) */}
       {step.cycles && (
