@@ -154,6 +154,10 @@ const PIPELINE_STYLES = `
   0%, 100% { transform: translate(-50%, 0) scale(1); }
   50% { transform: translate(-50%, -2px) scale(1.05); }
 }
+@keyframes pipeline-pulse-soft-2 {
+  0%, 100% { background-color: rgb(239,68,68); }
+  50% { background-color: rgb(220,38,38); }
+}
 @keyframes pipeline-dash {
   to { stroke-dashoffset: -20; }
 }
@@ -317,8 +321,9 @@ function StepCard({
         "pipeline-step-enter relative flex flex-col items-center gap-2 rounded-xl border-2 p-3 w-[140px] min-w-[140px] cursor-pointer transition-all duration-200",
         // Active blocker overrides normal status colours — thicker red ring +
         // brighter bg + slight scale lift so the eye lands on it immediately.
+        // Extra top padding to make room for the inline "Action needed" banner.
         isActiveBlocker
-          ? "border-red-500 bg-red-500/15 scale-[1.04] shadow-lg shadow-red-500/30"
+          ? "border-red-500 bg-red-500/15 scale-[1.04] shadow-lg shadow-red-500/30 pt-7"
           : [colors.border, colors.bg],
         isSelected && !isActiveBlocker && "ring-2 ring-primary/50 scale-[1.03]",
         isSelected && isActiveBlocker && "ring-2 ring-red-500/40",
@@ -336,29 +341,17 @@ function StepCard({
         animationIterationCount: isActiveBlocker || colors.glow ? "infinite" : undefined,
       }}
     >
-      {/* "Action needed" badge for the live blocker step — sits ABOVE the
-          card with a downward-pointing tail so it visually points at the
-          card the user needs to act on. Pulses with the same red glow so
-          the badge + card move together. */}
+      {/* "Action needed" banner — full-width at the TOP of the card so the
+          parent's overflow-x-auto can't clip it like an externally-positioned
+          badge would. Pulses softly so the eye lands on it across the strip. */}
       {isActiveBlocker && (
-        <>
-          <span
-            className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md bg-red-500 text-white shadow-lg shadow-red-500/50 whitespace-nowrap"
-            style={{ animation: "pipeline-pulse-soft 1.4s ease-in-out infinite" }}
-          >
-            <AlertTriangle className="size-3" />
-            Action needed
-          </span>
-          {/* Downward chevron tail pointing at the card */}
-          <span
-            className="absolute -top-1 left-1/2 -translate-x-1/2 z-10 w-0 h-0"
-            style={{
-              borderLeft: "5px solid transparent",
-              borderRight: "5px solid transparent",
-              borderTop: "5px solid #EF4444",
-            }}
-          />
-        </>
+        <div
+          className="absolute top-0 left-0 right-0 z-10 inline-flex items-center justify-center gap-1 py-1 text-[10px] font-bold uppercase tracking-wider bg-red-500 text-white whitespace-nowrap rounded-t-[10px]"
+          style={{ animation: "pipeline-pulse-soft-2 1.4s ease-in-out infinite" }}
+        >
+          <AlertTriangle className="size-3" />
+          Action needed
+        </div>
       )}
       {/* Cycle indicator (top-right corner) */}
       {step.cycles && (
