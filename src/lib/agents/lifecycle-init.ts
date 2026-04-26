@@ -43,7 +43,7 @@ export async function generatePhaseArtefacts(
   ]);
   if (!agent || !project) throw new Error("Agent or project not found");
 
-  const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+  const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
   const methodology = getMethodology(methodologyId);
 
   // Determine target phase
@@ -377,7 +377,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
 
   const project = deployment.project;
   const agent = deployment.agent;
-  const methodologyId = (project.methodology || "PRINCE2").toLowerCase().replace("agile_", "");
+  const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
   const methodology = getMethodology(methodologyId);
   const playbook = getPlaybook(methodologyId);
 
