@@ -51,6 +51,10 @@ export default function KnowledgeBasePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
   const [filterTag, setFilterTag]   = useState<string | null>(null);
+  // Top-level mode: "all" or "pending" — when "pending" the list is restricted
+  // to items tagged pending_user_confirmation so the user can sweep through
+  // research/meeting flagged items in one place.
+  const [filterMode, setFilterMode] = useState<"all" | "pending">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing]       = useState(false);
   const [editContent, setEditContent] = useState("");
@@ -102,13 +106,22 @@ export default function KnowledgeBasePage() {
     );
   }, [selectedItem, items, selectedId]);
 
-  // Client-side secondary filter (tag only — type/layer/search go to API)
+  // Pending-review count drives the badge on the "Pending review" tab so
+  // the user can see at a glance how much research/meeting output needs
+  // their confirmation.
+  const pendingCount = useMemo(
+    () => items.filter((i: any) => (i.tags || []).includes("pending_user_confirmation")).length,
+    [items],
+  );
+
+  // Client-side secondary filter (mode + tag — type/layer/search go to API)
   const filtered = useMemo(() => {
     return items.filter(i => {
+      if (filterMode === "pending" && !((i.tags || []) as string[]).includes("pending_user_confirmation")) return false;
       if (filterTag && !(i.tags || []).includes(filterTag)) return false;
       return true;
     });
-  }, [items, filterTag]);
+  }, [items, filterTag, filterMode]);
 
   const handleSave = async () => {
     if (!selectedId) return;
@@ -231,6 +244,27 @@ export default function KnowledgeBasePage() {
             </div>
           </div>
 
+          {/* Mode tabs — All vs Pending review */}
+          <div className="px-3 pt-2 flex gap-1 border-b border-border/30">
+            <button
+              onClick={() => setFilterMode("all")}
+              className={`flex-1 px-2 py-1.5 rounded-t-md text-[11px] font-semibold transition-colors ${filterMode === "all" ? "bg-card text-foreground border-b-2 border-primary" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              All items
+            </button>
+            <button
+              onClick={() => setFilterMode("pending")}
+              className={`flex-1 px-2 py-1.5 rounded-t-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors ${filterMode === "pending" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-b-2 border-amber-500" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Pending review
+              {pendingCount > 0 && (
+                <span className={`text-[9px] min-w-[16px] px-1 h-4 rounded-full flex items-center justify-center font-bold ${filterMode === "pending" ? "bg-amber-500 text-white" : "bg-amber-500/20 text-amber-600 dark:text-amber-400"}`}>
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          </div>
+
           {/* Type filters */}
           <div className="px-3 py-2 flex flex-wrap gap-1 border-b border-border/30">
             <button onClick={() => setFilterType(null)}
@@ -289,10 +323,25 @@ export default function KnowledgeBasePage() {
                 const contentLen = (item.content || "").length;
                 const isRawResearch = (item.tags || []).some((t: string) => t === "raw_research" || t === "phase_research") && contentLen > 500;
                 const isFact = contentLen < 300 && (item.tags || []).includes("research");
+                const isPending = (item.tags || []).includes("pending_user_confirmation");
+                const isUserConfirmed = (item.tags || []).includes("user_confirmed") || (item.tags || []).includes("user_answer");
+                // Trust pill — coloured + labelled instead of one-letter "H"/"R"
+                let trustPill: { label: string; className: string; title: string } | null = null;
+                if (isPending) {
+                  trustPill = { label: "PENDING", className: "bg-amber-500/15 text-amber-600 dark:text-amber-400", title: "Pending your confirmation — not used for artefact generation yet" };
+                } else if (isUserConfirmed) {
+                  trustPill = { label: "USER", className: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400", title: "User-confirmed — highest trust, used as ground truth" };
+                } else if (item.trustLevel === "HIGH_TRUST") {
+                  trustPill = { label: "HIGH", className: "bg-blue-500/15 text-blue-600 dark:text-blue-400", title: "High-trust fact — verified or formal decision" };
+                } else if (item.trustLevel === "REFERENCE_ONLY") {
+                  trustPill = { label: "REF", className: "bg-muted text-muted-foreground border border-dashed border-border", title: "Reference only — lookup, not authoritative" };
+                } else {
+                  trustPill = { label: "STD", className: "bg-muted/60 text-muted-foreground", title: "Standard trust — best-effort, can be overridden by HIGH_TRUST or USER" };
+                }
                 return (
                   <button key={item.id}
                     onClick={() => { setSelectedId(item.id); setEditing(false); setEditContent(item.content); setEditTitle(item.title); }}
-                    className={`w-full text-left px-3 py-2.5 border-b border-border/20 hover:bg-muted/30 transition-colors ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""} ${isRawResearch ? "bg-primary/[0.03]" : ""}`}>
+                    className={`w-full text-left px-3 py-2.5 border-b border-border/20 hover:bg-muted/30 transition-colors ${isActive ? "bg-primary/5 border-l-2 border-l-primary" : ""} ${isRawResearch ? "bg-primary/[0.03]" : ""} ${isPending ? "bg-amber-500/[0.04]" : ""}`}>
                     <div className="flex items-center gap-2">
                       <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: typeConfig.color }} />
                       <span className="text-xs font-medium truncate flex-1">{item.title}</span>
@@ -303,8 +352,8 @@ export default function KnowledgeBasePage() {
                         <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground flex-shrink-0" title="Extracted atomic fact">FACT</span>
                       )}
                       {item.confidential && <Shield className="w-3 h-3 text-destructive flex-shrink-0" />}
-                      <span className={`text-[9px] flex-shrink-0 ${TRUST_COLORS[item.trustLevel] || ""}`}>
-                        {item.trustLevel === "HIGH_TRUST" ? "H" : item.trustLevel === "REFERENCE_ONLY" ? "R" : ""}
+                      <span className={`text-[8px] px-1.5 py-0 rounded font-bold flex-shrink-0 ${trustPill.className}`} title={trustPill.title}>
+                        {trustPill.label}
                       </span>
                     </div>
                     <div className="flex items-center gap-1 mt-0.5 pl-5">
