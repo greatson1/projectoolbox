@@ -129,10 +129,15 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
     // pending_user_confirmation is already filtered out of artefact-generation
     // prompts by getProjectKnowledgeContext.
     const hedgePattern = /\b(probably|possibly|maybe|might|could|should|tentative|hopeful|likely|i think|i believe|seems|may|hopefully|fingers crossed)\b/i;
-    let pendingDecisions: { text: string; by: string; reason: string }[] = [];
+    // Track decisions that need follow-up so we can post per-decision cards
+    // AFTER all KB writes settle (we need the KB row IDs).
+    const pendingDecisions: {
+      text: string; by: string; reason: string;
+      certainty: "probable" | "tentative";
+      createPromise: Promise<{ id: string }>;
+    }[] = [];
+    const definiteDecisions: { text: string; by: string }[] = [];
     for (const d of result.decisions) {
-      // Use Claude's certainty if provided; otherwise fall back to hedge-word
-      // detection so we still benefit even if the model omits the field.
       const declaredCertainty = (d.certainty as "definite" | "probable" | "tentative" | undefined) || undefined;
       const looksHedged = hedgePattern.test(d.text);
       const certainty: "definite" | "probable" | "tentative" =
@@ -144,15 +149,8 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
       const trust = certainty === "tentative" ? "STANDARD" : "HIGH_TRUST";
       const needsReview = certainty !== "definite";
       const tags = ["meeting", "decision", `decision_certainty:${certainty}`];
-      if (needsReview) {
-        tags.push("pending_user_confirmation", "needs_review");
-        pendingDecisions.push({
-          text: d.text,
-          by: d.by,
-          reason: certainty === "tentative" ? "speculative wording" : "qualified language",
-        });
-      }
-      kbWrites.push(db.knowledgeBaseItem.create({
+      if (needsReview) tags.push("pending_user_confirmation", "needs_review");
+      const createPromise = db.knowledgeBaseItem.create({
         data: {
           ...sharedBase,
           type: "DECISION",
@@ -161,7 +159,20 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
           trustLevel: trust,
           tags,
         },
-      }));
+        select: { id: true },
+      });
+      kbWrites.push(createPromise);
+      if (needsReview) {
+        pendingDecisions.push({
+          text: d.text,
+          by: d.by,
+          reason: certainty === "tentative" ? "speculative wording" : "qualified language",
+          certainty: certainty as "probable" | "tentative",
+          createPromise,
+        });
+      } else {
+        definiteDecisions.push({ text: d.text, by: d.by });
+      }
     }
 
     // 3. Each risk identified — STANDARD trust
@@ -208,26 +219,49 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
 
     await Promise.allSettled(kbWrites);
 
-    // ── B: Notify user of decisions that need confirmation ──
+    // ── B: Per-decision PendingDecisionCard for each flagged item ──
+    // Render one interactive card per flagged decision so the user can
+    // [Confirm]/[Discard] inline without leaving chat.
     if (pendingDecisions.length > 0) {
-      const list = pendingDecisions.slice(0, 8).map(d => `• "${d.text}" (${d.by} · ${d.reason})`).join("\n");
-      const more = pendingDecisions.length > 8 ? `\n… and ${pendingDecisions.length - 8} more` : "";
+      // Header summary so the cards have context.
       await db.chatMessage.create({
         data: {
           agentId: meeting.agentId,
           role: "agent",
-          content: `Meeting **"${meeting.title}"** processed. I extracted **${pendingDecisions.length} decision${pendingDecisions.length !== 1 ? "s" : ""} that need your confirmation** before I rely on them — the wording was qualified or speculative, and I don't want to act on them as fact:\n\n${list}${more}\n\nReview them on the [Knowledge Base](/knowledge) and confirm or edit. Until then they won't be used to generate artefacts.`,
+          content: `Meeting **"${meeting.title}"** processed. ${pendingDecisions.length} decision${pendingDecisions.length !== 1 ? "s" : ""} need your confirmation before I'll act on them:`,
         },
       }).catch(() => {});
+
+      for (const pd of pendingDecisions) {
+        // The KB-write promise was registered earlier; await it so we have
+        // the row id to address from the card. allSettled has already run
+        // so this resolves immediately from cache.
+        let kbItemId: string | null = null;
+        try { kbItemId = (await pd.createPromise).id; } catch { /* skip */ }
+        if (!kbItemId) continue;
+
+        await db.chatMessage.create({
+          data: {
+            agentId: meeting.agentId,
+            role: "agent",
+            content: "__PENDING_DECISION__",
+            metadata: {
+              type: "pending_decision",
+              kbItemId,
+              decisionText: pd.text,
+              by: pd.by,
+              reason: pd.reason,
+              certainty: pd.certainty,
+              meetingTitle: meeting.title,
+            } as any,
+          },
+        }).catch(() => {});
+      }
     }
 
-    // ── C: Match decisions to open tasks/risks and propose state changes ──
-    // Fuzzy keyword match — for each high-confidence decision, look for an
-    // open PM task or open risk whose title shares meaningful tokens. Post
-    // a single chat message proposing the state change. We DON'T auto-apply
-    // — the user clicks through to confirm, keeping a human in the loop on
-    // every state mutation that flowed from a transcript.
-    if (meeting.projectId && result.decisions.length > 0) {
+    // ── C: Per-suggestion ActionSuggestionCard for each definite-decision
+    // → open-work-item match. Same one-click pattern, no auto-apply.
+    if (meeting.projectId && definiteDecisions.length > 0) {
       try {
         const [openTasks, openRisks] = await Promise.all([
           db.task.findMany({
@@ -245,10 +279,8 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
         const STOPWORDS = new Set(["the", "a", "an", "of", "for", "to", "and", "is", "are", "was", "were", "be", "in", "on", "at", "by", "or", "we", "i", "they", "you", "he", "she", "it", "this", "that", "with", "from", "have", "has", "had", "will", "should", "can", "do", "does"]);
         const tokenise = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !STOPWORDS.has(t));
 
-        const suggestions: { decision: string; type: "task" | "risk"; itemTitle: string; itemId: string; suggested: string }[] = [];
-        for (const d of result.decisions) {
-          // Only propose actions for decisions Claude marked as definite.
-          if (d.certainty && d.certainty !== "definite") continue;
+        const suggestions: { decision: string; type: "task" | "risk"; itemTitle: string; itemId: string }[] = [];
+        for (const d of definiteDecisions) {
           const dTokens = new Set(tokenise(d.text));
           if (dTokens.size === 0) continue;
 
@@ -257,10 +289,7 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
             if (tTokens.length === 0) continue;
             const overlap = tTokens.filter(tok => dTokens.has(tok)).length;
             if (overlap >= Math.min(2, Math.ceil(tTokens.length * 0.4))) {
-              suggestions.push({
-                decision: d.text, type: "task", itemTitle: t.title || "", itemId: t.id,
-                suggested: `Mark task "${t.title}" as DONE?`,
-              });
+              suggestions.push({ decision: d.text, type: "task", itemTitle: t.title || "", itemId: t.id });
               break; // one match per decision is enough
             }
           }
@@ -269,27 +298,38 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
             if (rTokens.length === 0) continue;
             const overlap = rTokens.filter(tok => dTokens.has(tok)).length;
             if (overlap >= Math.min(2, Math.ceil(rTokens.length * 0.4))) {
-              suggestions.push({
-                decision: d.text, type: "risk", itemTitle: r.title || "", itemId: r.id,
-                suggested: `Close risk "${r.title}"?`,
-              });
+              suggestions.push({ decision: d.text, type: "risk", itemTitle: r.title || "", itemId: r.id });
               break;
             }
           }
         }
 
         if (suggestions.length > 0) {
-          const lines = suggestions.slice(0, 6).map(s =>
-            `• Decision: "${s.decision}"\n  → ${s.suggested} ([open ${s.type}](/projects/${meeting.projectId}/${s.type === "task" ? "agile" : "risk"}))`,
-          ).join("\n\n");
-          const more = suggestions.length > 6 ? `\n\n… and ${suggestions.length - 6} more potential matches` : "";
           await db.chatMessage.create({
             data: {
               agentId: meeting.agentId,
               role: "agent",
-              content: `I noticed ${suggestions.length} decision${suggestions.length !== 1 ? "s" : ""} from this meeting that match open work items. Want to update them?\n\n${lines}${more}\n\nOpen the linked board and update each item — I won't change them automatically because state changes from transcripts are too easy to get wrong.`,
+              content: `I noticed ${suggestions.length} decision${suggestions.length !== 1 ? "s" : ""} from this meeting match open work items. One click to apply:`,
             },
           }).catch(() => {});
+
+          for (const s of suggestions.slice(0, 8)) {
+            await db.chatMessage.create({
+              data: {
+                agentId: meeting.agentId,
+                role: "agent",
+                content: "__ACTION_SUGGESTION__",
+                metadata: {
+                  type: "action_suggestion",
+                  projectId: meeting.projectId,
+                  decisionText: s.decision,
+                  itemType: s.type,
+                  itemId: s.itemId,
+                  itemTitle: s.itemTitle,
+                } as any,
+              },
+            }).catch(() => {});
+          }
         }
       } catch (e) {
         console.error("[meeting-processor] decision→task/risk matching failed:", e);

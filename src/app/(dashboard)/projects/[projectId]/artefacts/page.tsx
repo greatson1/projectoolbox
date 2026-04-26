@@ -398,6 +398,38 @@ export default function ArtefactsPage() {
         </div>
       </div>
 
+      {/* Custom-document quick prompts — single click prefills the chat with
+          a focused starter so users see what kinds of bespoke artefacts the
+          agent can produce on demand. */}
+      {(() => {
+        const firstAgentId = items.find((a: any) => a.agent?.id)?.agent?.id || "";
+        const SUGGESTIONS: Array<{ label: string; prompt: string }> = [
+          { label: "Vendor Comparison", prompt: "Create a Vendor Comparison Report covering the top 3 candidate vendors for this project — include price, fit, risks, and a recommendation." },
+          { label: "Status Update", prompt: "Create a one-page Status Update for this week — RAG, key milestones, top 3 risks, what's blocked, and the next 7 days." },
+          { label: "Risk Heat Map", prompt: "Create a Risk Heat Map as a CSV with severity (1-5) on one axis and likelihood (1-5) on the other, listing each open risk in its cell." },
+          { label: "Meeting Minutes", prompt: "Create Meeting Minutes for our last meeting — attendees, decisions, action items with owners and due dates, and follow-up notes." },
+          { label: "Lessons Capture", prompt: "Create a Lessons Capture document recording what's worked well so far in this project, what hasn't, and what we'd do differently next time." },
+        ];
+        const baseHref = (prompt: string) => firstAgentId
+          ? `/agents/chat?agent=${firstAgentId}&prompt=${encodeURIComponent(prompt)}`
+          : `/agents/chat?prompt=${encodeURIComponent(prompt)}`;
+        return (
+          <div className="flex items-center gap-2 flex-wrap text-[11px]">
+            <span className="text-muted-foreground">Try:</span>
+            {SUGGESTIONS.map(s => (
+              <Link
+                key={s.label}
+                href={baseHref(s.prompt)}
+                className="px-2.5 py-1 rounded-full border border-border bg-muted/40 text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
+                title={s.prompt}
+              >
+                {s.label}
+              </Link>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4">

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
+import { PendingDecisionCard, ActionSuggestionCard } from "@/components/agents/MeetingDecisionCards";
 import { AgentQuestionCard, ProjectStatusCard } from "@/components/agents/AgentResponseCards";
 import { ResearchFindingsCard } from "@/components/agents/ResearchFindingsCard";
 import { SentimentFeedback } from "@/components/ml/SentimentFeedback";
@@ -64,7 +65,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
 };
 
 // ── Rich message types matching Vite original ──
-type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings";
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings" | "pending_decision" | "action_suggestion";
 
 interface Message {
   id: string;
@@ -260,6 +261,45 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
             totalCount={msg.data.totalCount || 0}
             onGenerate={msg.data.onGenerate}
             isGenerating={msg.data.isGenerating}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Pending meeting decision — Confirm / Discard inline
+  if (msg.type === "pending_decision" && msg.data?.kbItemId) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[85%]">
+          <PendingDecisionCard
+            agentId={msg.data.agentId}
+            kbItemId={msg.data.kbItemId}
+            decisionText={msg.data.decisionText || ""}
+            by={msg.data.by || "Unknown"}
+            reason={msg.data.reason || "needs review"}
+            certainty={msg.data.certainty || "probable"}
+            meetingTitle={msg.data.meetingTitle}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Action suggestion — Apply / Skip a state change suggested by a meeting decision
+  if (msg.type === "action_suggestion" && msg.data?.itemId) {
+    return (
+      <div className="flex gap-2">
+        {avatar}
+        <div className="flex-1 max-w-[85%]">
+          <ActionSuggestionCard
+            agentId={msg.data.agentId}
+            projectId={msg.data.projectId}
+            decisionText={msg.data.decisionText || ""}
+            itemType={msg.data.itemType || "task"}
+            itemId={msg.data.itemId}
+            itemTitle={msg.data.itemTitle || ""}
           />
         </div>
       </div>
@@ -565,6 +605,28 @@ function AgentChatPage() {
             };
           }
 
+          if (meta?.type === "pending_decision" && meta.kbItemId) {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "pending_decision" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: { ...meta, agentId: activeAgentId },
+            };
+          }
+
+          if (meta?.type === "action_suggestion" && meta.itemId) {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "action_suggestion" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: { ...meta, agentId: activeAgentId },
+            };
+          }
+
           return {
             id: m.id,
             role: m.role === "user" ? "user" as const : "agent" as const,
@@ -580,7 +642,9 @@ function AgentChatPage() {
             m.content === "__AGENT_QUESTION__" ||
             m.content === "__PROJECT_STATUS__" ||
             m.content === "__CHANGE_PROPOSAL__" ||
-            m.content === "__RESEARCH_FINDINGS__"
+            m.content === "__RESEARCH_FINDINGS__" ||
+            m.content === "__PENDING_DECISION__" ||
+            m.content === "__ACTION_SUGGESTION__"
           ));
         });
 
