@@ -999,7 +999,26 @@ Length guidance: Most replies should be 2-5 sentences. Only use headers/bullets 
 The following are internal system markers. NEVER write them in your responses:
 PROJECT_STATUS, AGENT_QUESTION, __PROJECT_STATUS__, __AGENT_QUESTION__, __CLARIFICATION_SESSION__, __CLARIFICATION_COMPLETE__, __CHANGE_PROPOSAL__
 These are handled by the platform automatically. Just write normal text.
-- Only introduce yourself on the very first ever message (when history is empty)`;
+- Only introduce yourself on the very first ever message (when history is empty)
+
+## APP SURFACES THE USER CAN VISIT
+You exist inside Projectoolbox — a project-management web app. When the user asks what to do next, where to look, or how to act on something, link them to the right surface using markdown link syntax: [link text](path). Don't paste full URLs.
+${deployment?.projectId ? `
+- Pipeline (phases, gates, blockers): [/agents/${agentId}/pipeline](/agents/${agentId}/pipeline)
+- Artefacts & approvals: [/agents/${agentId}/approvals](/agents/${agentId}/approvals)
+- Live agent activity: [/agents/${agentId}/live](/agents/${agentId}/live)
+- Project schedule (Gantt + WBS): [/projects/${deployment.projectId}/schedule](/projects/${deployment.projectId}/schedule)
+- Agile board (sprints, backlog): [/projects/${deployment.projectId}/agile](/projects/${deployment.projectId}/agile)
+- Risk register: [/projects/${deployment.projectId}/risk](/projects/${deployment.projectId}/risk)
+- Cost plan: [/projects/${deployment.projectId}/cost](/projects/${deployment.projectId}/cost)
+- Compliance: [/projects/${deployment.projectId}/compliance](/projects/${deployment.projectId}/compliance)
+` : ""}
+- Knowledge base (saved facts, research, transcripts): [/knowledge](/knowledge)
+- Calendar (meetings, briefs): [/calendar](/calendar)
+- Meetings & transcripts: [/meetings](/meetings)
+- Settings → Integration health: [/settings](/settings)
+
+When you mention an action the user must take ("review the artefacts", "approve the phase gate"), include the link to the screen so they can jump straight there.`;
 
   // Load the full conversation history — last 100 messages, filter hidden system kickoffs.
   // We keep 100 so the agent has genuine memory of previous sessions.
@@ -1060,6 +1079,12 @@ These are handled by the platform automatically. Just write normal text.
       case "research_findings": {
         const sections = Array.isArray(meta.sections) && meta.sections.length > 0 ? ` across sections: ${meta.sections.join(", ")}` : "";
         return `[I posted research findings: ${meta.factsCount || 0} facts${sections}${meta.phase ? ` for phase ${meta.phase}` : ""}]`;
+      }
+      case "tool_effects": {
+        const effects = Array.isArray(meta.effects) ? meta.effects : [];
+        if (effects.length === 0) return content;
+        const lines = effects.map((e: any) => `- ${e.status === "error" ? "FAILED" : "OK"}: ${e.summary}`).join("\n");
+        return `[I executed ${effects.length} action${effects.length === 1 ? "" : "s"} this turn:\n${lines}]`;
       }
       default:
         return content;
@@ -1738,7 +1763,7 @@ These are handled by the platform automatically. Just write normal text.
 
                   // Strip sentinel strings from live stream (they're post-processed into cards)
                   let cleanToken = event.delta.text
-                    .replace(/\b(PROJECT_STATUS|AGENT_QUESTION|__PROJECT_STATUS__|__AGENT_QUESTION__|__CLARIFICATION_SESSION__|__CLARIFICATION_COMPLETE__|__CHANGE_PROPOSAL__)\b/g, "");
+                    .replace(/\b(PROJECT_STATUS|AGENT_QUESTION|__PROJECT_STATUS__|__AGENT_QUESTION__|__CLARIFICATION_SESSION__|__CLARIFICATION_COMPLETE__|__CHANGE_PROPOSAL__|__TOOL_EFFECTS__)\b/g, "");
 
                   // FACTS suppression — 4 cases:
                   if (wasInsideFacts && nowInsideFacts) {
@@ -1791,6 +1816,18 @@ These are handled by the platform automatically. Just write normal text.
           emitStatus("executing", `Running ${p1ToolBlocks.length} action${p1ToolBlocks.length > 1 ? "s" : ""}...`);
           // Execute each tool call and collect results
           const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
+          // Side-effect log for the chat trace card. Each successful entity-
+          // mutating tool pushes a row here so we can post one inline summary
+          // card to chat after the loop instead of staying silent. Powers the
+          // "What did the agent just do?" trace + "Why?" expander on the
+          // client.
+          const toolEffects: Array<{
+            tool: string;
+            status: "success" | "error";
+            summary: string;
+            link?: string;
+            why?: string;
+          }> = [];
 
           for (const toolBlock of p1ToolBlocks) {
             if (toolBlock.name === "schedule_meeting") {
@@ -1810,6 +1847,17 @@ These are handled by the platform automatically. Just write normal text.
                 tool_use_id: toolBlock.id,
                 content: JSON.stringify(toolResult),
               });
+              if (toolResult.error) {
+                toolEffects.push({ tool: "schedule_meeting", status: "error", summary: `Meeting scheduling failed: ${toolResult.error}` });
+              } else {
+                toolEffects.push({
+                  tool: "schedule_meeting",
+                  status: "success",
+                  summary: `Scheduled meeting "${toolBlock.input.title || "(untitled)"}" for ${toolBlock.input.startTime || "soon"}`,
+                  link: "/calendar",
+                  why: `Inputs: ${JSON.stringify(toolBlock.input).slice(0, 400)}`,
+                });
+              }
             } else if (toolBlock.name === "create_task") {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: "\n\n*Creating task…*\n\n" })}\n\n`));
               fullContent += "\n\n*Creating task…*\n\n";
@@ -1828,8 +1876,16 @@ These are handled by the platform automatically. Just write normal text.
                   },
                 });
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, taskId: task.id, title: task.title }) });
+                toolEffects.push({
+                  tool: "create_task",
+                  status: "success",
+                  summary: `Created task "${task.title}" (priority: ${task.priority || "MEDIUM"})`,
+                  link: depForTask?.projectId ? `/projects/${depForTask.projectId}/agile` : undefined,
+                  why: toolBlock.input.description || `Inputs: ${JSON.stringify(toolBlock.input).slice(0, 400)}`,
+                });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+                toolEffects.push({ tool: "create_task", status: "error", summary: `Failed to create task: ${err.message}` });
               }
 
             } else if (toolBlock.name === "update_risk") {
@@ -1853,8 +1909,16 @@ These are handled by the platform automatically. Just write normal text.
                   },
                 });
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, riskId: risk.id, title: risk.title, score: risk.score }) });
+                toolEffects.push({
+                  tool: "update_risk",
+                  status: "success",
+                  summary: `Logged risk "${risk.title}" (score ${risk.score} = P${prob} × I${imp})`,
+                  link: depForRisk?.projectId ? `/projects/${depForRisk.projectId}/risk` : undefined,
+                  why: toolBlock.input.description || toolBlock.input.mitigation || `Inputs: ${JSON.stringify(toolBlock.input).slice(0, 400)}`,
+                });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+                toolEffects.push({ tool: "update_risk", status: "error", summary: `Failed to log risk: ${err.message}` });
               }
 
             } else if (toolBlock.name === "search_knowledge") {
@@ -1952,8 +2016,16 @@ These are handled by the platform automatically. Just write normal text.
                   success: true, artefactId: artefact.id, name: artName, format: artFormat,
                   message: `Document "${artName}" created as DRAFT. User can review at /agents/${agentId}?tab=artefacts`,
                 }) });
+                toolEffects.push({
+                  tool: "create_artefact",
+                  status: "success",
+                  summary: `Drafted "${artName}" (${artContent.length} chars, ${artFormat})`,
+                  link: `/agents/${agentId}/approvals`,
+                  why: `Format: ${artFormat}. Phase: ${depForArt?.currentPhase || "n/a"}. Saved as DRAFT for your review.`,
+                });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+                toolEffects.push({ tool: "create_artefact", status: "error", summary: `Failed to create artefact: ${err.message}` });
               }
 
             } else if (toolBlock.name === "record_assumption") {
@@ -1969,8 +2041,16 @@ These are handled by the platform automatically. Just write normal text.
                   reasoning: toolBlock.input.reasoning || "",
                 });
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ success: true, assumptionId: assId, message: "Assumption recorded. User can confirm or change it in the Knowledge Base." }) });
+                toolEffects.push({
+                  tool: "record_assumption",
+                  status: "success",
+                  summary: `Recorded assumption: "${toolBlock.input.title}"`,
+                  link: "/knowledge",
+                  why: `Value: "${toolBlock.input.value}". Source: ${toolBlock.input.source || "agent_inference"}. Confidence: ${toolBlock.input.confidence || "medium"}. Confirm or change in the Knowledge Base.`,
+                });
               } catch (err: any) {
                 toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: err.message }) });
+                toolEffects.push({ tool: "record_assumption", status: "error", summary: `Failed to record assumption: ${err.message}` });
               }
 
             } else if (toolBlock.name === "run_phase_research") {
@@ -2038,6 +2118,28 @@ These are handled by the platform automatically. Just write normal text.
               // Unknown tool — return error
               toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: JSON.stringify({ error: `Unknown tool: ${toolBlock.name}` }) });
             }
+          }
+
+          // Post a single inline trace card summarising every entity-level
+          // side-effect from this turn. Renders as a compact "What I just did"
+          // panel in chat with a "Why?" expander per row — combines tasks 4
+          // and 5 from the polish list (back-references + audit visibility).
+          if (toolEffects.length > 0) {
+            await db.chatMessage.create({
+              data: {
+                agentId,
+                conversationId,
+                role: "agent",
+                content: "__TOOL_EFFECTS__",
+                metadata: {
+                  type: "tool_effects",
+                  effects: toolEffects,
+                  count: toolEffects.length,
+                  successCount: toolEffects.filter(e => e.status === "success").length,
+                  errorCount: toolEffects.filter(e => e.status === "error").length,
+                } as any,
+              },
+            }).catch(() => {});
           }
 
           if (toolResults.length > 0) {

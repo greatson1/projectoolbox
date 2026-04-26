@@ -90,6 +90,9 @@ export async function GET(
       tasks: workload.tasks,
       hours: workload.hours,
       allocation,
+      // Carry the source-prefix-bearing notes through so the Resources
+      // page can render the SourceBadge + "Why this resource?" expansion.
+      notes: s.notes || null,
     };
   });
 

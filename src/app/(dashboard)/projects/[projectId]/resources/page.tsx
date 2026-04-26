@@ -1,9 +1,11 @@
 "use client";
 
+import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { useProjectResources } from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { parseSource, SourceBadge, RowReasoning, ExpandChevron } from "@/components/artefacts/source-prefix";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, BarChart3, Clock, CheckCircle2, AlertTriangle, Mail, Download } from "lucide-react";
@@ -39,6 +41,7 @@ function InitialsAvatar({ name, color }: { name: string; color: string }) {
 
 export default function ResourcesPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const { data: resourceData, isLoading } = useProjectResources(projectId);
 
   if (isLoading) {
@@ -224,14 +227,25 @@ export default function ResourcesPage() {
                 const completionPct = member.tasks.total > 0
                   ? Math.round((member.tasks.done / member.tasks.total) * 100)
                   : 0;
+                const parsed = parseSource(member.notes);
+                const hasReasoning = parsed.kind !== "unknown" && (!!parsed.reasoning || parsed.alternatives.length > 0);
+                const isExpanded = expandedRow === member.id;
                 return (
-                  <div key={member.id} className="flex items-center gap-4 p-3 rounded-xl border border-border/20 hover:bg-muted/20 transition-colors">
+                  <React.Fragment key={member.id}>
+                  <div
+                    className={`flex items-center gap-4 p-3 rounded-xl border border-border/20 hover:bg-muted/20 transition-colors ${hasReasoning ? "cursor-pointer" : ""}`}
+                    onClick={() => hasReasoning && setExpandedRow(isExpanded ? null : member.id)}
+                  >
                     {/* Avatar */}
                     <InitialsAvatar name={member.name} color={sentimentColor} />
 
                     {/* Name + role */}
                     <div className="min-w-[140px]">
-                      <p className="text-sm font-semibold">{member.name}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {hasReasoning && <ExpandChevron expanded={isExpanded} />}
+                        <p className="text-sm font-semibold">{member.name}</p>
+                        {parsed.kind !== "unknown" && <SourceBadge kind={parsed.kind} />}
+                      </div>
                       <p className="text-xs text-muted-foreground">{member.role}</p>
                       {member.email && (
                         <div className="flex items-center gap-1 mt-0.5">
@@ -293,6 +307,13 @@ export default function ResourcesPage() {
                       </Badge>
                     </div>
                   </div>
+                  {/* Why this resource? — only renders when notes carry a parseable source prefix */}
+                  {isExpanded && hasReasoning && (
+                    <div className="ml-12 -mt-1 mb-2 rounded-lg p-3 bg-muted/10 border border-border/30">
+                      <RowReasoning source={parsed} label="Why this resource + this allocation?" />
+                    </div>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </div>

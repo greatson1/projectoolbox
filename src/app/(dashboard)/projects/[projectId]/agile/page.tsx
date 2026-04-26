@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { useState, useMemo, useCallback, useRef } from "react";
+import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/source-prefix";
 import {
   DndContext,
   DragOverlay,
@@ -1364,8 +1365,27 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, sprints, curre
 
         {/* Title */}
         <div className="px-6 py-3">
-          <h2 className="text-lg font-bold leading-snug">{issue.title}</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-lg font-bold leading-snug">{issue.title}</h2>
+            {(() => {
+              const parsed = parseSource(issue.description);
+              return parsed.kind !== "unknown" ? <SourceBadge kind={parsed.kind} /> : null;
+            })()}
+          </div>
         </div>
+
+        {/* Why this task? — only if description carries a parseable source prefix */}
+        {(() => {
+          const parsed = parseSource(issue.description);
+          if (parsed.kind === "unknown" || (!parsed.reasoning && parsed.alternatives.length === 0)) return null;
+          return (
+            <div className="px-6 pb-3">
+              <div className="rounded-lg p-3 bg-muted/20 border border-border">
+                <RowReasoning source={parsed} label="Why this task?" />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Move to column */}
         <div className="px-6 pb-3">

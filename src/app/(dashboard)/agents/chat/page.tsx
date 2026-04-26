@@ -1,7 +1,7 @@
 "use client";
 
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useState, useRef, useEffect, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw } from "lucide-react";
+import { Send, Bot, Loader2, BarChart3, FileText, AlertTriangle, Calendar, Search, Paperclip, ChevronRight, CheckCircle2, Circle, Shield, ExternalLink, RefreshCw, MessageSquare, Info } from "lucide-react";
 import Link from "next/link";
 import { ClarificationCard, ClarificationCompleteCard } from "@/components/agents/ClarificationCard";
 import { PendingDecisionCard, ActionSuggestionCard } from "@/components/agents/MeetingDecisionCards";
@@ -65,7 +65,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = 
 };
 
 // ── Rich message types matching Vite original ──
-type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings" | "pending_decision" | "action_suggestion";
+type MessageType = "text" | "status" | "artefact" | "risk" | "actions" | "clarification" | "clarification_complete" | "agent_question" | "project_status" | "change_proposal" | "research_findings" | "pending_decision" | "action_suggestion" | "tool_effects";
 
 interface Message {
   id: string;
@@ -85,6 +85,78 @@ const QUICK_ACTIONS = [
 ];
 
 // ── Rich message renderer ──
+// Compact "what I just did" card — one row per side-effecting tool call from
+// the most recent agent turn. Each row has a "Why?" expander (the inputs +
+// reasoning) and an optional jump-link to the surface where the entity lives.
+function ToolEffectsCard({ avatar, data }: { avatar: React.ReactNode; data: any }) {
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const effects: any[] = Array.isArray(data?.effects) ? data.effects : [];
+  if (effects.length === 0) return null;
+
+  const TOOL_LABELS: Record<string, string> = {
+    schedule_meeting: "Meeting",
+    create_task: "Task",
+    update_risk: "Risk",
+    create_artefact: "Document",
+    record_assumption: "Assumption",
+    run_phase_research: "Research",
+    generate_report: "Report",
+    search_knowledge: "Knowledge",
+  };
+
+  return (
+    <div className="flex gap-2">
+      {avatar}
+      <div className="max-w-[85%] flex-1 rounded-2xl rounded-bl-md border border-border/60 bg-muted/30 p-3 space-y-1.5">
+        <div className="flex items-center gap-2 mb-1">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            What I just did
+          </span>
+          {data.errorCount > 0 && (
+            <span className="text-[10px] px-1.5 py-0 rounded bg-destructive/10 text-destructive font-semibold">
+              {data.errorCount} failed
+            </span>
+          )}
+        </div>
+        {effects.map((e: any, i: number) => {
+          const label = TOOL_LABELS[e.tool] || e.tool;
+          const isExpanded = expanded[i];
+          return (
+            <div key={i} className={`rounded-lg border ${e.status === "error" ? "border-destructive/20 bg-destructive/5" : "border-border/40 bg-background/60"} px-2.5 py-1.5`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${e.status === "error" ? "bg-destructive/15 text-destructive" : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"}`}>
+                  {label}
+                </span>
+                <span className="text-[12px] flex-1 min-w-0 truncate">{e.summary}</span>
+                {e.link && (
+                  <Link href={e.link} className="text-[10px] text-primary hover:underline flex-shrink-0">
+                    Open →
+                  </Link>
+                )}
+                {e.why && (
+                  <button
+                    onClick={() => setExpanded(p => ({ ...p, [i]: !p[i] }))}
+                    className="text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0"
+                    title={isExpanded ? "Hide details" : "Show details"}
+                  >
+                    {isExpanded ? "Hide" : "Why?"}
+                  </button>
+                )}
+              </div>
+              {isExpanded && e.why && (
+                <div className="mt-1.5 px-2 py-1.5 rounded bg-muted/40 text-[11px] text-muted-foreground whitespace-pre-wrap break-words">
+                  {e.why}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGradient?: string; agentName?: string }) {
   // Guard against null content (DB records can have null)
   const content = msg.content ?? "";
@@ -344,6 +416,11 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
     );
   }
 
+  // Tool-effects trace — compact "what I just did" card with per-row Why expander
+  if (msg.type === "tool_effects" && msg.data) {
+    return <ToolEffectsCard avatar={avatar} data={msg.data} />;
+  }
+
   // Change proposal card — interactive approval widget
   if (msg.type === "change_proposal" && msg.data) {
     const d = msg.data as any;
@@ -494,6 +571,49 @@ function AgentChatPage() {
     return m;
   });
 
+  // ── Open-questions tracking ─────────────────────────────────────────────────
+  // A question card is "open" when an answer handler is still wired (we strip
+  // it once the user answers, so this naturally tracks unresolved state). We
+  // also include pending decisions and change proposals because they're
+  // user-action cards that block forward motion the same way.
+  // Used by:
+  //   - Header badge (count + click-to-jump-to-oldest)
+  //   - Resume banner (shown when reopening chat with a stale unanswered card)
+  const openQuestions = useMemo(() => {
+    return messages.filter(m => {
+      if (m.type === "agent_question" && m.data?.onAnswered !== null) return true;
+      if (m.type === "clarification" && m.data?.onAnswered !== null) return true;
+      // change_proposal and pending_decision don't carry an onAnswered handler
+      // so we fall back to the timestamp heuristic — they're "open" until the
+      // user clicks Confirm/Discard which removes the card from local state.
+      if (m.type === "change_proposal") return true;
+      if (m.type === "pending_decision") return true;
+      return false;
+    });
+  }, [messages]);
+
+  // Resume banner — show only the OLDEST unanswered question that's at least
+  // 30 minutes old, so we don't pester the user about something they just saw.
+  const staleOpenQuestion = useMemo(() => {
+    const THIRTY_MIN = 30 * 60 * 1000;
+    const now = Date.now();
+    return openQuestions
+      .filter(q => now - new Date(q.timestamp).getTime() > THIRTY_MIN)
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[0];
+  }, [openQuestions]);
+
+  // Scroll a specific message into view (used by the header badge + resume
+  // banner). The message wrapper carries id={`msg-${msg.id}`} so we can
+  // anchor straight to it.
+  const scrollToMessage = (messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary", "ring-offset-2", "rounded-2xl", "transition-all");
+      setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2", "rounded-2xl", "transition-all"), 2200);
+    }
+  };
+
   // ── Load persistent chat history from DB when switching agents ──
   useEffect(() => {
     if (!activeAgentId || historyLoaded.has(activeAgentId)) return;
@@ -595,6 +715,17 @@ function AgentChatPage() {
             };
           }
 
+          if (meta?.type === "tool_effects") {
+            return {
+              id: m.id,
+              role: "agent" as const,
+              type: "tool_effects" as const,
+              content: "",
+              timestamp: new Date(m.createdAt),
+              data: meta,
+            };
+          }
+
           if (meta?.type === "change_proposal") {
             return {
               id: m.id,
@@ -641,6 +772,7 @@ function AgentChatPage() {
             m.content === "__CLARIFICATION_SESSION__" ||
             m.content === "__CLARIFICATION_COMPLETE__" ||
             m.content === "__AGENT_QUESTION__" ||
+            m.content === "__TOOL_EFFECTS__" ||
             m.content === "__PROJECT_STATUS__" ||
             m.content === "__CHANGE_PROPOSAL__" ||
             m.content === "__RESEARCH_FINDINGS__" ||
@@ -962,6 +1094,15 @@ function AgentChatPage() {
                     timestamp: new Date(m.createdAt),
                     data: meta,
                   });
+                } else if (meta?.type === "tool_effects") {
+                  newCards.push({
+                    id: m.id,
+                    role: "agent",
+                    type: "tool_effects",
+                    content: "",
+                    timestamp: new Date(m.createdAt),
+                    data: meta,
+                  });
                 }
               }
 
@@ -1114,8 +1255,19 @@ function AgentChatPage() {
                 <p className="text-[10px] text-muted-foreground">L{activeAgent.autonomyLevel} · {activeAgent.deployments?.[0]?.project?.name || "No project"} · {activeAgent.status}</p>
               </div>
               <span className={`w-2 h-2 rounded-full ${activeAgent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
+              {/* Open-questions badge — click to jump to the oldest unresolved card */}
+              {openQuestions.length > 0 && (
+                <button
+                  onClick={() => scrollToMessage(openQuestions[0].id)}
+                  className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors text-[11px] font-semibold"
+                  title="Jump to the oldest unresolved question"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  {openQuestions.length} {openQuestions.length === 1 ? "question waiting" : "questions waiting"}
+                </button>
+              )}
               {/* Search + Export buttons */}
-              <div className="ml-auto flex items-center gap-1">
+              <div className={`${openQuestions.length > 0 ? "" : "ml-auto"} flex items-center gap-1`}>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowSearch(!showSearch)} title="Search conversation">
                   <Search className="w-3.5 h-3.5" />
                 </Button>
@@ -1143,6 +1295,43 @@ function AgentChatPage() {
               placeholder="Search messages..."
               className="w-full px-3 py-1.5 rounded-lg text-xs bg-muted border border-border outline-none focus:border-primary"
               autoFocus />
+          </div>
+        )}
+
+        {/* Resume banner — surfaces stale unresolved questions when you reopen
+            chat after a break, so you don't have to scroll to find what the
+            agent was waiting on. */}
+        {staleOpenQuestion && !sending && (
+          <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+              <MessageSquare className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                Picking up where you left off
+              </p>
+              <p className="text-xs text-foreground truncate">
+                {staleOpenQuestion.type === "agent_question" || staleOpenQuestion.type === "clarification"
+                  ? staleOpenQuestion.data?.question?.question || "An open question is waiting for your answer"
+                  : staleOpenQuestion.type === "pending_decision"
+                    ? `Pending decision: "${staleOpenQuestion.data?.decisionText || "(no text)"}"`
+                    : staleOpenQuestion.type === "change_proposal"
+                      ? `Change proposal: ${staleOpenQuestion.data?.title || "(untitled)"}`
+                      : "An action is waiting for you"}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                Asked {new Date(staleOpenQuestion.timestamp).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                {openQuestions.length > 1 && ` · ${openQuestions.length - 1} more waiting`}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px] flex-shrink-0"
+              onClick={() => scrollToMessage(staleOpenQuestion.id)}
+            >
+              Show me
+            </Button>
           </div>
         )}
 
@@ -1177,7 +1366,9 @@ function AgentChatPage() {
           {messages
             .filter(msg => !searchQuery || (msg.content || "").toLowerCase().includes(searchQuery.toLowerCase()))
             .map(msg => (
-            <RichMessage key={msg.id} msg={msg} agentGradient={activeAgent?.gradient} agentName={activeAgent?.name} />
+            <div key={msg.id} id={`msg-${msg.id}`}>
+              <RichMessage msg={msg} agentGradient={activeAgent?.gradient} agentName={activeAgent?.name} />
+            </div>
           ))}
           {/* Working indicator with live status + stuck detection */}
           {sending && (
