@@ -10,6 +10,7 @@ import { getMethodology } from "@/lib/methodology-definitions";
 import { getPlaybook } from "./methodology-playbooks";
 import { isSpreadsheetArtefact, getArtefactColumns } from "@/lib/artefact-types";
 import { cleanMarkdownLeakage } from "./markdown-cleanup";
+import { sanitiseArtefactContent } from "./sanitise-artefact-content";
 
 /**
  * Generate artefacts for the current (or specified) phase of a project.
@@ -247,9 +248,16 @@ export async function generatePhaseArtefacts(
             detectedFmt = "html";
             cleaned = cleanMarkdownLeakage(content);
           }
+          // Strip fabricated personal names from any Owner/Assigned-to column
+          // before persisting. The Sonnet prompt forbids inventing names but
+          // it still slips through; this is the last-mile guard.
+          const sanitised = sanitiseArtefactContent(cleaned, detectedFmt);
+          if (sanitised.replaced > 0) {
+            console.log(`[generatePhaseArtefacts] sanitised ${sanitised.replaced} fabricated owner cell(s) in "${artName}"`);
+          }
           // Resolve any [TBC — …] markers from the KB before saving so the artefact
           // never lands in DRAFT with stale placeholders for facts we already know.
-          const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, cleaned);
+          const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, sanitised.content);
           await db.agentArtefact.create({
             data: { agentId, projectId, name: artName, format: detectedFmt, content: resolvedContent, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
           });
@@ -310,7 +318,11 @@ export async function generatePhaseArtefacts(
         cleanedRetry = cleanMarkdownLeakage(stripped);
       }
       if (existingNames.has(name.toLowerCase())) continue;
-      const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, cleanedRetry);
+      const sanitisedRetry = sanitiseArtefactContent(cleanedRetry, detectedFmt);
+      if (sanitisedRetry.replaced > 0) {
+        console.log(`[generatePhaseArtefacts retry] sanitised ${sanitisedRetry.replaced} fabricated owner cell(s) in "${name}"`);
+      }
+      const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, sanitisedRetry.content);
       await db.agentArtefact.create({
         data: { agentId, projectId, name, format: detectedFmt, content: resolvedRetry, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
       });

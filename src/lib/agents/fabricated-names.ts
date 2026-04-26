@@ -13,26 +13,12 @@
 
 import { db } from "@/lib/db";
 
-const ROLE_KEYWORDS =
-  /\b(manager|lead|director|sponsor|owner|team|member|representative|analyst|head|officer|coordinator|chair|agent|provider|supplier|contractor|partner|client|user|stakeholder|body|department|commission|authority|board|council|ministry|traveller|family|spouse|child|parent|guardian|companion|host|contact|emergency|insurance|airline|hotel|agency|primary|secondary|self|tbd|unassigned)\b/i;
-
-const ORG_KEYWORDS =
-  /\b(ltd|inc|corp|llc|plc|gmbh|airlines?|hotel|resort|clinic|hospital|bank|airways|ventures?|group|services?|solutions?|systems?|consultancy|consulting|agency|centre|center|commission|embassy|high commission|authority|department|ministry)\b/i;
-
-/**
- * Pure synchronous check — does NOT consult the KB. Use this when you just
- * want a defensive read-time filter.
- */
-export function looksLikeFabricatedName(s: string | null | undefined): boolean {
-  if (!s) return false;
-  const trimmed = s.trim();
-  if (!trimmed) return false;
-  if (ROLE_KEYWORDS.test(trimmed)) return false;
-  if (ORG_KEYWORDS.test(trimmed)) return false;
-  const words = trimmed.split(/\s+/);
-  if (words.length < 2 || words.length > 4) return false;
-  return words.every(w => /^[A-Z][a-z]+/.test(w));
-}
+// Pure detector lives in fabricated-names-pure.ts so it can be unit-tested
+// without pulling in the Prisma client. Re-exported here for back-compat
+// with all the call sites that import `looksLikeFabricatedName` from this
+// file.
+export { looksLikeFabricatedName } from "./fabricated-names-pure";
+import { looksLikeFabricatedName } from "./fabricated-names-pure";
 
 /**
  * KB-aware version: returns false if the user confirmed this exact name during
