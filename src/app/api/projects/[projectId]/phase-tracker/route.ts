@@ -6,6 +6,7 @@ import { getAllPhasesCompletion } from "@/lib/agents/phase-completion";
 import {
   evaluatePrerequisites,
   summarisePrerequisites,
+  manualKey,
   type PrerequisiteEvalContext,
 } from "@/lib/agents/phase-prerequisites";
 
@@ -48,7 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   });
 
   // ── Pull all the project state we need to evaluate prereqs ────────────
-  const [phaseRows, allArtefacts, scaffoldedTasks, stakeholders, phaseGateApprovals, riskCount, completion] = await Promise.all([
+  const [phaseRows, allArtefacts, scaffoldedTasks, stakeholders, phaseGateApprovals, riskCount, completion, manualConfirmations] = await Promise.all([
     db.phase.findMany({ where: { projectId }, orderBy: { order: "asc" } }),
     db.agentArtefact.findMany({
       where: { projectId },
@@ -71,7 +72,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     }),
     db.risk.count({ where: { projectId } }),
     deployment ? getAllPhasesCompletion(projectId, deployment.agentId).catch(() => []) : Promise.resolve([]),
+    db.knowledgeBaseItem.findMany({
+      where: { projectId, orgId, tags: { has: "prereq_confirmation" } },
+      select: { metadata: true },
+    }),
   ]);
+
+  const manuallyConfirmed = new Set<string>();
+  for (const row of manualConfirmations) {
+    const meta = (row.metadata as Record<string, unknown>) || {};
+    if (typeof meta.phase === "string" && typeof meta.prereq === "string") {
+      manuallyConfirmed.add(manualKey(meta.phase, meta.prereq));
+    }
+  }
 
   const completionByPhase = new Map(completion.map(c => [c.phaseName, c]));
 
@@ -132,6 +145,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       stakeholderRoles: stakeholders.map(s => s.role || "").filter(Boolean),
       approvedPhaseGateNames: phaseGateApprovals.map(a => a.title || ""),
       hasRisks: riskCount > 0,
+      manuallyConfirmed,
+      phaseName: phaseDef.name,
     };
     const evaluatedPrereqs = evaluatePrerequisites(phaseDef.gate.preRequisites, prereqCtx);
     const prereqSummary = summarisePrerequisites(evaluatedPrereqs);

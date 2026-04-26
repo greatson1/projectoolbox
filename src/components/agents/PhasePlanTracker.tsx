@@ -12,8 +12,14 @@
  *   - blockers preventing advancement
  *
  * Source: GET /api/projects/:projectId/phase-tracker
+ *
+ * Manual prereqs (those that can't be auto-checked from project state)
+ * have a clickable circle that toggles a confirmation row in the
+ * /api/projects/:projectId/prereq-confirmations endpoint.
  */
 
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -44,6 +50,7 @@ interface EvaluatedPrereq {
   requiresHumanApproval: boolean;
   state: "met" | "rejected" | "draft" | "unmet" | "manual";
   evidence?: string;
+  manuallyConfirmed?: boolean;
 }
 
 interface ArtefactStatus {
@@ -136,6 +143,58 @@ function PrereqIcon({ state }: { state: EvaluatedPrereq["state"] }) {
 
 export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
   const { phases, methodology } = data;
+
+  // Local override layer so a click feels instant — the next refetch
+  // (parent page re-fetches after save) will reconcile with the server.
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [, startTransition] = useTransition();
+
+  const overrideKey = (phase: string, prereq: string) => `${phase}::${prereq}`;
+
+  async function toggleManualConfirm(phase: string, p: EvaluatedPrereq) {
+    // Only allow toggling on prereqs that are either manual or already
+    // manually confirmed — auto-detected metas should not be hand-flipped.
+    const isCurrentlyConfirmed = !!p.manuallyConfirmed || overrides[overrideKey(phase, p.description)] === true;
+    const willConfirm = !isCurrentlyConfirmed;
+    const key = overrideKey(phase, p.description);
+
+    setOverrides(prev => ({ ...prev, [key]: willConfirm }));
+
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/prereq-confirmations`, {
+          method: willConfirm ? "POST" : "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phase, prereq: p.description }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j?.error || `${res.status}`);
+        }
+        toast.success(willConfirm ? "Prerequisite confirmed" : "Confirmation removed");
+      } catch (e: any) {
+        // Roll back optimistic state on failure
+        setOverrides(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        toast.error(e?.message || "Could not save");
+      }
+    });
+  }
+
+  function effectiveState(phaseName: string, p: EvaluatedPrereq): EvaluatedPrereq {
+    const key = overrideKey(phaseName, p.description);
+    if (overrides[key] === true && p.state !== "met") {
+      return { ...p, state: "met", manuallyConfirmed: true, evidence: "Manually confirmed" };
+    }
+    if (overrides[key] === false && p.manuallyConfirmed) {
+      // Roll back to manual — the server will reconcile on next fetch.
+      return { ...p, state: "manual", manuallyConfirmed: false, evidence: undefined };
+    }
+    return p;
+  }
 
   return (
     <div className="space-y-4">
@@ -269,23 +328,39 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
               </div>
               <p className="text-[10px] text-muted-foreground mb-2 italic">{phase.gate.criteria}</p>
               <div className="space-y-1">
-                {phase.gate.prerequisites.map((p, i) => (
-                  <div key={i} className="flex items-start gap-2 py-0.5">
-                    <PrereqIcon state={p.state} />
-                    <div className="flex-1 min-w-0">
-                      <span className={`text-[11px] ${p.state === "met" ? "text-foreground/80 line-through" : "text-foreground"}`}>
-                        {p.description}
-                        {p.isMandatory && <span className="ml-1 text-red-500/70" title="Mandatory">*</span>}
-                      </span>
-                      {p.evidence && (
-                        <p className="text-[9px] text-muted-foreground mt-0.5">{p.evidence}</p>
-                      )}
-                      {p.state === "manual" && (
-                        <p className="text-[9px] text-blue-500/80 mt-0.5">Needs human confirmation — can't be auto-checked from project data.</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                {phase.gate.prerequisites.map((rawP, i) => {
+                  const p = effectiveState(phase.name, rawP);
+                  const canToggle = p.state === "manual" || p.manuallyConfirmed;
+                  const Wrapper: any = canToggle ? "button" : "div";
+                  return (
+                    <Wrapper
+                      key={i}
+                      type={canToggle ? "button" : undefined}
+                      onClick={canToggle ? () => toggleManualConfirm(phase.name, p) : undefined}
+                      className={`w-full flex items-start gap-2 py-0.5 text-left ${canToggle ? "rounded px-1 -mx-1 hover:bg-muted/40 transition-colors cursor-pointer" : ""}`}
+                    >
+                      <PrereqIcon state={p.state} />
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-[11px] ${p.state === "met" ? "text-foreground/80 line-through" : "text-foreground"}`}>
+                          {p.description}
+                          {p.isMandatory && <span className="ml-1 text-red-500/70" title="Mandatory">*</span>}
+                          {p.manuallyConfirmed && (
+                            <span className="ml-1 text-[8px] uppercase tracking-wider text-emerald-500 font-bold">manual</span>
+                          )}
+                        </span>
+                        {p.evidence && (
+                          <p className="text-[9px] text-muted-foreground mt-0.5">{p.evidence}</p>
+                        )}
+                        {p.state === "manual" && !p.manuallyConfirmed && (
+                          <p className="text-[9px] text-blue-500/80 mt-0.5">Click to mark as manually confirmed.</p>
+                        )}
+                        {p.manuallyConfirmed && (
+                          <p className="text-[9px] text-muted-foreground mt-0.5">Click to undo this manual confirmation.</p>
+                        )}
+                      </div>
+                    </Wrapper>
+                  );
+                })}
               </div>
               {phase.completion?.blockers && phase.completion.blockers.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-border/30">

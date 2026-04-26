@@ -24,6 +24,15 @@ export interface PrerequisiteEvalContext {
   approvedPhaseGateNames: string[];
   /** True if at least one risk has been logged on the project. */
   hasRisks: boolean;
+  /**
+   * Set of "<phaseName>::<prereq.description>" strings that the user has
+   * manually confirmed. When a prereq is in this set, its evaluation is
+   * forced to "met" with a manual-confirmation evidence string —
+   * regardless of whether the heuristic could otherwise auto-tick it.
+   */
+  manuallyConfirmed?: Set<string>;
+  /** Phase name passed alongside so the evaluator can compose the lookup key. */
+  phaseName?: string;
 }
 
 export type PrerequisiteState = "met" | "rejected" | "draft" | "unmet" | "manual";
@@ -31,6 +40,12 @@ export type PrerequisiteState = "met" | "rejected" | "draft" | "unmet" | "manual
 export interface EvaluatedPrerequisite extends GatePreRequisite {
   state: PrerequisiteState;
   evidence?: string;
+  /** True when the "met" verdict came from a user manual confirmation. */
+  manuallyConfirmed?: boolean;
+}
+
+export function manualKey(phaseName: string, prereqDescription: string): string {
+  return `${phaseName}::${prereqDescription}`;
 }
 
 const ARTEFACT_KEYWORDS = [
@@ -108,6 +123,14 @@ export function evaluatePrerequisite(
 ): EvaluatedPrerequisite {
   const desc = prereq.description;
   const descN = normalize(desc);
+
+  // 0. Manual confirmation overrides everything else — if the user has
+  //    explicitly ticked this prereq it's met, full stop.
+  if (ctx.manuallyConfirmed && ctx.phaseName) {
+    if (ctx.manuallyConfirmed.has(manualKey(ctx.phaseName, prereq.description))) {
+      return { ...prereq, state: "met", evidence: "Manually confirmed", manuallyConfirmed: true };
+    }
+  }
 
   // 1. Artefact-driven prereq — most common pattern
   const artefactName = findArtefactReferenced(desc);

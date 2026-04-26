@@ -113,6 +113,51 @@ describe("evaluatePrerequisite — stakeholders, risks, gates, manual", () => {
   });
 });
 
+describe("evaluatePrerequisite — manual confirmation override", () => {
+  it("forces 'met' when the prereq is in manuallyConfirmed, even if otherwise unmet", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Office space allocated" }),
+      {
+        ...baseCtx,
+        phaseName: "Pre-Project",
+        manuallyConfirmed: new Set(["Pre-Project::Office space allocated"]),
+      },
+    );
+    expect(out.state).toBe("met");
+    expect(out.manuallyConfirmed).toBe(true);
+    expect(out.evidence).toBe("Manually confirmed");
+  });
+
+  it("manual confirmation overrides a draft state too", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Project Brief reviewed and accepted" }),
+      {
+        ...baseCtx,
+        draftArtefactNames: ["Project Brief"],
+        phaseName: "Requirements",
+        manuallyConfirmed: new Set(["Requirements::Project Brief reviewed and accepted"]),
+      },
+    );
+    expect(out.state).toBe("met");
+    expect(out.manuallyConfirmed).toBe(true);
+  });
+
+  it("does not affect prereqs from other phases", () => {
+    // Confirmation is scoped to one phase. A confirmation under Initiation
+    // should NOT auto-tick a prereq with the same description under Closure.
+    const out = evaluatePrerequisite(
+      prereq({ description: "Office space allocated" }),
+      {
+        ...baseCtx,
+        phaseName: "Closure",
+        manuallyConfirmed: new Set(["Initiation::Office space allocated"]),
+      },
+    );
+    expect(out.state).toBe("manual");
+    expect(out.manuallyConfirmed).not.toBe(true);
+  });
+});
+
 describe("summarisePrerequisites", () => {
   it("canAdvance when every mandatory prereq is met and none manual", () => {
     const evals = evaluatePrerequisites(
