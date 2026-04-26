@@ -47,13 +47,38 @@ export async function GET(req: NextRequest) {
     orderBy: { startTime: "asc" },
   });
 
+  // Hydrate each event with its linked Meeting (bot dispatch info) so the
+  // calendar detail view can show "bot dispatch failed → Retry" without an
+  // extra round-trip. We match by calendarEventId. Limit to the events we
+  // already fetched so the lookup is bounded.
+  const eventIds = events.map((e) => e.id);
+  const meetings = eventIds.length === 0 ? [] : await db.meeting.findMany({
+    where: { orgId, calendarEventId: { in: eventIds } },
+    select: {
+      id: true,
+      calendarEventId: true,
+      recallBotId: true,
+      recallBotStatus: true,
+      botProvider: true,
+      meetingUrl: true,
+      agentId: true,
+    },
+  });
+  const meetingByEventId = new Map<string, (typeof meetings)[number]>();
+  for (const m of meetings) if (m.calendarEventId) meetingByEventId.set(m.calendarEventId, m);
+
+  const enrichedEvents = events.map((e) => ({
+    ...e,
+    linkedMeeting: meetingByEventId.get(e.id) || null,
+  }));
+
   // Identify events needing pre-meeting briefs (within next 2 hours, no brief yet)
   const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-  const needsBrief = events.filter(e =>
+  const needsBrief = enrichedEvents.filter(e =>
     e.startTime >= now && e.startTime <= twoHoursFromNow && !e.preAgenda && e.projectId
   );
 
-  return NextResponse.json({ data: { events, needsBrief } });
+  return NextResponse.json({ data: { events: enrichedEvents, needsBrief } });
 }
 
 // POST /api/calendar — Create calendar event

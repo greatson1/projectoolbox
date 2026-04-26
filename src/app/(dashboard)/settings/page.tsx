@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { User, Bell, Shield, Palette, Building2, Key, Moon, Sun, Check, Plug } from "lucide-react";
+import { User, Bell, Shield, Palette, Building2, Key, Moon, Sun, Check, Plug, Activity, AlertTriangle, CheckCircle2, MinusCircle, RefreshCw, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useAppStore, type AccentTheme } from "@/stores/app";
 import { useOrgCurrency, useUpdateOrgCurrency } from "@/hooks/use-currency";
@@ -28,6 +28,7 @@ const SECTIONS = [
   { id: "organisation", label: "Organisation", icon: Building2 },
   { id: "api", label: "API Keys", icon: Key },
   { id: "integrations", label: "Integrations", icon: Plug },
+  { id: "health", label: "Health", icon: Activity },
 ];
 
 const ACCENT_THEMES: { id: AccentTheme; label: string; color: string; desc: string }[] = [
@@ -293,6 +294,8 @@ export default function SettingsPage() {
             </Card>
           )}
 
+          {active === "health" && <IntegrationHealthPanel />}
+
           {active === "integrations" && (
             <Card>
               <CardHeader><CardTitle className="text-base">Integrations</CardTitle></CardHeader>
@@ -405,5 +408,142 @@ function CurrencyPicker() {
         ))}
       </div>
     </div>
+  );
+}
+
+function IntegrationHealthPanel() {
+  const [services, setServices] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [pinging, setPinging] = useState(false);
+  const [pingedAt, setPingedAt] = useState<string | null>(null);
+
+  const fetchHealth = useCallback(async (ping: boolean) => {
+    if (ping) setPinging(true); else setLoading(true);
+    try {
+      const r = await fetch(`/api/admin/integration-health${ping ? "?ping=true" : ""}`);
+      const d = await r.json();
+      setServices(d.data?.services || []);
+      setPingedAt(d.data?.pingedAt || null);
+    } catch (e: any) {
+      toast.error(e?.message || "Health check failed");
+    } finally {
+      if (ping) setPinging(false); else setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchHealth(false); }, [fetchHealth]);
+
+  const groups: Record<string, string> = {
+    ai: "AI providers",
+    research: "Research",
+    meetings: "Meetings & calendar",
+    payments: "Payments",
+    comms: "Communications",
+    storage: "Storage",
+  };
+
+  const grouped: Record<string, any[]> = {};
+  (services || []).forEach((s: any) => {
+    if (!grouped[s.group]) grouped[s.group] = [];
+    grouped[s.group].push(s);
+  });
+
+  const summary = (services || []).reduce(
+    (acc: any, s: any) => {
+      if (!s.configured && s.required) acc.broken++;
+      else if (!s.configured) acc.missing++;
+      else if (s.reachable === "fail") acc.broken++;
+      else if (s.reachable === "ok") acc.healthy++;
+      else acc.healthy++;
+      return acc;
+    },
+    { healthy: 0, missing: 0, broken: 0 },
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Activity className="w-4 h-4 text-primary" />
+          Integration health
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Status of every external service the platform relies on. Configured = env keys are present. Reachable = a live API call succeeded.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => fetchHealth(true)} disabled={pinging || loading}>
+            {pinging ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+            Run live checks
+          </Button>
+        </div>
+
+        {/* Summary chips */}
+        {services && (
+          <div className="flex gap-2 text-[11px]">
+            <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">{summary.healthy} healthy</span>
+            <span className="px-2 py-1 rounded bg-muted text-muted-foreground font-semibold">{summary.missing} not configured</span>
+            <span className="px-2 py-1 rounded bg-destructive/10 text-destructive font-semibold">{summary.broken} broken</span>
+            {pingedAt && <span className="ml-auto text-muted-foreground">Last live check: {new Date(pingedAt).toLocaleTimeString("en-GB")}</span>}
+          </div>
+        )}
+
+        {loading && !services && (
+          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading…
+          </div>
+        )}
+
+        {/* Service rows grouped */}
+        {services && Object.entries(groups).map(([key, label]) => {
+          const items = grouped[key] || [];
+          if (items.length === 0) return null;
+          return (
+            <div key={key}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">{label}</p>
+              <div className="space-y-1.5">
+                {items.map((s: any) => {
+                  let icon = <MinusCircle className="w-4 h-4 text-muted-foreground" />;
+                  let pillClass = "bg-muted text-muted-foreground";
+                  let pillLabel = "Not configured";
+                  if (!s.configured && s.required) {
+                    icon = <AlertTriangle className="w-4 h-4 text-destructive" />;
+                    pillClass = "bg-destructive/10 text-destructive";
+                    pillLabel = "Missing (required)";
+                  } else if (!s.configured) {
+                    pillLabel = "Not configured";
+                  } else if (s.reachable === "ok") {
+                    icon = <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
+                    pillClass = "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+                    pillLabel = "Healthy";
+                  } else if (s.reachable === "fail") {
+                    icon = <AlertTriangle className="w-4 h-4 text-destructive" />;
+                    pillClass = "bg-destructive/10 text-destructive";
+                    pillLabel = "Unreachable";
+                  } else {
+                    icon = <CheckCircle2 className="w-4 h-4 text-blue-500" />;
+                    pillClass = "bg-blue-500/10 text-blue-600 dark:text-blue-400";
+                    pillLabel = "Configured";
+                  }
+                  return (
+                    <div key={s.key} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border/60 bg-card">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {icon}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{s.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{s.detail}</p>
+                        </div>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-semibold flex-shrink-0 ${pillClass}`}>{pillLabel}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }

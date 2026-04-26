@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCalendarEvents } from "@/hooks/use-api";
-import { Calendar, Plus, Clock, MapPin, Users, Bot, FileText, ChevronRight } from "lucide-react";
+import { Calendar, Plus, Clock, MapPin, Users, Bot, FileText, ChevronRight, AlertTriangle, Loader2, RefreshCw, CheckCircle2 } from "lucide-react";
 import { NewEventModal } from "@/components/meetings/new-event-modal";
+import { toast } from "sonner";
 
 function timeUntil(date: string | Date) {
   const ms = new Date(date).getTime() - Date.now();
@@ -24,6 +25,7 @@ export default function CalendarPage() {
   const [range, setRange] = useState("week");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [retryingBot, setRetryingBot] = useState(false);
 
   const { data, isLoading } = useCalendarEvents(range);
 
@@ -118,6 +120,75 @@ export default function CalendarPage() {
             <p className="text-sm text-foreground">{selectedEvent.postUpdate}</p>
           </CardContent></Card>
         )}
+
+        {/* Bot dispatch status — surfaces failed dispatches with a retry button */}
+        {selectedEvent.linkedMeeting && (() => {
+          const lm = selectedEvent.linkedMeeting;
+          const status = lm.recallBotStatus || "idle";
+          const isFailed = status === "failed";
+          const isLive = ["recording", "joining", "waiting"].includes(status);
+          const isDone = status === "done";
+          const canRetry = isFailed && !!lm.meetingUrl;
+          return (
+            <Card className={isFailed ? "border-amber-500/30 bg-amber-500/5" : ""}>
+              <CardContent className="p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                  <Bot className="inline h-3.5 w-3.5 mr-1" />Recording Bot
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {isFailed && <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />}
+                    {isDone && <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />}
+                    {isLive && <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {isFailed ? "Bot dispatch failed" :
+                         isDone ? "Recording complete" :
+                         isLive ? `Bot ${status}` :
+                         status === "idle" || !lm.recallBotId ? "No bot scheduled" :
+                         status}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {lm.botProvider ? `Provider: ${lm.botProvider}` : "No provider attempted"}
+                        {lm.recallBotId ? ` · ID: ${lm.recallBotId.slice(0, 12)}…` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  {canRetry && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={retryingBot}
+                      onClick={async () => {
+                        setRetryingBot(true);
+                        try {
+                          const r = await fetch(`/api/meetings/${lm.id}/redispatch-bot`, { method: "POST" });
+                          const d = await r.json();
+                          if (!r.ok) throw new Error(d.error || "Retry failed");
+                          if (d.data?.dispatched) {
+                            toast.success(`Bot dispatched via ${d.data.provider}`);
+                            window.location.reload();
+                          } else {
+                            toast.error(d.data?.message || `Retry failed: ${d.data?.detail || "unknown"}`);
+                          }
+                        } catch (e: any) {
+                          toast.error(e.message || "Retry failed");
+                        } finally {
+                          setRetryingBot(false);
+                        }
+                      }}
+                    >
+                      {retryingBot
+                        ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                        : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+                      Retry dispatch
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {selectedEvent.meetingUrl && (
           <Button asChild><a href={selectedEvent.meetingUrl} target="_blank" rel="noopener noreferrer">Join Meeting</a></Button>

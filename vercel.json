@@ -17,6 +17,10 @@
     {
       "path": "/api/cron/ml-train",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-stale-pending",
+      "schedule": "30 4 * * *"
     }
   ]
 }
