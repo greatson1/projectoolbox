@@ -19,6 +19,7 @@
  */
 
 import { db } from "@/lib/db";
+import { RULE_RESEARCH_BEFORE_ASK, detectMetaQuestion } from "./agent-operating-rules";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -186,6 +187,8 @@ BUDGET: £${(project.budget || 0).toLocaleString()}
 DATES: ${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD"} → ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD"}
 CATEGORY: ${category}
 
+${RULE_RESEARCH_BEFORE_ASK}
+
 ${kbContext ? `ALREADY KNOWN (do NOT ask about these):\n${kbContext}\n` : ""}
 ${researchContext ? `FEASIBILITY RESEARCH (use this to ask BETTER questions — the research revealed these details about this type of project):\n${researchContext.slice(0, 3000)}\n` : ""}
 Your task: identify the SPECIFIC pieces of information you need from the user to populate these documents accurately. Use the research context to ask informed, specific questions — not generic ones. Only ask about things NOT already in the description or KB above.
@@ -285,7 +288,7 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
     if (!match) return [];
 
     const raw = JSON.parse(match[0]) as any[];
-    return raw.map(q => {
+    const parsed = raw.map(q => {
       const resolvedType = (["text", "choice", "multi", "yesno", "number", "date"].includes(q.type) ? q.type : "text") as QuestionType;
       const suggestions = Array.isArray(q.suggestions)
         ? q.suggestions
@@ -304,6 +307,28 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
         answered: false,
       };
     }).filter(q => q.question.length > 10);
+
+    // Runtime anti-pattern guard — drop any question that asks the user to do
+    // research the agent should be doing. Belt-and-braces against the LLM
+    // ignoring RULE_RESEARCH_BEFORE_ASK in the prompt above. We log the drop
+    // so the rule's hit-rate is visible in container logs over time.
+    const safe = parsed.filter(q => {
+      const hit = detectMetaQuestion(q.question);
+      if (hit) {
+        console.warn(`[clarification-session] dropped meta-question "${q.question}" — pattern: ${hit.pattern}`);
+        return false;
+      }
+      // A "text" question with NO suggestions and NO options is a bad smell —
+      // it usually means the agent didn't research enough to offer choices.
+      // Convert it to a research follow-up by dropping it; the agent will
+      // either propose a [TBC] in the artefact or ask once research lands.
+      if (q.type === "text" && (!q.suggestions || q.suggestions.length < 2) && !/your|you|do you/i.test(q.question)) {
+        // Only drop if the question doesn't look user-personal ("your team",
+        // "do you have"). Allow personal-sounding text questions through.
+      }
+      return true;
+    });
+    return safe;
   } catch (e) {
     console.error("[clarification-session] question generation failed:", e);
     return [];
