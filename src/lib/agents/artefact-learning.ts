@@ -232,6 +232,21 @@ export async function getProjectKnowledgeContext(
       "",
     ];
 
+    // ── CONFIRMED FACTS (system-of-record — top priority) ──
+    // Loaded from the consolidated confirmed-facts module so any artefact
+    // generation prompt sees the authoritative budget/dates/sponsor before
+    // any other context. Replaces ad-hoc inference of these from approved
+    // artefact prose previews (which truncated at 600 chars and could lose
+    // a Charter's budget figure).
+    try {
+      const { getConfirmedFacts, formatConfirmedFactsBlock } = await import("@/lib/agents/confirmed-facts");
+      const facts = await getConfirmedFacts(projectId);
+      const block = formatConfirmedFactsBlock(facts);
+      lines.push(block);
+    } catch (e) {
+      console.error("[artefact-learning] confirmed-facts injection failed:", e);
+    }
+
     // ── Project facts (always first — these are the canonical baselines) ──
     if (project) {
       lines.push("── PROJECT BASELINE ──");

@@ -414,8 +414,18 @@ model Task {
   dependencies    Json?
   createdBy       String?   // "agent:<agentId>" or "user:<userId>"
   lastEditedBy    String?
+  // ── Source artefact linkage (artefact action extraction) ─────────────
+  // Set when this Task was created by parsing the "Next Actions" table of
+  // an approved artefact. sourceRowKey is a stable hash of the parsed
+  // (Action + Owner) so the extractor can update existing tasks on
+  // re-extraction (e.g. after the artefact is regenerated) instead of
+  // creating duplicates. Both nullable for tasks created any other way.
+  sourceArtefactId String?
+  sourceRowKey     String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  @@index([sourceArtefactId])
 }
 
 model Risk {
@@ -865,6 +875,13 @@ model AgentArtefact {
   version   Int      @default(1)
   feedback  String?  @db.Text
   metadata  Json?
+  // ── Cross-artefact linkage ────────────────────────────────────────────
+  // Names (not IDs — the canonical reference in DEPENDENCY_MAP and
+  // methodology definitions is by artefact name) of artefacts this one
+  // depends on. Maintained by the dependency-tracker on approval.
+  // Stored as Json so we don't need a separate join table for what is
+  // a small-cardinality reference list.
+  linkedArtefactNames Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

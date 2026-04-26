@@ -125,7 +125,13 @@ export default function ArtefactsPage() {
     }
   };
 
-  const handleApprove = async (id?: string) => {
+  const handleApprove = async (idOrConfirm?: string | boolean) => {
+    // Polymorphic call:
+    //   handleApprove("artefactId")          — list-row Approve button
+    //   handleApprove(true)                  — DocumentEditor override approval
+    //   handleApprove() / handleApprove(false) — DocumentEditor normal approval
+    const isConfirmIntentional = typeof idOrConfirm === "boolean" && idOrConfirm === true;
+    const id = typeof idOrConfirm === "string" ? idOrConfirm : undefined;
     const artId = id || editorArt?.id;
     if (!artId) return;
     // Optimistically mark as APPROVED immediately — list never goes empty
@@ -146,7 +152,7 @@ export default function ArtefactsPage() {
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "APPROVED" }),
+      body: JSON.stringify({ status: "APPROVED", ...(isConfirmIntentional ? { confirmIntentional: true } : {}) }),
     });
     if (res.ok) {
       if (wasLastPending) {
@@ -345,8 +351,9 @@ export default function ArtefactsPage() {
         status={editorArt.status}
         type={editorArt.format || "markdown"}
         projectName={project?.name}
+        metadata={editorArt.metadata}
         onSave={handleSave}
-        onApprove={editorArt.status !== "APPROVED" ? () => handleApprove() : undefined}
+        onApprove={editorArt.status !== "APPROVED" ? (confirmIntentional) => handleApprove(confirmIntentional) : undefined}
         onReject={editorArt.status !== "APPROVED" ? (reason) => handleReject(reason) : undefined}
         onExportPDF={() => handleDownload(editorArt, "pdf")}
         onExportDOCX={() => handleDownload(editorArt, "docx")}

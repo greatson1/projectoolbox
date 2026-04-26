@@ -34,6 +34,45 @@ const DEPENDENCY_MAP: Record<string, string[]> = {
   "Cost Estimate": ["Cost Management Plan", "EVM Dashboard"],
   "Budget Breakdown": ["Cost Management Plan", "EVM Dashboard"],
   "Cost Management Plan": ["EVM Dashboard"],
+  // Charter / Business Case / PID are the parents of nearly every
+  // downstream artefact — when any of them change, downstream ones inherit
+  // the budget/dates/scope and need re-validation. Without these entries,
+  // a budget revision in the Charter would silently leave the Cost Plan,
+  // Risk Plan, Communication Plan, etc. claiming the old number.
+  "Project Charter": [
+    "Cost Management Plan",
+    "Cost Estimate",
+    "Budget Breakdown",
+    "Schedule with Dependencies",
+    "Work Breakdown Structure",
+    "Resource Management Plan",
+    "Risk Management Plan",
+    "Initial Risk Register",
+    "Communication Plan",
+    "Business Case",
+    "Stakeholder Register",
+    "Quality Management Plan",
+    "Procurement Management Plan",
+  ],
+  "Business Case": [
+    "Cost Management Plan",
+    "Cost Estimate",
+    "Budget Breakdown",
+    "Benefits Management Plan",
+    "Project Charter",
+  ],
+  "Project Brief": [
+    "Project Charter",
+    "Stakeholder Register",
+    "Cost Estimate",
+    "Schedule with Dependencies",
+  ],
+  "Project Initiation Document": [
+    "Cost Management Plan",
+    "Schedule with Dependencies",
+    "Risk Management Plan",
+    "Communication Plan",
+  ],
 };
 
 // ─── 0. Reverse sync: cost entries → Cost Estimate artefact ──────────────────

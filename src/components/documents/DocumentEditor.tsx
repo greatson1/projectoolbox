@@ -37,8 +37,19 @@ interface DocumentEditorProps {
   type: string;
   projectName?: string;
   versions?: { id: string; version: number; editedBy: string; createdAt: string; comment: string }[];
+  /**
+   * Optional artefact.metadata object — when present, surfaces the
+   * `contradictions` array (drafted-vs-confirmed-fact disagreements) and
+   * the `stale` flag (this artefact's parents have changed since approval)
+   * as a banner above the document. The Approve flow respects these:
+   * contradictions block plain Approve and require an "intentional
+   * override" confirmation that re-calls onApprove(true).
+   */
+  metadata?: any;
   onSave: (content: string, comment?: string) => Promise<void>;
-  onApprove?: () => Promise<void>;
+  /** When called with confirmIntentional=true the API will accept the
+   * approval even if metadata.contradictions is non-empty. */
+  onApprove?: (confirmIntentional?: boolean) => Promise<void>;
   onReject?: (reason: string) => Promise<void>;
   onExportPDF?: () => void;
   onExportDOCX?: () => void;
@@ -68,9 +79,30 @@ function ToolbarDivider() {
 }
 
 export function DocumentEditor({
-  reportId, title, content, status, type, projectName,
+  reportId, title, content, status, type, projectName, metadata,
   versions = [], onSave, onApprove, onReject, onExportPDF, onExportDOCX, onClose,
 }: DocumentEditorProps) {
+  const contradictions: Array<{ field: string; drafted: string; confirmed: string; source?: string }> =
+    Array.isArray(metadata?.contradictions) ? metadata.contradictions : [];
+  const isStale = metadata?.stale === true;
+  const staleReason = typeof metadata?.staleReason === "string" ? metadata.staleReason : null;
+  const hasBlockingFlag = contradictions.length > 0 || isStale;
+  const [showOverridePrompt, setShowOverridePrompt] = useState(false);
+
+  const handleApproveClick: () => void = () => {
+    if (!onApprove) return;
+    if (contradictions.length > 0) {
+      setShowOverridePrompt(true);
+      return;
+    }
+    void onApprove(false);
+  };
+
+  const handleConfirmIntentional: () => void = () => {
+    if (!onApprove) return;
+    setShowOverridePrompt(false);
+    void onApprove(true);
+  };
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [saving, setSaving] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
@@ -181,7 +213,9 @@ export function DocumentEditor({
           {/* Approve/Reject */}
           {status === "DRAFT" && onApprove && (
             <>
-              <Button size="sm" onClick={onApprove}><Check className="w-3.5 h-3.5 mr-1" /> Approve</Button>
+              <Button size="sm" onClick={handleApproveClick} variant={hasBlockingFlag ? "outline" : "default"}>
+                <Check className="w-3.5 h-3.5 mr-1" /> Approve{contradictions.length > 0 ? "…" : ""}
+              </Button>
               <Button variant="destructive" size="sm" onClick={() => setShowRejectModal(true)}><X className="w-3.5 h-3.5 mr-1" /> Reject</Button>
             </>
           )}
@@ -239,6 +273,60 @@ export function DocumentEditor({
         {/* Document */}
         <div className="flex-1 overflow-y-auto bg-background">
           <div className="max-w-[800px] mx-auto my-8 bg-card rounded-xl border border-border shadow-lg min-h-[600px]">
+            {/* ── Contradiction / stale banner ──
+                Surfaces the contradiction-detector's findings (this draft
+                disagrees with the Charter on budget/dates/etc) and the
+                stale flag (a parent artefact has changed since this one
+                was approved). User MUST acknowledge a contradiction
+                before approving — the API will 409 otherwise. */}
+            {contradictions.length > 0 && (
+              <div className="mx-6 mt-6 px-4 py-3 rounded-lg border border-amber-500/40 bg-amber-500/10">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-2">
+                  ⚠ This draft contradicts {contradictions.length} confirmed fact{contradictions.length === 1 ? "" : "s"}
+                </p>
+                <ul className="space-y-1.5 text-xs">
+                  {contradictions.map((c, i) => (
+                    <li key={i} className="text-foreground">
+                      <strong>{c.field}</strong>: this draft says <span className="text-amber-700 dark:text-amber-300">&ldquo;{c.drafted}&rdquo;</span>, confirmed value is <span className="text-emerald-700 dark:text-emerald-300">&ldquo;{c.confirmed}&rdquo;</span>
+                      {c.source && <span className="text-muted-foreground"> (source: {c.source})</span>}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  Edit the document to match the confirmed values, OR click Approve and confirm the change is intentional.
+                </p>
+              </div>
+            )}
+            {isStale && (
+              <div className="mx-6 mt-4 px-4 py-2.5 rounded-lg border border-blue-500/30 bg-blue-500/5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400 mb-1">
+                  Parent artefact has changed
+                </p>
+                <p className="text-xs text-foreground">
+                  {staleReason || "An artefact this document depends on was edited or re-approved. Review whether the changes affect this document before approving."}
+                </p>
+              </div>
+            )}
+
+            {/* Override-confirmation modal (in-place card) */}
+            {showOverridePrompt && (
+              <div className="mx-6 mt-4 px-4 py-3 rounded-lg border border-destructive/40 bg-destructive/10">
+                <p className="text-sm font-bold text-destructive mb-2">Confirm intentional override</p>
+                <p className="text-xs text-foreground mb-3">
+                  You are approving an artefact that contradicts {contradictions.length} confirmed fact{contradictions.length === 1 ? "" : "s"}.
+                  This will mark the new values as the source of truth going forward. Are you sure?
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="destructive" onClick={handleConfirmIntentional}>
+                    Yes, approve with override
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowOverridePrompt(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Document header */}
             <div className="px-8 pt-8 pb-4 border-b border-border/30">
               <div className="flex items-center gap-2 mb-2">

@@ -261,7 +261,7 @@ export async function generatePhaseArtefacts(
           // Resolve any [TBC — …] markers from the KB before saving so the artefact
           // never lands in DRAFT with stale placeholders for facts we already know.
           const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, sanitised.content);
-          await db.agentArtefact.create({
+          const created = await db.agentArtefact.create({
             data: { agentId, projectId, name: artName, format: detectedFmt, content: resolvedContent, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
           });
           existingNames.add(artName.toLowerCase());
@@ -272,6 +272,33 @@ export async function generatePhaseArtefacts(
             const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
             await onArtefactGenerated(agentId, projectId, artName);
           } catch {}
+          // Contradiction-detection pass (fire-and-forget). Compares the
+          // fresh draft against the project's confirmed facts and writes
+          // any divergences to artefact.metadata.contradictions. The
+          // approval API blocks APPROVED transitions when this list is
+          // non-empty unless the caller passes confirmIntentional=true.
+          (async () => {
+            try {
+              const { detectContradictions, persistContradictions } = await import("@/lib/agents/contradiction-detector");
+              const contradictions = await detectContradictions({
+                projectId,
+                artefactName: artName,
+                draftContent: resolvedContent,
+              });
+              await persistContradictions(created.id, contradictions);
+              if (contradictions.length > 0) {
+                await db.agentActivity.create({
+                  data: {
+                    agentId,
+                    type: "document",
+                    summary: `⚠️ "${artName}" draft contradicts ${contradictions.length} confirmed fact${contradictions.length === 1 ? "" : "s"} — flagged for user review before approval.`,
+                  },
+                }).catch(() => {});
+              }
+            } catch (e) {
+              console.error(`[generatePhaseArtefacts] contradiction-detector for "${artName}" failed:`, e);
+            }
+          })();
         }
       }
     } catch (e) {
@@ -326,7 +353,7 @@ export async function generatePhaseArtefacts(
         console.log(`[generatePhaseArtefacts retry] sanitised ${sanitisedRetry.replaced} fabricated owner cell(s) in "${name}"`);
       }
       const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, sanitisedRetry.content);
-      await db.agentArtefact.create({
+      const createdRetry = await db.agentArtefact.create({
         data: { agentId, projectId, name, format: detectedFmt, content: resolvedRetry, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
       });
       existingNames.add(name.toLowerCase());
@@ -336,6 +363,14 @@ export async function generatePhaseArtefacts(
         const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
         await onArtefactGenerated(agentId, projectId, name);
       } catch {}
+      // Same contradiction pass as the main loop (see comment above).
+      (async () => {
+        try {
+          const { detectContradictions, persistContradictions } = await import("@/lib/agents/contradiction-detector");
+          const contradictions = await detectContradictions({ projectId, artefactName: name, draftContent: resolvedRetry });
+          await persistContradictions(createdRetry.id, contradictions);
+        } catch {}
+      })();
     } catch (e) {
       console.error(`[generatePhaseArtefacts] Retry failed for "${name}":`, e);
     }

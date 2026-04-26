@@ -77,6 +77,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // ── Contradiction-block guard ────────────────────────────────────────────
+  // If the contradiction-detector flagged this draft as differing from the
+  // confirmed facts (Charter budget vs Cost Plan budget, etc), block approval
+  // unless the caller explicitly passes confirmIntentional=true. This forces
+  // the user to acknowledge that they ARE intentionally overriding a
+  // previously-confirmed value.
+  if (status === "APPROVED" && body.confirmIntentional !== true) {
+    const checkExisting = await db.agentArtefact.findUnique({
+      where: { id },
+      select: { metadata: true },
+    });
+    const meta = (checkExisting?.metadata as any) || {};
+    const contradictions = Array.isArray(meta.contradictions) ? meta.contradictions : [];
+    if (contradictions.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Artefact contradicts confirmed facts",
+          contradictions,
+          message: `This draft differs from ${contradictions.length} confirmed fact${contradictions.length === 1 ? "" : "s"}. Resolve the differences or pass confirmIntentional=true to approve anyway.`,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   // Read the current artefact so we can merge metadata and detect
   // content-edits to previously-APPROVED work.
   const existing = await db.agentArtefact.findUnique({
@@ -274,6 +299,50 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             }
           })
           .catch(e => console.error("[artefact PATCH] artefact seeding failed:", e))
+      );
+
+      // ── Action-item extraction ──
+      // Parse the artefact's "Summary and Next Actions" table into Task rows
+      // tagged "from_artefact" + "action_item" so they show up in the PM
+      // Tracker's "Delivery Tasks" layer and count toward the phase-completion
+      // gate. Idempotent — re-extraction on edit updates existing tasks
+      // matched by sourceArtefactId + sourceRowKey.
+      waitUntil(
+        (async () => {
+          try {
+            const { extractAndPersistArtefactActions } = await import("@/lib/agents/extract-artefact-actions");
+            const result = await extractAndPersistArtefactActions(artefact.id);
+            if (result.parsed > 0) {
+              await db.agentActivity.create({
+                data: {
+                  agentId: seedAgentId,
+                  type: "task",
+                  summary: `Extracted ${result.created} new task${result.created === 1 ? "" : "s"} (+${result.updated} updated) from "${artefact.name}" Next Actions table.`,
+                },
+              }).catch(() => {});
+            }
+          } catch (e) {
+            console.error("[artefact PATCH] action extraction failed:", e);
+          }
+        })(),
+      );
+
+      // ── Dependency staleness propagation ──
+      // When this artefact changes (approved fresh OR edit on already-
+      // approved), every artefact that depends on it (per DEPENDENCY_MAP)
+      // gets metadata.stale=true so the user sees a "may be out of date"
+      // banner. The dependency map now includes Charter as parent of
+      // virtually everything — so a Charter budget revision will flag the
+      // Cost Plan, Risk Plan, Schedule, etc. for re-validation.
+      waitUntil(
+        (async () => {
+          try {
+            const { flagDependentsStale } = await import("@/lib/agents/artefact-sync");
+            await flagDependentsStale(artefact.projectId, artefact.name);
+          } catch (e) {
+            console.error("[artefact PATCH] flagDependentsStale failed:", e);
+          }
+        })(),
       );
 
     } catch (e) {

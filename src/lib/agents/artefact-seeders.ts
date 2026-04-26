@@ -90,6 +90,19 @@ export async function seedArtefactData(
     lname.includes("benefits management")
   ) {
     await seedBenefits(artefact, agentId);
+    // Business Case may also carry budget/dates that should sync to Project.
+    await seedCharterToProject(artefact);
+    return;
+  }
+
+  if (
+    lname.includes("charter") ||
+    lname.includes("project brief") ||
+    lname.includes("scope statement") ||
+    lname === "project initiation document" ||
+    lname === "pid"
+  ) {
+    await seedCharterToProject(artefact);
     return;
   }
 
@@ -788,5 +801,72 @@ async function seedBenefits(artefact: ArtefactInput, agentId: string): Promise<v
     } catch (e) {
       console.error(`[seedBenefits] row ${i} failed:`, e);
     }
+  }
+}
+
+// ─── Charter / Business Case → Project field sync ─────────────────────────────
+// On approval of a system-of-record artefact (Charter, Business Case, PID),
+// extract structured facts via Haiku and write them back to the Project row
+// AND the artefact's metadata.extractedFacts (so confirmed-facts.ts can read
+// them). This closes the biggest split-brain risk: a Charter approving a
+// £75k budget while Project.budget still says £50k from the wizard, then
+// every downstream artefact reading Project.budget and contradicting the
+// Charter.
+//
+// Conservative: ONLY overwrites a Project field if it was empty (null or
+// 0) — never silently overwrites an explicit value. If the Project already
+// has £50k and the Charter says £75k, we DON'T flip it; instead we leave
+// both, and the contradiction-detector pass will flag the disagreement
+// for the user to resolve.
+async function seedCharterToProject(artefact: ArtefactInput): Promise<void> {
+  try {
+    const { extractAndPersistArtefactFacts } = await import("@/lib/agents/extract-artefact-facts");
+    const facts = await extractAndPersistArtefactFacts(artefact.id);
+    if (!facts) return;
+
+    const project = await db.project.findUnique({
+      where: { id: artefact.projectId },
+      select: { budget: true, startDate: true, endDate: true },
+    });
+    if (!project) return;
+
+    const updates: any = {};
+    if (facts.budget && (!project.budget || project.budget === 0)) {
+      updates.budget = facts.budget;
+    }
+    if (facts.startDate && !project.startDate) {
+      const d = new Date(facts.startDate);
+      if (!isNaN(d.getTime())) updates.startDate = d;
+    }
+    if (facts.endDate && !project.endDate) {
+      const d = new Date(facts.endDate);
+      if (!isNaN(d.getTime())) updates.endDate = d;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.project.update({
+        where: { id: artefact.projectId },
+        data: updates,
+      });
+      // Audit log so the operator can see why the Project row changed
+      try {
+        const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true } });
+        if (project?.orgId) {
+          await db.auditLog.create({
+            data: {
+              orgId: project.orgId,
+              action: "PROJECT_FIELDS_SYNCED_FROM_ARTEFACT",
+              target: artefact.name,
+              entityType: "project",
+              entityId: artefact.projectId,
+              rationale: `Synced ${Object.keys(updates).join(", ")} from approved "${artefact.name}" because Project row had no value set.`,
+              details: { updates, artefactId: artefact.id } as any,
+            },
+          }).catch(() => {});
+        }
+      } catch {}
+    }
+  } catch (e) {
+    console.error(`[seedCharterToProject] failed:`, e);
   }
 }
