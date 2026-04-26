@@ -25,7 +25,7 @@ function mdToHtml(md: string): string {
   }
 }
 import {
-  Pause, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
+  Pause, Play, RefreshCw, MessageSquare, Settings, TrendingUp, FileText,
   Activity, Brain, Sliders, ChevronRight, Mail, Copy, CheckCircle2, Shield,
   BookOpen, Upload, Link as LinkIcon, FileAudio, Trash2 as TrashIcon, Star, X,
   Video, Mic, MicOff, Calendar, ExternalLink, Download,
@@ -456,14 +456,33 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
             </div>
             {/* Actions */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs h-9 gap-1.5"
-                onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); } catch { toast.error("Failed to pause agent"); } }}
-              >
-                <Pause className="size-3.5" /> Pause
-              </Button>
+              {AGENT_RESOLVED.status === "paused" ? (
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="text-xs h-9 gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                  onClick={async () => {
+                    try {
+                      await fetch(`/api/agents/${agentId}/resume`, { method: "POST" });
+                      toast.success("Agent resumed");
+                      window.location.reload();
+                    } catch {
+                      toast.error("Failed to resume agent");
+                    }
+                  }}
+                >
+                  <Play className="size-3.5" /> Resume
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-9 gap-1.5"
+                  onClick={async () => { try { await fetch(`/api/agents/${agentId}/pause`, { method: "POST" }); toast.success("Agent paused"); window.location.reload(); } catch { toast.error("Failed to pause agent"); } }}
+                >
+                  <Pause className="size-3.5" /> Pause
+                </Button>
+              )}
               <Link href={`/agents/chat?agent=${agentId}`}>
                 <Button size="sm" className="text-xs h-9 gap-1.5 bg-primary hover:bg-primary/90">
                   <MessageSquare className="size-3.5" /> Chat
@@ -1775,22 +1794,42 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
           <Card className="p-4">
             <h3 className="mb-3 text-sm font-semibold text-destructive">Danger Zone</h3>
             <div className="flex flex-wrap gap-3">
-              <div className="min-w-[200px] flex-1 rounded-[10px] border border-amber-500/20 bg-amber-500/5 p-3">
-                <p className="mb-1 text-xs font-semibold text-amber-500">Pause Agent</p>
-                <p className="mb-2 text-[11px] text-muted-foreground">
-                  Temporarily stop all agent activity. Can be resumed.
-                </p>
-                <Button variant="outline" size="sm" className="border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
-                  onClick={async () => {
-                    if (!confirm("Pause this agent? It will stop all activity.")) return;
-                    try {
-                      await fetch(`/api/agents/${AGENT_RESOLVED.id}/pause`, { method: "POST" });
-                      alert("Agent paused"); window.location.reload();
-                    } catch { alert("Failed"); }
-                  }}>
-                  <Pause className="mr-1 size-3" /> Pause Agent
-                </Button>
-              </div>
+              {AGENT_RESOLVED.status === "paused" ? (
+                <div className="min-w-[200px] flex-1 rounded-[10px] border border-emerald-500/30 bg-emerald-500/5 p-3">
+                  <p className="mb-1 text-xs font-semibold text-emerald-500">Resume Agent</p>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    Agent is currently paused. Resume to restart all activity.
+                  </p>
+                  <Button variant="default" size="sm" className="bg-emerald-600 hover:bg-emerald-700"
+                    onClick={async () => {
+                      try {
+                        await fetch(`/api/agents/${AGENT_RESOLVED.id}/resume`, { method: "POST" });
+                        toast.success("Agent resumed");
+                        window.location.reload();
+                      } catch { toast.error("Failed to resume agent"); }
+                    }}>
+                    <Play className="mr-1 size-3" /> Resume Agent
+                  </Button>
+                </div>
+              ) : (
+                <div className="min-w-[200px] flex-1 rounded-[10px] border border-amber-500/20 bg-amber-500/5 p-3">
+                  <p className="mb-1 text-xs font-semibold text-amber-500">Pause Agent</p>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    Temporarily stop all agent activity. Can be resumed.
+                  </p>
+                  <Button variant="outline" size="sm" className="border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
+                    onClick={async () => {
+                      if (!confirm("Pause this agent? It will stop all activity.")) return;
+                      try {
+                        await fetch(`/api/agents/${AGENT_RESOLVED.id}/pause`, { method: "POST" });
+                        toast.success("Agent paused");
+                        window.location.reload();
+                      } catch { toast.error("Failed to pause agent"); }
+                    }}>
+                    <Pause className="mr-1 size-3" /> Pause Agent
+                  </Button>
+                </div>
+              )}
               <div className="min-w-[200px] flex-1 rounded-[10px] border border-primary/20 bg-primary/5 p-3">
                 <p className="mb-1 text-xs font-semibold text-primary">Reassign Agent</p>
                 <p className="mb-2 text-[11px] text-muted-foreground">
