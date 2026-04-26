@@ -213,6 +213,36 @@ const PHASE_TASKS: Record<string, TaskTemplate[]> = {
     { title: "Define flow policies and DoD", category: "governance", estimatedHours: 0.5 },
     { title: "Submit Setup gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
   ],
+
+  // ── SAFe phases ────────────────────────────────────────────────────────
+  // These were missing entirely — a SAFe project would scaffold zero PM
+  // tasks across all three phases, so users had no governance/monitoring
+  // checklist to act on. Mirrors the structure used by Waterfall/Scrum.
+  "pi planning": [
+    { title: "Conduct clarification Q&A with project owner", category: "governance", linkedEvent: "clarification_complete", estimatedHours: 0.5 },
+    { title: "Facilitate PI planning event (2-day workshop)", category: "delivery_activity", estimatedHours: 16 },
+    { title: "Map cross-team dependencies on programme board", category: "delivery_activity", estimatedHours: 4 },
+    { title: "Confirm team capacity and load", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Run confidence vote and capture risks", category: "delivery_activity", estimatedHours: 1 },
+    { title: "Submit PI Commitment gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
+    { title: "Obtain approval for all PI Planning artefacts", category: "governance", linkedEvent: "phase_advanced", estimatedHours: 0.25 },
+  ],
+  "iteration cadence": [
+    { title: "Run iteration planning, daily stand-ups, and reviews", category: "delivery", estimatedHours: 4 },
+    { title: "Track iteration progress and burn rate", category: "monitoring", estimatedHours: 2 },
+    { title: "Resolve impediments and ART-level blockers", category: "delivery_activity", estimatedHours: 3 },
+    { title: "Coordinate cross-team dependencies (ART Sync / Scrum of Scrums)", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Prepare and deliver System Demo", category: "delivery_activity", estimatedHours: 4 },
+    { title: "Process Change Requests through CCB", category: "governance", estimatedHours: 1 },
+    { title: "Submit System Demo gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
+  ],
+  "inspect & adapt": [
+    { title: "Compile PI metrics and quantitative analysis", category: "monitoring", estimatedHours: 2 },
+    { title: "Facilitate PI retrospective workshop", category: "delivery_activity", estimatedHours: 3 },
+    { title: "Run problem-solving workshop on top issues", category: "delivery_activity", estimatedHours: 3 },
+    { title: "Prioritise and groom Improvement Backlog", category: "delivery_activity", estimatedHours: 2 },
+    { title: "Submit I&A Complete gate approval", category: "governance", linkedEvent: "gate_request", estimatedHours: 0.25 },
+  ],
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
