@@ -103,11 +103,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id: agentId } = await params;
 
-  const messages = await db.chatMessage.findMany({
+  // Take the LATEST 100 messages, then return them in chronological order.
+  // The previous version ordered ASC + take:100 which returned the oldest
+  // 100 — once a conversation crossed that threshold the newest messages
+  // (the ones the user actually wants on refresh) were silently dropped.
+  const recent = await db.chatMessage.findMany({
     where: { agentId },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
     take: 100,
   });
 
-  return NextResponse.json({ data: messages });
+  return NextResponse.json({ data: recent.reverse() });
 }
