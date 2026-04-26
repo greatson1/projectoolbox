@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Download } from "lucide-react";
+import { Download, Flag, Sparkles, CheckCircle2, Clock, Circle, ListChecks } from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
 
 /**
@@ -799,57 +799,140 @@ function StatPill({ label, value, color,  }: { label: string; value: string; col
 
 // ── Phase Gates Sidebar ──
 function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[] }) {
-  const gateStatusColor = (s: string) => s === "Approved" ? "#10B981" : s === "Pending" ? "#F59E0B" : "var(--muted-foreground)";
+  const gateStyle = (s: string) => {
+    if (s === "Approved")    return { color: "#10B981", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)", Icon: CheckCircle2 };
+    if (s === "Pending")     return { color: "#F59E0B", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)", Icon: Clock };
+    return                          { color: "var(--muted-foreground)", bg: "rgba(100,116,139,0.10)", border: "rgba(100,116,139,0.25)", Icon: Circle };
+  };
+
+  const totalTasks = phases.reduce((s, p) => s + p.tasks, 0);
+  const totalDone = phases.reduce((s, p) => s + p.complete, 0);
+  const overall = totalTasks === 0 ? 0 : Math.round(
+    phases.reduce((s, p) => s + (p.progress ?? 0) * p.tasks, 0) / totalTasks,
+  );
+  const activePhase = phases.find(p => p.status === "active");
+  const approved = phases.filter(p => p.gate === "Approved").length;
 
   return (
-    <div className="w-[240px] flex-shrink-0 space-y-3">
-      <Card>
-        <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Phase Gates</h3>
-        <div className="space-y-2">
-          {phases.map(p => (
-            <div key={p.name} className="p-2 rounded-[8px]" style={{ background: true ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)" }}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{p.name}</span>
-                <span className="text-[10px] font-semibold" style={{ color: gateStatusColor(p.gate) }}>{p.gate}</span>
-              </div>
-              <Progress value={p.progress ?? (p.tasks > 0 ? Math.round((p.complete / p.tasks) * 100) : 0)} className="h-1.5" />
-              <div className="flex items-center justify-between mt-0.5">
-                <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{p.complete}/{p.tasks} done</span>
-                <span className="text-[10px] font-semibold" style={{ color: "var(--muted-foreground)" }}>{p.progress ?? 0}%</span>
-              </div>
+    <div className="w-[280px] flex-shrink-0 space-y-4">
+      {/* ── Phase Gates ─────────────────────────────────────────────── */}
+      <Card className="px-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(99,102,241,0.12)" }}>
+              <Flag className="w-3.5 h-3.5" style={{ color: "var(--primary)" }} />
             </div>
-          ))}
+            <h3 className="text-[13px] font-bold tracking-tight" style={{ color: "var(--foreground)" }}>Phase Gates</h3>
+          </div>
+          {phases.length > 0 && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)" }}>
+              {approved}/{phases.length}
+            </span>
+          )}
         </div>
+
+        {phases.length === 0 ? (
+          <div className="rounded-[10px] py-6 px-3 text-center"
+            style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed var(--border)" }}>
+            <Flag className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
+            <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No phases yet</p>
+            <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+              Phases appear here as your agent generates the project schedule.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {phases.map(p => {
+              const g = gateStyle(p.gate);
+              const GIcon = g.Icon;
+              const pct = p.progress ?? (p.tasks > 0 ? Math.round((p.complete / p.tasks) * 100) : 0);
+              return (
+                <div key={p.name} className="p-2.5 rounded-[10px] transition-colors hover:bg-white/[0.04]"
+                  style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="text-[12px] font-semibold truncate" style={{ color: "var(--foreground)" }}>{p.name}</span>
+                    <span className="flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md flex-shrink-0"
+                      style={{ background: g.bg, color: g.color, border: `1px solid ${g.border}` }}>
+                      <GIcon className="w-2.5 h-2.5" />
+                      {p.gate}
+                    </span>
+                  </div>
+                  <Progress value={pct} className="h-1.5" />
+                  <div className="flex items-center justify-between mt-1.5">
+                    <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{p.complete}/{p.tasks} done</span>
+                    <span className="text-[10px] font-bold" style={{ color: pct >= 100 ? "#10B981" : "var(--foreground)" }}>{pct}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
-      <Card>
-        <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Insights</h3>
-        <div className="space-y-2 text-[12px]" style={{ color: "var(--muted-foreground)" }}>
-          {phases.length === 0 ? (
-            <div className="p-2 rounded-[8px]" style={{ background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.2)" }}>
-              <span className="font-semibold" style={{ color: "var(--muted-foreground)" }}>No tasks yet.</span> Add tasks to this project to see schedule insights.
-            </div>
-          ) : (() => {
-            const totalTasks = phases.reduce((s, p) => s + p.tasks, 0);
-            const totalDone = phases.reduce((s, p) => s + p.complete, 0);
-            const overall = totalTasks === 0 ? 0 : Math.round(
-              phases.reduce((s, p) => s + (p.progress ?? 0) * p.tasks, 0) / totalTasks,
-            );
-            const activePhase = phases.find(p => p.status === "active");
-            return (
-              <>
-                <div className="p-2 rounded-[8px]" style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)" }}>
-                  <span className="font-semibold text-emerald-400">Overall:</span> {overall}% complete · {totalDone}/{totalTasks} tasks done across {phases.length} phase{phases.length !== 1 ? "s" : ""}.
-                </div>
-                {activePhase && (
-                  <div className="p-2 rounded-[8px]" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)" }}>
-                    <span className="font-semibold" style={{ color: "var(--primary)" }}>Active:</span> {activePhase.name} — {activePhase.complete}/{activePhase.tasks} done ({activePhase.progress ?? 0}%).
-                  </div>
-                )}
-              </>
-            );
-          })()}
+      {/* ── Insights ────────────────────────────────────────────────── */}
+      <Card className="px-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(245,158,11,0.12)" }}>
+            <Sparkles className="w-3.5 h-3.5" style={{ color: "#F59E0B" }} />
+          </div>
+          <h3 className="text-[13px] font-bold tracking-tight" style={{ color: "var(--foreground)" }}>Insights</h3>
         </div>
+
+        {phases.length === 0 ? (
+          <div className="rounded-[10px] py-6 px-3 text-center"
+            style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed var(--border)" }}>
+            <ListChecks className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
+            <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No tasks yet</p>
+            <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+              Add tasks to this project to see schedule insights.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {/* Overall progress hero */}
+            <div className="rounded-[10px] p-3"
+              style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.10), rgba(16,185,129,0.04))", border: "1px solid rgba(16,185,129,0.25)" }}>
+              <div className="flex items-baseline justify-between mb-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Overall progress</span>
+                <span className="text-[18px] font-extrabold leading-none" style={{ color: "#10B981" }}>{overall}%</span>
+              </div>
+              <Progress value={overall} className="h-1.5" />
+              <p className="text-[10px] mt-1.5" style={{ color: "var(--muted-foreground)" }}>
+                {totalDone}/{totalTasks} tasks done · {phases.length} phase{phases.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+
+            {/* Active phase callout */}
+            {activePhase && (
+              <div className="rounded-[10px] p-3"
+                style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)" }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "var(--primary)" }} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--primary)" }}>Active phase</span>
+                </div>
+                <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{activePhase.name}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+                  {activePhase.complete}/{activePhase.tasks} done — {activePhase.progress ?? 0}%
+                </p>
+              </div>
+            )}
+
+            {/* Mini stat row */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-[10px] p-2.5 text-center"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Approved</p>
+                <p className="text-[15px] font-extrabold mt-0.5" style={{ color: "#10B981" }}>{approved}</p>
+              </div>
+              <div className="rounded-[10px] p-2.5 text-center"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--muted-foreground)" }}>Remaining</p>
+                <p className="text-[15px] font-extrabold mt-0.5" style={{ color: "var(--foreground)" }}>{phases.length - approved}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
