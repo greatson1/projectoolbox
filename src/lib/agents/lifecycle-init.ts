@@ -962,6 +962,21 @@ Emergency: British High Commission Lagos: +234 (0)1 277-0780`
 ⚠️ ABSOLUTE RULE — READ BEFORE ANYTHING ELSE:
 NEVER invent personal names (e.g. "John Doe", "Sarah Mitchell"). Use ROLE TITLES only (e.g. "Project Manager", "Executive Sponsor"). NEVER invent company names, vendor names, contact details, booking references, venue names, or addresses. Use [TBC — description] for ANY fact not in the project description below. A document full of [TBC] markers is correct; a document with invented details is WRONG.
 
+⚠️ MANDATORY APPENDIX — "Sources & Assumptions"
+EVERY prose document you produce MUST end with a final section titled "Sources & Assumptions" (rendered as <h3>Sources & Assumptions</h3>) immediately before the closing "Items Awaiting Confirmation" section (if present).
+
+The appendix is a <table> with these exact columns: Claim · Source · Reasoning · Alternatives Considered
+
+Populate one row per significant claim, decision, or specific number used in the document above (e.g. budget figures, dates, supplier names, risk severities, recommended approach). For EACH row use one of these source labels in the Source column:
+
+  • Research-anchored — drawn from feasibility/phase research in the knowledge base above. The Reasoning column should quote the relevant research finding. Alternatives Considered MUST list 1–2 nearby options the agent could have picked.
+  • User-confirmed — comes from a user_confirmed clarification answer. Quote the user's words in the Reasoning column.
+  • Default-template — a standard methodology default (e.g. PMI risk catalogue, percentage-of-budget skeleton). Reasoning explains why the default fits.
+  • Research-thin — research was attempted but couldn't surface a concrete value. Reasoning names what's missing; Alternatives Considered is "—".
+  • Reserved — reserved-for-emergency / contingency / buffer items.
+
+This appendix is the prose-document equivalent of the Notes-column source prefix used in spreadsheet artefacts. The UI surfaces both so the user can audit the "why" behind every claim. Skipping the appendix or leaving the Reasoning/Alternatives columns blank is a failure.
+
 TODAY: ${today} | PHASE: ${phaseName} | PROJECT: ${project.name}
 METHODOLOGY: ${methodologyName} | BUDGET: £${budget}
 DURATION: ${startDt ? startDt.toLocaleDateString("en-GB") : "TBD"} → ${endDt ? endDt.toLocaleDateString("en-GB") : "TBD"}${totalDays ? ` (${totalDays} days)` : ""}${daysRemaining !== null ? ` · ${daysRemaining} days remaining` : ""}
