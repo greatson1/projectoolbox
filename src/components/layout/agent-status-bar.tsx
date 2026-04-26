@@ -19,11 +19,12 @@ import { useAppStore } from "@/stores/app";
 import {
   CheckCircle2, AlertCircle, Sparkles, ChevronUp, ChevronDown,
   ArrowRight, RefreshCw, X, Clock, Activity, FileText, Zap, Shield, Bot, MessageSquare,
+  Rocket, Pause,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AgentState = "questions_waiting" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "monitoring" | "idle";
+type AgentState = "questions_waiting" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "setup" | "paused" | "monitoring" | "idle";
 
 interface RawActivity {
   id?: string;
@@ -74,6 +75,8 @@ const COLOURS: Record<AgentState, { border: string; glow: string; badge: string;
   generating:     { border: "#6366F1", glow: "rgba(99,102,241,0.22)",  badge: "#6366F1", badgeBg: "rgba(99,102,241,0.13)",  ring: "#6366F1", pulse: "rgba(99,102,241,0.35)"  },
   phase_complete: { border: "#10B981", glow: "rgba(16,185,129,0.22)",  badge: "#10B981", badgeBg: "rgba(16,185,129,0.13)",  ring: "#10B981", pulse: "rgba(16,185,129,0.35)"  },
   blocked_by_tasks: { border: "#F59E0B", glow: "rgba(245,158,11,0.22)", badge: "#F59E0B", badgeBg: "rgba(245,158,11,0.13)", ring: "#F59E0B", pulse: "rgba(245,158,11,0.35)" },
+  setup:          { border: "#8B5CF6", glow: "rgba(139,92,246,0.22)",  badge: "#8B5CF6", badgeBg: "rgba(139,92,246,0.13)",  ring: "#8B5CF6", pulse: "rgba(139,92,246,0.35)"  },
+  paused:         { border: "#94A3B8", glow: "rgba(148,163,184,0.18)", badge: "#94A3B8", badgeBg: "rgba(148,163,184,0.12)", ring: "#94A3B8", pulse: "rgba(148,163,184,0.25)" },
   monitoring:     { border: "rgba(100,116,139,0.3)", glow: "rgba(100,116,139,0.08)", badge: "#64748B", badgeBg: "rgba(100,116,139,0.1)", ring: "#64748B", pulse: "rgba(100,116,139,0.2)" },
   idle:           { border: "rgba(100,116,139,0.2)", glow: "rgba(100,116,139,0.05)", badge: "#94A3B8", badgeBg: "rgba(100,116,139,0.08)", ring: "#94A3B8", pulse: "rgba(100,116,139,0.15)" },
 };
@@ -112,8 +115,14 @@ function deriveState(
   phaseStatus?: string | null,
   canAdvance?: boolean,
   hasCompletionData?: boolean,
+  agentStatus?: string | null,
 ): AgentState {
   if (!agentDeployed) return "idle";
+
+  // PAUSED is an explicit user action and overrides everything else — we
+  // never want to show "Monitoring · everything is under control" when the
+  // user has actively stopped the agent.
+  if (agentStatus === "PAUSED") return "paused";
 
   // hasActiveSession is the LIVE source of truth — phaseStatus can lag if the
   // deployment column update missed (recovered on next pipeline fetch via
@@ -143,12 +152,17 @@ function deriveState(
     if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
     return "phase_complete";
   }
-  return "monitoring";
+  // No artefacts yet AND no active clarification session AND no recent
+  // generating activity → the agent has just deployed and is preparing the
+  // project context. "monitoring everything is under control" is a lie at
+  // this stage; "setup" makes the actual state clear and tells the user
+  // what's coming.
+  return "setup";
 }
 
 /** Priority for auto-focus: lower = more urgent */
 function statePriority(s: AgentState): number {
-  return { questions_waiting: 0, review: 1, blocked_by_tasks: 2, generating: 3, phase_complete: 4, monitoring: 5, idle: 6 }[s] ?? 7;
+  return { questions_waiting: 0, review: 1, blocked_by_tasks: 2, generating: 3, phase_complete: 4, setup: 5, paused: 6, monitoring: 7, idle: 8 }[s] ?? 9;
 }
 
 function gradientColour(gradient: string | null | undefined): string {
@@ -208,6 +222,14 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
       return `${phase} blocked from advancing — ${pm}, ${del}.`;
     }
 
+    case "setup":
+      return phase
+        ? `${slot.agentName} just deployed — about to research and ask clarification questions for the ${phase} phase. Sit tight or open Chat to nudge.`
+        : `${slot.agentName} just deployed and is preparing the project context. The first clarification questions land in Chat shortly.`;
+
+    case "paused":
+      return `${slot.agentName} is paused — resume from the agent header to continue working on ${projectName}.`;
+
     case "monitoring":
       return actText
         ? `${actText.slice(0, 160)} — monitoring ${projectName}`
@@ -233,6 +255,8 @@ function badgeLabel(slot: AgentSlot): string {
       if (remainingDel > 0) return `${remainingDel} delivery task${remainingDel === 1 ? "" : "s"} to finish`;
       return "Tasks blocking advance";
     }
+    case "setup":          return "Just deployed";
+    case "paused":         return "Paused";
     case "monitoring":     return "Monitoring";
     case "idle":           return "Not deployed";
   }
@@ -348,6 +372,7 @@ export function AgentStatusBar() {
           phaseStatus,
           canAdvance,
           completion !== null,
+          (agent as any).status ?? null,
         );
 
         return {
@@ -797,6 +822,8 @@ function StateBadge({ label, colour, bg, state }: {
     generating:     <RefreshCw size={10} className="animate-spin" />,
     phase_complete: <CheckCircle2 size={10} />,
     blocked_by_tasks: <AlertCircle size={10} />,
+    setup:          <Rocket size={10} />,
+    paused:         <Pause size={10} />,
     monitoring:     <Shield size={10} />,
     idle:           <Bot size={10} />,
   };
