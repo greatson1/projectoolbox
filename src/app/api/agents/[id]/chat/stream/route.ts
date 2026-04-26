@@ -1009,12 +1009,73 @@ These are handled by the platform automatically. Just write normal text.
     take: 100,
   });
 
+  // Rehydrate sentinel messages — interactive cards are stored with content
+  // === "__AGENT_QUESTION__" / "__PENDING_DECISION__" etc. and the actual
+  // semantic payload lives in `metadata`. If we feed those raw sentinels
+  // straight to Claude the model sees opaque markers and cannot link a
+  // user's reply ("Birmingham") to the question that prompted it ("Which
+  // UK city are you departing from?"). Replace each sentinel with a
+  // human-readable summary built from metadata so the conversation reads
+  // coherently end-to-end. Returns the original content unchanged for
+  // normal text messages.
+  function rehydrateSentinelContent(content: string, metadata: any): string {
+    if (!content || !content.startsWith("__")) return content;
+    if (!metadata || typeof metadata !== "object") return content;
+    const meta: any = metadata;
+    switch (meta.type) {
+      case "agent_question": {
+        const q = meta.question;
+        if (!q?.question) return content;
+        const opts = Array.isArray(q.options) && q.options.length > 0 ? ` (options: ${q.options.join(", ")})` : "";
+        const idx = meta.totalQuestions > 1 ? ` [${(meta.questionIndex ?? 0) + 1}/${meta.totalQuestions}]` : "";
+        return `[I asked the user${idx}]: "${q.question}"${opts}`;
+      }
+      case "clarification_question": {
+        const q = meta.question;
+        const text = q?.question || q?.text;
+        if (!text) return content;
+        const idx = meta.totalQuestions ? ` [${(meta.questionIndex ?? 0) + 1}/${meta.totalQuestions}]` : "";
+        return `[I asked a clarification question${idx}]: "${text}"`;
+      }
+      case "clarification_complete": {
+        const n = meta.questionsCount || meta.totalQuestions || 0;
+        return `[I confirmed the clarification session is complete${n ? ` (${n} questions answered)` : ""} and offered to generate documents]`;
+      }
+      case "project_status": {
+        const phase = meta.phase ? `, current phase: ${meta.phase}` : "";
+        return `[I posted a project status card for "${meta.projectName || "the project"}"${phase}]`;
+      }
+      case "change_proposal": {
+        const trig = meta.trigger ? ` (triggered by: ${meta.trigger})` : "";
+        return `[I proposed a change: "${meta.title || "untitled"}"${trig} — pending your approval]`;
+      }
+      case "pending_decision": {
+        const by = meta.by ? ` (by ${meta.by})` : "";
+        const cert = meta.certainty ? ` — certainty: ${meta.certainty}` : "";
+        return `[I flagged a pending decision for the user to confirm: "${meta.decisionText}"${by}${cert}]`;
+      }
+      case "action_suggestion": {
+        return `[I suggested applying the decision "${meta.decisionText}" to the open ${meta.itemType}: "${meta.itemTitle}"]`;
+      }
+      case "research_findings": {
+        const sections = Array.isArray(meta.sections) && meta.sections.length > 0 ? ` across sections: ${meta.sections.join(", ")}` : "";
+        return `[I posted research findings: ${meta.factsCount || 0} facts${sections}${meta.phase ? ` for phase ${meta.phase}` : ""}]`;
+      }
+      default:
+        return content;
+    }
+  }
+
   const historyFiltered = historyAll
     .reverse()
     .filter(m =>
       m.role !== "system" &&
       !(m.role === "user" && (m.content?.startsWith("SYSTEM_KICKOFF:") || m.content?.startsWith("KICKOFF:")))
-    );
+    )
+    .map(m => ({
+      ...m,
+      content: rehydrateSentinelContent(m.content, m.metadata),
+    }));
 
   // If we have more than 60 messages, summarise the oldest half into a single context block
   // rather than sending all tokens verbatim. This keeps the window focused on recent exchanges
