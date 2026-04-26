@@ -281,6 +281,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
             reason={msg.data.reason || "needs review"}
             certainty={msg.data.certainty || "probable"}
             meetingTitle={msg.data.meetingTitle}
+            meetingId={msg.data.meetingId}
           />
         </div>
       </div>

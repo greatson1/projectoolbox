@@ -798,11 +798,18 @@ Quote fields containing commas.`;
 `;
       } else {
         percentageHints = `Default category split (use ONLY when research has no concrete number for that line):
-  • Labour 50-60% (per Resource Management Plan)
+  • Labour 50-60% (per Resource Management Plan; reconcile against research day-rates if present)
   • External Services 15-25% (per contracts/procurement)
   • Materials & Equipment 10-20% (per WBS)
   • Travel & Expenses 2-5%
   • Contingency Reserve 10-15% (required, do not consume)
+
+⚠️ LABOUR / HUMAN RESOURCE COSTS specifically:
+The same selection rule applies. The IT/software and training feasibility research queries explicitly ASK for current day-rates by seniority — look for them in the KB. Then:
+  - **If the user has confirmed roles/team size** in clarification (e.g. "we have 2 developers and 1 PM"): multiply role × research day-rate × project duration. Notes: "Research-anchored: 2 × Senior Dev @ £600/day × 60 days = £72,000 (also considered: contract market £750/day, offshore £200/day)".
+  - **If the Resource Management Plan artefact exists in approved KB** (source D): use the FTE/rates from there. Notes: "Per approved Resource Management Plan: 3 FTEs over 6 months".
+  - **If neither is available**: use the percentage default with Notes "Default-percentage — TBC: confirm team composition and rates".
+  - Always cite the alternative seniority/sourcing options when research surfaces them so the user can flex the cost model.
 `;
       }
 

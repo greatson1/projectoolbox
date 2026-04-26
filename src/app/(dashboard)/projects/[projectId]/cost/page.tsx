@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useProject, useProjectMetrics } from "@/hooks/use-api";
@@ -10,12 +10,78 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PoundSterling, Plus, ArrowUpRight, ArrowDownRight, Download } from "lucide-react";
+import { PoundSterling, Plus, ArrowUpRight, ArrowDownRight, Download, ChevronDown, ChevronRight, Microscope, UserCheck, Percent, AlertCircle, Lock } from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
 
 function fmtIndex(v: number | null | undefined): string {
   if (v === null || v === undefined || isNaN(v)) return "N/A";
   return v.toFixed(2);
+}
+
+/**
+ * Parse the source prefix the agent embeds in the cost-entry description.
+ * Format produced by lifecycle-init.ts cost-plan template:
+ *   "<Item> | <Phase> | <Source-prefix>: <reasoning> (also considered: <alt1>, <alt2>)"
+ * The prefix tells us which selection rule fired and lets us render a
+ * "Why this number?" expandable on each row.
+ */
+type CostSourceKind = "research" | "user_confirmed" | "default_percentage" | "research_thin" | "reserved" | "unknown";
+interface CostSourceParsed {
+  kind: CostSourceKind;
+  itemLabel: string;       // first segment before "|"
+  phase: string | null;     // optional phase segment
+  reasoning: string | null; // text after the source prefix
+  alternatives: string[];   // anything inside "(also considered: ...)"
+  raw: string;              // original description for fallback
+}
+function parseCostSource(description: string | null | undefined): CostSourceParsed {
+  const raw = description || "";
+  if (!raw) return { kind: "unknown", itemLabel: "—", phase: null, reasoning: null, alternatives: [], raw };
+  const parts = raw.split("|").map(p => p.trim()).filter(Boolean);
+  const itemLabel = parts[0] || raw.slice(0, 60);
+  // The phase segment, if present, is between item and the source-prefixed Notes.
+  // Find the segment that contains a known prefix; everything before that (after item) is phase.
+  const PREFIX_RE = /^(Research-anchored|User-confirmed|Default-percentage|Research-thin|Reserved)\s*[—:-]\s*/i;
+  const noteIdx = parts.findIndex(p => PREFIX_RE.test(p));
+  const phase = noteIdx > 1 ? parts.slice(1, noteIdx).join(" / ") : null;
+  if (noteIdx < 0) {
+    return { kind: "unknown", itemLabel, phase, reasoning: parts.slice(1).join(" / ") || null, alternatives: [], raw };
+  }
+  const noteSeg = parts[noteIdx];
+  const m = noteSeg.match(PREFIX_RE);
+  const prefix = (m?.[1] || "").toLowerCase();
+  const kind: CostSourceKind =
+    prefix === "research-anchored" ? "research" :
+    prefix === "user-confirmed" ? "user_confirmed" :
+    prefix === "default-percentage" ? "default_percentage" :
+    prefix === "research-thin" ? "research_thin" :
+    prefix === "reserved" ? "reserved" : "unknown";
+  let body = noteSeg.replace(PREFIX_RE, "");
+  // Pull out "(also considered: ...)" if present
+  const altMatch = body.match(/\(also considered:\s*([^)]+)\)/i);
+  const alternatives = altMatch
+    ? altMatch[1].split(/,\s*/).map(s => s.trim()).filter(Boolean)
+    : [];
+  if (altMatch) body = body.replace(altMatch[0], "").trim().replace(/\s+\.$/, "");
+  return { kind, itemLabel, phase, reasoning: body || null, alternatives, raw };
+}
+
+function CostSourceBadge({ kind }: { kind: CostSourceKind }) {
+  const cfg: Record<CostSourceKind, { label: string; cls: string; Icon: any }> = {
+    research:            { label: "Research", cls: "text-indigo-400 border-indigo-400/30 bg-indigo-400/5", Icon: Microscope },
+    user_confirmed:      { label: "User",     cls: "text-emerald-400 border-emerald-400/30 bg-emerald-400/5", Icon: UserCheck },
+    default_percentage:  { label: "Default",  cls: "text-amber-400 border-amber-400/30 bg-amber-400/5", Icon: Percent },
+    research_thin:       { label: "Thin",     cls: "text-orange-400 border-orange-400/30 bg-orange-400/5", Icon: AlertCircle },
+    reserved:            { label: "Reserved", cls: "text-slate-400 border-slate-400/30 bg-slate-400/5", Icon: Lock },
+    unknown:             { label: "—",        cls: "text-muted-foreground/60 border-border", Icon: ChevronRight },
+  };
+  const c = cfg[kind];
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold uppercase tracking-wide ${c.cls}`}>
+      <c.Icon className="size-2.5" />
+      {c.label}
+    </span>
+  );
 }
 
 interface CostSummary {
@@ -46,6 +112,7 @@ export default function CostManagementPage() {
   const [byCategory, setByCategory] = useState<Record<string, CostSummary>>({});
   const [costSummary, setCostSummary] = useState<CostSummary>({ estimated: 0, actual: 0, committed: 0 });
   const [adding, setAdding] = useState(false);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -329,29 +396,86 @@ export default function CostManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {costs.map((c) => (
-                  <tr key={c.id} className="border-b border-border/10 hover:bg-muted/20">
-                    <td className="py-2 px-3 text-muted-foreground">
-                      {new Date(c.recordedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
-                    </td>
-                    <td className="py-2 px-3">
-                      <span>{c.description || "—"}</span>
-                      {c.vendorName && <span className="text-muted-foreground ml-1">· {c.vendorName}</span>}
-                    </td>
-                    <td className="py-2 px-3">
-                      <Badge variant="outline" className="text-[9px]">{c.category || "OTHER"}</Badge>
-                    </td>
-                    <td className="py-2 px-3">
-                      <Badge
-                        variant={c.entryType === "ACTUAL" ? "default" : "secondary"}
-                        className="text-[9px]"
+                {costs.map((c) => {
+                  const parsed = parseCostSource(c.description);
+                  const hasReasoning = !!parsed.reasoning || parsed.alternatives.length > 0;
+                  const isExpanded = expandedRow === c.id;
+                  return (
+                    <React.Fragment key={c.id}>
+                      <tr
+                        className={`border-b border-border/10 hover:bg-muted/20 ${hasReasoning ? "cursor-pointer" : ""}`}
+                        onClick={() => hasReasoning && setExpandedRow(isExpanded ? null : c.id)}
                       >
-                        {c.entryType}
-                      </Badge>
-                    </td>
-                    <td className="py-2 px-3 font-mono font-medium">{fmt(c.amount)}</td>
-                  </tr>
-                ))}
+                        <td className="py-2 px-3 text-muted-foreground">
+                          {new Date(c.recordedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
+                        </td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            {hasReasoning && (
+                              isExpanded
+                                ? <ChevronDown className="size-3 text-muted-foreground shrink-0" />
+                                : <ChevronRight className="size-3 text-muted-foreground shrink-0" />
+                            )}
+                            <span className="font-medium">{parsed.itemLabel}</span>
+                            <CostSourceBadge kind={parsed.kind} />
+                            {parsed.phase && (
+                              <span className="text-[10px] text-muted-foreground">· {parsed.phase}</span>
+                            )}
+                          </div>
+                          {c.vendorName && <span className="text-muted-foreground text-[10px] block mt-0.5">· {c.vendorName}</span>}
+                        </td>
+                        <td className="py-2 px-3">
+                          <Badge variant="outline" className="text-[9px]">{c.category || "OTHER"}</Badge>
+                        </td>
+                        <td className="py-2 px-3">
+                          <Badge
+                            variant={c.entryType === "ACTUAL" ? "default" : "secondary"}
+                            className="text-[9px]"
+                          >
+                            {c.entryType}
+                          </Badge>
+                        </td>
+                        <td className="py-2 px-3 font-mono font-medium">{fmt(c.amount)}</td>
+                      </tr>
+                      {/* "Why this number?" expandable — visible only when row has parsed reasoning */}
+                      {isExpanded && hasReasoning && (
+                        <tr className="bg-muted/10 border-b border-border/10">
+                          <td colSpan={5} className="py-3 px-6">
+                            <div className="space-y-2 max-w-3xl">
+                              <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Why this number?</p>
+                              {parsed.reasoning && (
+                                <p className="text-xs text-foreground/90 leading-relaxed">{parsed.reasoning}</p>
+                              )}
+                              {parsed.alternatives.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mt-2 mb-1">Alternatives the agent considered</p>
+                                  <ul className="space-y-0.5 text-xs">
+                                    {parsed.alternatives.map((alt, i) => (
+                                      <li key={i} className="text-foreground/70 flex items-start gap-1.5">
+                                        <span className="text-muted-foreground/50 mt-0.5">•</span>
+                                        <span>{alt}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {parsed.kind === "default_percentage" && (
+                                <p className="text-[11px] text-amber-500/80 italic">
+                                  This is a percentage-of-budget placeholder, not a researched figure. Confirm specifics in chat to refine.
+                                </p>
+                              )}
+                              {parsed.kind === "research_thin" && (
+                                <p className="text-[11px] text-orange-500/80 italic">
+                                  Research couldn&apos;t surface a concrete number for this line. Worth confirming with the user.
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}

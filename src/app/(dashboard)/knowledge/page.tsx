@@ -64,6 +64,7 @@ export default function KnowledgeBasePage() {
   const [showResearch, setShowResearch] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [viewMode, setViewMode]     = useState<"list" | "graph">("list");
+  const [bulkRunning, setBulkRunning] = useState<null | "confirm" | "discard">(null);
 
   const { data: agentsData, isLoading: agentsLoading } = useAgents();
   const agents = agentsData?.agents || [];
@@ -140,6 +141,43 @@ export default function KnowledgeBasePage() {
     await fetch(`/api/agents/${selectedAgent}/knowledge?itemId=${id}`, { method: "DELETE" });
     setItems(prev => prev.filter(i => i.id !== id));
     if (selectedId === id) setSelectedId(null);
+  };
+
+  // Bulk confirm / discard for everything currently visible in Pending review.
+  // Fires kb-action calls in parallel against the agent endpoint, then strips
+  // the resolved items out of local state so the list shrinks immediately.
+  const runBulkAction = async (action: "confirm" | "discard") => {
+    if (!selectedAgent) return;
+    const targets = filtered.filter((i: any) => (i.tags || []).includes("pending_user_confirmation"));
+    if (targets.length === 0) return;
+    const verb = action === "confirm" ? "Confirm" : "Discard";
+    if (!window.confirm(`${verb} all ${targets.length} pending items?\n\nThis cannot be undone.`)) return;
+    setBulkRunning(action);
+    try {
+      const results = await Promise.allSettled(
+        targets.map((it: any) =>
+          fetch(`/api/agents/${selectedAgent}/kb-action`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, kbItemId: it.id }),
+          }).then(r => r.ok ? it.id : null),
+        ),
+      );
+      const okIds = new Set(
+        results
+          .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled" && r.value !== null)
+          .map(r => r.value as string),
+      );
+      const failed = targets.length - okIds.size;
+      setItems(prev => prev.filter((i: any) => !okIds.has(i.id)));
+      if (selectedId && okIds.has(selectedId)) setSelectedId(null);
+      if (failed === 0) toast.success(`${verb}ed ${okIds.size} item${okIds.size === 1 ? "" : "s"}`);
+      else toast.warning(`${verb}ed ${okIds.size}, ${failed} failed`);
+    } catch (e: any) {
+      toast.error(e?.message || `Bulk ${action} failed`);
+    } finally {
+      setBulkRunning(null);
+    }
   };
 
   // ── No agents deployed yet — show onboarding ──
@@ -293,6 +331,36 @@ export default function KnowledgeBasePage() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Bulk actions — only in Pending review mode with items visible */}
+          {filterMode === "pending" && filtered.length > 0 && (
+            <div className="px-3 py-2 border-b border-border/30 bg-amber-500/[0.04] flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[10px] flex-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                onClick={() => runBulkAction("confirm")}
+                disabled={bulkRunning !== null}
+              >
+                {bulkRunning === "confirm"
+                  ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  : <Shield className="w-3 h-3 mr-1" />}
+                Confirm all {filtered.length}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[10px] flex-1 border-destructive/30 text-destructive hover:bg-destructive/10"
+                onClick={() => runBulkAction("discard")}
+                disabled={bulkRunning !== null}
+              >
+                {bulkRunning === "discard"
+                  ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  : <Trash2 className="w-3 h-3 mr-1" />}
+                Discard all {filtered.length}
+              </Button>
             </div>
           )}
 

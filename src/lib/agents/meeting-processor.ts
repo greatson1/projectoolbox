@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { embedTexts, cosineSimilarity, isEmbeddingsAvailable } from "@/lib/ml/text-embedding";
 
 /**
  * Processes a meeting transcript (text) with AI to extract:
@@ -248,6 +249,7 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
             metadata: {
               type: "pending_decision",
               kbItemId,
+              meetingId,
               decisionText: pd.text,
               by: pd.by,
               reason: pd.reason,
@@ -280,7 +282,62 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
         const tokenise = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !STOPWORDS.has(t));
 
         const suggestions: { decision: string; type: "task" | "risk"; itemTitle: string; itemId: string }[] = [];
-        for (const d of definiteDecisions) {
+
+        // Try embedding-based semantic match first — captures paraphrased
+        // matches keyword overlap misses ("ship the API" vs "release backend
+        // service"). Falls back to keyword overlap when OPENAI_API_KEY is
+        // missing or the embedding call fails.
+        let useEmbeddings = isEmbeddingsAvailable();
+        let decisionVecs: number[][] = [];
+        let taskVecs: number[][] = [];
+        let riskVecs: number[][] = [];
+
+        if (useEmbeddings) {
+          try {
+            const decisionTexts = definiteDecisions.map(d => d.text);
+            const taskTexts = openTasks.map(t => t.title || "");
+            const riskTexts = openRisks.map(r => r.title || "");
+            const all = await embedTexts([...decisionTexts, ...taskTexts, ...riskTexts]);
+            decisionVecs = all.slice(0, decisionTexts.length);
+            taskVecs = all.slice(decisionTexts.length, decisionTexts.length + taskTexts.length);
+            riskVecs = all.slice(decisionTexts.length + taskTexts.length);
+          } catch (e) {
+            console.warn("[meeting-processor] embedding match failed, falling back to keyword overlap:", e);
+            useEmbeddings = false;
+          }
+        }
+
+        const SIM_THRESHOLD = 0.55; // matches the cross-project priors threshold
+
+        for (let di = 0; di < definiteDecisions.length; di++) {
+          const d = definiteDecisions[di];
+
+          if (useEmbeddings) {
+            const dVec = decisionVecs[di];
+            // Best task match
+            let bestTask = { idx: -1, score: 0 };
+            for (let i = 0; i < openTasks.length; i++) {
+              const score = cosineSimilarity(dVec, taskVecs[i]);
+              if (score > bestTask.score) bestTask = { idx: i, score };
+            }
+            if (bestTask.idx >= 0 && bestTask.score >= SIM_THRESHOLD) {
+              const t = openTasks[bestTask.idx];
+              suggestions.push({ decision: d.text, type: "task", itemTitle: t.title || "", itemId: t.id });
+            }
+            // Best risk match
+            let bestRisk = { idx: -1, score: 0 };
+            for (let i = 0; i < openRisks.length; i++) {
+              const score = cosineSimilarity(dVec, riskVecs[i]);
+              if (score > bestRisk.score) bestRisk = { idx: i, score };
+            }
+            if (bestRisk.idx >= 0 && bestRisk.score >= SIM_THRESHOLD) {
+              const r = openRisks[bestRisk.idx];
+              suggestions.push({ decision: d.text, type: "risk", itemTitle: r.title || "", itemId: r.id });
+            }
+            continue;
+          }
+
+          // Fallback: keyword overlap
           const dTokens = new Set(tokenise(d.text));
           if (dTokens.size === 0) continue;
 
@@ -290,7 +347,7 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
             const overlap = tTokens.filter(tok => dTokens.has(tok)).length;
             if (overlap >= Math.min(2, Math.ceil(tTokens.length * 0.4))) {
               suggestions.push({ decision: d.text, type: "task", itemTitle: t.title || "", itemId: t.id });
-              break; // one match per decision is enough
+              break;
             }
           }
           for (const r of openRisks) {

@@ -56,6 +56,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ data: { ok: true, action: "confirmed", kbItemId: item.id } });
     }
 
+    if (body.action === "edit") {
+      // Edit + confirm: caller passes a corrected text; we update the KB
+      // item, treat it as user-confirmed (HIGH_TRUST), drop pending tags,
+      // and strip any "NEEDS REVIEW" caveats. Saves a discard-and-recreate.
+      const item = await db.knowledgeBaseItem.findFirst({
+        where: { id: body.kbItemId, orgId, agentId },
+        select: { id: true, tags: true, content: true, title: true },
+      });
+      if (!item) return NextResponse.json({ error: "KB item not found" }, { status: 404 });
+      const newText: string | undefined = body.text;
+      if (!newText || !newText.trim()) {
+        return NextResponse.json({ error: "text required" }, { status: 400 });
+      }
+      const newTags = (item.tags || []).filter(
+        (t) => t !== "pending_user_confirmation" && t !== "needs_review",
+      );
+      newTags.push("user_confirmed", "user_edited");
+      // Re-build content using a clean structure — preserve "Made by"/"Rationale" if we can parse them.
+      const byMatch = item.content.match(/Made by:\s*([^\n]+)/i);
+      const rationaleMatch = item.content.match(/Rationale:\s*([^\n]+)/i);
+      const rebuilt = [
+        `Decision: ${newText.trim()}`,
+        byMatch ? `Made by: ${byMatch[1].trim()}` : null,
+        rationaleMatch ? `Rationale: ${rationaleMatch[1].trim()}` : null,
+        `Edited and confirmed by user on ${new Date().toLocaleDateString("en-GB")}`,
+      ].filter(Boolean).join("\n");
+      await db.knowledgeBaseItem.update({
+        where: { id: item.id },
+        data: {
+          tags: newTags,
+          trustLevel: "HIGH_TRUST",
+          title: newText.trim().slice(0, 120),
+          content: rebuilt,
+        },
+      });
+      return NextResponse.json({ data: { ok: true, action: "edited", kbItemId: item.id, newText: newText.trim() } });
+    }
+
     if (body.action === "discard") {
       const item = await db.knowledgeBaseItem.findFirst({
         where: { id: body.kbItemId, orgId, agentId },
