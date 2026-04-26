@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useProjectArtefacts, useProject } from "@/hooks/use-api";
+import { getMethodology } from "@/lib/methodology-definitions";
+import Link from "next/link";
+import { MessageSquare } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +61,24 @@ export default function ArtefactsPage() {
   const refreshArtefacts = () => {
     qc.invalidateQueries({ queryKey: ["project-artefacts", projectId] });
   };
+
+  /** Build a lower-cased Set of every artefact name across every phase
+   * of the project's methodology. Anything outside this set is bespoke
+   * (chat-created or uploaded) — used to render the "Custom" badge. */
+  const methodologyArtefactSet = (() => {
+    const meth = (project as any)?.methodology;
+    if (!meth) return new Set<string>();
+    try {
+      const def = getMethodology(meth);
+      const names: string[] = [];
+      for (const p of def.phases) {
+        for (const a of p.artefacts) names.push(a.name.toLowerCase());
+      }
+      return new Set(names);
+    } catch {
+      return new Set<string>();
+    }
+  })();
 
   if (isLoading) {
     return (
@@ -356,6 +377,24 @@ export default function ArtefactsPage() {
           <Button size="sm" variant="outline">
             <Upload className="h-4 w-4 mr-2" />Upload Document
           </Button>
+          {/* Bespoke-document CTA — deep-links to chat with a starter prompt */}
+          {(() => {
+            const firstAgent = items.find((a: any) => a.agent?.id)?.agent;
+            const agentId = firstAgent?.id || "";
+            const agentName = firstAgent?.name || "your agent";
+            const promptText = "Create a custom document for this project — please ask me what kind I need (e.g. vendor comparison, status update, risk heat map).";
+            const href = agentId
+              ? `/agents/chat?agent=${agentId}&prompt=${encodeURIComponent(promptText)}`
+              : `/agents/chat?prompt=${encodeURIComponent(promptText)}`;
+            return (
+              <Link href={href} title={`Ask ${agentName} in chat to create any custom document not covered by the methodology.`}>
+                <Button size="sm" variant="default" className="gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Ask {agentName} for a custom document
+                </Button>
+              </Link>
+            );
+          })()}
         </div>
       </div>
 
@@ -451,6 +490,14 @@ export default function ArtefactsPage() {
                           ? <Badge variant="outline" className="text-[9px] text-emerald-500 border-emerald-500/30">Spreadsheet</Badge>
                           : art.format && <Badge variant="outline" className="text-[9px]">{FORMAT_LABEL[art.format] || art.format}</Badge>
                         }
+                        {/* Source badge — methodology-defined vs bespoke (chat-created or uploaded).
+                            Inferred from whether the name appears in the project methodology's
+                            artefact catalogue. Bespoke ones don't gate phase advancement. */}
+                        {methodologyArtefactSet.size > 0 && (
+                          methodologyArtefactSet.has(art.name.toLowerCase())
+                            ? <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30" title="Defined by the project's methodology — counts toward phase gate when required.">Methodology</Badge>
+                            : <Badge variant="outline" className="text-[9px] text-amber-400 border-amber-400/30" title="Custom document created via chat or upload — does not gate phase advancement.">Custom</Badge>
+                        )}
                         <span className="text-[10px] text-muted-foreground ml-auto">v{art.version || 1}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">

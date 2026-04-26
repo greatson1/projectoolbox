@@ -120,16 +120,46 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
       },
     }));
 
-    // 2. Each decision — HIGH_TRUST (formal agreements override agent defaults)
+    // 2. Each decision — trust level + tags driven by certainty so a passing
+    // hedge ("we should be fine on the visa") doesn't get promoted to
+    // HIGH_TRUST and then acted on as an explicit approval downstream.
+    //   • definite     → HIGH_TRUST, no review needed (clear factual claim)
+    //   • probable     → HIGH_TRUST + pending_user_confirmation (used only after user confirms)
+    //   • tentative    → STANDARD + pending_user_confirmation (excluded from prompts until reviewed)
+    // pending_user_confirmation is already filtered out of artefact-generation
+    // prompts by getProjectKnowledgeContext.
+    const hedgePattern = /\b(probably|possibly|maybe|might|could|should|tentative|hopeful|likely|i think|i believe|seems|may|hopefully|fingers crossed)\b/i;
+    let pendingDecisions: { text: string; by: string; reason: string }[] = [];
     for (const d of result.decisions) {
+      // Use Claude's certainty if provided; otherwise fall back to hedge-word
+      // detection so we still benefit even if the model omits the field.
+      const declaredCertainty = (d.certainty as "definite" | "probable" | "tentative" | undefined) || undefined;
+      const looksHedged = hedgePattern.test(d.text);
+      const certainty: "definite" | "probable" | "tentative" =
+        declaredCertainty
+          ? declaredCertainty
+          : looksHedged
+            ? "probable"
+            : "definite";
+      const trust = certainty === "tentative" ? "STANDARD" : "HIGH_TRUST";
+      const needsReview = certainty !== "definite";
+      const tags = ["meeting", "decision", `decision_certainty:${certainty}`];
+      if (needsReview) {
+        tags.push("pending_user_confirmation", "needs_review");
+        pendingDecisions.push({
+          text: d.text,
+          by: d.by,
+          reason: certainty === "tentative" ? "speculative wording" : "qualified language",
+        });
+      }
       kbWrites.push(db.knowledgeBaseItem.create({
         data: {
           ...sharedBase,
           type: "DECISION",
           title: d.text.slice(0, 120),
-          content: `Decision: ${d.text}\nMade by: ${d.by}\nRationale: ${d.rationale}`,
-          trustLevel: "HIGH_TRUST",
-          tags: ["meeting", "decision"],
+          content: `Decision: ${d.text}\nMade by: ${d.by}\nRationale: ${d.rationale}\nCertainty: ${certainty}${needsReview ? "\nFlagged for confirmation — not used for artefact generation until reviewed." : ""}`,
+          trustLevel: trust,
+          tags,
         },
       }));
     }
@@ -177,6 +207,94 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
     }));
 
     await Promise.allSettled(kbWrites);
+
+    // ── B: Notify user of decisions that need confirmation ──
+    if (pendingDecisions.length > 0) {
+      const list = pendingDecisions.slice(0, 8).map(d => `• "${d.text}" (${d.by} · ${d.reason})`).join("\n");
+      const more = pendingDecisions.length > 8 ? `\n… and ${pendingDecisions.length - 8} more` : "";
+      await db.chatMessage.create({
+        data: {
+          agentId: meeting.agentId,
+          role: "agent",
+          content: `Meeting **"${meeting.title}"** processed. I extracted **${pendingDecisions.length} decision${pendingDecisions.length !== 1 ? "s" : ""} that need your confirmation** before I rely on them — the wording was qualified or speculative, and I don't want to act on them as fact:\n\n${list}${more}\n\nReview them on the [Knowledge Base](/knowledge) and confirm or edit. Until then they won't be used to generate artefacts.`,
+        },
+      }).catch(() => {});
+    }
+
+    // ── C: Match decisions to open tasks/risks and propose state changes ──
+    // Fuzzy keyword match — for each high-confidence decision, look for an
+    // open PM task or open risk whose title shares meaningful tokens. Post
+    // a single chat message proposing the state change. We DON'T auto-apply
+    // — the user clicks through to confirm, keeping a human in the loop on
+    // every state mutation that flowed from a transcript.
+    if (meeting.projectId && result.decisions.length > 0) {
+      try {
+        const [openTasks, openRisks] = await Promise.all([
+          db.task.findMany({
+            where: { projectId: meeting.projectId, status: { not: "DONE" } },
+            select: { id: true, title: true, status: true },
+            take: 200,
+          }),
+          db.risk.findMany({
+            where: { projectId: meeting.projectId, status: { in: ["OPEN", "MITIGATING"] } },
+            select: { id: true, title: true, status: true },
+            take: 100,
+          }),
+        ]);
+
+        const STOPWORDS = new Set(["the", "a", "an", "of", "for", "to", "and", "is", "are", "was", "were", "be", "in", "on", "at", "by", "or", "we", "i", "they", "you", "he", "she", "it", "this", "that", "with", "from", "have", "has", "had", "will", "should", "can", "do", "does"]);
+        const tokenise = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !STOPWORDS.has(t));
+
+        const suggestions: { decision: string; type: "task" | "risk"; itemTitle: string; itemId: string; suggested: string }[] = [];
+        for (const d of result.decisions) {
+          // Only propose actions for decisions Claude marked as definite.
+          if (d.certainty && d.certainty !== "definite") continue;
+          const dTokens = new Set(tokenise(d.text));
+          if (dTokens.size === 0) continue;
+
+          for (const t of openTasks) {
+            const tTokens = tokenise(t.title || "");
+            if (tTokens.length === 0) continue;
+            const overlap = tTokens.filter(tok => dTokens.has(tok)).length;
+            if (overlap >= Math.min(2, Math.ceil(tTokens.length * 0.4))) {
+              suggestions.push({
+                decision: d.text, type: "task", itemTitle: t.title || "", itemId: t.id,
+                suggested: `Mark task "${t.title}" as DONE?`,
+              });
+              break; // one match per decision is enough
+            }
+          }
+          for (const r of openRisks) {
+            const rTokens = tokenise(r.title || "");
+            if (rTokens.length === 0) continue;
+            const overlap = rTokens.filter(tok => dTokens.has(tok)).length;
+            if (overlap >= Math.min(2, Math.ceil(rTokens.length * 0.4))) {
+              suggestions.push({
+                decision: d.text, type: "risk", itemTitle: r.title || "", itemId: r.id,
+                suggested: `Close risk "${r.title}"?`,
+              });
+              break;
+            }
+          }
+        }
+
+        if (suggestions.length > 0) {
+          const lines = suggestions.slice(0, 6).map(s =>
+            `• Decision: "${s.decision}"\n  → ${s.suggested} ([open ${s.type}](/projects/${meeting.projectId}/${s.type === "task" ? "agile" : "risk"}))`,
+          ).join("\n\n");
+          const more = suggestions.length > 6 ? `\n\n… and ${suggestions.length - 6} more potential matches` : "";
+          await db.chatMessage.create({
+            data: {
+              agentId: meeting.agentId,
+              role: "agent",
+              content: `I noticed ${suggestions.length} decision${suggestions.length !== 1 ? "s" : ""} from this meeting that match open work items. Want to update them?\n\n${lines}${more}\n\nOpen the linked board and update each item — I won't change them automatically because state changes from transcripts are too easy to get wrong.`,
+            },
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.error("[meeting-processor] decision→task/risk matching failed:", e);
+      }
+    }
   }
 }
 
@@ -186,7 +304,7 @@ interface TranscriptAnalysis {
   sentiment: string;
   speakers: { name: string; minutes: number; percentage: number }[];
   actionItems: { text: string; assignee?: string; deadline?: string }[];
-  decisions: { text: string; by: string; rationale: string }[];
+  decisions: { text: string; by: string; rationale: string; certainty?: "definite" | "probable" | "tentative" }[];
   risks: { title: string; description: string; severity: string }[];
   confidence: number;
 }
@@ -207,7 +325,7 @@ Respond with VALID JSON only (no markdown, no code fences). Use this exact struc
   "sentiment": "positive|neutral|concerned|negative",
   "speakers": [{"name": "Speaker Name", "minutes": 10, "percentage": 25}],
   "actionItems": [{"text": "action description", "assignee": "Person Name", "deadline": "timeframe"}],
-  "decisions": [{"text": "decision made", "by": "Person Name", "rationale": "why"}],
+  "decisions": [{"text": "decision made", "by": "Person Name", "rationale": "why", "certainty": "definite|probable|tentative"}],
   "risks": [{"title": "risk title", "description": "risk details", "severity": "HIGH|MEDIUM|LOW"}],
   "confidence": 85
 }
@@ -215,7 +333,11 @@ Respond with VALID JSON only (no markdown, no code fences). Use this exact struc
 Rules:
 - Extract EVERY action item mentioned (tasks, follow-ups, commitments)
 - Flag ALL risks (delays, blockers, dependencies, concerns)
-- Capture ALL decisions with who made them
+- Capture ALL decisions with who made them AND a certainty rating:
+    • "definite"  — explicit, unhedged statement of fact ("the visa IS approved", "we have approved the budget", "the contract IS signed")
+    • "probable"  — leaning yes but qualified ("the visa should be approved soon", "we'll likely sign this week", "I think we agreed to…")
+    • "tentative" — speculative or hedge-heavy ("the visa might be approved", "probably going to", "could potentially", "I'm not 100% sure but…")
+  Be CONSERVATIVE — when in doubt, downgrade. A wrongly-confident decision will be acted on as fact downstream.
 - Identify speakers from the transcript (look for "Name:" or "[Name]" patterns)
 - Estimate speaker time proportionally based on their text volume
 - Set confidence based on transcript quality (clear/structured = 90+, messy/pasted = 70-85)

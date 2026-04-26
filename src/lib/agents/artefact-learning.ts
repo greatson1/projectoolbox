@@ -335,6 +335,7 @@ export async function getProjectKnowledgeContext(
     lines.push("── HOW TO USE THIS KNOWLEDGE ──");
     lines.push("Trust order (highest → lowest): USER-CONFIRMED > HIGH_TRUST > STANDARD > REFERENCE-ONLY > PRIORS-FROM-PAST-PROJECTS.");
     lines.push("If two facts conflict, the higher-trust one wins. NEVER let a STANDARD or PAST-PROJECT fact override a USER-CONFIRMED fact.");
+    lines.push("Recency tie-breaker: if two facts are at the SAME tier and they conflict, prefer the more recent one — UNLESS the older one is USER-CONFIRMED, in which case the user's explicit answer always wins regardless of age.");
     lines.push("If a needed fact is not in any tier above, write [TBC — what's needed] — do NOT invent.");
     lines.push("");
     lines.push("━━━ END KNOWLEDGE BASE ━━━");
