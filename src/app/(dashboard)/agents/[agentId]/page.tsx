@@ -1902,7 +1902,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                   Purges the agent and all its data — artefacts, history, chat, risks, jobs. Irreversible.
                 </p>
                 <Button variant="destructive" size="sm"
-                  onClick={() => { setDeleteModal("purge"); setDeleteProject(false); setDeleteConfirmText(""); }}>
+                  onClick={() => { setDeleteModal("purge"); setDeleteProject(true); setDeleteConfirmText(""); }}>
                   <TrashIcon className="mr-1 size-3" /> Delete Permanently
                 </Button>
               </div>
@@ -2274,7 +2274,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                     Also delete the associated project
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    Removes phases, risks, tasks, and all project data. Only applies if no other agents are deployed on it.
+                    Removes phases, risks, tasks, and all project data. Default ON — uncheck only if you want to redeploy a fresh agent on this project. Only applies if no other agents are deployed on it.
                   </p>
                 </div>
               </label>
