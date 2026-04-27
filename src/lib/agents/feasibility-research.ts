@@ -226,6 +226,11 @@ async function extractAndStoreFacts(
   orgId: string,
   researchText: string,
   queryLabel: string,
+  /** When this research came from an artefact-driven query, the artefact
+   *  it was generated for. Stored on each fact's metadata.targetArtefact
+   *  so the approval card and downstream prompts know exactly which
+   *  artefact each fact informs (no heuristic guess). */
+  targetArtefact?: string,
 ): Promise<number> {
   if (!process.env.ANTHROPIC_API_KEY || !researchText.trim()) return 0;
 
@@ -374,7 +379,13 @@ Return ONLY a JSON array of the 1-based indices to flag, e.g. [2, 5, 7]. If none
             "pending_user_confirmation",
             ...(isFlagged ? ["needs_review"] : []),
           ],
-          metadata: { source: "perplexity_research", extractedAt: new Date().toISOString(), flaggedForReview: isFlagged } as any,
+          metadata: {
+            source: "perplexity_research",
+            extractedAt: new Date().toISOString(),
+            flaggedForReview: isFlagged,
+            queryLabel,
+            ...(targetArtefact ? { targetArtefact } : {}),
+          } as any,
         },
       });
       stored++;
@@ -464,8 +475,58 @@ export async function runFeasibilityResearch(
     }
   }
 
-  const queries = buildResearchQueries(project as ProjectContext);
-  const queryLabels = ["Core feasibility", "Domain-specific research", "Regulatory & compliance"];
+  // ── Artefact-driven query generation for the FIRST phase ──
+  // Same idea as runPhaseResearch: try the Haiku-generated artefact-
+  // targeted queries first; fall back to the hardcoded
+  // buildResearchQueries (Core feasibility / Domain-specific / Regulatory)
+  // if the targeted builder returns nothing. The hardcoded set is still
+  // valuable on phase 1 — it covers compliance + market context that may
+  // not map cleanly to a single artefact.
+  let firstPhaseTargetedQueries: { artefact: string; query: string; rationale?: string }[] = [];
+  try {
+    const phases = await db.phase.findMany({
+      where: { projectId },
+      orderBy: { order: "asc" },
+      select: { name: true, artefacts: true },
+      take: 1,
+    });
+    const firstPhase = phases[0];
+    const artefactNames = Array.isArray(firstPhase?.artefacts) ? (firstPhase!.artefacts as string[]) : [];
+    if (firstPhase && artefactNames.length > 0) {
+      const { buildArtefactDrivenQueries } = await import("@/lib/agents/research-query-builder");
+      firstPhaseTargetedQueries = await buildArtefactDrivenQueries({
+        project: project as ProjectContext,
+        phaseName: firstPhase.name,
+        artefactNames,
+        methodology: project.methodology,
+      });
+    }
+  } catch (e) {
+    console.error("[feasibility-research] artefact-driven query gen failed, falling back to static:", e);
+  }
+
+  const staticQueries = buildResearchQueries(project as ProjectContext);
+  const staticLabels = ["Core feasibility", "Domain-specific research", "Regulatory & compliance"];
+
+  // Compose the working set: 1-2 targeted queries from the artefact builder
+  // PLUS the regulatory-compliance static query (always valuable, covers
+  // a corner the artefact-driven set typically misses).
+  const queryRecords: { query: string; targetArtefact: string | null; label: string }[] =
+    firstPhaseTargetedQueries.length > 0
+      ? [
+          ...firstPhaseTargetedQueries.slice(0, 2).map(t => ({
+            query: t.query,
+            targetArtefact: t.artefact,
+            label: t.artefact,
+          })),
+          // Always keep the regulatory & compliance query — it's a corner
+          // the artefact-driven prompt rarely covers and it's cheap.
+          { query: staticQueries[2] || staticQueries[staticQueries.length - 1], targetArtefact: null, label: "Regulatory & compliance" },
+        ]
+      : staticQueries.map((q, i) => ({ query: q, targetArtefact: null, label: staticLabels[i] || `Research ${i + 1}` }));
+
+  const queries = queryRecords.map(r => r.query);
+  const queryLabels = queryRecords.map(r => r.label);
 
   let totalFacts = 0;
   const allResearch: string[] = [];
@@ -476,21 +537,36 @@ export async function runFeasibilityResearch(
       if (result) {
         allResearch.push(result);
 
+        const targetArtefact = queryRecords[i]?.targetArtefact || null;
         // Store the raw research as a KB item too
         await db.knowledgeBaseItem.create({
           data: {
             orgId, agentId, projectId,
             layer: "PROJECT", type: "TEXT",
-            title: `Feasibility Research: ${queryLabels[i]}`,
+            title: targetArtefact
+              ? `Feasibility Research → ${targetArtefact}`
+              : `Feasibility Research: ${queryLabels[i]}`,
             content: result.slice(0, 5000),
             trustLevel: "STANDARD",
             tags: ["research", "feasibility", "perplexity", "raw_research"],
-            metadata: { source: "perplexity", query: queries[i].slice(0, 200), researchedAt: new Date().toISOString() } as any,
+            metadata: {
+              source: "perplexity",
+              query: queries[i].slice(0, 200),
+              researchedAt: new Date().toISOString(),
+              ...(targetArtefact ? { targetArtefact } : {}),
+            } as any,
           },
         }).catch(() => {});
 
         // Extract and store individual facts
-        const facts = await extractAndStoreFacts(agentId, projectId, orgId, result, queryLabels[i]);
+        const facts = await extractAndStoreFacts(
+          agentId,
+          projectId,
+          orgId,
+          result,
+          queryLabels[i],
+          queryRecords[i]?.targetArtefact || undefined,
+        );
         totalFacts += facts;
       }
     } catch (e) {
@@ -675,6 +751,35 @@ export async function runPhaseResearch(
     `Industry benchmarks and real-world examples for "${phaseName}" phase of ${p.category || "general"} projects. Budget context: ${p.budget ? `£${p.budget}` : "TBC"}.`,
   ]);
 
+  // ── Artefact-driven query generation ──
+  // Try the new artefact-targeted builder FIRST. It produces queries that
+  // explicitly mention which artefact each query is filling, so:
+  //   1. The Perplexity result is more specific (less hallucination headroom)
+  //   2. KB items are tagged with metadata.targetArtefact so the approval
+  //      card can show authoritative artefact mapping
+  //   3. Each query is rationalised ("what gap this fills") for audit
+  // Falls back to the static PHASE_RESEARCH_QUERIES template if Haiku
+  // fails or returns no usable queries.
+  let targetedQueries: { artefact: string; query: string; rationale?: string }[] = [];
+  try {
+    const phaseRow = await db.phase.findFirst({
+      where: { projectId, name: phaseName },
+      select: { artefacts: true },
+    });
+    const artefactNames = Array.isArray(phaseRow?.artefacts) ? (phaseRow!.artefacts as string[]) : [];
+    if (artefactNames.length > 0) {
+      const { buildArtefactDrivenQueries } = await import("@/lib/agents/research-query-builder");
+      targetedQueries = await buildArtefactDrivenQueries({
+        project: project as ProjectContext,
+        phaseName,
+        artefactNames,
+        methodology: project.methodology,
+      });
+    }
+  } catch (e) {
+    console.error(`[phase-research:${phaseName}] artefact-driven query gen failed, falling back:`, e);
+  }
+
   // Check existing KB to avoid re-researching covered topics
   const existingKB = await db.knowledgeBaseItem.findMany({
     where: {
@@ -687,14 +792,21 @@ export async function runPhaseResearch(
   });
   const existingTopics = existingKB.map((k) => k.title.toLowerCase()).join(" ");
 
-  const rawQueries = effectiveBuilder(project as ProjectContext);
+  // Build the working set of queries paired with their target artefact.
+  // Static-template fallback queries get a `null` artefact target — they're
+  // still useful, just not explicitly artefact-driven.
+  const workingQueries: { query: string; targetArtefact: string | null; rationale: string | null }[] =
+    targetedQueries.length > 0
+      ? targetedQueries.map(t => ({ query: t.query, targetArtefact: t.artefact, rationale: t.rationale ?? null }))
+      : effectiveBuilder(project as ProjectContext).map(q => ({ query: q, targetArtefact: null, rationale: null }));
+
   // Filter out queries already covered by existing KB
-  const queries = rawQueries.filter((q) => {
-    const keywords = q.toLowerCase().split(/\s+/).filter((w) => w.length > 4).slice(0, 5);
+  const queryRecords = workingQueries.filter((wq) => {
+    const keywords = wq.query.toLowerCase().split(/\s+/).filter((w) => w.length > 4).slice(0, 5);
     const alreadyCovered = keywords.filter((k) => existingTopics.includes(k)).length;
-    // Skip if >60% of keywords are already in KB topics
     return keywords.length === 0 || alreadyCovered / keywords.length < 0.6;
   });
+  const queries = queryRecords.map(r => r.query);
 
   if (queries.length === 0) {
     // KB already covers this phase's topics — count as research done so the
@@ -709,7 +821,12 @@ export async function runPhaseResearch(
     };
   }
 
-  const queryLabels = queries.map((_, i) => `${phaseName} research ${i + 1}`);
+  // Label each query with its target artefact when available, otherwise
+  // a sequential phase label. This becomes the KB item title prefix and
+  // the "informs" attribution downstream.
+  const queryLabels = queryRecords.map((r, i) =>
+    r.targetArtefact ? `${r.targetArtefact}` : `${phaseName} research ${i + 1}`
+  );
 
   let totalFacts = 0;
   const allResearch: string[] = [];
@@ -720,19 +837,36 @@ export async function runPhaseResearch(
       if (result) {
         allResearch.push(result);
 
+        const targetArtefact = queryRecords[i]?.targetArtefact || null;
+        const rationale = queryRecords[i]?.rationale || null;
         await db.knowledgeBaseItem.create({
           data: {
             orgId, agentId, projectId,
             layer: "PROJECT", type: "TEXT",
-            title: `Phase Research (${phaseName}): ${queryLabels[i]}`,
+            title: targetArtefact
+              ? `Phase Research (${phaseName}) → ${targetArtefact}`
+              : `Phase Research (${phaseName}): ${queryLabels[i]}`,
             content: result.slice(0, 5000),
             trustLevel: "STANDARD",
             tags: ["research", "phase_research", "perplexity", phaseName.toLowerCase()],
-            metadata: { source: "perplexity", phase: phaseName, query: queries[i].slice(0, 200), researchedAt: new Date().toISOString() } as any,
+            metadata: {
+              source: "perplexity",
+              phase: phaseName,
+              query: queries[i].slice(0, 200),
+              researchedAt: new Date().toISOString(),
+              ...(targetArtefact ? { targetArtefact, rationale } : {}),
+            } as any,
           },
         }).catch(() => {});
 
-        const facts = await extractAndStoreFacts(agentId, projectId, orgId, result, queryLabels[i]);
+        const facts = await extractAndStoreFacts(
+          agentId,
+          projectId,
+          orgId,
+          result,
+          queryLabels[i],
+          targetArtefact || undefined,
+        );
         totalFacts += facts;
       }
     } catch (e) {

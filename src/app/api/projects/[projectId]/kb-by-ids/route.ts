@@ -102,14 +102,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
 
   const enriched = rows.map((r) => {
     const meta = r.metadata as any;
+    // If the research query was artefact-driven, the target artefact is
+    // authoritative — use it instead of the keyword heuristic. Falls
+    // back to the heuristic for legacy / static-template research where
+    // no target was recorded.
+    const authoritative = typeof meta?.targetArtefact === "string" && meta.targetArtefact
+      ? [meta.targetArtefact]
+      : null;
     return {
       ...r,
       query: meta?.query || null,
       phase: meta?.phase || meta?.phaseName || null,
       source: meta?.source || null,
       researchedAt: meta?.researchedAt || null,
+      rationale: meta?.rationale || null,
       citations: Array.isArray(meta?.citations) ? meta.citations.slice(0, 5) : null,
-      likelyArtefacts: likelyArtefactsByRow.get(r.id) || [],
+      likelyArtefacts: authoritative || likelyArtefactsByRow.get(r.id) || [],
+      // True when the targetArtefact came from the artefact-driven query
+      // (not a heuristic guess). The UI can trust this row implicitly.
+      artefactTargetIsAuthoritative: !!authoritative,
     };
   });
 

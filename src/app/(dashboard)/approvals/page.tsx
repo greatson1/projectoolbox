@@ -49,8 +49,12 @@ interface ResearchFindingRow {
   phase?: string | null;
   source?: string | null;
   researchedAt?: string | null;
+  rationale?: string | null;
   citations?: string[] | null;
   likelyArtefacts?: string[];
+  /** True when likelyArtefacts came from an artefact-driven research query
+   *  (the agent KNEW which artefact this fact would inform, not heuristic). */
+  artefactTargetIsAuthoritative?: boolean;
 }
 
 function ResearchFindingsPreview({
@@ -205,16 +209,37 @@ function ResearchFindingsPreview({
                       <div className="flex-1 min-w-0">
                         <p className={`font-semibold ${checked ? "text-foreground" : "text-muted-foreground line-through"}`}>{r.title}</p>
                         <p className={`text-muted-foreground mt-0.5 ${expanded ? "" : "line-clamp-2"}`}>{r.content}</p>
-                        {/* Where it'll apply */}
+                        {/* Where it'll apply.
+                            When artefactTargetIsAuthoritative=true, the
+                            agent specifically researched this fact for
+                            the named artefact — show with a stronger pill
+                            ("for: <Artefact>") and the rationale. Otherwise
+                            it's a heuristic match — show "may inform" with
+                            a softer style. */}
                         {artefacts.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            <span className="text-[10px] text-muted-foreground">→ informs:</span>
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">
+                              {r.artefactTargetIsAuthoritative ? "researched for:" : "→ may inform:"}
+                            </span>
                             {artefacts.map((a) => (
-                              <span key={a} className="text-[10px] px-1.5 py-0 rounded bg-blue-500/10 text-blue-700 dark:text-blue-400 font-medium">
+                              <span
+                                key={a}
+                                className={`text-[10px] px-1.5 py-0 rounded font-medium ${
+                                  r.artefactTargetIsAuthoritative
+                                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30"
+                                    : "bg-blue-500/10 text-blue-700 dark:text-blue-400"
+                                }`}
+                              >
                                 {a}
                               </span>
                             ))}
                           </div>
+                        )}
+                        {/* Rationale — why the agent ran this query. */}
+                        {r.rationale && (
+                          <p className="text-[10px] text-muted-foreground italic mt-0.5">
+                            why: {r.rationale}
+                          </p>
                         )}
                         {/* Citations link if Perplexity returned source URLs */}
                         {r.citations && r.citations.length > 0 && (
