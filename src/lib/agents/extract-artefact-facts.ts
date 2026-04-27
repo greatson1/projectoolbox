@@ -8,8 +8,14 @@
  * easily lose the budget figure. With extraction, those facts are written
  * to the artefact's metadata.extractedFacts and surfaced via the
  * confirmed-facts module — guaranteeing every later prompt sees them.
+ *
+ * Dedup by content hash: re-approving the same Charter content (common
+ * during iterative review cycles) used to re-run Haiku each time. Now
+ * we hash the content into metadata.factsExtractedFromHash and skip
+ * the LLM call when the hash matches.
  */
 
+import { createHash } from "crypto";
 import { db } from "@/lib/db";
 
 interface ExtractedFacts {
@@ -27,10 +33,15 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function contentHash(text: string): string {
+  return createHash("sha1").update(text).digest("hex").slice(0, 16);
+}
+
 /**
  * Run extraction on an approved artefact and persist results to its
- * metadata.extractedFacts. Idempotent — safe to call repeatedly. Cheap
- * (one Haiku call, few-hundred tokens).
+ * metadata.extractedFacts. Idempotent — safe to call repeatedly. Skips
+ * the Haiku call entirely when the content hasn't changed since the last
+ * extraction (matched by SHA-1 hash stored in metadata.factsExtractedFromHash).
  */
 export async function extractAndPersistArtefactFacts(artefactId: string): Promise<ExtractedFacts | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
@@ -50,6 +61,15 @@ export async function extractAndPersistArtefactFacts(artefactId: string): Promis
 
   const text = stripHtml(artefact.content || "").slice(0, 8000);
   if (text.length < 100) return null;
+
+  // ── Content-hash dedup ──
+  // If we've already extracted facts from this exact content, return the
+  // cached extract instead of paying for another Haiku call.
+  const hash = contentHash(text);
+  const existingMetaPre = (artefact.metadata as any) || {};
+  if (existingMetaPre.factsExtractedFromHash === hash && existingMetaPre.extractedFacts) {
+    return existingMetaPre.extractedFacts as ExtractedFacts;
+  }
 
   const prompt = `Extract structured project facts from this approved project document. Return ONLY a JSON object with the keys you find evidence for; OMIT any key you can't confidently extract — do NOT guess.
 
@@ -103,12 +123,17 @@ Respond with ONLY the JSON object, no preamble.`;
   if (typeof parsed.scope === "string" && parsed.scope.length > 5) cleaned.scope = parsed.scope.slice(0, 240).trim();
   if (typeof parsed.successCriteria === "string" && parsed.successCriteria.length > 5) cleaned.successCriteria = parsed.successCriteria.slice(0, 240).trim();
 
-  // Persist to artefact.metadata.extractedFacts
+  // Persist to artefact.metadata.extractedFacts + hash for future dedup
   const existingMeta = (artefact.metadata as any) || {};
   await db.agentArtefact.update({
     where: { id: artefact.id },
     data: {
-      metadata: { ...existingMeta, extractedFacts: cleaned, factsExtractedAt: new Date().toISOString() } as any,
+      metadata: {
+        ...existingMeta,
+        extractedFacts: cleaned,
+        factsExtractedAt: new Date().toISOString(),
+        factsExtractedFromHash: hash,
+      } as any,
     },
   }).catch(() => {});
 

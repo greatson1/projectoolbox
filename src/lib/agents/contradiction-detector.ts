@@ -11,6 +11,7 @@
  * One Haiku call. No-op when ANTHROPIC_API_KEY is missing.
  */
 
+import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { getConfirmedFacts, type ConfirmedFacts } from "@/lib/agents/confirmed-facts";
 
@@ -25,6 +26,10 @@ interface DetectInput {
   projectId: string;
   artefactName: string;
   draftContent: string;
+  /** Optional artefact id — when supplied, enables content-hash dedup
+   *  against artefact.metadata.contradictionsCheckedFromHash so we don't
+   *  re-run Haiku on identical content (e.g. retry path or re-save). */
+  artefactId?: string;
 }
 
 /** Strip HTML to plain text for the LLM prompt. */
@@ -45,15 +50,40 @@ function factsAsBullets(facts: ConfirmedFacts): string {
   return rows.join("\n");
 }
 
-export async function detectContradictions(input: DetectInput): Promise<Contradiction[]> {
-  if (!process.env.ANTHROPIC_API_KEY) return [];
+export interface DetectResult {
+  contradictions: Contradiction[];
+  /** Cache key to pass to persistContradictions so future identical
+   *  draft+facts pairs skip the Haiku call. null when caching is disabled
+   *  (no artefactId provided) or there's nothing to cache. */
+  cacheKey: string | null;
+}
+
+export async function detectContradictions(input: DetectInput): Promise<DetectResult> {
+  if (!process.env.ANTHROPIC_API_KEY) return { contradictions: [], cacheKey: null };
 
   const facts = await getConfirmedFacts(input.projectId);
   const factBlock = factsAsBullets(facts);
-  if (!factBlock) return []; // nothing to compare against
+  if (!factBlock) return { contradictions: [], cacheKey: null }; // nothing to compare — no Haiku call
 
   const draft = stripHtml(input.draftContent || "").slice(0, 12000);
-  if (draft.length < 100) return [];
+  if (draft.length < 100) return { contradictions: [], cacheKey: null };
+
+  // ── Content-hash dedup ──
+  // Skip the Haiku call when the same draft+facts pair was checked
+  // previously. Hash includes the fact block so a Charter approval that
+  // changes confirmed budget invalidates the cache automatically.
+  const cacheKey = createHash("sha1").update(draft + "|" + factBlock).digest("hex").slice(0, 16);
+  if (input.artefactId) {
+    const cached = await db.agentArtefact.findUnique({
+      where: { id: input.artefactId },
+      select: { metadata: true },
+    });
+    const meta = (cached?.metadata as any) || {};
+    if (meta.contradictionsCheckedFromHash === cacheKey) {
+      const cachedContradictions = Array.isArray(meta.contradictions) ? meta.contradictions : [];
+      return { contradictions: cachedContradictions, cacheKey };
+    }
+  }
 
   const prompt = `You are an audit pass for a project artefact. Compare the DRAFT below to the CONFIRMED FACTS and report any field where the draft asserts a DIFFERENT value than the confirmed source.
 
@@ -86,14 +116,14 @@ Rules:
         messages: [{ role: "user", content: prompt }],
       }),
     });
-    if (!r.ok) return [];
+    if (!r.ok) return { contradictions: [], cacheKey };
     const data = await r.json();
     const text = (data.content?.[0]?.text || "").trim();
     const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return [];
+    if (!m) return { contradictions: [], cacheKey };
     const parsed = JSON.parse(m[0]) as { contradictions?: Contradiction[] };
-    if (!Array.isArray(parsed.contradictions)) return [];
-    return parsed.contradictions
+    if (!Array.isArray(parsed.contradictions)) return { contradictions: [], cacheKey };
+    const contradictions = parsed.contradictions
       .filter(c => typeof c?.field === "string" && typeof c?.drafted === "string" && typeof c?.confirmed === "string")
       .slice(0, 8) // cap noise
       .map(c => ({
@@ -102,14 +132,23 @@ Rules:
         confirmed: c.confirmed.slice(0, 120),
         source: facts.sources[c.field as keyof ConfirmedFacts["sources"]] || "confirmed_facts",
       }));
+    return { contradictions, cacheKey };
   } catch (e) {
     console.error("[contradiction-detector] failed:", e);
-    return [];
+    return { contradictions: [], cacheKey };
   }
 }
 
-/** Persist contradictions to artefact.metadata.contradictions (overwrites). */
-export async function persistContradictions(artefactId: string, contradictions: Contradiction[]): Promise<void> {
+/**
+ * Persist contradictions to artefact.metadata.contradictions (overwrites).
+ * Also writes the content+facts hash so future calls can skip Haiku when
+ * neither the draft nor the confirmed facts have changed.
+ */
+export async function persistContradictions(
+  artefactId: string,
+  contradictions: Contradiction[],
+  draftAndFactsHash?: string,
+): Promise<void> {
   const artefact = await db.agentArtefact.findUnique({
     where: { id: artefactId },
     select: { metadata: true },
@@ -122,6 +161,7 @@ export async function persistContradictions(artefactId: string, contradictions: 
         ...existing,
         contradictions,
         contradictionsCheckedAt: new Date().toISOString(),
+        ...(draftAndFactsHash ? { contradictionsCheckedFromHash: draftAndFactsHash } : {}),
       } as any,
     },
   }).catch(() => {});

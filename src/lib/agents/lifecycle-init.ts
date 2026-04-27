@@ -358,12 +358,13 @@ export async function generatePhaseArtefacts(
           (async () => {
             try {
               const { detectContradictions, persistContradictions } = await import("@/lib/agents/contradiction-detector");
-              const contradictions = await detectContradictions({
+              const { contradictions, cacheKey } = await detectContradictions({
                 projectId,
                 artefactName: artName,
                 draftContent: resolvedContent,
+                artefactId: created.id,
               });
-              await persistContradictions(created.id, contradictions);
+              await persistContradictions(created.id, contradictions, cacheKey || undefined);
               if (contradictions.length > 0) {
                 await db.agentActivity.create({
                   data: {
@@ -468,8 +469,8 @@ export async function generatePhaseArtefacts(
       (async () => {
         try {
           const { detectContradictions, persistContradictions } = await import("@/lib/agents/contradiction-detector");
-          const contradictions = await detectContradictions({ projectId, artefactName: name, draftContent: resolvedRetry });
-          await persistContradictions(createdRetry.id, contradictions);
+          const { contradictions, cacheKey } = await detectContradictions({ projectId, artefactName: name, draftContent: resolvedRetry, artefactId: createdRetry.id });
+          await persistContradictions(createdRetry.id, contradictions, cacheKey || undefined);
         } catch {}
       })();
     } catch (e) {
