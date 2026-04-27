@@ -610,21 +610,37 @@ function AgentChatPage() {
     return () => { cancelled = true; };
   }, [activeAgentId, isPaused]);
 
-  // Phase next-action — drives the "what step is next" banner. Fetched once
-  // on agent change and refreshed whenever the messages array grows (which
-  // is a proxy for "something just happened, state may have changed"). The
-  // resolver is the single source of truth for pipeline state.
+  // Phase next-action — drives the "what step is next" banner. The resolver
+  // is the single source of truth for pipeline state. We refresh:
+  //   - on agent change
+  //   - whenever messages grow (proxy for "something just happened")
+  //   - every 30s while the tab is foregrounded (catches autonomous progress
+  //     from the cron job — research finishing, gate auto-advancing, etc.)
+  //   - when the window regains focus (catches state changes from another
+  //     tab or device — the Approvals page, a meeting webhook, etc.)
   type NextAction = { step: string; reason: string; bannerLabel: string; awaitingUser: boolean; blockedBy: string[] };
   const [nextAction, setNextAction] = useState<{ currentPhase: string | null; phaseStatus: string | null; nextAction: NextAction | null } | null>(null);
   const messagesCountForActiveAgent = activeAgentId ? (messagesByAgent[activeAgentId] || []).length : 0;
   useEffect(() => {
     if (!activeAgentId || isPaused) { setNextAction(null); return; }
     let cancelled = false;
-    fetch(`/api/agents/${activeAgentId}/next-action`)
-      .then(r => r.ok ? r.json() : null)
-      .then(j => { if (!cancelled && j?.data) setNextAction(j.data); })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const fetchNext = () => {
+      fetch(`/api/agents/${activeAgentId}/next-action`)
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (!cancelled && j?.data) setNextAction(j.data); })
+        .catch(() => {});
+    };
+    fetchNext();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchNext();
+    }, 30_000);
+    const onFocus = () => fetchNext();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [activeAgentId, isPaused, messagesCountForActiveAgent, sending]);
   // Inject live handlers into clarification cards (handlers can't be serialised to state)
   const messages: Message[] = (activeAgentId ? (messagesByAgent[activeAgentId] || []) : []).map(m => {
@@ -670,15 +686,9 @@ function AgentChatPage() {
     });
   }, [messages]);
 
-  // Resume banner — show only the OLDEST unanswered question that's at least
-  // 30 minutes old, so we don't pester the user about something they just saw.
-  const staleOpenQuestion = useMemo(() => {
-    const THIRTY_MIN = 30 * 60 * 1000;
-    const now = Date.now();
-    return openQuestions
-      .filter(q => now - new Date(q.timestamp).getTime() > THIRTY_MIN)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())[0];
-  }, [openQuestions]);
+  // (The old "staleOpenQuestion" resume banner was retired in favour of the
+  // resolver-driven step banner above — same context, kept in sync via the
+  // /next-action endpoint with periodic refresh.)
 
   // Scroll a specific message into view (used by the header badge + resume
   // banner). The message wrapper carries id={`msg-${msg.id}`} so we can
@@ -1531,83 +1541,136 @@ function AgentChatPage() {
           );
         })()}
 
-        {/* Pipeline next-step banner — driven by the phase-next-action resolver
-            (single source of truth across the app). Hidden when the agent is
-            paused (the paused banner takes precedence) or when the resolver
-            says the phase is fully complete. Tells the user the EXACT next
-            required step rather than relying on inferred phaseStatus. */}
+        {/* Pipeline step banner — driven by the phase-next-action resolver
+            (single source of truth across the app). Renders every step in
+            the current phase as a row of dots, highlights the active step,
+            and surfaces "what's needed" for that step plus a contextual
+            CTA. Refreshes every 30s + on window focus so it never goes stale.
+            Hidden when paused (the paused banner takes over) or when the
+            resolver says the phase is fully complete. */}
         {!isPaused && nextAction?.nextAction && nextAction.nextAction.step !== "complete" && (() => {
           const na = nextAction.nextAction!;
-          const isActionable = na.awaitingUser; // user must do something
+          const isActionable = na.awaitingUser;
           const palette = isActionable
-            ? "border-violet-500/30 bg-violet-500/5 text-violet-700 dark:text-violet-400"
-            : "border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-400";
-          const stepLabel: Record<string, string> = {
-            research: "Research",
-            research_approval: "Approve research findings",
-            clarification: "Clarification",
-            clarification_in_progress: "Clarification in progress",
-            generation: "Generation",
-            review_artefacts: "Review",
-            delivery_tasks: "Delivery tasks",
-            gate_approval: "Gate approval",
-            advance: "Phase advance",
+            ? { border: "border-violet-500/30", bg: "bg-violet-500/5", text: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" }
+            : { border: "border-blue-500/30",   bg: "bg-blue-500/5",   text: "text-blue-600 dark:text-blue-400",     dot: "bg-blue-500" };
+
+          // The full pipeline for any phase. The resolver collapses some of
+          // these (e.g. clarification_in_progress is the "active" subtype of
+          // clarification) so we map both back onto the same dot.
+          const PIPELINE = [
+            { id: "research",                label: "Research" },
+            { id: "research_approval",       label: "Approve research" },
+            { id: "clarification",           label: "Clarification" },
+            { id: "generation",              label: "Generate artefacts" },
+            { id: "review_artefacts",        label: "Review artefacts" },
+            { id: "delivery_tasks",          label: "Delivery tasks" },
+            { id: "gate_approval",           label: "Approve gate" },
+            { id: "advance",                 label: "Advance phase" },
+          ] as const;
+
+          const activeId = na.step === "clarification_in_progress" ? "clarification" : na.step;
+          const activeIdx = PIPELINE.findIndex(p => p.id === activeId);
+
+          // Compact contextual CTA — what should the user click NOW?
+          const ctaForStep: Record<string, { label: string; onClick: () => void } | null> = {
+            research:                  null, // agent is doing it
+            research_approval:         { label: "Review", onClick: () => { window.location.href = "/approvals"; } },
+            clarification:             { label: "Show me", onClick: () => {
+              const open = openQuestions[0];
+              if (open) scrollToMessage(open.id);
+              else {
+                const container = document.querySelector("[data-chat-scroll]");
+                container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+              }
+            } },
+            clarification_in_progress: { label: "Show me", onClick: () => {
+              const open = openQuestions[0];
+              if (open) scrollToMessage(open.id);
+              else {
+                const container = document.querySelector("[data-chat-scroll]");
+                container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+              }
+            } },
+            generation:                null,
+            review_artefacts:          { label: "Open documents", onClick: () => {
+              const dep = nextAction?.currentPhase ? activeAgent?.deployments?.[0] : null;
+              const projectId = (dep as any)?.projectId || (activeAgent as any)?.deployments?.[0]?.projectId;
+              if (projectId) window.location.href = `/projects/${projectId}/artefacts`;
+            } },
+            delivery_tasks:            { label: "Open tasks", onClick: () => {
+              const projectId = (activeAgent as any)?.deployments?.[0]?.projectId;
+              if (projectId) window.location.href = `/projects/${projectId}/pm-tracker`;
+            } },
+            gate_approval:             { label: "Approve", onClick: () => { window.location.href = "/approvals"; } },
+            advance:                   null,
           };
-          const label = stepLabel[na.step] || na.step;
+          const cta = ctaForStep[na.step] || null;
+
+          // Stale-question hint: when we're on clarification, show *when*
+          // the oldest open question was asked so the user has the context
+          // the old "Picking up where you left off" banner used to give.
+          const oldest = activeId === "clarification" ? openQuestions[openQuestions.length - 1] : undefined;
+          const oldestAt = oldest?.timestamp ? new Date(oldest.timestamp) : null;
+
           return (
-            <div className={`mx-4 mt-3 px-3 py-2 rounded-xl border ${palette} flex items-center gap-3`}>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-background/60 flex-shrink-0">
-                {label}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-foreground truncate">{na.bannerLabel}</p>
-                {na.reason && na.reason !== na.bannerLabel && (
-                  <p className="text-[10px] text-muted-foreground truncate">{na.reason}</p>
+            <div className={`mx-4 mt-3 rounded-xl border ${palette.border} ${palette.bg} overflow-hidden`}>
+              {/* Header row: step + phase + CTA */}
+              <div className="px-3 py-2 flex items-center gap-3">
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-background/60 flex-shrink-0 ${palette.text}`}>
+                  {PIPELINE[activeIdx]?.label || na.step}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-foreground truncate">{na.bannerLabel}</p>
+                  {na.reason && na.reason !== na.bannerLabel && (
+                    <p className="text-[10px] text-muted-foreground truncate">{na.reason}</p>
+                  )}
+                </div>
+                <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:inline">
+                  {nextAction?.currentPhase}
+                </span>
+                {cta && (
+                  <Button size="sm" variant="outline" className="h-7 text-[11px] flex-shrink-0" onClick={cta.onClick}>
+                    {cta.label}
+                  </Button>
                 )}
               </div>
-              <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                {nextAction.currentPhase}
-              </span>
+
+              {/* Step pipeline — dots + labels show every step in the current
+                  phase so the user can see at a glance how far along they
+                  are AND what's still ahead. */}
+              <div className="px-3 pb-2 flex items-center gap-1 overflow-x-auto">
+                {PIPELINE.map((p, i) => {
+                  const isDone = activeIdx >= 0 && i < activeIdx;
+                  const isActive = i === activeIdx;
+                  return (
+                    <div key={p.id} className="flex items-center gap-1 flex-shrink-0">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full transition-all ${
+                          isDone ? "bg-emerald-500" : isActive ? `${palette.dot} ring-2 ring-offset-2 ring-offset-background ring-current` : "bg-muted-foreground/30"
+                        } ${isActive ? palette.text : ""}`}
+                      />
+                      <span className={`text-[9px] font-medium ${isActive ? palette.text + " font-bold" : isDone ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground/60"}`}>
+                        {p.label}
+                      </span>
+                      {i < PIPELINE.length - 1 && <span className="text-muted-foreground/20 text-[8px] mx-0.5">→</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Asked-at hint when sitting on clarification — preserves the
+                  context the old "Picking up" banner provided. */}
+              {oldestAt && (
+                <div className="px-3 py-1.5 border-t border-border/30 bg-background/40">
+                  <p className="text-[10px] text-muted-foreground">
+                    Oldest unanswered question · asked {oldestAt.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              )}
             </div>
           );
         })()}
-
-        {/* Resume banner — surfaces stale unresolved questions when you reopen
-            chat after a break, so you don't have to scroll to find what the
-            agent was waiting on. */}
-        {staleOpenQuestion && !sending && (
-          <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-              <MessageSquare className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                Picking up where you left off
-              </p>
-              <p className="text-xs text-foreground truncate">
-                {staleOpenQuestion.type === "agent_question" || staleOpenQuestion.type === "clarification"
-                  ? staleOpenQuestion.data?.question?.question || "An open question is waiting for your answer"
-                  : staleOpenQuestion.type === "pending_decision"
-                    ? `Pending decision: "${staleOpenQuestion.data?.decisionText || "(no text)"}"`
-                    : staleOpenQuestion.type === "change_proposal"
-                      ? `Change proposal: ${staleOpenQuestion.data?.title || "(untitled)"}`
-                      : "An action is waiting for you"}
-              </p>
-              <p className="text-[10px] text-muted-foreground">
-                Asked {new Date(staleOpenQuestion.timestamp).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                {openQuestions.length > 1 && ` · ${openQuestions.length - 1} more waiting`}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-[11px] flex-shrink-0"
-              onClick={() => scrollToMessage(staleOpenQuestion.id)}
-            >
-              Show me
-            </Button>
-          </div>
-        )}
 
         {/* Messages */}
         <div ref={scrollRef} data-chat-scroll className="flex-1 overflow-y-auto p-4 space-y-4">
