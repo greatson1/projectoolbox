@@ -152,6 +152,41 @@ export async function generatePhaseArtefacts(
     }
   }
 
+  // ── Research-approval gate ──
+  // Generation must NOT proceed while research findings are still pending
+  // user approval. Until the user has approved (or rejected) the bundle,
+  // those facts sit in the KB tagged "pending_user_confirmation" — they
+  // are excluded from the prompt by getProjectKnowledgeContext, so Claude
+  // would draft artefacts on a stale knowledge base and the user would
+  // see fabricated names because the real ones aren't visible yet.
+  // Skipped on force=true so user-initiated regenerate after explicit
+  // intent still works.
+  if (!force) {
+    try {
+      const pendingResearchApprovals = await db.approval.count({
+        where: {
+          projectId,
+          status: "PENDING",
+          type: "CHANGE_REQUEST",
+          impact: { path: ["subtype"], equals: "research_finding" },
+        },
+      });
+      if (pendingResearchApprovals > 0) {
+        console.warn(`[generatePhaseArtefacts] Blocked by ${pendingResearchApprovals} pending research-finding approval(s) for project=${projectId} phase=${targetPhaseName}`);
+        await db.agentActivity.create({
+          data: {
+            agentId,
+            type: "document",
+            summary: `${targetPhaseName}: generation blocked — ${pendingResearchApprovals} research-finding approval${pendingResearchApprovals === 1 ? "" : "s"} awaiting your review. Approve or reject the research findings on the Approvals page before any artefacts can be drafted. ${toGenerate.length} artefact(s) waiting: ${toGenerate.join(", ")}.`,
+          },
+        }).catch(() => {});
+        return { generated: 0, skipped, phase: targetPhaseName, missing: toGenerate };
+      }
+    } catch (e) {
+      console.error("[generatePhaseArtefacts] research-approval gate check failed:", e);
+    }
+  }
+
   await db.agentActivity.create({
     data: { agentId, type: "document", summary: `Generating ${toGenerate.length} artefact(s) for ${targetPhaseName} (${skipped} already exist)` },
   });
@@ -261,9 +296,52 @@ export async function generatePhaseArtefacts(
           // Resolve any [TBC — …] markers from the KB before saving so the artefact
           // never lands in DRAFT with stale placeholders for facts we already know.
           const { content: resolvedContent } = await autoResolveTBCsInContent(agentId, projectId, sanitised.content);
+
+          // ── Fabricated-name validation ──
+          // Scan the resolved content for proper-name tokens not in the
+          // project's allowed-names registry. If found, persist the
+          // violations to metadata.fabricatedNames so the approval API
+          // and DocumentEditor banner can block / surface them. The
+          // validator also covers prose names — not just the Owner-column
+          // cells caught by sanitiseArtefactContent above.
+          let fabricatedNameViolations: Array<{ name: string; context: string; occurrences: number }> = [];
+          try {
+            const { getAllowedNamesRegistry } = await import("@/lib/agents/allowed-names");
+            const { validateArtefactNames } = await import("@/lib/agents/fabricated-names-validator");
+            const registry = await getAllowedNamesRegistry(projectId);
+            fabricatedNameViolations = validateArtefactNames({ content: resolvedContent, registry });
+          } catch (e) {
+            console.error(`[generatePhaseArtefacts] name-validator for "${artName}" failed:`, e);
+          }
+
           const created = await db.agentArtefact.create({
-            data: { agentId, projectId, name: artName, format: detectedFmt, content: resolvedContent, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
+            data: {
+              agentId,
+              projectId,
+              name: artName,
+              format: detectedFmt,
+              content: resolvedContent,
+              status: "DRAFT",
+              version: 1,
+              ...(phaseId ? { phaseId } : {}),
+              ...(fabricatedNameViolations.length > 0 ? {
+                metadata: {
+                  fabricatedNames: fabricatedNameViolations,
+                  fabricatedNamesCheckedAt: new Date().toISOString(),
+                } as any,
+              } : {}),
+            },
           });
+
+          if (fabricatedNameViolations.length > 0) {
+            await db.agentActivity.create({
+              data: {
+                agentId,
+                type: "document",
+                summary: `⚠️ "${artName}" draft contains ${fabricatedNameViolations.length} fabricated name${fabricatedNameViolations.length === 1 ? "" : "s"} (${fabricatedNameViolations.slice(0, 3).map(v => v.name).join(", ")}${fabricatedNameViolations.length > 3 ? "…" : ""}) — approval blocked until resolved.`,
+              },
+            }).catch(() => {});
+          }
           existingNames.add(artName.toLowerCase());
           generatedNormNames.add(normalizeName(artName));
           totalGenerated++;
@@ -353,8 +431,31 @@ export async function generatePhaseArtefacts(
         console.log(`[generatePhaseArtefacts retry] sanitised ${sanitisedRetry.replaced} fabricated owner cell(s) in "${name}"`);
       }
       const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, sanitisedRetry.content);
+      // Fabricated-name validation on retry path too.
+      let fabricatedNameViolationsRetry: Array<{ name: string; context: string; occurrences: number }> = [];
+      try {
+        const { getAllowedNamesRegistry } = await import("@/lib/agents/allowed-names");
+        const { validateArtefactNames } = await import("@/lib/agents/fabricated-names-validator");
+        const registry = await getAllowedNamesRegistry(projectId);
+        fabricatedNameViolationsRetry = validateArtefactNames({ content: resolvedRetry, registry });
+      } catch {}
       const createdRetry = await db.agentArtefact.create({
-        data: { agentId, projectId, name, format: detectedFmt, content: resolvedRetry, status: "DRAFT", version: 1, ...(phaseId ? { phaseId } : {}) },
+        data: {
+          agentId,
+          projectId,
+          name,
+          format: detectedFmt,
+          content: resolvedRetry,
+          status: "DRAFT",
+          version: 1,
+          ...(phaseId ? { phaseId } : {}),
+          ...(fabricatedNameViolationsRetry.length > 0 ? {
+            metadata: {
+              fabricatedNames: fabricatedNameViolationsRetry,
+              fabricatedNamesCheckedAt: new Date().toISOString(),
+            } as any,
+          } : {}),
+        },
       });
       existingNames.add(name.toLowerCase());
       generatedNormNames.add(normalizeName(name));

@@ -84,13 +84,21 @@ export function DocumentEditor({
 }: DocumentEditorProps) {
   const contradictions: Array<{ field: string; drafted: string; confirmed: string; source?: string }> =
     Array.isArray(metadata?.contradictions) ? metadata.contradictions : [];
+  const fabricatedNames: Array<{ name: string; context: string; occurrences: number }> =
+    Array.isArray(metadata?.fabricatedNames) ? metadata.fabricatedNames : [];
   const isStale = metadata?.stale === true;
   const staleReason = typeof metadata?.staleReason === "string" ? metadata.staleReason : null;
-  const hasBlockingFlag = contradictions.length > 0 || isStale;
+  const hasBlockingFlag = contradictions.length > 0 || isStale || fabricatedNames.length > 0;
+  // Fabricated names CANNOT be overridden — only contradictions can.
+  const isApproveBlocked = fabricatedNames.length > 0;
   const [showOverridePrompt, setShowOverridePrompt] = useState(false);
 
   const handleApproveClick: () => void = () => {
     if (!onApprove) return;
+    if (fabricatedNames.length > 0) {
+      // No override path — refuse and let the banner explain.
+      return;
+    }
     if (contradictions.length > 0) {
       setShowOverridePrompt(true);
       return;
@@ -213,8 +221,15 @@ export function DocumentEditor({
           {/* Approve/Reject */}
           {status === "DRAFT" && onApprove && (
             <>
-              <Button size="sm" onClick={handleApproveClick} variant={hasBlockingFlag ? "outline" : "default"}>
-                <Check className="w-3.5 h-3.5 mr-1" /> Approve{contradictions.length > 0 ? "…" : ""}
+              <Button
+                size="sm"
+                onClick={handleApproveClick}
+                variant={hasBlockingFlag ? "outline" : "default"}
+                disabled={isApproveBlocked}
+                title={isApproveBlocked ? `Cannot approve while ${fabricatedNames.length} fabricated name(s) remain — edit the document to remove them.` : undefined}
+              >
+                <Check className="w-3.5 h-3.5 mr-1" />
+                {isApproveBlocked ? "Approve (blocked)" : `Approve${contradictions.length > 0 ? "…" : ""}`}
               </Button>
               <Button variant="destructive" size="sm" onClick={() => setShowRejectModal(true)}><X className="w-3.5 h-3.5 mr-1" /> Reject</Button>
             </>
@@ -273,6 +288,38 @@ export function DocumentEditor({
         {/* Document */}
         <div className="flex-1 overflow-y-auto bg-background">
           <div className="max-w-[800px] mx-auto my-8 bg-card rounded-xl border border-border shadow-lg min-h-[600px]">
+            {/* ── Fabricated-names banner ──
+                Names not in the project's allowed-names registry (Stakeholder
+                table + user_confirmed KB items). HARD BLOCK — no override:
+                the user must edit the document to replace each fabricated
+                name with [TBC — role] or a real confirmed name, then save.
+                Saving re-runs the validator and clears the metadata flag
+                if all violations are resolved.  */}
+            {fabricatedNames.length > 0 && (
+              <div className="mx-6 mt-6 px-4 py-3 rounded-lg border-2 border-red-500/50 bg-red-500/10">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400 mb-2">
+                  ⛔ {fabricatedNames.length} fabricated name{fabricatedNames.length === 1 ? "" : "s"} detected — approval blocked
+                </p>
+                <p className="text-xs text-foreground mb-2">
+                  These names aren&apos;t in the project&apos;s allowed-names list
+                  (Stakeholders + user-confirmed facts). The agent has invented them.
+                  Edit the document and replace each with <code className="bg-muted px-1 rounded text-[11px]">[TBC — role]</code> or a confirmed name from the project.
+                </p>
+                <ul className="space-y-1 text-xs">
+                  {fabricatedNames.slice(0, 8).map((v, i) => (
+                    <li key={i} className="text-foreground">
+                      <strong className="text-red-700 dark:text-red-400">&ldquo;{v.name}&rdquo;</strong>
+                      {v.occurrences > 1 && <span className="text-muted-foreground"> ×{v.occurrences}</span>}
+                      <span className="text-muted-foreground"> — &ldquo;…{v.context}…&rdquo;</span>
+                    </li>
+                  ))}
+                  {fabricatedNames.length > 8 && (
+                    <li className="text-muted-foreground italic">…and {fabricatedNames.length - 8} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
             {/* ── Contradiction / stale banner ──
                 Surfaces the contradiction-detector's findings (this draft
                 disagrees with the Charter on budget/dates/etc) and the

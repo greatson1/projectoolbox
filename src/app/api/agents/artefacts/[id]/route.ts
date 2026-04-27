@@ -77,20 +77,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  // ── Contradiction-block guard ────────────────────────────────────────────
-  // If the contradiction-detector flagged this draft as differing from the
-  // confirmed facts (Charter budget vs Cost Plan budget, etc), block approval
-  // unless the caller explicitly passes confirmIntentional=true. This forces
-  // the user to acknowledge that they ARE intentionally overriding a
-  // previously-confirmed value.
-  if (status === "APPROVED" && body.confirmIntentional !== true) {
+  // ── Contradiction + fabricated-name block guard ──────────────────────────
+  // Before allowing APPROVED, check the metadata for two block conditions:
+  //   - contradictions[]   — draft disagrees with confirmed facts
+  //   - fabricatedNames[]  — draft contains names not in the allow-list
+  // Both can be overridden via confirmIntentional=true (the user has
+  // chosen to override a contradiction) but fabricatedNames CANNOT be
+  // approved at all — the user must edit the document to remove the
+  // fabricated names first. Inventing personal/organisation names is a
+  // hard policy violation, not a judgement call.
+  if (status === "APPROVED") {
     const checkExisting = await db.agentArtefact.findUnique({
       where: { id },
       select: { metadata: true },
     });
     const meta = (checkExisting?.metadata as any) || {};
+    const fabricatedNames = Array.isArray(meta.fabricatedNames) ? meta.fabricatedNames : [];
+    if (fabricatedNames.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Artefact contains fabricated names",
+          fabricatedNames,
+          message: `This draft contains ${fabricatedNames.length} name${fabricatedNames.length === 1 ? "" : "s"} that aren't in the project's allowed-names registry: ${fabricatedNames.slice(0, 5).map((v: any) => v.name).join(", ")}${fabricatedNames.length > 5 ? "…" : ""}. Edit the document to replace them with [TBC — role] markers or actual confirmed names before approval.`,
+        },
+        { status: 409 },
+      );
+    }
     const contradictions = Array.isArray(meta.contradictions) ? meta.contradictions : [];
-    if (contradictions.length > 0) {
+    if (contradictions.length > 0 && body.confirmIntentional !== true) {
       return NextResponse.json(
         {
           error: "Artefact contradicts confirmed facts",
@@ -207,6 +221,35 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
     } catch (e) {
       console.error("[artefact PATCH] approval audit log failed:", e);
+    }
+  }
+
+  // ── Re-validate fabricated names when content is edited ───────────────
+  // If the user just edited the document content, re-run the name
+  // validator so a previously-flagged artefact can be approved once the
+  // user has replaced the fabricated names with [TBC] markers or real
+  // ones. Without this, metadata.fabricatedNames would persist forever
+  // and block approval even after the names are gone.
+  if (content && content.trim().length > 50) {
+    try {
+      const { getAllowedNamesRegistry } = await import("@/lib/agents/allowed-names");
+      const { validateArtefactNames } = await import("@/lib/agents/fabricated-names-validator");
+      const registry = await getAllowedNamesRegistry(artefact.projectId);
+      const refreshed = validateArtefactNames({ content, registry });
+      const currentMeta = (artefact.metadata as any) || {};
+      const newMeta = {
+        ...currentMeta,
+        fabricatedNames: refreshed.length > 0 ? refreshed : undefined,
+        fabricatedNamesCheckedAt: new Date().toISOString(),
+      };
+      // Strip undefined keys so JSON output stays clean
+      if (refreshed.length === 0) delete newMeta.fabricatedNames;
+      await db.agentArtefact.update({
+        where: { id: artefact.id },
+        data: { metadata: newMeta as any },
+      }).catch(() => {});
+    } catch (e) {
+      console.error("[artefact PATCH] name re-validation failed:", e);
     }
   }
 

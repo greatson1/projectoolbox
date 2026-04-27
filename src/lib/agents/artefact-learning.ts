@@ -247,6 +247,21 @@ export async function getProjectKnowledgeContext(
       console.error("[artefact-learning] confirmed-facts injection failed:", e);
     }
 
+    // ── Allowed-names hard constraint ────────────────────────────────────
+    // Listed BEFORE the artefact-content section so Claude sees the
+    // permitted name set before any prior artefact previews. The
+    // post-generation validator catches violations and blocks approval —
+    // but injecting the constraint up-front means the generator should
+    // produce [TBC — role] markers instead of inventing names from the
+    // start, halving the retry rate.
+    try {
+      const { getAllowedNamesRegistry, formatAllowedNamesBlock } = await import("@/lib/agents/allowed-names");
+      const registry = await getAllowedNamesRegistry(projectId);
+      lines.push(formatAllowedNamesBlock(registry));
+    } catch (e) {
+      console.error("[artefact-learning] allowed-names injection failed:", e);
+    }
+
     // ── Project facts (always first — these are the canonical baselines) ──
     if (project) {
       lines.push("── PROJECT BASELINE ──");
