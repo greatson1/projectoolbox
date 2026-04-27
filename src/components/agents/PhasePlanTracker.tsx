@@ -147,6 +147,10 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
   // Local override layer so a click feels instant — the next refetch
   // (parent page re-fetches after save) will reconcile with the server.
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  // Same pattern for PM task ticks — soft tasks (Stakeholder
+  // communication, Risk Register review) have no auto-tick path, so the
+  // user marks them done by clicking the circle. Map keyed by task id.
+  const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({});
   const [, startTransition] = useTransition();
 
   const overrideKey = (phase: string, prereq: string) => `${phase}::${prereq}`;
@@ -177,6 +181,40 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
         setOverrides(prev => {
           const next = { ...prev };
           delete next[key];
+          return next;
+        });
+        toast.error(e?.message || "Could not save");
+      }
+    });
+  }
+
+  // Click handler for soft PM tasks ("Stakeholder communication",
+  // "Review and update Risk Register") that have no auto-tick path.
+  // Hits the existing /api/projects/:id/tasks/:taskId PATCH and applies
+  // the same optimistic-then-reconcile pattern as toggleManualConfirm.
+  async function toggleTaskDone(t: TaskChild) {
+    const isCurrentlyDone = t.done || taskOverrides[t.id] === true;
+    const willMarkDone = !isCurrentlyDone;
+    setTaskOverrides(prev => ({ ...prev, [t.id]: willMarkDone }));
+    startTransition(async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/tasks/${t.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: willMarkDone ? "DONE" : "TODO",
+            progress: willMarkDone ? 100 : 0,
+          }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j?.error || `${res.status}`);
+        }
+        toast.success(willMarkDone ? "Task marked done" : "Task reopened");
+      } catch (e: any) {
+        setTaskOverrides(prev => {
+          const next = { ...prev };
+          delete next[t.id];
           return next;
         });
         toast.error(e?.message || "Could not save");
@@ -288,19 +326,44 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                           <span className="text-[9px] text-muted-foreground/60">{group.done}/{group.total}</span>
                         </div>
                         <div className="ml-5 space-y-0.5">
-                          {group.children.map(t => (
-                            <div key={t.id} className="flex items-center gap-2 py-0.5">
-                              {t.done
-                                ? <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                                : <Circle className="w-3 h-3 text-muted-foreground/30 flex-shrink-0" />}
-                              <span className={`text-[10px] flex-1 ${t.done ? "text-muted-foreground line-through" : "text-foreground"}`}>
-                                {t.title}
-                              </span>
-                              {!t.done && t.progress > 0 && (
-                                <span className="text-[9px] text-primary">{t.progress}%</span>
-                              )}
-                            </div>
-                          ))}
+                          {group.children.map(t => {
+                            const overrideDone = taskOverrides[t.id];
+                            const effectiveDone = overrideDone === true ? true : overrideDone === false ? false : t.done;
+                            // Document Generation tasks are auto-driven by
+                            // artefact existence — don't let the user
+                            // hand-tick them; they'd just resync next refresh.
+                            const isAutoDriven = group.category === "Document Generation";
+                            const canToggle = !isAutoDriven;
+                            return (
+                              <div key={t.id} className="flex items-center gap-2 py-0.5">
+                                {canToggle ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTaskDone({ ...t, done: effectiveDone })}
+                                    title={effectiveDone ? "Click to reopen" : "Click to mark done"}
+                                    className="flex-shrink-0 hover:scale-110 transition-transform"
+                                  >
+                                    {effectiveDone
+                                      ? <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                      : <Circle className="w-3 h-3 text-muted-foreground/40 hover:text-foreground" />}
+                                  </button>
+                                ) : (
+                                  effectiveDone
+                                    ? <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                                    : <Circle className="w-3 h-3 text-muted-foreground/30 flex-shrink-0" />
+                                )}
+                                <span className={`text-[10px] flex-1 ${effectiveDone ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                                  {t.title}
+                                  {isAutoDriven && !effectiveDone && (
+                                    <span className="ml-1 text-muted-foreground/60 italic">(auto — ticks when artefact exists)</span>
+                                  )}
+                                </span>
+                                {!effectiveDone && t.progress > 0 && (
+                                  <span className="text-[9px] text-primary">{t.progress}%</span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );

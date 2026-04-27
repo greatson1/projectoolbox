@@ -153,6 +153,59 @@ export async function getPhaseCompletion(
     console.error("[phase-completion] retroactive event-task self-heal failed:", e);
   }
 
+  // ── Retroactive artefact-task self-heal ──
+  // Scaffolded tasks like "Generate Problem Statement" carry
+  // [artefact:Problem Statement] in their description. They're MEANT to
+  // tick when onArtefactGenerated() fires during artefact creation, but
+  // that's scoped by createdBy=agent:<id> — and after a wipe-and-redeploy,
+  // OR if the lookup misses for any reason, the task stays open while the
+  // artefact is approved. This self-heal scans for [artefact:X] tasks that
+  // are not DONE and ticks any whose linked artefact actually exists with
+  // status DRAFT/PENDING_REVIEW/APPROVED.
+  // Idempotent — runs on every getPhaseCompletion call.
+  try {
+    const artefactTasks = await db.task.findMany({
+      where: {
+        projectId,
+        OR: phaseIdMatch,
+        description: { contains: "[artefact:" },
+        status: { not: "DONE" },
+        parentId: { not: null },
+      },
+      select: { id: true, description: true },
+    });
+    if (artefactTasks.length > 0) {
+      const allArtefactsForPhase = await db.agentArtefact.findMany({
+        where: {
+          projectId,
+          OR: phaseIdMatch.map((p) => ({ phaseId: p.phaseId })),
+        },
+        select: { name: true, status: true },
+      });
+      // Names that exist for this phase in a "real" status (not REJECTED).
+      const realArtefactNames = new Set(
+        allArtefactsForPhase
+          .filter((a) => a.status !== "REJECTED")
+          .map((a) => a.name.toLowerCase().trim()),
+      );
+      const toTick: string[] = [];
+      for (const t of artefactTasks) {
+        const m = (t.description || "").match(/\[artefact:([^\]]+)\]/);
+        if (!m) continue;
+        const linkedName = m[1].toLowerCase().trim();
+        if (realArtefactNames.has(linkedName)) toTick.push(t.id);
+      }
+      if (toTick.length > 0) {
+        await db.task.updateMany({
+          where: { id: { in: toTick } },
+          data: { progress: 100, status: "DONE" },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[phase-completion] retroactive artefact-task self-heal failed:", e);
+  }
+
   // ── 1. Artefacts ──────────────────────────────────────────────────────
 
   const [artefacts, projectForMethodology] = await Promise.all([
@@ -192,8 +245,12 @@ export async function getPhaseCompletion(
     console.error("[phase-completion] required-artefact lookup failed:", e);
   }
 
-  const artefactsDone = artefacts.filter((a) => a.status === "APPROVED").length;
-  const artefactsTotal = artefacts.length;
+  // Exclude REJECTED artefacts from the count — once rejected they're
+  // superseded (the user either regenerated a replacement or moved on),
+  // so they should never appear as "not yet approved" blockers.
+  const liveArtefacts = artefacts.filter((a) => a.status !== "REJECTED");
+  const artefactsDone = liveArtefacts.filter((a) => a.status === "APPROVED").length;
+  const artefactsTotal = liveArtefacts.length;
   const artefactsPct = artefactsTotal > 0 ? Math.round((artefactsDone / artefactsTotal) * 100) : 100;
 
   // ── 2. PM Tasks (scaffolded overhead) ─────────────────────────────────
