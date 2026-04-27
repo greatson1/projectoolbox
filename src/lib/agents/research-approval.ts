@@ -64,7 +64,7 @@ export async function createResearchApproval(
   //    out of artefact prompts until the user approves the bundle.
   const rows = await db.knowledgeBaseItem.findMany({
     where: { id: { in: input.kbItemIds } },
-    select: { id: true, tags: true, title: true },
+    select: { id: true, tags: true, title: true, content: true },
   });
   for (const r of rows) {
     if ((r.tags || []).includes("pending_user_confirmation")) continue;
@@ -94,11 +94,24 @@ export async function createResearchApproval(
     flaggedCount: input.flaggedCount,
   };
 
-  const titles = rows.slice(0, 3).map(r => `• ${r.title}`).join("\n");
-  const moreSuffix = rows.length > 3 ? `\n…and ${rows.length - 3} more` : "";
+  // Build a richer preview: title + first ~140 chars of content per fact.
+  // The previous version listed bare titles which left the user blind to
+  // what each fact actually claimed. Cap to 5 entries inline; the
+  // approval card itself shows every fact via ResearchFindingsPreview.
+  const previewLines = rows.slice(0, 5).map(r => {
+    const firstLine = (r.content || "")
+      .replace(/^\[Research[^\]]*\]\s*/, "") // strip the "[Research — X]" prefix added by feasibility-research
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 140);
+    return firstLine.length > 0
+      ? `• ${r.title} — ${firstLine}${(r.content || "").length > 140 ? "…" : ""}`
+      : `• ${r.title}`;
+  }).join("\n");
+  const moreSuffix = rows.length > 5 ? `\n…and ${rows.length - 5} more` : "";
   const description = input.preview
     ? input.preview
-    : `${input.kbItemIds.length} fact${input.kbItemIds.length === 1 ? "" : "s"} extracted from ${input.source}${input.query ? ` query "${input.query}"` : ""}.\n\n${titles}${moreSuffix}\n\nNothing here will influence artefact generation until you approve.`;
+    : `${input.kbItemIds.length} fact${input.kbItemIds.length === 1 ? "" : "s"} extracted from ${input.source}${input.query ? ` query "${input.query}"` : ""}.\n\n${previewLines}${moreSuffix}\n\nReview each finding below and tick the ones you want to keep. Unchecked findings are discarded entirely. Nothing here influences artefact generation until you decide.`;
 
   // 3. Create the approval row
   const approval = await db.approval.create({

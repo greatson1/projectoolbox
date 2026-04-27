@@ -688,6 +688,35 @@ export default function ApprovalsPage() {
                       </div>
                     </div>
 
+                    {/* For research-finding approvals: surface the per-fact
+                        preview right under Executive Summary so the user
+                        can see WHAT they're approving without scrolling
+                        past five sections to the recommendation block. The
+                        preview also lives in section 5 for users who scroll
+                        to the recommendation; both reads of the same
+                        component but rendered once each. */}
+                    {item.type === "CHANGE_REQUEST" && item.impact?.subtype === "research_finding" && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500">Research detail — review before approving</p>
+                          {(item.projectId || item.project?.id) && (
+                            <a
+                              href={`/research?project=${item.projectId || item.project?.id}`}
+                              className="text-[10px] text-primary hover:underline font-semibold"
+                            >
+                              Open Research Audit →
+                            </a>
+                          )}
+                        </div>
+                        <ResearchFindingsPreview
+                          approvalId={item.id}
+                          projectId={item.projectId || item.project?.id}
+                          kbItemIds={Array.isArray(item.impact?.kbItemIds) ? item.impact.kbItemIds : []}
+                          onResolved={() => refetch()}
+                        />
+                      </div>
+                    )}
+
                     {/* ── 2. AGENT RATIONALE ── */}
                     {(item.reasoningChain || parsed.reason) && (
                       <div>
@@ -811,14 +840,9 @@ export default function ApprovalsPage() {
                             phase={(item.title || "").split(" Gate")[0]?.trim() || undefined}
                           />
                         )}
-                        {item.type === "CHANGE_REQUEST" && item.impact?.subtype === "research_finding" && (
-                          <ResearchFindingsPreview
-                            approvalId={item.id}
-                            projectId={item.projectId || item.project?.id}
-                            kbItemIds={Array.isArray(item.impact?.kbItemIds) ? item.impact.kbItemIds : []}
-                            onResolved={() => refetch()}
-                          />
-                        )}
+                        {/* Research-finding cards render the per-fact preview
+                            up at the top under Executive Summary, so we don't
+                            duplicate it here. */}
                       </div>
                     </div>
 
