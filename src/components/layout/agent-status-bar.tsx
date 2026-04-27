@@ -24,7 +24,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AgentState = "questions_waiting" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "setup" | "paused" | "monitoring" | "idle";
+type AgentState = "questions_waiting" | "research_approval_waiting" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "setup" | "paused" | "monitoring" | "idle";
 
 interface RawActivity {
   id?: string;
@@ -71,6 +71,7 @@ interface AgentSlot {
 
 const COLOURS: Record<AgentState, { border: string; glow: string; badge: string; badgeBg: string; ring: string; pulse: string }> = {
   questions_waiting: { border: "#F97316", glow: "rgba(249,115,22,0.25)", badge: "#F97316", badgeBg: "rgba(249,115,22,0.13)", ring: "#F97316", pulse: "rgba(249,115,22,0.4)" },
+  research_approval_waiting: { border: "#3B82F6", glow: "rgba(59,130,246,0.22)", badge: "#3B82F6", badgeBg: "rgba(59,130,246,0.13)", ring: "#3B82F6", pulse: "rgba(59,130,246,0.35)" },
   review:         { border: "#F59E0B", glow: "rgba(245,158,11,0.22)", badge: "#F59E0B", badgeBg: "rgba(245,158,11,0.13)", ring: "#F59E0B", pulse: "rgba(245,158,11,0.35)" },
   generating:     { border: "#6366F1", glow: "rgba(99,102,241,0.22)",  badge: "#6366F1", badgeBg: "rgba(99,102,241,0.13)",  ring: "#6366F1", pulse: "rgba(99,102,241,0.35)"  },
   phase_complete: { border: "#10B981", glow: "rgba(16,185,129,0.22)",  badge: "#10B981", badgeBg: "rgba(16,185,129,0.13)",  ring: "#10B981", pulse: "rgba(16,185,129,0.35)"  },
@@ -124,6 +125,11 @@ function deriveState(
   // user has actively stopped the agent.
   if (agentStatus === "PAUSED") return "paused";
 
+  // Research-approval gate: when the strict-sequencing flow has parked the
+  // deployment in awaiting_research_approval, surface that. The agent will
+  // resume the lifecycle as soon as the user clears the queue.
+  if (phaseStatus === "awaiting_research_approval") return "research_approval_waiting";
+
   // hasActiveSession is the LIVE source of truth — phaseStatus can lag if the
   // deployment column update missed (recovered on next pipeline fetch via
   // self-heal). Always trust the active session presence first.
@@ -162,7 +168,7 @@ function deriveState(
 
 /** Priority for auto-focus: lower = more urgent */
 function statePriority(s: AgentState): number {
-  return { questions_waiting: 0, review: 1, blocked_by_tasks: 2, generating: 3, phase_complete: 4, setup: 5, paused: 6, monitoring: 7, idle: 8 }[s] ?? 9;
+  return { questions_waiting: 0, research_approval_waiting: 1, review: 2, blocked_by_tasks: 3, generating: 4, phase_complete: 5, setup: 6, paused: 7, monitoring: 8, idle: 9 }[s] ?? 10;
 }
 
 function gradientColour(gradient: string | null | undefined): string {
@@ -194,6 +200,9 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
   switch (state) {
     case "questions_waiting":
       return `${slot.agentName} has questions that need your answers before documents can be generated — open Chat to respond`;
+
+    case "research_approval_waiting":
+      return `${slot.agentName} has research findings waiting in the Approvals queue — review which ones to keep before they can shape ${phase} artefacts.`;
 
     case "generating":
       return actText
@@ -244,6 +253,7 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
 function badgeLabel(slot: AgentSlot): string {
   switch (slot.state) {
     case "questions_waiting": return "Questions waiting";
+    case "research_approval_waiting": return "Research to review";
     case "review":         return `${slot.pendingCount} doc${slot.pendingCount === 1 ? "" : "s"} to review`;
     case "generating":     return "Writing…";
     case "phase_complete": return slot.nextPhase ? `Start ${slot.nextPhase}` : "All done";
@@ -493,6 +503,8 @@ export function AgentStatusBar() {
   })();
   const ctaHref    = slot.state === "questions_waiting"
     ? `/agents/chat?agent=${slot.agentId}`
+    : slot.state === "research_approval_waiting"
+    ? "/approvals"
     : slot.state === "blocked_by_tasks"
     ? blockedTarget
     : slot.projectId ? `/projects/${slot.projectId}/artefacts` : "/agents";
@@ -618,12 +630,14 @@ export function AgentStatusBar() {
           </div>
 
           {/* CTA strip */}
-          {(slot.state === "questions_waiting" || slot.state === "review" || slot.state === "phase_complete" || slot.state === "blocked_by_tasks") && (
+          {(slot.state === "questions_waiting" || slot.state === "research_approval_waiting" || slot.state === "review" || slot.state === "phase_complete" || slot.state === "blocked_by_tasks") && (
             <div className="border-t px-5 py-2.5 flex items-center justify-between"
               style={{ borderColor: `${c.border}22`, background: `${c.badgeBg}` }}>
               <p className="text-[12px] font-medium" style={{ color: c.badge }}>
                 {slot.state === "questions_waiting"
                   ? `${slot.agentName} needs your answers before it can generate documents — open Chat to respond`
+                  : slot.state === "research_approval_waiting"
+                  ? `${slot.agentName} found research it wants to apply — review which findings to keep before they shape ${slot.currentPhase ?? "phase"} artefacts`
                   : slot.state === "review"
                   ? `${slot.pendingCount} document${slot.pendingCount === 1 ? "" : "s"} need your approval before ${slot.agentName} can continue`
                   : slot.state === "blocked_by_tasks"
@@ -635,6 +649,8 @@ export function AgentStatusBar() {
                 style={{ color: c.badge, borderColor: `${c.badge}44`, background: `${c.badge}11` }}>
                 {slot.state === "questions_waiting"
                   ? "Open Chat"
+                  : slot.state === "research_approval_waiting"
+                  ? "Review Research"
                   : slot.state === "review"
                   ? "Review Documents"
                   : slot.state === "blocked_by_tasks"
@@ -820,6 +836,7 @@ function StateBadge({ label, colour, bg, state }: {
 }) {
   const ico: Record<AgentState, React.ReactNode> = {
     questions_waiting: <MessageSquare size={10} />,
+    research_approval_waiting: <Sparkles size={10} />,
     review:         <AlertCircle size={10} />,
     generating:     <RefreshCw size={10} className="animate-spin" />,
     phase_complete: <CheckCircle2 size={10} />,
