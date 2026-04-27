@@ -87,6 +87,45 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
       ? (nextPhaseRow.artefacts as string[])
       : [];
     if (artefactNames.length > 0) {
+      // Strict-sequencing checkpoint — same as lifecycle-init. If the
+      // phase research above produced pending research-finding approvals,
+      // hold here. The research-approval handler will fire clarification
+      // once the user clears the queue.
+      const pendingResearchApprovals = await db.approval.count({
+        where: {
+          projectId: ctx.projectId,
+          status: "PENDING",
+          type: "CHANGE_REQUEST",
+          impact: { path: ["subtype"], equals: "research_finding" },
+        },
+      }).catch(() => 0);
+
+      if (pendingResearchApprovals > 0) {
+        await db.agentDeployment.update({
+          where: { id: ctx.deploymentId },
+          data: { phaseStatus: "awaiting_research_approval" },
+        }).catch(() => {});
+        await db.chatMessage.create({
+          data: {
+            agentId: ctx.agentId,
+            role: "agent",
+            content: [
+              `## ${ctx.toPhase} research is in — your turn`,
+              ``,
+              `I've completed the ${ctx.toPhase} research and posted ${pendingResearchApprovals === 1 ? "an approval bundle" : `${pendingResearchApprovals} approval bundles`} on the Approvals page.`,
+              ``,
+              `Once you've reviewed and approved the findings, I'll post clarification questions before drafting the ${ctx.toPhase} artefacts.`,
+              ``,
+              `[Open Approvals](/approvals)`,
+            ].join("\n"),
+          },
+        }).catch(() => {});
+        await db.agentActivity.create({
+          data: { agentId: ctx.agentId, type: "chat", summary: `${ctx.toPhase} research complete — awaiting your approval on ${pendingResearchApprovals} research finding bundle${pendingResearchApprovals === 1 ? "" : "s"} before clarification can begin.` },
+        }).catch(() => {});
+        return;
+      }
+
       await db.agentDeployment.update({
         where: { id: ctx.deploymentId },
         data: { phaseStatus: "awaiting_clarification" },

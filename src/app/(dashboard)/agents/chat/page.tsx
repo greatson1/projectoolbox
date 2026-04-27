@@ -1544,6 +1544,7 @@ function AgentChatPage() {
             : "border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-400";
           const stepLabel: Record<string, string> = {
             research: "Research",
+            research_approval: "Approve research findings",
             clarification: "Clarification",
             clarification_in_progress: "Clarification in progress",
             generation: "Generation",

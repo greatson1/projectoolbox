@@ -41,6 +41,18 @@ function ApprovalLikelihoodRow({ type, urgency, projectId }: { type: string; urg
  * "X facts extracted" line and has to dig into the KB to know what
  * they're approving.
  */
+interface ResearchFindingRow {
+  id: string;
+  title: string;
+  content: string;
+  query?: string | null;
+  phase?: string | null;
+  source?: string | null;
+  researchedAt?: string | null;
+  citations?: string[] | null;
+  likelyArtefacts?: string[];
+}
+
 function ResearchFindingsPreview({
   approvalId, kbItemIds, projectId, onResolved,
 }: {
@@ -49,23 +61,26 @@ function ResearchFindingsPreview({
   projectId?: string;
   onResolved?: () => void;
 }) {
-  const [rows, setRows] = useState<Array<{ id: string; title: string; content: string }>>([]);
+  const [rows, setRows] = useState<ResearchFindingRow[]>([]);
+  const [projectName, setProjectName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   // Default: all checked = all approved on submit. Unchecking a row marks
   // it for rejection. Submit splits the bundle accordingly.
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!projectId || !kbItemIds || kbItemIds.length === 0) { setLoading(false); return; }
     fetch(`/api/projects/${projectId}/kb-by-ids?ids=${encodeURIComponent(kbItemIds.join(","))}`)
       .then(r => r.ok ? r.json() : null)
       .then(j => {
-        const list = (j?.data) as any[];
+        const list = (j?.data) as ResearchFindingRow[];
         if (Array.isArray(list)) {
           setRows(list);
-          setCheckedIds(new Set(list.map((r: any) => r.id))); // default all checked
+          setCheckedIds(new Set(list.map((r) => r.id))); // default all checked
         }
+        if (typeof j?.projectName === "string") setProjectName(j.projectName);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -115,8 +130,43 @@ function ResearchFindingsPreview({
     );
   }
 
+  // Group facts by their underlying research query so the user can see
+  // "this batch came from query X" — explains WHY each set of facts was
+  // researched. Most bundles share one query but if multiple they group.
+  const queryGroups = (() => {
+    const m = new Map<string, ResearchFindingRow[]>();
+    for (const r of rows) {
+      const k = r.query || "Research";
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(r);
+    }
+    return Array.from(m.entries());
+  })();
+  const phaseLabel = rows.find((r) => r.phase)?.phase;
+  const sourceLabel = rows.find((r) => r.source)?.source || "research";
+
+  const toggleExpand = (id: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="mt-2 px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-500/5">
+      {/* Top context strip — what is this approval about? */}
+      <div className="mb-2.5 pb-2 border-b border-border/30">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">What you&apos;re approving</p>
+        <p className="text-xs text-foreground leading-relaxed">
+          {rows.length} fact{rows.length === 1 ? "" : "s"} from <span className="font-semibold">{sourceLabel}</span>
+          {phaseLabel && <> for the <span className="font-semibold">{phaseLabel}</span> phase</>}
+          {projectName && <> of <span className="font-semibold">{projectName}</span></>}.
+          Checked items become <span className="text-emerald-600 dark:text-emerald-400 font-semibold">user_confirmed / HIGH_TRUST</span> and
+          will inform the listed artefacts. Unchecked items are discarded entirely.
+        </p>
+      </div>
+
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           Research findings — {checkedIds.size}/{rows.length} kept
@@ -129,30 +179,77 @@ function ResearchFindingsPreview({
           {allChecked ? "Uncheck all" : "Check all"}
         </button>
       </div>
-      <ul className="space-y-1.5 max-h-64 overflow-y-auto">
-        {rows.map(r => {
-          const checked = checkedIds.has(r.id);
-          return (
-            <li key={r.id} className="text-[11px]">
-              <label className="flex items-start gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(r.id)}
-                  className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-emerald-500 flex-shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className={`font-semibold ${checked ? "text-foreground" : "text-muted-foreground line-through"}`}>{r.title}</p>
-                  <p className="text-muted-foreground mt-0.5 line-clamp-2">{r.content}</p>
-                </div>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+
+      <div className="max-h-96 overflow-y-auto space-y-2.5">
+        {queryGroups.map(([queryLabel, groupRows], gi) => (
+          <div key={gi}>
+            {queryGroups.length > 1 && (
+              <p className="text-[10px] text-muted-foreground italic mb-1">
+                From query: &ldquo;{queryLabel}&rdquo;
+              </p>
+            )}
+            <ul className="space-y-1.5">
+              {groupRows.map((r) => {
+                const checked = checkedIds.has(r.id);
+                const expanded = expandedRows.has(r.id);
+                const artefacts = r.likelyArtefacts || [];
+                return (
+                  <li key={r.id} className={`text-[11px] rounded-md border ${checked ? "border-border/60 bg-card/60" : "border-border/30 bg-muted/20"} px-2 py-1.5`}>
+                    <label className="flex items-start gap-2 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(r.id)}
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-emerald-500 flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-semibold ${checked ? "text-foreground" : "text-muted-foreground line-through"}`}>{r.title}</p>
+                        <p className={`text-muted-foreground mt-0.5 ${expanded ? "" : "line-clamp-2"}`}>{r.content}</p>
+                        {/* Where it'll apply */}
+                        {artefacts.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className="text-[10px] text-muted-foreground">→ informs:</span>
+                            {artefacts.map((a) => (
+                              <span key={a} className="text-[10px] px-1.5 py-0 rounded bg-blue-500/10 text-blue-700 dark:text-blue-400 font-medium">
+                                {a}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {/* Citations link if Perplexity returned source URLs */}
+                        {r.citations && r.citations.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            <span className="text-[10px] text-muted-foreground">sources:</span>
+                            {r.citations.map((c, ci) => (
+                              <a key={ci} href={c} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary hover:underline truncate max-w-[200px]">
+                                {(() => { try { return new URL(c).hostname; } catch { return c.slice(0, 30); } })()}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {(r.content || "").length > 160 && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); toggleExpand(r.id); }}
+                          className="text-[10px] text-primary hover:underline flex-shrink-0 mt-0.5"
+                        >
+                          {expanded ? "Less" : "More"}
+                        </button>
+                      )}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border/30">
         <p className="text-[10px] text-muted-foreground flex-1">
           Checked → <span className="text-emerald-500 font-semibold">user_confirmed/HIGH</span>. Unchecked → discarded.
+          {phaseLabel && <> Once all bundles are resolved, clarification questions for <span className="font-semibold">{phaseLabel}</span> will start automatically.</>}
         </p>
         <button
           type="button"

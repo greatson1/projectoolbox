@@ -142,7 +142,7 @@ export async function applyResearchApprovalDecision(
   // APPROVED — strip pending, add user_confirmed, bump trust
   const rows = await db.knowledgeBaseItem.findMany({
     where: { id: { in: ids } },
-    select: { id: true, tags: true },
+    select: { id: true, tags: true, projectId: true, agentId: true },
   });
   let applied = 0;
   for (const r of rows) {
@@ -154,5 +154,73 @@ export async function applyResearchApprovalDecision(
     }).catch(() => {});
     applied += 1;
   }
+
+  // ── Strict-sequencing trigger ──
+  // If the deployment is in awaiting_research_approval state and there
+  // are now zero pending research-finding approvals, kick off the
+  // clarification flow. lifecycle-init / phase-advance both deferred
+  // clarification waiting for this moment.
+  try {
+    const projectId = rows[0]?.projectId;
+    const agentId = rows[0]?.agentId;
+    if (projectId && agentId) {
+      const stillPending = await db.approval.count({
+        where: {
+          projectId,
+          status: "PENDING",
+          type: "CHANGE_REQUEST",
+          impact: { path: ["subtype"], equals: "research_finding" },
+        },
+      });
+      if (stillPending === 0) {
+        const deployment = await db.agentDeployment.findFirst({
+          where: { agentId, projectId, isActive: true },
+          select: { id: true, currentPhase: true, phaseStatus: true },
+        });
+        if (deployment?.phaseStatus === "awaiting_research_approval" && deployment.currentPhase) {
+          const orgId = (await db.agent.findUnique({ where: { id: agentId }, select: { orgId: true } }))?.orgId;
+          const phaseRow = await db.phase.findFirst({
+            where: { projectId, name: deployment.currentPhase },
+            select: { artefacts: true },
+          });
+          const artefactNames = Array.isArray(phaseRow?.artefacts) ? (phaseRow.artefacts as string[]) : [];
+          if (artefactNames.length > 0 && orgId) {
+            // Flip to awaiting_clarification + start the session.
+            await db.agentDeployment.update({
+              where: { id: deployment.id },
+              data: { phaseStatus: "awaiting_clarification" },
+            }).catch(() => {});
+            const { startClarificationSession } = await import("@/lib/agents/clarification-session");
+            const { markClarificationSkipped } = await import("@/lib/agents/phase-next-action");
+            try {
+              const outcome = await startClarificationSession(agentId, projectId, orgId, artefactNames);
+              if (outcome.outcome === "no_questions") {
+                await markClarificationSkipped(projectId, deployment.currentPhase, "no_questions_needed");
+                // Trigger generation directly — same path as
+                // post-clarification, but skipping clarification.
+                const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+                await generatePhaseArtefacts(agentId, projectId, deployment.currentPhase, undefined, "post_clarification");
+              } else if (outcome.outcome === "failed") {
+                await db.chatMessage.create({
+                  data: {
+                    agentId,
+                    role: "agent",
+                    content: `## Clarification setup hit a snag\n\nResearch is approved, but I couldn't generate clarification questions: \`${outcome.reason}\`. Reply **"Skip questions and generate"** or send me what you'd like me to know.`,
+                    metadata: { type: "clarification_failed", reason: outcome.reason, phase: deployment.currentPhase } as any,
+                  },
+                }).catch(() => {});
+              }
+              // started/already_active → questions are already posted, nothing more to do.
+            } catch (e: any) {
+              console.error("[applyResearchApprovalDecision] clarification kick-off failed:", e);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[applyResearchApprovalDecision] post-approval sequencing failed:", e);
+  }
+
   return { applied };
 }

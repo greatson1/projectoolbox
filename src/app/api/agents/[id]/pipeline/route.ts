@@ -361,6 +361,53 @@ export async function GET(
     });
   }
 
+  // 2b. Research approval — surfaces the gate between research output and
+  // clarification. The user must approve (or reject) every research-finding
+  // bundle before clarification can begin and artefact generation can run.
+  // Sourced from the project's pending CHANGE_REQUEST approvals where
+  // impact.subtype === "research_finding".
+  {
+    const researchApprovals = approvals.filter((a: any) => {
+      const subtype = (a.impact as any)?.subtype;
+      return a.type === "CHANGE_REQUEST" && subtype === "research_finding";
+    });
+    const pendingCount = researchApprovals.filter((a: any) => a.status === "PENDING").length;
+    const approvedCount = researchApprovals.filter((a: any) => a.status === "APPROVED").length;
+    const rejectedCount = researchApprovals.filter((a: any) => a.status === "REJECTED").length;
+    const totalCount = researchApprovals.length;
+
+    let status: PipelineStep["status"] = "waiting";
+    let details: string | undefined;
+    if (totalCount === 0) {
+      // Either research hasn't run yet, or it found nothing to gate.
+      // Mirror the research step's state — if research is done with zero
+      // bundles, treat this gate as not applicable.
+      const researchStep = steps[steps.length - 1];
+      if (researchStep?.id === "research" && researchStep.status === "done") {
+        status = "skipped";
+        details = "No research findings required approval";
+      } else {
+        status = "waiting";
+      }
+    } else if (pendingCount > 0) {
+      status = "running";
+      details = `${pendingCount} bundle${pendingCount === 1 ? "" : "s"} awaiting your review · ${approvedCount} approved · ${rejectedCount} rejected`;
+    } else {
+      status = "done";
+      details = approvedCount > 0
+        ? `${approvedCount} bundle${approvedCount === 1 ? "" : "s"} approved${rejectedCount > 0 ? ` · ${rejectedCount} rejected` : ""}`
+        : "All research bundles resolved";
+    }
+
+    steps.push({
+      id: "research_approval",
+      label: `${phaseLabel}Research Approval`,
+      cycles: true,
+      status,
+      details,
+    });
+  }
+
   // 3. Clarify — uses real session state + message metadata
   {
     let status: PipelineStep["status"] = "waiting";

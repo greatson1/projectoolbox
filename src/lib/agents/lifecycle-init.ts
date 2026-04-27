@@ -650,7 +650,50 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         }).catch(() => {});
       }
 
-      // ── 3c: Update status to awaiting_clarification ──
+      // ── 3c: Strict-sequencing checkpoint ──
+      // The user explicitly chose: research must be APPROVED before
+      // clarification questions are posted. Check whether the research
+      // run created any pending research-finding approvals. If yes, hold
+      // here — clarification will be kicked off by the research-approval
+      // handler when the user clears the queue. If no (e.g. research
+      // returned zero facts, or the approval was somehow auto-cleared),
+      // fall through to the original clarification flow.
+      const pendingResearchApprovals = await db.approval.count({
+        where: {
+          projectId: project.id,
+          status: "PENDING",
+          type: "CHANGE_REQUEST",
+          impact: { path: ["subtype"], equals: "research_finding" },
+        },
+      }).catch(() => 0);
+
+      if (pendingResearchApprovals > 0) {
+        await db.agentDeployment.update({
+          where: { id: deploymentId },
+          data: { phaseStatus: "awaiting_research_approval" },
+        });
+        await db.chatMessage.create({
+          data: {
+            agentId,
+            role: "agent",
+            content: [
+              `## Research is in — your turn`,
+              ``,
+              `I've completed ${researchFacts > 0 ? `**${researchFacts}** research findings` : "research"} for **${project.name}** and posted ${pendingResearchApprovals === 1 ? "a single approval" : `${pendingResearchApprovals} approval bundles`} on the Approvals page.`,
+              ``,
+              `Once you've reviewed and approved the findings (so I know which facts to trust), I'll post clarification questions to fill any remaining gaps before drafting the ${firstPhase.name} artefacts.`,
+              ``,
+              `[Open Approvals](/approvals)`,
+            ].join("\n"),
+          },
+        }).catch(() => {});
+        await db.agentActivity.create({
+          data: { agentId, type: "chat", summary: `Research complete (${researchFacts} facts) — awaiting your approval on ${pendingResearchApprovals} research finding bundle${pendingResearchApprovals === 1 ? "" : "s"} before clarification can begin.` },
+        }).catch(() => {});
+        return;
+      }
+
+      // No pending research approvals → continue with original flow.
       await db.agentDeployment.update({
         where: { id: deploymentId },
         data: { phaseStatus: "awaiting_clarification" },

@@ -25,6 +25,7 @@ import { getActiveSession } from "@/lib/agents/clarification-session";
 
 export type RequiredStep =
   | "research"
+  | "research_approval"
   | "clarification"
   | "clarification_in_progress"
   | "generation"
@@ -96,6 +97,30 @@ export async function getNextRequiredStep({
       blockedBy: ["research"],
       bannerLabel: `Researching ${phaseName}…`,
       awaitingUser: false,
+    };
+  }
+
+  // Step 1b — research findings must be approved by the user. If a
+  // research-finding approval is still PENDING for this project, the
+  // facts are tagged pending_user_confirmation and excluded from
+  // generation prompts. We block clarification here because clarification
+  // questions should only be asked AFTER the user has decided which
+  // research to trust.
+  const pendingResearchApprovals = await db.approval.count({
+    where: {
+      projectId,
+      status: "PENDING",
+      type: "CHANGE_REQUEST",
+      impact: { path: ["subtype"], equals: "research_finding" },
+    },
+  }).catch(() => 0);
+  if (pendingResearchApprovals > 0) {
+    return {
+      step: "research_approval",
+      reason: `${pendingResearchApprovals} research-finding approval${pendingResearchApprovals === 1 ? "" : "s"} awaiting your review.`,
+      blockedBy: ["research_approval"],
+      bannerLabel: `Approve ${pendingResearchApprovals} research finding${pendingResearchApprovals === 1 ? "" : "s"}`,
+      awaitingUser: true,
     };
   }
 
