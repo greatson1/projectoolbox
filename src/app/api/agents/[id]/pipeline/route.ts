@@ -538,9 +538,19 @@ export async function GET(
         canRetry = true;
       }
     } else if (generatedCount > 0) {
-      // Generated but phaseStatus not active (e.g. awaiting_clarification)
-      status = "done";
-      details = `${expectedVsGenerated} artefacts generated`;
+      // Generated some, but phaseStatus is not "active" (e.g. paused mid-batch
+      // because clarification was reopened, an approval is waiting, etc.).
+      // CRITICAL: do NOT mark "done" — we have generated < expected. Marking
+      // done here was the source of the misleading "2/4 ✓" green tick. Show
+      // the partial state honestly so the user sees there's still work owed.
+      if (expectedArtefacts > 0 && generatedCount < expectedArtefacts) {
+        status = "running";
+        details = `${expectedVsGenerated} generated · waiting on prior step before resuming`;
+      } else {
+        // No template, or generatedCount somehow >= expected — safe to call done.
+        status = "done";
+        details = `${expectedVsGenerated} artefacts generated`;
+      }
     } else if (phaseStatus === "active" && minutesSinceUpdate <= timeoutMins) {
       status = "running";
       details = expectedArtefacts > 0
@@ -581,6 +591,16 @@ export async function GET(
       (a) => a.status === "APPROVED"
     );
 
+    // Re-derive expected count here (scoped to this block — the Generate
+    // block above used a local variable). We need it so we never mark Review
+    // "done" when there are still artefacts owed by the Generate step.
+    const reviewExpected = Array.isArray(currentPhaseObj?.artefacts)
+      ? (currentPhaseObj!.artefacts as string[]).length
+      : 0;
+    const reviewTarget = reviewExpected > 0
+      ? Math.max(reviewExpected, currentPhaseArtefacts.length) // honour over-delivery
+      : currentPhaseArtefacts.length;
+
     // Extract unique approvers from artefact metadata
     const approvers = new Set<string>();
     let lastApprovedAt: Date | null = null;
@@ -599,16 +619,35 @@ export async function GET(
     if (currentPhaseArtefacts.length === 0) {
       status = "waiting";
     } else if (
+      // Done means: every expected artefact exists AND every existing artefact
+      // is approved. Without the first half of the check, "All 2 approved" was
+      // firing even when the template called for 4.
+      reviewExpected > 0 &&
+      currentPhaseArtefacts.length >= reviewExpected &&
+      approvedArtefacts.length === currentPhaseArtefacts.length
+    ) {
+      status = "done";
+      details = `All ${approvedArtefacts.length} artefact${approvedArtefacts.length !== 1 ? "s" : ""} approved${approverText}`;
+    } else if (
+      // Edge case: no template (reviewExpected === 0) — fall back to the
+      // original "everything that exists is approved" rule so dynamic /
+      // user-added artefact sets still resolve cleanly.
+      reviewExpected === 0 &&
       approvedArtefacts.length === currentPhaseArtefacts.length
     ) {
       status = "done";
       details = `All ${approvedArtefacts.length} artefact${approvedArtefacts.length !== 1 ? "s" : ""} approved${approverText}`;
     } else if (approvedArtefacts.length > 0) {
       status = "running";
-      details = `${approvedArtefacts.length}/${currentPhaseArtefacts.length} approved${approverText}`;
+      // Show progress against the EXPECTED total, not just what was generated.
+      // "2/2 approved" reads "done"; "2/4 approved" reads "halfway".
+      details = `${approvedArtefacts.length}/${reviewTarget} approved${approverText}`;
     } else {
       status = "waiting";
-      details = `${currentPhaseArtefacts.length} artefact${currentPhaseArtefacts.length !== 1 ? "s" : ""} awaiting review`;
+      const waitingCount = currentPhaseArtefacts.length;
+      details = reviewExpected > waitingCount
+        ? `${waitingCount}/${reviewTarget} artefacts awaiting review · ${reviewTarget - waitingCount} still to be generated`
+        : `${waitingCount} artefact${waitingCount !== 1 ? "s" : ""} awaiting review`;
     }
 
     steps.push({
