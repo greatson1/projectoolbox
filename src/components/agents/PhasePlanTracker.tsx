@@ -310,7 +310,14 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
 
             {/* ── Scaffolded PM tasks ────────────────────────────────── */}
             {phase.taskGroups.length > 0 && (
-              <div className="px-4 py-3 border-b border-border/30">
+              <div
+                className="px-4 py-3 border-b border-border/30"
+                /* The pm-tracker page reads this attribute to scroll the
+                   user to the current phase's PM tasks when they land via
+                   the agent status-bar "Open PM Tracker" CTA with
+                   ?focus=blocking. */
+                {...(phase.isCurrent ? { "data-current-pm-tasks": "true" } : {})}
+              >
                 <div className="flex items-center gap-1.5 mb-2">
                   <Shield className="w-3 h-3 text-muted-foreground" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PM tasks</span>
@@ -334,8 +341,17 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                             // hand-tick them; they'd just resync next refresh.
                             const isAutoDriven = group.category === "Document Generation";
                             const canToggle = !isAutoDriven;
+                            // Tag incomplete rows on the CURRENT phase only —
+                            // the page's focus handler pulse-highlights every
+                            // matching element so the user lands directly on
+                            // what's blocking advancement.
+                            const isBlocking = phase.isCurrent && !effectiveDone;
                             return (
-                              <div key={t.id} className="flex items-center gap-2 py-0.5">
+                              <div
+                                key={t.id}
+                                className="flex items-center gap-2 py-0.5 rounded"
+                                {...(isBlocking ? { "data-incomplete-pm-task": "true" } : {})}
+                              >
                                 {canToggle ? (
                                   <button
                                     type="button"

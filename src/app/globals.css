@@ -168,6 +168,20 @@
   animation: fadeInUp 0.3s ease-out;
 }
 
+/* ─── PM Tracker focus pulse ─── */
+/* Applied transiently to every incomplete PM task row when the user lands on
+   the page via the agent status-bar's "Open PM Tracker" CTA with
+   ?focus=blocking. Pulses for ~3s then the page handler removes the class.
+   Amber matches the agent status-bar's "blocked_by_tasks" badge colour. */
+@keyframes pmTaskPulse {
+  0%   { background-color: rgba(245, 158, 11, 0); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  35%  { background-color: rgba(245, 158, 11, 0.18); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25); }
+  100% { background-color: rgba(245, 158, 11, 0); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+.pm-task-pulse {
+  animation: pmTaskPulse 1.6s ease-out 2;
+}
+
 /* ─── Enterprise UX: Card Interactions ─── */
 .card-interactive {
   transition: transform 0.2s ease, box-shadow 0.2s ease;

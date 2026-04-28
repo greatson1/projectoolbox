@@ -489,15 +489,19 @@ export function AgentStatusBar() {
     if (!slot.projectId) return "/agents";
     const pmRemaining = Math.max(0, slot.pmTasksTotal - slot.pmTasksDone);
     const delRemaining = Math.max(0, slot.deliveryTotal - slot.deliveryDone);
-    if (pmRemaining > 0 && delRemaining === 0) return `/projects/${slot.projectId}/pm-tracker`;
-    if (delRemaining > 0 && pmRemaining === 0) return `/projects/${slot.projectId}/agile`;
+    // ?focus=blocking is read by the destination pages (PM Tracker scrolls
+    // to the current phase's PM tasks and pulses the incomplete rows; the
+    // Agile board can do the same later). Without this the user lands on
+    // the page top and has to hunt for what's blocking.
+    if (pmRemaining > 0 && delRemaining === 0) return `/projects/${slot.projectId}/pm-tracker?focus=blocking`;
+    if (delRemaining > 0 && pmRemaining === 0) return `/projects/${slot.projectId}/agile?focus=blocking`;
     if (pmRemaining > 0 && delRemaining > 0) {
       // Both blocking — go to the bigger gap by % incomplete
       const pmPct  = slot.pmTasksTotal  > 0 ? slot.pmTasksDone  / slot.pmTasksTotal  : 1;
       const delPct = slot.deliveryTotal > 0 ? slot.deliveryDone / slot.deliveryTotal : 1;
       return delPct < pmPct
-        ? `/projects/${slot.projectId}/agile`
-        : `/projects/${slot.projectId}/pm-tracker`;
+        ? `/projects/${slot.projectId}/agile?focus=blocking`
+        : `/projects/${slot.projectId}/pm-tracker?focus=blocking`;
     }
     return `/projects/${slot.projectId}/artefacts`;
   })();
@@ -654,8 +658,8 @@ export function AgentStatusBar() {
                   : slot.state === "review"
                   ? "Review Documents"
                   : slot.state === "blocked_by_tasks"
-                  ? (blockedTarget.endsWith("/pm-tracker") ? "Open PM Tracker"
-                    : blockedTarget.endsWith("/agile")     ? "Open Agile Board"
+                  ? (blockedTarget.includes("/pm-tracker") ? "Open PM Tracker"
+                    : blockedTarget.includes("/agile")     ? "Open Agile Board"
                     : "Open Task Boards")
                   : `Generate ${slot.nextPhase ?? "Next Phase"}`}
                 <ArrowRight size={12} />

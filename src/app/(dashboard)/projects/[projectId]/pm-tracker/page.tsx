@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PhasePlanTracker } from "@/components/agents/PhasePlanTracker";
 import { ClipboardCheck, AlertCircle } from "lucide-react";
@@ -21,6 +21,8 @@ import { ClipboardCheck, AlertCircle } from "lucide-react";
 
 export default function PMTrackerPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const searchParams = useSearchParams();
+  const focus = searchParams.get("focus");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +39,28 @@ export default function PMTrackerPage() {
       .catch(() => setError("Could not load phase tracker"))
       .finally(() => setLoading(false));
   }, [projectId]);
+
+  // When the agent status-bar CTA sends the user here with ?focus=blocking,
+  // scroll to the current phase's PM tasks block and pulse-highlight every
+  // incomplete row for ~3s. Without this the user lands on the page top and
+  // has to hunt for what's blocking advancement — which is exactly the
+  // confusion the screenshot reported.
+  useEffect(() => {
+    if (focus !== "blocking" || loading || !data) return;
+    // Wait one tick for PhasePlanTracker to mount and emit data attrs.
+    const t = setTimeout(() => {
+      const block = document.querySelector<HTMLElement>("[data-current-pm-tasks]");
+      if (block) {
+        block.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      const incompletes = document.querySelectorAll<HTMLElement>("[data-incomplete-pm-task]");
+      incompletes.forEach(el => {
+        el.classList.add("pm-task-pulse");
+        setTimeout(() => el.classList.remove("pm-task-pulse"), 3200);
+      });
+    }, 80);
+    return () => clearTimeout(t);
+  }, [focus, loading, data]);
 
   if (loading) return (
     <div className="space-y-4 max-w-[1000px]">
