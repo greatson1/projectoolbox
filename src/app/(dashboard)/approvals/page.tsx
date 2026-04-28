@@ -289,6 +289,133 @@ function ResearchFindingsPreview({
   );
 }
 
+/**
+ * AuditChain — Source → Rationale → Decision → Applied effects timeline
+ * for any approval. Pulls everything except the user-side display copy
+ * from the audit-chain endpoint so the rules for "where did the source
+ * come from" stay in one place server-side.
+ *
+ * Renders for both PENDING and resolved approvals. While PENDING the
+ * Decision and Effects steps render as placeholders ("not yet decided"
+ * / "no effects yet") so the reviewer sees the full chain shape before
+ * acting.
+ */
+function AuditChain({ approvalId }: { approvalId: string }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!approvalId) return;
+    fetch(`/api/approvals/${approvalId}/audit-chain`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => setData(j?.data ?? null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [approvalId]);
+
+  if (loading) return null;
+  if (!data) return null;
+
+  const { source, rationale, decision, effects } = data;
+
+  const Step = ({ n, label, tone, children }: { n: number; label: string; tone: "default" | "muted"; children: React.ReactNode }) => (
+    <div className="flex gap-2.5">
+      <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+        tone === "muted" ? "bg-muted text-muted-foreground" : "bg-primary/15 text-primary"
+      }`}>{n}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">{label}</p>
+        <div className="text-[12px] text-foreground leading-relaxed">{children}</div>
+      </div>
+    </div>
+  );
+
+  const fmtTime = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+
+  return (
+    <div className="px-3 py-3 rounded-lg border border-border/40 bg-muted/10 space-y-3">
+      {/* 1. Source */}
+      <Step n={1} label="Source" tone="default">
+        {source ? (
+          <>
+            <p>
+              <span className="text-muted-foreground">{source.kind}: </span>
+              <span className="font-semibold">{source.label}</span>
+            </p>
+            {source.detail && <p className="text-muted-foreground mt-0.5">{source.detail}</p>}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-muted-foreground">{fmtTime(source.timestamp)}</span>
+              {source.link && (
+                <a href={source.link} className="text-[10px] text-primary hover:underline font-semibold">
+                  Open source →
+                </a>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-muted-foreground">No source recorded.</p>
+        )}
+      </Step>
+
+      {/* 2. Agent rationale */}
+      <Step n={2} label="Agent rationale" tone="default">
+        {rationale ? (
+          <p className="whitespace-pre-line">{rationale}</p>
+        ) : (
+          <p className="text-muted-foreground italic">No agent rationale recorded.</p>
+        )}
+      </Step>
+
+      {/* 3. Human decision */}
+      <Step n={3} label="Decision" tone={decision ? "default" : "muted"}>
+        {decision ? (
+          <>
+            <p>
+              <span className={`font-bold ${
+                decision.status === "APPROVED"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : decision.status === "REJECTED"
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-amber-600 dark:text-amber-400"
+              }`}>{decision.status}</span>
+              {decision.resolvedByName && <> by <span className="font-semibold">{decision.resolvedByName}</span></>}
+              {decision.resolvedVia && <> <span className="text-muted-foreground">(via {decision.resolvedVia.replace(/_/g, " ")})</span></>}
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{fmtTime(decision.resolvedAt)}</p>
+            {decision.comment && (
+              <p className="mt-1 text-muted-foreground italic">&ldquo;{decision.comment}&rdquo;</p>
+            )}
+          </>
+        ) : (
+          <p className="text-muted-foreground italic">Pending — no decision yet.</p>
+        )}
+      </Step>
+
+      {/* 4. Applied effects */}
+      <Step n={4} label="Applied effects" tone={effects && effects.length > 0 ? "default" : "muted"}>
+        {effects && effects.length > 0 ? (
+          <ul className="space-y-1">
+            {effects.map((e: any, i: number) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="w-1 h-1 mt-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p>{e.summary}</p>
+                  <p className="text-[10px] text-muted-foreground">{fmtTime(e.timestamp)}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground italic">
+            {decision ? "No downstream effects logged within the time window." : "Will be recorded once you decide."}
+          </p>
+        )}
+      </Step>
+    </div>
+  );
+}
+
 function GatePrereqSummary({ projectId, phase }: { projectId?: string; phase?: string }) {
   const [prereqs, setPrereqs] = useState<any[] | null>(null);
   const [phaseObj, setPhaseObj] = useState<any | null>(null);
@@ -899,10 +1026,20 @@ export default function ApprovalsPage() {
                       </div>
                     </div>
 
-                    {/* ── 7. ALTERNATIVES ── */}
+                    {/* ── 7. AUDIT CHAIN ── */}
+                    {/* Source → Agent rationale → Decision → Effects.
+                        Renders for every approval (not just research-finding)
+                        so the user can read the full provenance in one place
+                        instead of cross-referencing chat / activity / KB. */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">7. Audit Chain</p>
+                      <AuditChain approvalId={item.id} />
+                    </div>
+
+                    {/* ── 8. ALTERNATIVES ── */}
                     {item.suggestedAlternatives && (item.suggestedAlternatives as any[]).length > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">7. Alternatives Considered</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">8. Alternatives Considered</p>
                         <div className="space-y-1.5">
                           {(item.suggestedAlternatives as any[]).map((alt: any, i: number) => (
                             <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 text-xs">
