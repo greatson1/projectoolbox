@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { createJob, getDueDeployments } from "@/lib/agents/job-queue";
+import { createJob, getDueDeployments, getEffectiveCycleInterval } from "@/lib/agents/job-queue";
 import { nudgeJobProcessor } from "@/lib/agents/agent-backend";
 
 export const dynamic = "force-dynamic";
@@ -224,8 +224,9 @@ export async function GET(req: NextRequest) {
 
       if (job.status === "PENDING") jobsCreated++;
 
-      // Update next cycle time
-      const intervalMs = (deployment.cycleInterval || 10) * 60_000;
+      // Update next cycle time using the phase-aware interval — setup
+      // phases get 24h, execution phases get the configured cycleInterval.
+      const intervalMs = getEffectiveCycleInterval(deployment) * 60_000;
       await db.agentDeployment.update({
         where: { id: deployment.id },
         data: { nextCycleAt: new Date(Date.now() + intervalMs) },

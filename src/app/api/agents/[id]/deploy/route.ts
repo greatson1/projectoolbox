@@ -21,6 +21,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
+  // Idempotency: if this agent is already actively deployed to this project,
+  // return the existing deployment instead of stacking a duplicate.
+  // Belt-and-braces against double-fires that slipped past upstream guards.
+  const existingDeployment = await db.agentDeployment.findFirst({
+    where: { agentId, projectId, isActive: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existingDeployment) {
+    return NextResponse.json(
+      { data: { deployment: existingDeployment, agentId }, idempotent: true },
+      { status: 200 },
+    );
+  }
+
   // Enforce subscription tier autonomy limit
   const agent = await db.agent.findUnique({ where: { id: agentId }, select: { autonomyLevel: true } });
   const org = await db.organisation.findUnique({ where: { id: orgId }, select: { plan: true } });

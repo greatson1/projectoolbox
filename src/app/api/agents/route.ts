@@ -107,6 +107,22 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { name, autonomyLevel, personality, gradient, title, avatarUrl, defaultGreeting, domainTags, monthlyBudget } = body;
 
+  // Idempotency: if an agent with this exact name was created in the same
+  // org within the last 60s, return it instead of creating a duplicate.
+  // Catches deploy-wizard double-fires before they cascade into duplicate
+  // deployments downstream.
+  const recentDuplicate = await db.agent.findFirst({
+    where: {
+      orgId,
+      name: name || "Agent",
+      createdAt: { gte: new Date(Date.now() - 60_000) },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (recentDuplicate) {
+    return NextResponse.json({ data: recentDuplicate, idempotent: true }, { status: 200 });
+  }
+
   const agent = await db.agent.create({
     data: {
       name: name || "Agent",

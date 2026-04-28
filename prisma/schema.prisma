@@ -262,6 +262,14 @@ model AgentDeployment {
   lastCycleAt    DateTime?
   nextCycleAt    DateTime?
   cycleInterval  Int       @default(10) // minutes between autonomous cycles
+  // ── Cost guard: cycle pause + phase-aware scheduling ────────────────
+  // The autonomous cycle (Sonnet + monitoring + alerts + scan) only adds
+  // value during execution phases where there's real work to monitor.
+  // Default true means new deployments start with the cycle DISABLED so
+  // setup phases (research, clarification, gate review) don't burn Claude
+  // credits on no-op cycles. The user enables it via the toggle on the
+  // agent detail page when the project enters delivery.
+  cyclePaused    Boolean   @default(true)
   healthStatus   String?   @default("GREEN") // GREEN | AMBER | RED
   autonomyConfig Json?     // { budgetApprovalThreshold, scopeChangeLimit, autoApprovePhases, requireApprovalFor }
   // HITL governance overrides (explicit columns for queryability)

@@ -117,6 +117,7 @@ export async function getDueDeployments() {
   return db.agentDeployment.findMany({
     where: {
       isActive: true,
+      cyclePaused: false, // Cost guard — paused deployments never run cycles
       agent: { status: "ACTIVE" },
       OR: [
         { nextCycleAt: null }, // Never ran
@@ -128,4 +129,34 @@ export async function getDueDeployments() {
       project: { select: { id: true, name: true, methodology: true } },
     },
   });
+}
+
+// ── Phase-aware cycle interval ─────────────────────────────────────────────
+// During setup phases (research, clarification, gate review) the cycle adds
+// no value — there's no schedule pressure to monitor, no team velocity to
+// track. Stretch the interval to 24h so even an "active" deployment in a
+// setup state doesn't burn Claude on every tick.
+// During execution phases (active with real work in flight) use the
+// configured cycleInterval (default 10 min) for tight monitoring.
+
+const SETUP_PHASE_STATUSES = new Set([
+  "researching",
+  "awaiting_research_approval",
+  "awaiting_clarification",
+  "waiting_approval",
+  "blocked_tasks_incomplete",
+]);
+
+/** Effective interval in minutes for a deployment, given its current phase status. */
+export function getEffectiveCycleInterval(deployment: {
+  cycleInterval: number;
+  phaseStatus?: string | null;
+}): number {
+  const status = (deployment.phaseStatus || "active").toLowerCase();
+  if (SETUP_PHASE_STATUSES.has(status)) {
+    // 24h cadence during setup — covers daily check-in scenarios but
+    // doesn't waste Sonnet on a project that's waiting for the user.
+    return 24 * 60;
+  }
+  return Math.max(1, deployment.cycleInterval || 10);
 }

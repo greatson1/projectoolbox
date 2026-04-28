@@ -47,6 +47,22 @@ export async function POST(req: NextRequest) {
 
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
+    // Idempotency: if a project with this exact name was created in the same
+    // org within the last 60s, return that one. Prevents duplicates from
+    // React Query retries, double-clicks, browser back-then-resubmit, and
+    // multi-tab submissions of the same deploy wizard.
+    const recentDuplicate = await db.project.findFirst({
+      where: {
+        orgId,
+        name,
+        createdAt: { gte: new Date(Date.now() - 60_000) },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (recentDuplicate) {
+      return NextResponse.json({ data: recentDuplicate, idempotent: true }, { status: 200 });
+    }
+
     // Map methodology keys to Prisma enum values (handles any casing from the deploy wizard).
     // The DB enum value PRINCE2 is kept for backward-compat — internally we
     // resolve it via getMethodology() to the Traditional (PMI-Style) definition.
