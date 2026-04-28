@@ -5,6 +5,46 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 /**
+ * GET /api/agents/[id]/cycle-toggle
+ *
+ * Returns the current paused state + the active deployment's phase
+ * context so the toggle card can show "Cycle is paused / running" and
+ * the phase-aware effective cadence.
+ */
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const orgId = (session.user as any).orgId;
+  if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
+
+  const { id: agentId } = await params;
+  const agent = await db.agent.findFirst({
+    where: { id: agentId, orgId },
+    select: { id: true },
+  });
+  if (!agent) return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+
+  const deployment = await db.agentDeployment.findFirst({
+    where: { agentId, isActive: true },
+    select: { id: true, cyclePaused: true, currentPhase: true, phaseStatus: true, cycleInterval: true },
+  });
+  if (!deployment) {
+    return NextResponse.json({
+      data: { paused: true, currentPhase: null, phaseStatus: null, cycleInterval: 10 },
+    });
+  }
+
+  return NextResponse.json({
+    data: {
+      paused: deployment.cyclePaused,
+      currentPhase: deployment.currentPhase,
+      phaseStatus: deployment.phaseStatus,
+      cycleInterval: deployment.cycleInterval,
+    },
+  });
+}
+
+/**
  * POST /api/agents/[id]/cycle-toggle
  * Body: { paused: boolean }
  *

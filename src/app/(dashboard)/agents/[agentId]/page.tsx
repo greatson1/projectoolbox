@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DocumentEditor } from "@/components/documents/DocumentEditor";
+import { CycleToggleCard } from "@/components/agents/CycleToggleCard";
 import { PMProgressTracker } from "@/components/agents/PMProgressTracker";
 import { usePMTasks } from "@/hooks/use-api";
 import { SpreadsheetViewer } from "@/components/documents/SpreadsheetViewer";
@@ -1539,6 +1540,13 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
             {/* Notifications + Personality + Integrations */}
             <div className="space-y-4">
+              {/* Autonomous cycle toggle — pause the monitoring/alert/Sonnet
+                  loop while the project is in setup or otherwise dormant.
+                  Default for new deployments is paused (cyclePaused=true) so
+                  no Claude credits burn during clarification + research-
+                  approval. User toggles it on when delivery starts. */}
+              <CycleToggleCard agentId={AGENT_RESOLVED.id} accentColor={AGENT_RESOLVED.color} />
+
               {/* Notifications */}
               <Card className="p-4">
                 <h3 className="mb-3 text-sm font-semibold text-foreground">
