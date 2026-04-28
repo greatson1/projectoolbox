@@ -17,6 +17,34 @@ export class AgentLLM {
     const project = agent.deployments[0]?.project;
     if (!project) return [];
 
+    // ── No-progress short-circuit (cost guard) ──
+    // The VPS schedules autonomous cycles every 40 min regardless of
+    // whether anything has changed in the project since the last cycle.
+    // If NOTHING has been written (no task/risk/issue/artefact updates,
+    // no chat messages, no KB items) since the last AgentActivity entry,
+    // skip the Sonnet call. Saves ~1 Sonnet ($0.02) per idle cycle.
+    const lastActivity = await db.agentActivity.findFirst({
+      where: { agentId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (lastActivity) {
+      const since = lastActivity.createdAt;
+      const [tasksUpd, risksUpd, issuesUpd, artefactsUpd, chatMsgs, kbItems] = await Promise.all([
+        db.task.count({ where: { projectId: project.id, updatedAt: { gt: since } } }),
+        db.risk.count({ where: { projectId: project.id, updatedAt: { gt: since } } }),
+        db.issue.count({ where: { projectId: project.id, updatedAt: { gt: since } } }),
+        db.agentArtefact.count({ where: { projectId: project.id, updatedAt: { gt: since } } }),
+        db.chatMessage.count({ where: { agentId, createdAt: { gt: since } } }),
+        db.knowledgeBaseItem.count({ where: { agentId, projectId: project.id, updatedAt: { gt: since } } }),
+      ]);
+      const anyChange = tasksUpd + risksUpd + issuesUpd + artefactsUpd + chatMsgs + kbItems > 0;
+      if (!anyChange) {
+        // Nothing new — no need to re-run Sonnet. Return empty proposals.
+        return [];
+      }
+    }
+
     // Gather project state
     const [tasks, risks, issues, recentActivities] = await Promise.all([
       db.task.findMany({ where: { projectId: project.id }, orderBy: { updatedAt: "desc" }, take: 30 }),

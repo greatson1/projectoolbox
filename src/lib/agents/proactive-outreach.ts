@@ -35,6 +35,39 @@ export async function askUser(
   projectId: string,
   question: ProactiveQuestion,
 ): Promise<string> {
+  // ── Idempotency guard ──
+  // The VPS autonomous cycle (and any loop on the platform) calls askUser
+  // every cycle. Without this guard the same "What is the total budget?"
+  // gets posted every 40 min indefinitely, polluting chat AND triggering
+  // a fresh sentiment-analyser Haiku per post.
+  // Skip if there's an unanswered proactive question with the same
+  // question text in the last 7 days.
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000);
+    const existing = await db.chatMessage.findFirst({
+      where: {
+        agentId,
+        role: "agent",
+        createdAt: { gte: sevenDaysAgo },
+        metadata: {
+          path: ["type"],
+          equals: "proactive_question",
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (existing) {
+      const meta = (existing.metadata as any) || {};
+      // Match by exact question text — different questions are not deduped.
+      if (typeof meta.question === "string" && meta.question === question.question && meta.answered !== true) {
+        // Already pending. Refresh askedAt so the timeout resets, but DON'T post a duplicate.
+        return existing.id;
+      }
+    }
+  } catch (e) {
+    console.error("[proactive-outreach] idempotency check failed:", e);
+  }
+
   // Get agent and org context
   const agent = await db.agent.findUnique({
     where: { id: agentId },
