@@ -47,6 +47,15 @@ interface PipelineStep {
   details?: string;
   canRetry?: boolean;
   cycles?: boolean; // true if this step repeats per phase
+  /**
+   * Two-axis progress for the merged Generation & Review step. The card
+   * renders one dot row per axis when this is set; other steps leave it
+   * undefined and fall back to the single-line `details` text.
+   */
+  progress?: {
+    generated: { done: number; total: number };
+    approved: { done: number; total: number };
+  };
 }
 
 interface Phase {
@@ -390,7 +399,55 @@ function StepCard({
         {formatDuration(step.duration)}
       </span>
 
-      {/* Detail snippet — clickable for research step (link to KB) */}
+      {/* Two-axis progress — shown ONLY for the merged Generation & Review
+          card. One row per axis: Generated (have we drafted enough?) and
+          Approved (has the user signed off on each draft?). Empty dots = not
+          yet, filled dots = done. Caps at 8 dots so the strip stays compact;
+          for larger batches we fall back to a numeric label only. */}
+      {step.progress && (
+        <div className="flex flex-col gap-1 w-full">
+          {([
+            { label: "Drafted",  axis: step.progress.generated, color: "#3B82F6" },
+            { label: "Approved", axis: step.progress.approved,  color: "#10B981" },
+          ] as const).map(({ label, axis, color }) => {
+            const total = Math.max(1, axis.total);
+            const showDots = total <= 8;
+            return (
+              <div key={label} className="flex items-center justify-between gap-1.5 px-1">
+                <span className="text-[9px] font-semibold text-muted-foreground/80 w-[42px] text-left">{label}</span>
+                {showDots ? (
+                  <div className="flex items-center gap-0.5 flex-1">
+                    {Array.from({ length: total }).map((_, i) => (
+                      <span
+                        key={i}
+                        className="w-1.5 h-1.5 rounded-full transition-all"
+                        style={{
+                          background: i < axis.done ? color : "rgba(148,163,184,0.25)",
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex-1 h-1 rounded-full bg-muted/40 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${(axis.done / total) * 100}%`, background: color }}
+                    />
+                  </div>
+                )}
+                <span className="text-[9px] font-bold tabular-nums" style={{ color: axis.done >= total ? color : "var(--foreground)" }}>
+                  {axis.done}/{axis.total}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Detail snippet — clickable for research step (link to KB). Suppressed
+          when two-axis progress is rendered above for the merged card; the
+          dot rows already convey the numbers, the details line just adds
+          contextual prose underneath. */}
       {step.details && step.status !== "waiting" && (
         step.id === "research" && step.status === "done" ? (
           <Link
@@ -865,7 +922,16 @@ export default function AgentPipelinePage() {
                 </Button>
               </Link>
             )}
-            {currentStep.status === "waiting" && (currentStep.id === "approve" || currentStep.id === "review") && (
+            {/* Review CTA — fires when the merged Generation & Review card has
+                drafts awaiting approval (all generated but not all approved).
+                Single-axis "approve"/"review" ids are kept for back-compat
+                with any older payload still in the wire. */}
+            {(
+              (currentStep.id === "generation_review" && currentStep.progress &&
+                currentStep.progress.generated.done >= currentStep.progress.generated.total &&
+                currentStep.progress.approved.done < currentStep.progress.approved.total) ||
+              (currentStep.status === "waiting" && (currentStep.id === "approve" || currentStep.id === "review"))
+            ) && (
               <Link href={`/agents/${agentId}?tab=artefacts`}>
                 <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white flex-shrink-0 font-semibold">
                   <Eye className="w-3.5 h-3.5 mr-1.5" />
@@ -1022,11 +1088,17 @@ export default function AgentPipelinePage() {
                 } else if (ps === "complete") {
                   displayStatus = "COMPLETE"; colorClass = "bg-emerald-500/10 text-emerald-500";
                 } else if (ps === "active") {
-                  const generateStep = data.steps.find(s => s.id === "generate");
-                  const reviewStep = data.steps.find(s => s.id === "review");
-                  if (generateStep?.status === "running") {
+                  // Generation & Review is now one merged card. Decide between
+                  // GENERATING / REVIEWING by looking at its progress axes —
+                  // generation is the bottleneck if drafts < target; review
+                  // is the bottleneck if drafts == target but approvals < drafts.
+                  const grStep = data.steps.find(s => s.id === "generation_review");
+                  const grogress = grStep?.progress;
+                  const generating = grogress && grogress.generated.done < grogress.generated.total;
+                  const reviewing  = grogress && grogress.generated.done >= grogress.generated.total && grogress.approved.done < grogress.approved.total;
+                  if (generating) {
                     displayStatus = "GENERATING"; colorClass = "bg-blue-500/10 text-blue-500";
-                  } else if (reviewStep?.status === "running" || reviewStep?.status === "waiting") {
+                  } else if (reviewing) {
                     displayStatus = "REVIEWING"; colorClass = "bg-indigo-500/10 text-indigo-500";
                   } else {
                     displayStatus = "ACTIVE"; colorClass = "bg-primary/10 text-primary";
@@ -1084,7 +1156,11 @@ export default function AgentPipelinePage() {
                 // tasks complete and KB risk-check runs). Group them under
                 // a single "GATE PREREQUISITES" lane so the visualisation
                 // reflects reality, not a fake chain.
-                const PARALLEL_IDS = new Set(["review", "delivery", "kb_check"]);
+                // The merged Generation & Review card runs in parallel with
+                // Delivery Tasks (the gate prerequisites lane). The KB risk
+                // check piggybacks on the same lane. Old "generate" / "review"
+                // ids are gone — the merged card is "generation_review".
+                const PARALLEL_IDS = new Set(["generation_review", "delivery", "kb_check"]);
                 const groups: Array<
                   | { kind: "single"; step: PipelineStep; idx: number }
                   | { kind: "parallel"; steps: Array<{ step: PipelineStep; idx: number }> }

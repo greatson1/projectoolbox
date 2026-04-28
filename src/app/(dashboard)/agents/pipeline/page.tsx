@@ -58,8 +58,12 @@ export default function AgentPipelineIndex() {
             const steps = d.steps || [];
             const researchStep = steps.find((s: any) => s.id === "research");
             const clarifyStep = steps.find((s: any) => s.id === "clarify" || s.id === "clarification");
-            const generateStep = steps.find((s: any) => s.id === "generate");
-            const reviewStep = steps.find((s: any) => s.id === "review" || s.id === "approve");
+            // Generation & Review is now one merged step. Old "generate" /
+            // "review" / "approve" ids are kept as fallbacks for backward
+            // compat with any older payloads still in flight.
+            const grStep = steps.find((s: any) => s.id === "generation_review");
+            const generateStep = grStep || steps.find((s: any) => s.id === "generate");
+            const reviewStep = grStep || steps.find((s: any) => s.id === "review" || s.id === "approve");
             const running = steps.find((s: any) => s.status === "running");
             const failed = steps.find((s: any) => s.status === "failed");
 
@@ -72,6 +76,20 @@ export default function AgentPipelineIndex() {
             } else if (running) {
               derivedStatus = running.label;
               currentStepLabel = running.label;
+            } else if (grStep?.progress) {
+              // Use the merged card's two-axis progress when available so the
+              // fleet view can distinguish "still drafting" from "drafted but
+              // unapproved" — both are "running" but mean different things.
+              const p = grStep.progress;
+              if (p.generated.done < p.generated.total) {
+                derivedStatus = "Generating";
+              } else if (p.approved.done < p.approved.total) {
+                derivedStatus = "Awaiting Review";
+              } else if (grStep.status !== "done") {
+                derivedStatus = grStep.status === "failed" ? "Failed" : "Active";
+              } else {
+                derivedStatus = d.phaseStatus?.replace(/_/g, " ") || "Active";
+              }
             } else if (generateStep?.status === "running") {
               derivedStatus = "Generating";
             } else if (reviewStep?.status === "waiting" || reviewStep?.status === "running") {

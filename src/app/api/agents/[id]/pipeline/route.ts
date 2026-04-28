@@ -15,6 +15,19 @@ interface PipelineStep {
   details?: string;
   canRetry?: boolean;
   cycles?: boolean; // true if this step repeats per phase
+  /**
+   * Two-axis progress for the merged Generation & Review step. The card
+   * renders one dot row per axis when this is set.
+   *   generated.done / generated.total  → how many artefacts exist vs expected
+   *   approved.done  / approved.total   → how many of those are approved
+   *
+   * Kept optional so all the other (single-axis) steps don't have to
+   * populate it.
+   */
+  progress?: {
+    generated: { done: number; total: number };
+    approved: { done: number; total: number };
+  };
 }
 
 // Pipeline steps are built inline per request.
@@ -483,125 +496,43 @@ export async function GET(
     });
   }
 
-  // 4. Generate
+  // 4. Generation & Review (merged) — one card with two progress axes.
+  //
+  // Replaces the prior separate "generate" + "review" steps. Each artefact
+  // has a single state machine (not_yet → drafted → approved) — splitting it
+  // into two sequential cards led to the misleading "2/4 ✓" green tick that
+  // appeared even when the generate step was done with only half the
+  // template's artefacts AND the user had approved only those halves.
+  //
+  // The card's overall status is:
+  //   waiting → no artefacts yet AND nothing actively generating
+  //   running → generation underway OR drafts awaiting review
+  //   failed  → generation stalled (with retry)
+  //   done    → expected count met AND every artefact approved
   {
     let status: PipelineStep["status"] = "waiting";
     let details: string | undefined;
     let error: string | undefined;
     let canRetry = false;
+
     const genActivity = activities.find(
       (a) => a.type === "artefact_generation" || a.type === "generate"
     );
     const startedAt = genActivity?.createdAt?.toISOString();
 
-    // Find the expected artefact count from the phase record
     const expectedArtefacts = Array.isArray(currentPhaseObj?.artefacts)
       ? (currentPhaseObj!.artefacts as string[]).length
       : 0;
     const generatedCount = currentPhaseArtefacts.length;
-    // Don't render confusing "7/6" when an extra artefact was created on top
-    // of the template. If the agent over-delivers, show the absolute count
-    // with a hint that more than the template were produced.
-    const expectedVsGenerated = expectedArtefacts > 0
-      ? generatedCount > expectedArtefacts
-        ? `${generatedCount} (target ${expectedArtefacts})`
-        : `${generatedCount}/${expectedArtefacts}`
-      : String(generatedCount);
+    const approvedArtefacts = currentPhaseArtefacts.filter((a) => a.status === "APPROVED");
+    const approvedCount = approvedArtefacts.length;
+    // Honour over-delivery — if the agent produced more than the template,
+    // the target is the actual generated count rather than `2 of 4` style copy.
+    const target = expectedArtefacts > 0
+      ? Math.max(expectedArtefacts, generatedCount)
+      : generatedCount;
 
-    // Smarter stall detection:
-    // - Use the most recent artefact's createdAt to detect activity (not just lastCycleAt)
-    // - Scale timeout with expected batch size (3 min per artefact, min 10 min, max 60 min)
-    const timeoutMins = Math.max(10, Math.min(60, expectedArtefacts * 3));
-    const lastArtefactAt = currentPhaseArtefacts[0]?.createdAt
-      ? new Date(currentPhaseArtefacts[0].createdAt).getTime()
-      : deployment.lastCycleAt?.getTime() || deployment.deployedAt.getTime();
-    const minutesSinceLastArtefact = (now - lastArtefactAt) / 60_000;
-
-    if (expectedArtefacts > 0 && generatedCount >= expectedArtefacts) {
-      // All expected artefacts generated. We still call this step "done" — its
-      // job is generation, not approval — but spell out that approval is the
-      // next step so the user doesn't read this single green tick as "phase
-      // complete". The Review & Approve step holds the real next action.
-      const approvedSoFar = currentPhaseArtefacts.filter((a) => a.status === "APPROVED").length;
-      status = "done";
-      details = approvedSoFar < generatedCount
-        ? `${expectedVsGenerated} generated — ${approvedSoFar}/${generatedCount} approved on the next step`
-        : `${expectedVsGenerated} artefacts generated`;
-    } else if (generatedCount > 0 && phaseStatus === "active") {
-      // Partially generated — still running if recent activity, else stalled
-      if (minutesSinceLastArtefact <= timeoutMins) {
-        status = "running";
-        details = `${expectedVsGenerated} generated · more incoming`;
-      } else {
-        status = "failed";
-        error = `Generation stalled at ${expectedVsGenerated} artefacts — no new output for ${Math.floor(minutesSinceLastArtefact)} min`;
-        canRetry = true;
-      }
-    } else if (generatedCount > 0) {
-      // Generated some, but phaseStatus is not "active" (e.g. paused mid-batch
-      // because clarification was reopened, an approval is waiting, etc.).
-      // CRITICAL: do NOT mark "done" — we have generated < expected. Marking
-      // done here was the source of the misleading "2/4 ✓" green tick. Show
-      // the partial state honestly so the user sees there's still work owed.
-      if (expectedArtefacts > 0 && generatedCount < expectedArtefacts) {
-        status = "running";
-        details = `${expectedVsGenerated} generated · waiting on prior step before resuming`;
-      } else {
-        // No template, or generatedCount somehow >= expected — safe to call done.
-        status = "done";
-        details = `${expectedVsGenerated} artefacts generated`;
-      }
-    } else if (phaseStatus === "active" && minutesSinceUpdate <= timeoutMins) {
-      status = "running";
-      details = expectedArtefacts > 0
-        ? `Generating 0/${expectedArtefacts}...`
-        : "Generating artefacts...";
-    } else if (phaseStatus === "active" && minutesSinceUpdate > timeoutMins) {
-      status = "failed";
-      error = `Generation stalled — no output after ${Math.floor(minutesSinceUpdate)} min (expected within ${timeoutMins} min for ${expectedArtefacts || "this"} batch)`;
-      canRetry = true;
-    }
-
-    steps.push({
-      id: "generate",
-      label: `${phaseLabel}Generate Artefacts`,
-      cycles: true,
-      status,
-      startedAt,
-      completedAt:
-        status === "done" && currentPhaseArtefacts.length > 0
-          ? currentPhaseArtefacts[0].createdAt.toISOString()
-          : undefined,
-      duration:
-        status === "done" && startedAt && currentPhaseArtefacts.length > 0
-          ? currentPhaseArtefacts[0].createdAt.getTime() -
-            new Date(startedAt).getTime()
-          : undefined,
-      details,
-      error,
-      canRetry,
-    });
-  }
-
-  // 5. Review & Approve (merged)
-  {
-    let status: PipelineStep["status"] = "waiting";
-    let details: string | undefined;
-    const approvedArtefacts = currentPhaseArtefacts.filter(
-      (a) => a.status === "APPROVED"
-    );
-
-    // Re-derive expected count here (scoped to this block — the Generate
-    // block above used a local variable). We need it so we never mark Review
-    // "done" when there are still artefacts owed by the Generate step.
-    const reviewExpected = Array.isArray(currentPhaseObj?.artefacts)
-      ? (currentPhaseObj!.artefacts as string[]).length
-      : 0;
-    const reviewTarget = reviewExpected > 0
-      ? Math.max(reviewExpected, currentPhaseArtefacts.length) // honour over-delivery
-      : currentPhaseArtefacts.length;
-
-    // Extract unique approvers from artefact metadata
+    // Approver attribution for the "approved by …" suffix on the done state.
     const approvers = new Set<string>();
     let lastApprovedAt: Date | null = null;
     for (const a of approvedArtefacts) {
@@ -616,50 +547,79 @@ export async function GET(
       : approvers.size === 1 ? ` by ${[...approvers][0]}`
       : ` by ${approvers.size} reviewers`;
 
-    if (currentPhaseArtefacts.length === 0) {
-      status = "waiting";
-    } else if (
-      // Done means: every expected artefact exists AND every existing artefact
-      // is approved. Without the first half of the check, "All 2 approved" was
-      // firing even when the template called for 4.
-      reviewExpected > 0 &&
-      currentPhaseArtefacts.length >= reviewExpected &&
-      approvedArtefacts.length === currentPhaseArtefacts.length
-    ) {
+    // Stall detection — same scaling as before (3 min/artefact, clamped 10–60).
+    const timeoutMins = Math.max(10, Math.min(60, expectedArtefacts * 3));
+    const lastArtefactAt = currentPhaseArtefacts[0]?.createdAt
+      ? new Date(currentPhaseArtefacts[0].createdAt).getTime()
+      : deployment.lastCycleAt?.getTime() || deployment.deployedAt.getTime();
+    const minutesSinceLastArtefact = (now - lastArtefactAt) / 60_000;
+
+    if (target > 0 && generatedCount >= target && approvedCount === generatedCount) {
+      // Fully done — all expected artefacts exist AND every one is approved.
       status = "done";
-      details = `All ${approvedArtefacts.length} artefact${approvedArtefacts.length !== 1 ? "s" : ""} approved${approverText}`;
-    } else if (
-      // Edge case: no template (reviewExpected === 0) — fall back to the
-      // original "everything that exists is approved" rule so dynamic /
-      // user-added artefact sets still resolve cleanly.
-      reviewExpected === 0 &&
-      approvedArtefacts.length === currentPhaseArtefacts.length
-    ) {
-      status = "done";
-      details = `All ${approvedArtefacts.length} artefact${approvedArtefacts.length !== 1 ? "s" : ""} approved${approverText}`;
-    } else if (approvedArtefacts.length > 0) {
+      details = `All ${approvedCount} artefact${approvedCount !== 1 ? "s" : ""} approved${approverText}`;
+    } else if (generatedCount === 0 && phaseStatus === "active" && minutesSinceUpdate <= timeoutMins) {
+      // Nothing yet, generation actively running.
       status = "running";
-      // Show progress against the EXPECTED total, not just what was generated.
-      // "2/2 approved" reads "done"; "2/4 approved" reads "halfway".
-      details = `${approvedArtefacts.length}/${reviewTarget} approved${approverText}`;
-    } else {
+      details = expectedArtefacts > 0
+        ? `Generating 0/${expectedArtefacts}…`
+        : "Generating artefacts…";
+    } else if (generatedCount === 0 && phaseStatus === "active" && minutesSinceUpdate > timeoutMins) {
+      // Nothing yet, generation has stalled past the timeout.
+      status = "failed";
+      error = `Generation stalled — no output after ${Math.floor(minutesSinceUpdate)} min (expected within ${timeoutMins} min for ${expectedArtefacts || "this"} batch)`;
+      canRetry = true;
+    } else if (generatedCount === 0) {
+      // Nothing yet, phase isn't active — waiting on a prior step.
       status = "waiting";
-      const waitingCount = currentPhaseArtefacts.length;
-      details = reviewExpected > waitingCount
-        ? `${waitingCount}/${reviewTarget} artefacts awaiting review · ${reviewTarget - waitingCount} still to be generated`
-        : `${waitingCount} artefact${waitingCount !== 1 ? "s" : ""} awaiting review`;
+      details = "Waiting on prior step";
+    } else if (generatedCount < target) {
+      // Partial generation. Still running if active + recent activity.
+      if (phaseStatus === "active" && minutesSinceLastArtefact <= timeoutMins) {
+        status = "running";
+        const incoming = target - generatedCount;
+        details = `${generatedCount} drafted · ${approvedCount} approved · ${incoming} more incoming`;
+      } else if (phaseStatus === "active") {
+        // Active but stalled mid-batch.
+        status = "failed";
+        error = `Generation stalled at ${generatedCount}/${target} artefacts — no new output for ${Math.floor(minutesSinceLastArtefact)} min`;
+        canRetry = true;
+      } else {
+        // Paused mid-batch (e.g. clarification reopened). Honest "running"
+        // state — work is owed but not currently in flight.
+        status = "running";
+        details = `${generatedCount} drafted · ${approvedCount} approved · waiting on prior step`;
+      }
+    } else {
+      // All generated, some still unapproved — call to action lives here.
+      status = "running";
+      const pending = generatedCount - approvedCount;
+      details = approvedCount > 0
+        ? `All ${generatedCount} drafted · ${pending} await${pending === 1 ? "s" : ""} your review`
+        : `All ${generatedCount} drafted · awaiting your review`;
     }
 
     steps.push({
-      id: "review",
-      label: `${phaseLabel}Review & Approve`,
+      id: "generation_review",
+      label: `${phaseLabel}Generation & Review`,
       cycles: true,
       status,
-      startedAt: currentPhaseArtefacts.length > 0
-        ? currentPhaseArtefacts[currentPhaseArtefacts.length - 1].createdAt.toISOString()
-        : undefined,
-      completedAt: lastApprovedAt ? lastApprovedAt.toISOString() : undefined,
+      startedAt,
+      completedAt:
+        status === "done" && lastApprovedAt
+          ? lastApprovedAt.toISOString()
+          : undefined,
+      duration:
+        status === "done" && startedAt && lastApprovedAt
+          ? lastApprovedAt.getTime() - new Date(startedAt).getTime()
+          : undefined,
       details,
+      error,
+      canRetry,
+      progress: {
+        generated: { done: generatedCount, total: target },
+        approved:  { done: approvedCount,  total: target },
+      },
     });
   }
 
@@ -847,7 +807,7 @@ export async function GET(
         if (s.status === "done" || s.status === "running") {
           const prevDetails = s.details;
           s.status = "waiting";
-          const reworkHint = s.id === "generate" ? " (stale — will regenerate)" : "";
+          const reworkHint = s.id === "generation_review" ? " (stale — will regenerate)" : "";
           s.details = prevDetails
             ? `${prevDetails} — waiting on ${blockingReason}${reworkHint}`
             : `Waiting on ${blockingReason}`;
