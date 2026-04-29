@@ -224,6 +224,19 @@ export async function GET(
     }
   }
 
+  // Compute phase completion ONCE per request and reuse across the auto-gate
+  // logic, the Delivery Tasks step, and the KB Risk Check step. Earlier this
+  // function was loaded and called 3× per pipeline fetch — each call runs
+  // its own ~6-query Promise.all (tasks, eventTasks, blockers, KB flags) so
+  // the duplication cost ~12 redundant queries per request.
+  let cachedCompletion: Awaited<ReturnType<typeof import("@/lib/agents/phase-completion").getPhaseCompletion>> | null = null;
+  async function loadCompletion() {
+    if (cachedCompletion || !currentPhase || !projectId) return cachedCompletion;
+    const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+    cachedCompletion = await getPhaseCompletion(projectId, currentPhase, agentId);
+    return cachedCompletion;
+  }
+
   // ── Auto-raise a phase gate when one is genuinely needed ───────────────
   // If the 3-layer phase completion check says canAdvance === true but no
   // PENDING PHASE_GATE exists for this phase, raise one now. Without this,
@@ -238,8 +251,7 @@ export async function GET(
       // Always run completion check — we use it both for auto-gate AND for
       // self-healing the "blocked_tasks_incomplete" status that can stick
       // around after PM tasks are completed (or after a deadlock fix).
-      const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
-      const completion = await getPhaseCompletion(deployment.projectId, currentPhase, agentId);
+      const completion = (await loadCompletion())!;
 
       // Self-heal stale BLOCKED status: phaseStatus may still be
       // "blocked_tasks_incomplete" from an earlier check even though the
@@ -629,8 +641,7 @@ export async function GET(
     let details: string | undefined;
     try {
       if (currentPhase && projectId) {
-        const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
-        const comp = await getPhaseCompletion(projectId, currentPhase, agentId);
+        const comp = (await loadCompletion())!;
         const pmTotal = comp.pmTasks.total;
         const pmDone = comp.pmTasks.done;
         const delTotal = comp.deliveryTasks.total;
@@ -663,8 +674,7 @@ export async function GET(
     let details: string | undefined;
     try {
       if (currentPhase && projectId) {
-        const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
-        const comp = await getPhaseCompletion(projectId, currentPhase, agentId);
+        const comp = (await loadCompletion())!;
         const kbBlockers = comp.blockers.filter((b) => b.startsWith("KB flag"));
         if (currentPhaseArtefacts.length === 0) {
           status = "waiting";

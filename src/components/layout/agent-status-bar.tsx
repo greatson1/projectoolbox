@@ -440,18 +440,17 @@ export function AgentStatusBar() {
   useEffect(() => {
     setLoading(true);
     fetchAll();
-    // 30s — tight enough that task completions, approvals and phase advances
-    // reflect on the banner within half a minute. The metrics endpoint that
-    // backs this is cheap (single Prisma round-trip + getPhaseCompletion).
-    const iv = setInterval(fetchAll, 30_000);
-    // Also refetch when the tab regains focus so coming back from another
-    // tab doesn't show a 30s-stale banner.
-    const onFocus = () => fetchAll();
-    window.addEventListener("focus", onFocus);
-    return () => {
-      clearInterval(iv);
-      window.removeEventListener("focus", onFocus);
-    };
+    // 60s — earlier 30s combined with the same fetch firing on every window
+    // focus produced 4× /api/projects/:id/metrics calls (each with ~10 DB
+    // queries) per refresh, repeating every time the user alt-tabbed back.
+    // 60s still surfaces task/approval/phase changes within a minute; the
+    // in-app /next-action banner refreshes more aggressively for actionable
+    // changes already.
+    const iv = setInterval(fetchAll, 60_000);
+    // Focus refetch removed — was the dominant source of slowness when the
+    // user came back from another tab. The minute-long polling keeps the
+    // banner usefully fresh without the metrics-storm side effect.
+    return () => clearInterval(iv);
   }, [fetchAll]);
 
   // Re-dismiss on project change

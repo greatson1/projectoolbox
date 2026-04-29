@@ -24,19 +24,23 @@ export function Providers({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // 15s stale window — keeps in-page navigation fast (no refetch
-            // when popping between sub-pages within seconds) without letting
-            // post-mutation state drift across pages. Phase changes,
-            // approvals, and task updates land on every surface within 15s
-            // of switching to it.
-            staleTime: 15 * 1000,
+            // 60s stale window — perf tuning. The earlier 15s value combined
+            // with refetchOnWindowFocus + refetchOnMount produced a refetch
+            // storm on every alt-tab back into the app: every cached query
+            // older than 15s would re-run, and at any one time the dashboard
+            // has 6–10 active queries. 60s is still tight enough that
+            // post-mutation drift surfaces within a minute on any view, but
+            // far enough out to absorb normal page hopping.
+            staleTime: 60 * 1000,
             gcTime: 15 * 60 * 1000,        // 15 min — keep unused data in cache
-            // Refetch when the tab regains focus so coming back from another
-            // app/tab doesn't show 5-minute-old phase or task counts.
-            refetchOnWindowFocus: true,
-            // Default (true) — refetch on mount if data is stale. With the
-            // 15s staleTime this means hopping between pages refreshes data
-            // that's older than 15 seconds.
+            // Disabled — focus refetch was the single biggest source of
+            // perceived slowness when returning from another tab. Hooks that
+            // genuinely need fresh data on focus opt in at the call site
+            // (e.g. agent-status-bar polls explicitly via setInterval).
+            refetchOnWindowFocus: false,
+            // Default (true) — refetch on mount if data is stale. Combined
+            // with the 60s staleTime, hopping between pages within a minute
+            // serves cache; longer than that triggers a single refetch.
             refetchOnMount: true,
             // Retry on 403 "session loading" errors (orgId not yet in JWT after refresh)
             retry: (failureCount, error: any) => {

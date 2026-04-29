@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after as waitUntil } from "next/server";
 import { db } from "@/lib/db";
 import { CreditService } from "@/lib/credits/service";
 import { resolveApiCaller } from "@/lib/api-auth";
@@ -116,19 +117,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // ── Sentiment extraction (non-blocking, cheap Haiku) ──
+  // Wrapped in waitUntil so Vercel keeps the lambda alive long enough for the
+  // background promise to complete AFTER the streaming response is finished.
+  // The earlier `(async () => {...})().catch(() => {})` IIFE was already
+  // fire-and-forget at the JS layer, but in serverless the lambda can freeze
+  // mid-flight once the response is sent — waitUntil is the contract that
+  // tells the platform "let this finish." Same pattern used elsewhere
+  // (e.g. artefacts PATCH route).
   if (message.length > 10) {
-    (async () => {
-      const a = await db.agent.findUnique({ where: { id: agentId }, select: { orgId: true } });
-      if (!a) return;
-      const { recordSentiment } = await import("@/lib/sentiment/recorder");
-      await recordSentiment({
-        orgId: a.orgId,
-        text: message,
-        subjectType: "chat",
-        subjectId: savedUserMsg.id,
-        context: "user chat message to agent",
-      });
-    })().catch(() => {});
+    waitUntil((async () => {
+      try {
+        const a = await db.agent.findUnique({ where: { id: agentId }, select: { orgId: true } });
+        if (!a) return;
+        const { recordSentiment } = await import("@/lib/sentiment/recorder");
+        await recordSentiment({
+          orgId: a.orgId,
+          text: message,
+          subjectType: "chat",
+          subjectId: savedUserMsg.id,
+          context: "user chat message to agent",
+        });
+      } catch { /* sentiment failures must never affect chat */ }
+    })());
   }
 
   // ── Clarification session guard ───────────────────────────────────────────────
@@ -188,26 +198,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           answerQuestionInSession(agentId, deployment0.projectId, orgId, currentQuestion.id, message).catch(() => {});
         }
       } else {
-        // BACKSTOP — when Claude asks a question in plain prose (violating the
-        // <ASK>-tag rule) and the user replies, no clarification session is
-        // active, so the answer never reaches storeFactToKB. Result: the agent
-        // re-asks the same question on the next turn. Recover by extracting a
-        // structured fact via Haiku and persisting it.
+        // BACKSTOP — covers two gaps where structured fact-storage misses:
+        //  (a) Claude asks a question in plain prose (violating the <ASK>-tag rule).
+        //  (b) Claude asks ONE question via <ASK>, which is saved as a
+        //      __AGENT_QUESTION__ card with metadata. Single-question cards
+        //      do NOT create a clarification session, so the user's reply
+        //      via the regular chat input has no automatic storage path.
+        // Either way, recover by extracting a structured fact via Haiku and
+        // persisting it before the next turn re-asks.
         try {
-          const { agentMessageContainsQuestion, replyLooksSubstantive, extractAnswerFromReply } =
+          const { getQuestionToBackstop, replyLooksSubstantive, extractAnswerFromReply } =
             await import("@/lib/agents/extract-answer-from-reply");
           if (replyLooksSubstantive(message)) {
             const lastAgentMsg = await db.chatMessage.findFirst({
               where: { agentId, role: "agent" },
               orderBy: { createdAt: "desc" },
-              select: { content: true, createdAt: true },
+              select: { content: true, metadata: true, createdAt: true },
             });
-            if (lastAgentMsg && agentMessageContainsQuestion(lastAgentMsg.content)) {
+            const questionText = lastAgentMsg
+              ? getQuestionToBackstop(lastAgentMsg.content, lastAgentMsg.metadata)
+              : null;
+            if (questionText) {
               // Don't await — let the extraction happen in the background while
               // the main Claude stream proceeds. The fact will be available on
               // subsequent turns even if Claude responds before extraction lands.
               (async () => {
-                const fact = await extractAnswerFromReply(lastAgentMsg.content, message);
+                const fact = await extractAnswerFromReply(questionText, message);
                 if (fact) {
                   const { storeFactToKB } = await import("@/lib/agents/clarification-session");
                   await storeFactToKB(

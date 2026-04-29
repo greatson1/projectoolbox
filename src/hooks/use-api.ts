@@ -51,8 +51,17 @@ export function useAgents() {
   return useQuery({
     queryKey: ["agents"],
     queryFn: () => api<any>("/api/agents"),
-    refetchInterval: 20000, // 20 s — drives the bottom status banner; needs to stay close to live
-    refetchOnWindowFocus: true,
+    // 60s polling — earlier 20s value combined with a separate 30s
+    // setInterval inside agent-status-bar fanning out to /api/projects/:id/
+    // metrics × up to 4 produced ~50 DB queries / 30s per logged-in user.
+    // The bottom status banner doesn't need sub-minute freshness; meaningful
+    // state changes (paused, blocked, awaiting approval) also flow through
+    // mutation invalidations and the in-page next-action banner refreshes
+    // every 30s anyway.
+    refetchInterval: 60000,
+    // Focus refetch off — same reason; the inherited default is now `false`
+    // in providers.tsx, but make it explicit here so the intent is local.
+    refetchOnWindowFocus: false,
   });
 }
 
