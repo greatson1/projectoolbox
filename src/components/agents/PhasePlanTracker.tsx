@@ -67,6 +67,22 @@ interface TaskChild {
   status: string;
   progress: number;
   done: boolean;
+  linkedArtefact?: string;
+  linkedEvent?: string;
+}
+
+// Maps a task's auto-tick driver to a one-line user-facing hint.
+// Returned text starts with "auto — " so it formats consistently.
+function autoTickHint(t: { linkedArtefact?: string; linkedEvent?: string }): string | null {
+  if (t.linkedArtefact) return `auto — ticks when "${t.linkedArtefact}" is generated`;
+  switch (t.linkedEvent) {
+    case "clarification_complete": return "auto — ticks once you answer the agent's clarification questions";
+    case "gate_request":           return "auto — ticks when the phase gate approval is created";
+    case "phase_advanced":         return "auto — ticks after the phase advances";
+    case "risk_register_updated":  return "auto — ticks when you add or edit a risk on the Risk Register";
+    case "stakeholder_updated":    return "auto — ticks when you add a stakeholder on the People page";
+    default:                       return null;
+  }
 }
 
 interface TaskGroup {
@@ -336,15 +352,15 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                           {group.children.map(t => {
                             const overrideDone = taskOverrides[t.id];
                             const effectiveDone = overrideDone === true ? true : overrideDone === false ? false : t.done;
-                            // Document Generation tasks are auto-driven by
+                            // Document-generation tasks are auto-driven by
                             // artefact existence — don't let the user
                             // hand-tick them; they'd just resync next refresh.
-                            const isAutoDriven = group.category === "Document Generation";
-                            const canToggle = !isAutoDriven;
-                            // Tag incomplete rows on the CURRENT phase only —
-                            // the page's focus handler pulse-highlights every
-                            // matching element so the user lands directly on
-                            // what's blocking advancement.
+                            // Other auto-tick tasks (e.g. risk_register_updated)
+                            // CAN be hand-ticked as a fallback if the user has
+                            // already done the work elsewhere.
+                            const hint = autoTickHint(t);
+                            const isArtefactDriven = !!t.linkedArtefact;
+                            const canToggle = !isArtefactDriven;
                             const isBlocking = phase.isCurrent && !effectiveDone;
                             return (
                               <div
@@ -370,8 +386,13 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                                 )}
                                 <span className={`text-[10px] flex-1 ${effectiveDone ? "text-muted-foreground line-through" : "text-foreground"}`}>
                                   {t.title}
-                                  {isAutoDriven && !effectiveDone && (
-                                    <span className="ml-1 text-muted-foreground/60 italic">(auto — ticks when artefact exists)</span>
+                                  {hint && !effectiveDone && (
+                                    <span className="ml-1 text-muted-foreground/60 italic">
+                                      ({hint}{canToggle ? " · or click ○ to mark done" : ""})
+                                    </span>
+                                  )}
+                                  {!hint && canToggle && !effectiveDone && (
+                                    <span className="ml-1 text-muted-foreground/60 italic">(click ○ to mark done)</span>
                                   )}
                                 </span>
                                 {!effectiveDone && t.progress > 0 && (

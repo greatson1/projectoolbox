@@ -819,19 +819,12 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     }
   }
 
-  // ── Step 4: Create initial risk assessment ──
-  const existingRisks = await db.risk.count({ where: { projectId: project.id } });
-  if (existingRisks === 0) {
-    const seedRisks = getSeedRisks(project.name, project.category || "other", project.budget || 0);
-    for (const risk of seedRisks) {
-      await db.risk.create({
-        data: { projectId: project.id, ...risk },
-      });
-    }
-    await db.agentActivity.create({
-      data: { agentId, type: "risk", summary: `Identified ${seedRisks.length} initial risks for "${project.name}"` },
-    });
-  }
+  // ── Step 4: Risk Register starts empty ──
+  // Previously seeded universal placeholders ("Budget overrun" referencing
+  // a £0 budget when project.budget was null, etc.). That misled the user
+  // into thinking the agent had analysed the project at deploy time when
+  // no facts had been confirmed yet. Real risks now flow from research
+  // findings, artefact action items (Charter / PMP), and user input.
 
   // ── Step 5: Create gate approval request — BUT ONLY if artefacts exist ──
   // Premature gates (zero artefacts) were flooding the approvals queue. A phase
@@ -2195,44 +2188,6 @@ This document must:
 | Action | Owner | Due Date | Status |
 [Concrete next actions arising from this document]
 ${agentProtocol(name)}`;
-}
-
-function getSeedRisks(projectName: string, category: string, budget: number) {
-  const name = projectName.toLowerCase();
-  const risks = [
-    { title: "Budget overrun", description: `Risk of exceeding the £${budget.toLocaleString()} budget due to unforeseen costs or price increases`, probability: 3, impact: 4, score: 12, status: "OPEN" },
-    { title: "Schedule slippage", description: "Key milestones may be delayed due to dependency chains or resource unavailability", probability: 3, impact: 3, score: 9, status: "OPEN" },
-    { title: "Stakeholder availability", description: "Key decision-makers may be unavailable for timely approvals, causing delays", probability: 2, impact: 3, score: 6, status: "OPEN" },
-  ];
-
-  if (category === "travel" || name.includes("trip") || name.includes("travel") || name.includes("holiday")) {
-    risks.push(
-      { title: "Flight cancellation or delay", description: "Flights may be cancelled or significantly delayed, disrupting the entire itinerary and incurring rebooking costs", probability: 2, impact: 4, score: 8, status: "OPEN" },
-      { title: "Visa / entry requirements not met", description: "Entry documentation, visa approvals, or vaccination requirements may not be obtained in time", probability: 2, impact: 5, score: 10, status: "OPEN" },
-      { title: "Health and medical risk", description: "Illness, injury, or required vaccinations (e.g. yellow fever, malaria prophylaxis) may impact the traveller or cause trip cancellation", probability: 2, impact: 4, score: 8, status: "OPEN" },
-      { title: "Accommodation unavailability", description: "Booked accommodation may be unavailable, overbooked, or below acceptable standard on arrival", probability: 1, impact: 3, score: 3, status: "OPEN" },
-      { title: "Currency and payment issues", description: "Access to local currency (NGN, etc.) may be restricted; card payments may not be accepted at all locations", probability: 2, impact: 3, score: 6, status: "OPEN" },
-    );
-  }
-
-  if (name.includes("nigeria") || name.includes("lagos") || name.includes("abuja")) {
-    risks.push(
-      { title: "Security and safety risk", description: "Nigeria carries an elevated FCO travel advisory. Petty crime, scams, and in some regions civil unrest are material risks requiring mitigation", probability: 3, impact: 5, score: 15, status: "OPEN" },
-      { title: "Yellow fever vaccination requirement", description: "Yellow fever vaccination certificate (valid yellow card) is mandatory for entry into Nigeria. Without it, entry will be refused", probability: 1, impact: 5, score: 5, status: "OPEN" },
-      { title: "Naira exchange rate volatility", description: "The Nigerian Naira has experienced significant exchange rate volatility. Budget variance risk is HIGH", probability: 3, impact: 3, score: 9, status: "OPEN" },
-      { title: "Power and connectivity outages", description: "Nigeria experiences frequent power cuts and intermittent internet connectivity which may disrupt communications and planned activities", probability: 4, impact: 2, score: 8, status: "OPEN" },
-    );
-  }
-
-  if (category === "events" || name.includes("event") || name.includes("conference") || name.includes("wedding")) {
-    risks.push(
-      { title: "Vendor no-show or cancellation", description: "A critical vendor (caterer, photographer, venue) cancels or fails to deliver", probability: 2, impact: 5, score: 10, status: "OPEN" },
-      { title: "Weather disruption", description: "Adverse weather affecting outdoor elements of the event", probability: 2, impact: 3, score: 6, status: "OPEN" },
-      { title: "Attendance variance", description: "Actual attendance significantly different from planned, affecting catering and logistics", probability: 3, impact: 2, score: 6, status: "OPEN" },
-    );
-  }
-
-  return risks;
 }
 
 // ─── TBC Extraction + Clarification Message ──────────────────────────────────

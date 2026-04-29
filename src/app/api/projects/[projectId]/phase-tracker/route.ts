@@ -124,13 +124,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         category: parent.title.replace(/^[^:]+:\s*/, ""),
         total: kids.length,
         done,
-        children: kids.map(k => ({
-          id: k.id,
-          title: k.title,
-          status: k.status,
-          progress: k.progress || 0,
-          done: k.status === "DONE" || (k.progress || 0) >= 100,
-        })),
+        children: kids.map(k => {
+          const desc = k.description || "";
+          const artMatch = desc.match(/\[artefact:([^\]]+)\]/);
+          const evtMatch = desc.match(/\[event:([^\]]+)\]/);
+          return {
+            id: k.id,
+            title: k.title,
+            status: k.status,
+            progress: k.progress || 0,
+            done: k.status === "DONE" || (k.progress || 0) >= 100,
+            linkedArtefact: artMatch ? artMatch[1] : undefined,
+            linkedEvent: evtMatch ? evtMatch[1] : undefined,
+          };
+        }),
       };
     });
 
