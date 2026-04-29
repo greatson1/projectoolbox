@@ -291,6 +291,10 @@ model AgentDecision {
   approvalId  String?        @unique
   approval    Approval?      @relation(fields: [approvalId], references: [id])
   createdAt   DateTime       @default(now())
+
+  // Hot path: `_count: { decisions: true }` on the agents-list endpoint
+  // counts decisions per agent.
+  @@index([agentId])
 }
 
 model AgentActivity {
@@ -301,6 +305,13 @@ model AgentActivity {
   summary   String
   metadata  Json?
   createdAt DateTime @default(now())
+
+  // Hot paths: `findMany where agentId=? orderBy createdAt desc take N` on
+  // the agent detail / chat / status-bar pages, plus cross-org joins on
+  // `where agent: { orgId } orderBy createdAt desc`. Composite (agentId,
+  // createdAt) covers both the per-agent recent-activity list and the
+  // _count rollup used by the agents-list endpoint.
+  @@index([agentId, createdAt])
 }
 
 model ChatMessage {
@@ -312,6 +323,11 @@ model ChatMessage {
   content        String   @db.Text
   metadata       Json?
   createdAt      DateTime @default(now())
+
+  // Hot paths: chat history load (orderBy createdAt asc), recent-message
+  // findFirst, and the `_count: { chatMessages: true }` rollup on the
+  // agents-list endpoint. Composite (agentId, createdAt) handles all three.
+  @@index([agentId, createdAt])
 }
 
 // ─── Approvals (HITL) ───
@@ -346,6 +362,12 @@ model Approval {
   sentiment           String?           // positive, neutral, concerned, negative
   sentimentScore      Float?            // -1 to 1
   sentimentConfidence Float?            // 0 to 1
+
+  // Hot paths: pending-approval count per project, status-bar pending
+  // alerts via `where project: { orgId } status: PENDING`, and the
+  // org-level approvals page.
+  @@index([projectId, status])
+  @@index([status, createdAt])
 }
 
 // ─── Project Modules ───
@@ -434,6 +456,12 @@ model Task {
   updatedAt       DateTime  @updatedAt
 
   @@index([sourceArtefactId])
+  // Hot paths: the metrics route's groupBy(status) and overdue count
+  // (`endDate < now AND status != DONE`), plus the project tasks list
+  // filtered by status, sprint filtering, and assignee lookups.
+  @@index([projectId, status])
+  @@index([projectId, endDate])
+  @@index([sprintId])
 }
 
 model Risk {
@@ -453,6 +481,11 @@ model Risk {
   responseLog    Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  // Hot paths: metrics route (OPEN with score), groupBy(category), and
+  // the project risks page filter-by-status.
+  @@index([projectId, status])
+  @@index([projectId, category])
 }
 
 model Issue {
@@ -467,6 +500,11 @@ model Issue {
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  // Hot paths: metrics route groupBy(status) and the
+  // count(priority=CRITICAL, status!=CLOSED).
+  @@index([projectId, status])
+  @@index([projectId, priority])
 }
 
 model ChangeRequest {
@@ -895,6 +933,10 @@ model AgentArtefact {
 
   @@index([agentId, phaseId])
   @@index([projectId])
+  // Hot paths: dashboard tile fetches top 30 by createdAt; pipeline route
+  // filters by status; phase-completion counts APPROVED per phase.
+  @@index([projectId, createdAt])
+  @@index([projectId, status])
 }
 
 // ─── Cost Tracking ───
@@ -918,6 +960,9 @@ model CostEntry {
 
   @@index([projectId])
   @@index([projectId, category])
+  // Hot path: aggregate(SUM amount) WHERE entryType=ACTUAL on the metrics
+  // route. Without this the aggregate scans every cost row per project.
+  @@index([projectId, entryType])
 }
 
 // ─── Benefits Realisation ───
