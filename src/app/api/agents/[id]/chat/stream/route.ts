@@ -187,6 +187,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           const { answerQuestionInSession } = await import("@/lib/agents/clarification-session");
           answerQuestionInSession(agentId, deployment0.projectId, orgId, currentQuestion.id, message).catch(() => {});
         }
+      } else {
+        // BACKSTOP — when Claude asks a question in plain prose (violating the
+        // <ASK>-tag rule) and the user replies, no clarification session is
+        // active, so the answer never reaches storeFactToKB. Result: the agent
+        // re-asks the same question on the next turn. Recover by extracting a
+        // structured fact via Haiku and persisting it.
+        try {
+          const { agentMessageContainsQuestion, replyLooksSubstantive, extractAnswerFromReply } =
+            await import("@/lib/agents/extract-answer-from-reply");
+          if (replyLooksSubstantive(message)) {
+            const lastAgentMsg = await db.chatMessage.findFirst({
+              where: { agentId, role: "agent" },
+              orderBy: { createdAt: "desc" },
+              select: { content: true, createdAt: true },
+            });
+            if (lastAgentMsg && agentMessageContainsQuestion(lastAgentMsg.content)) {
+              // Don't await — let the extraction happen in the background while
+              // the main Claude stream proceeds. The fact will be available on
+              // subsequent turns even if Claude responds before extraction lands.
+              (async () => {
+                const fact = await extractAnswerFromReply(lastAgentMsg.content, message);
+                if (fact) {
+                  const { storeFactToKB } = await import("@/lib/agents/clarification-session");
+                  await storeFactToKB(
+                    agentId,
+                    deployment0.projectId!,
+                    orgId,
+                    fact.title,
+                    fact.content,
+                    ["chat_extracted_backstop", "user_answer"],
+                  );
+                }
+              })().catch((e) => console.error("[chat/stream] backstop extraction failed:", e));
+            }
+          }
+        } catch (e) {
+          console.error("[chat/stream] backstop import failed:", e);
+        }
       }
     }
   } catch {}
@@ -1111,6 +1149,9 @@ The following are internal system markers. NEVER write them in your responses:
 PROJECT_STATUS, AGENT_QUESTION, __PROJECT_STATUS__, __AGENT_QUESTION__, __CLARIFICATION_SESSION__, __CLARIFICATION_COMPLETE__, __CHANGE_PROPOSAL__
 These are handled by the platform automatically. Just write normal text.
 - Only introduce yourself on the very first ever message (when history is empty)
+
+## CRITICAL: NEVER ASSERT VERIFICATION
+NEVER append [VERIFIED], [CONFIRMED], [SOURCE: ...], "verified by me", or any similar badge to a fact. Verification is a property of facts that exist in the project's CONFIRMED FACTS block above (sourced from the Project row, Stakeholder table, user-confirmed KB items, or approved Charter). You are not the verifier — you READ from those sources. If a value is in CONFIRMED FACTS, just state it; if it isn't, write \`[TBC — <field> not confirmed]\` instead of inventing one. Never write a budget, sponsor, date, or person's name unless it appears verbatim in CONFIRMED FACTS or USER-CONFIRMED FACTS — even if you "know" it from elsewhere in the conversation. The platform will strip [VERIFIED]/[CONFIRMED] tags post-stream and replace fabricated values with [TBC] anyway, so writing them just produces ugly output.
 
 ## APP SURFACES THE USER CAN VISIT
 You exist inside Projectoolbox — a project-management web app. When the user asks what to do next, where to look, or how to act on something, link them to the right surface using markdown link syntax: [link text](path). Don't paste full URLs.
@@ -2336,11 +2377,41 @@ When you mention an action the user must take ("review the artefacts", "approve 
         }
 
         // Clean <ASK> and <FACTS> blocks from the persisted text
-        const cleanedContent = fullContent
+        let cleanedContent = fullContent
           .replace(/<ASK[\s\S]*?<\/ASK>/gi, "")
           .replace(/<FACTS>[\s\S]*?<\/FACTS>/gi, "")
           .replace(/\n{3,}/g, "\n\n")
           .trim();
+
+        // ── Fabrication sanitiser ──
+        // Strip self-asserted [VERIFIED]/[CONFIRMED] tags and replace
+        // load-bearing values (budget, sponsor, dates) that don't match
+        // the project's confirmed facts. Same pattern the artefact-side
+        // contradiction-detector + fabricated-names-validator use, but
+        // applied to the chat reply itself before it lands in history.
+        if (deployment?.projectId) {
+          try {
+            const { getConfirmedFacts } = await import("@/lib/agents/confirmed-facts");
+            const { sanitiseChatResponse } = await import("@/lib/agents/sanitise-chat-response");
+            const facts = await getConfirmedFacts(deployment.projectId);
+            const result = sanitiseChatResponse(cleanedContent, facts);
+            if (result.corrections.length > 0) {
+              cleanedContent = result.content;
+              console.warn(
+                `[chat/stream] sanitised ${result.corrections.length} fabrication(s) from chat reply: ${result.corrections.map(c => `${c.kind}:${c.before}→${c.after}`).join(", ")}`,
+              );
+              await db.agentActivity.create({
+                data: {
+                  agentId,
+                  type: "system",
+                  summary: `Chat reply sanitised: ${result.corrections.length} fabricated claim(s) replaced — ${result.corrections.slice(0, 3).map(c => `"${c.before}"`).join(", ")}.`,
+                },
+              }).catch(() => {});
+            }
+          } catch (e) {
+            console.error("[chat/stream] sanitiser failed:", e);
+          }
+        }
 
         // ── Persist + finalise ────────────────────────────────────────────
         await db.chatMessage.create({
