@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   const { projectId } = await params;
 
   const tasks = await db.task.findMany({
-    where: { projectId, isCriticalPath: true },
+    where: { projectId, isCriticalPath: true, ...EXCLUDE_PM_OVERHEAD },
     orderBy: { startDate: "asc" },
   });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -105,7 +106,7 @@ export async function GET(
         },
       }),
       db.task.findMany({
-        where: { projectId },
+        where: { projectId, ...EXCLUDE_PM_OVERHEAD },
         orderBy: { createdAt: "asc" },
       }),
       db.risk.findMany({

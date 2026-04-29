@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { formatMoney, normaliseCurrency } from "@/lib/currency";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         org: { select: { currency: true } },
       },
     }),
-    db.task.findMany({ where: { projectId }, select: { status: true, storyPoints: true, endDate: true, createdAt: true, updatedAt: true } }),
+    db.task.findMany({ where: { projectId, ...EXCLUDE_PM_OVERHEAD }, select: { status: true, storyPoints: true, endDate: true, createdAt: true, updatedAt: true } }),
     db.risk.findMany({ where: { projectId }, select: { score: true, status: true, createdAt: true } }),
     db.issue.findMany({ where: { projectId }, select: { priority: true, status: true, createdAt: true } }),
     db.stakeholder.findMany({ where: { projectId }, select: { sentiment: true, power: true, interest: true } }),

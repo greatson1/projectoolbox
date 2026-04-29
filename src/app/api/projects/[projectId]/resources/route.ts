@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { looksLikeFabricatedName } from "@/lib/agents/fabricated-names";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function GET(
   const [stakeholders, tasks] = await Promise.all([
     db.stakeholder.findMany({ where: { projectId } }),
     db.task.findMany({
-      where: { projectId },
+      where: { projectId, ...EXCLUDE_PM_OVERHEAD },
       select: {
         id: true, status: true, assigneeId: true,
         estimatedHours: true, actualHours: true,

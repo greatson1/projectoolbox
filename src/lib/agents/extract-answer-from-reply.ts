@@ -20,22 +20,55 @@ interface ExtractedFact {
 }
 
 /**
- * Returns true if the agent's last message contained a substantive
- * question we should try to attribute the user's reply to.
+ * Returns the question text the agent asked, or null if the message isn't a
+ * question worth attributing the next user reply to.
  *
- * We require a "?" because nearly every prose-question the agent writes
- * ends in one. We exclude clarification-card placeholders and approval
- * prompts (those have their own dedicated handlers upstream).
+ * Handles two cases:
+ * 1. Structured agent-question card (content === "__AGENT_QUESTION__" with
+ *    metadata.type === "agent_question"). These are generated when Claude
+ *    emits a single <ASK> tag — they render as a Q&A card on the frontend
+ *    but, for single-question cards, there's NO clarification session, so
+ *    the user's reply has no automatic fact-storage path. The metadata
+ *    holds the actual question text we use here.
+ * 2. Plain prose ending in "?". Claude regularly violates the "always use
+ *    <ASK>" rule and asks questions inline. Any answer the user gives is
+ *    otherwise lost from the structured-fact perspective.
+ *
+ * Excludes: __CLARIFICATION_COMPLETE__, __PROJECT_STATUS__, and any other
+ * placeholder content not paired with question-shaped metadata.
  */
-export function agentMessageContainsQuestion(content: string): boolean {
-  if (!content) return false;
-  if (content === "__AGENT_QUESTION__" || content === "__CLARIFICATION_COMPLETE__") return false;
-  // Strip <ASK>/<FACTS> blocks before checking — those are handled by other paths.
+export function getQuestionToBackstop(
+  content: string,
+  metadata: unknown,
+): string | null {
+  if (!content && !metadata) return null;
+  const meta = (metadata && typeof metadata === "object" ? metadata : {}) as Record<string, unknown>;
+  const metaType = typeof meta.type === "string" ? meta.type : null;
+  const metaQuestion = meta.question as { question?: string } | undefined;
+
+  // Case 1: structured agent-question card
+  if (metaType === "agent_question" && metaQuestion?.question) {
+    return metaQuestion.question;
+  }
+
+  // Case 2: prose with "?" — exclude internal placeholders that have no
+  // user-facing question text in their content
+  if (!content || content.startsWith("__")) return null;
   const stripped = content
     .replace(/<ASK[\s\S]*?<\/ASK>/gi, "")
     .replace(/<FACTS>[\s\S]*?<\/FACTS>/gi, "")
     .trim();
-  return /\?/.test(stripped);
+  if (!/\?/.test(stripped)) return null;
+  return stripped;
+}
+
+/**
+ * @deprecated Use getQuestionToBackstop instead — this signature can't
+ * see the metadata field, so it misses __AGENT_QUESTION__ cards.
+ * Kept as a thin wrapper for callers that haven't been updated yet.
+ */
+export function agentMessageContainsQuestion(content: string): boolean {
+  return getQuestionToBackstop(content, null) !== null;
 }
 
 /**

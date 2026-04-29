@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function GET() {
       where: { orgId, status: "ACTIVE" },
       include: {
         agents: { where: { isActive: true }, include: { agent: true } },
-        _count: { select: { tasks: true, risks: true } },
+        _count: { select: { tasks: { where: EXCLUDE_PM_OVERHEAD }, risks: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: 10,
@@ -39,9 +40,9 @@ export async function GET() {
     }),
   ]);
 
-  // Count tasks completed across all projects
-  const completedTasks = await db.task.count({ where: { project: { orgId }, status: "DONE" } });
-  const totalTasks = await db.task.count({ where: { project: { orgId } } });
+  // Count tasks completed across all projects (excluding PM-overhead pseudo-tasks)
+  const completedTasks = await db.task.count({ where: { project: { orgId }, status: "DONE", ...EXCLUDE_PM_OVERHEAD } });
+  const totalTasks = await db.task.count({ where: { project: { orgId }, ...EXCLUDE_PM_OVERHEAD } });
   const openRisks = await db.risk.count({ where: { project: { orgId }, status: "OPEN" } });
 
   // ── Stuck conversations ────────────────────────────────────────────────────

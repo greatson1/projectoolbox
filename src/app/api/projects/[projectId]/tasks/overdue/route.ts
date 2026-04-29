@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       projectId,
       endDate: { lt: now },
       status: { notIn: ["DONE", "CANCELLED"] },
+      ...EXCLUDE_PM_OVERHEAD,
     },
     orderBy: { endDate: "asc" },
   });

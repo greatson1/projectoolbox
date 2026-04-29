@@ -35,20 +35,43 @@ export async function askUser(
   projectId: string,
   question: ProactiveQuestion,
 ): Promise<string> {
+  // ── Stale-question guard ──
+  // Before checking dedup, see if the underlying gap that triggered this
+  // question has already been resolved in the DB or KB. Real incident
+  // (Apr 2026): the budget proactive_question got posted 60 times over
+  // 40 hours even though `project.budget = 3000` was set after the first
+  // post — the autonomous cycle doesn't always read fresh state when
+  // deciding to ask. So short-circuit here regardless of the dedup.
+  try {
+    if (await isGapResolved(projectId, agentId, question.question)) {
+      // Mark any pending proactive_questions on this exact question as
+      // answered so the UI's "open questions" counter clears too.
+      await markPendingAsResolved(agentId, question.question).catch(() => {});
+      return "";
+    }
+  } catch (e) {
+    console.error("[proactive-outreach] stale-question check failed:", e);
+  }
+
   // ── Idempotency guard ──
   // The VPS autonomous cycle (and any loop on the platform) calls askUser
   // every cycle. Without this guard the same "What is the total budget?"
   // gets posted every 40 min indefinitely, polluting chat AND triggering
   // a fresh sentiment-analyser Haiku per post.
-  // Skip if there's an unanswered proactive question with the same
-  // question text in the last 7 days.
+  // Skip if ANY proactive_question with the same exact question text was
+  // posted in the last 24 hours — answered or not. This is intentionally
+  // stricter than checking only unanswered questions because in practice
+  // the answered=true flag is only flipped by the timeout handler, not by
+  // the chat-stream handler when the user replies. So unanswered + posted
+  // recently was triggering reposts when the user had answered but the
+  // metadata flag never got flipped.
   try {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000);
+    const recentlyAsked = new Date(Date.now() - 24 * 60 * 60_000);
     const existing = await db.chatMessage.findFirst({
       where: {
         agentId,
         role: "agent",
-        createdAt: { gte: sevenDaysAgo },
+        createdAt: { gte: recentlyAsked },
         metadata: {
           path: ["type"],
           equals: "proactive_question",
@@ -58,9 +81,8 @@ export async function askUser(
     });
     if (existing) {
       const meta = (existing.metadata as any) || {};
-      // Match by exact question text — different questions are not deduped.
-      if (typeof meta.question === "string" && meta.question === question.question && meta.answered !== true) {
-        // Already pending. Refresh askedAt so the timeout resets, but DON'T post a duplicate.
+      if (typeof meta.question === "string" && meta.question === question.question) {
+        // Same question, posted within the last 24h — skip regardless of answered state.
         return existing.id;
       }
     }
@@ -208,6 +230,91 @@ export async function askUser(
   }).catch(() => {});
 
   return chatMsg.id;
+}
+
+/**
+ * Decide whether the underlying gap that would justify a given proactive
+ * question still exists. We pattern-match on the question text against the
+ * known recurring asks (budget, sponsor) and check the corresponding state.
+ *
+ * Returns true if the question should NOT be posted (gap is resolved).
+ * Returns false if we can't tell — in that case the dedup logic still
+ * gates duplicates by question text in the last 24h.
+ */
+async function isGapResolved(
+  projectId: string,
+  agentId: string,
+  questionText: string,
+): Promise<boolean> {
+  const q = questionText.toLowerCase();
+
+  // Budget — gap is resolved if project.budget > 0 OR a budget fact exists in KB.
+  if (q.includes("budget")) {
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { budget: true },
+    });
+    if (project && project.budget != null && project.budget > 0) return true;
+    const budgetFact = await db.knowledgeBaseItem.findFirst({
+      where: {
+        agentId,
+        projectId,
+        trustLevel: "HIGH_TRUST",
+        OR: [
+          { title: { contains: "budget", mode: "insensitive" } },
+          { tags: { has: "budget_confirmed" } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (budgetFact) return true;
+  }
+
+  // Project sponsor — gap is resolved if a HIGH_TRUST sponsor fact exists.
+  if (q.includes("sponsor")) {
+    const sponsorFact = await db.knowledgeBaseItem.findFirst({
+      where: {
+        agentId,
+        projectId,
+        trustLevel: "HIGH_TRUST",
+        title: { contains: "sponsor", mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (sponsorFact) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Mark every still-unanswered proactive_question with the given question text
+ * as answered=true with autoProceeded=true so the chat UI's "open questions"
+ * count clears. Used when isGapResolved returns true — the gap is gone, so the
+ * pending questions are stale.
+ */
+async function markPendingAsResolved(agentId: string, questionText: string): Promise<void> {
+  const pending = await db.chatMessage.findMany({
+    where: {
+      agentId,
+      role: "agent",
+      metadata: { path: ["type"], equals: "proactive_question" },
+    },
+    select: { id: true, metadata: true },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  for (const msg of pending) {
+    const meta = (msg.metadata as any) || {};
+    if (meta.answered === true) continue;
+    if (meta.question !== questionText) continue;
+    await db.chatMessage.update({
+      where: { id: msg.id },
+      data: {
+        metadata: { ...meta, answered: true, autoProceeded: true, resolvedReason: "gap_resolved" } as any,
+      },
+    }).catch(() => {});
+  }
 }
 
 /**
