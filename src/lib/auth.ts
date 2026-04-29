@@ -71,16 +71,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.onboardingComplete = dbUser?.onboardingComplete;
         }
       }
-      // Re-fetch orgId if it's missing from a stale token
+      // Re-fetch orgId if it's missing from a stale token. Throttled to at
+      // most once per 60s per token: previously this ran on EVERY API request
+      // for any user whose token lacked an orgId (newly-signed-up users, or
+      // users mid-onboarding) which translated to a `db.user.findUnique` on
+      // every page load. The check is still self-healing — we just don't pay
+      // the latency on every request.
       if (!token.orgId && token.sub) {
-        const dbUser = await db.user.findUnique({
-          where: { id: token.sub as string },
-          select: { role: true, orgId: true, onboardingComplete: true },
-        });
-        if (dbUser?.orgId) {
-          token.orgId = dbUser.orgId;
-          token.role = dbUser.role;
-          token.onboardingComplete = dbUser.onboardingComplete;
+        const last = (token as any).orgIdCheckedAt as number | undefined;
+        if (!last || Date.now() - last > 60_000) {
+          const dbUser = await db.user.findUnique({
+            where: { id: token.sub as string },
+            select: { role: true, orgId: true, onboardingComplete: true },
+          });
+          (token as any).orgIdCheckedAt = Date.now();
+          if (dbUser?.orgId) {
+            token.orgId = dbUser.orgId;
+            token.role = dbUser.role;
+            token.onboardingComplete = dbUser.onboardingComplete;
+          }
         }
       }
       return token;

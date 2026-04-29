@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,34 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 
   const { projectId } = await params;
 
-  const [project, tasks, risks, issues, stakeholders, changeRequests, phases, deployment, activities, artefacts, approvals, actualCosts] = await Promise.all([
+  const nowISO = new Date();
+  const taskWhere = { projectId, ...EXCLUDE_PM_OVERHEAD };
+  const [
+    project,
+    tasksByStatus,            // groupBy → no row materialisation
+    overdueTasksCount,
+    spSums,
+    risksOpenWithScore,       // small projection, only OPEN risks
+    risksByCategoryRows,
+    issueStatusGroup,
+    issueCriticalOpenCount,
+    stakeholders,
+    changeRequests,
+    phases,
+    deployment,
+    activities,
+    artefacts,
+    approvals,
+    actualCosts,
+  ] = await Promise.all([
     db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, status: true, methodology: true, budget: true, startDate: true, endDate: true } }),
-    db.task.findMany({ where: { projectId }, select: { status: true, storyPoints: true, endDate: true, assigneeId: true } }),
-    db.risk.findMany({ where: { projectId }, select: { score: true, status: true, category: true } }),
-    db.issue.findMany({ where: { projectId }, select: { priority: true, status: true } }),
+    db.task.groupBy({ by: ["status"], where: taskWhere, _count: true, _sum: { storyPoints: true } }),
+    db.task.count({ where: { ...taskWhere, endDate: { lt: nowISO }, status: { not: "DONE" } } }),
+    db.task.aggregate({ where: taskWhere, _sum: { storyPoints: true } }),
+    db.risk.findMany({ where: { projectId, status: "OPEN" }, select: { score: true } }),
+    db.risk.groupBy({ by: ["category"], where: { projectId }, _count: true }),
+    db.issue.groupBy({ by: ["status"], where: { projectId }, _count: true }),
+    db.issue.count({ where: { projectId, priority: "CRITICAL", status: { not: "CLOSED" } } }),
     db.stakeholder.count({ where: { projectId } }),
     db.changeRequest.count({ where: { projectId } }),
     db.phase.findMany({ where: { projectId }, orderBy: { order: "asc" }, select: { name: true, status: true, order: true } }),
@@ -36,7 +60,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       orderBy: { createdAt: "desc" }, take: 15,
       select: { type: true, summary: true, createdAt: true, metadata: true },
     }),
-    db.agentArtefact.findMany({ where: { projectId }, select: { id: true, name: true, status: true, format: true, version: true, createdAt: true } }),
+    // Cap artefacts at 30 most-recent — the dashboard tile shows top 5–10 and
+    // the full list lives on /projects/:id/artefacts. Pulling unbounded rows
+    // here was the heaviest query on long-running projects.
+    db.agentArtefact.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      select: { id: true, name: true, status: true, format: true, version: true, createdAt: true },
+    }),
     db.approval.findMany({ where: { projectId, status: "PENDING" }, select: { id: true, title: true, urgency: true, createdAt: true } }),
     // Real actual costs — used for genuine CPI calculation
     db.costEntry.aggregate({
@@ -48,26 +80,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Task metrics
-  const totalTasks = tasks.length;
-  const doneTasks = tasks.filter(t => t.status === "DONE").length;
-  const inProgressTasks = tasks.filter(t => t.status === "IN_PROGRESS").length;
-  const blockedTasks = tasks.filter(t => t.status === "BLOCKED").length;
-  const overdueTasks = tasks.filter(t => t.endDate && new Date(t.endDate) < new Date() && t.status !== "DONE").length;
-  const totalSP = tasks.reduce((s, t) => s + (t.storyPoints || 0), 0);
-  const doneSP = tasks.filter(t => t.status === "DONE").reduce((s, t) => s + (t.storyPoints || 0), 0);
+  // ── Task metrics derived from groupBy + count + aggregate ──
+  // Earlier this materialised every task row in JS; now we lean on the SQL
+  // engine. On large projects this is the difference between transferring
+  // hundreds of rows over the wire and a handful of integers.
+  const findStatus = (s: string) => tasksByStatus.find(g => g.status === s);
+  const totalTasks = tasksByStatus.reduce((s, g) => s + g._count, 0);
+  const doneTasks = findStatus("DONE")?._count ?? 0;
+  const inProgressTasks = findStatus("IN_PROGRESS")?._count ?? 0;
+  const blockedTasks = findStatus("BLOCKED")?._count ?? 0;
+  const overdueTasks = overdueTasksCount;
+  const totalSP = spSums._sum.storyPoints ?? 0;
+  const doneSP = findStatus("DONE")?._sum.storyPoints ?? 0;
   const progressPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
-  // Risk metrics
-  const totalRisks = risks.length;
-  const criticalRisks = risks.filter(r => (r.score || 0) >= 12 && r.status === "OPEN").length;
-  const highRisks = risks.filter(r => (r.score || 0) >= 9 && r.status === "OPEN").length;
+  // ── Risk metrics ──
+  // Total comes from the by-category aggregate (covers every status). High /
+  // critical are filtered from the OPEN-with-score projection — only OPEN
+  // risks count as critical/high so we never pull CLOSED rows.
+  const totalRisks = risksByCategoryRows.reduce((s, g) => s + g._count, 0);
+  const criticalRisks = risksOpenWithScore.filter(r => (r.score || 0) >= 12).length;
+  const highRisks = risksOpenWithScore.filter(r => (r.score || 0) >= 9).length;
   const risksByCategory: Record<string, number> = {};
-  risks.forEach(r => { const c = r.category || "Other"; risksByCategory[c] = (risksByCategory[c] || 0) + 1; });
+  for (const g of risksByCategoryRows) {
+    risksByCategory[g.category || "Other"] = g._count;
+  }
 
-  // Issue metrics
-  const openIssues = issues.filter(i => i.status === "OPEN" || i.status === "IN_PROGRESS").length;
-  const criticalIssues = issues.filter(i => i.priority === "CRITICAL" && i.status !== "CLOSED").length;
+  // ── Issue metrics ──
+  const totalIssues = issueStatusGroup.reduce((s, g) => s + g._count, 0);
+  const openIssues = issueStatusGroup
+    .filter(g => g.status === "OPEN" || g.status === "IN_PROGRESS")
+    .reduce((s, g) => s + g._count, 0);
+  const criticalIssues = issueCriticalOpenCount;
 
   // ── EVM ──
   // Only meaningful when:
@@ -183,7 +227,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       project: { ...project, progressPct },
       tasks: { total: totalTasks, done: doneTasks, inProgress: inProgressTasks, blocked: blockedTasks, overdue: overdueTasks, totalSP, doneSP },
       risks: { total: totalRisks, critical: criticalRisks, high: highRisks, byCategory: risksByCategory },
-      issues: { total: issues.length, open: openIssues, critical: criticalIssues },
+      issues: { total: totalIssues, open: openIssues, critical: criticalIssues },
       stakeholders,
       changeRequests,
       evm: {
