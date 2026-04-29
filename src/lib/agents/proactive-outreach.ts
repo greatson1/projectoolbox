@@ -15,6 +15,17 @@
 
 import { db } from "@/lib/db";
 
+/**
+ * Declarative description of what state would resolve a question. When a
+ * caller sets this on their ProactiveQuestion, askUser can decide
+ * deterministically (no LLM) whether the gap is already resolved and
+ * suppress the post. Always prefer this over text-matching when you know
+ * the field — it's free, exact, and survives Claude rephrasing the question.
+ */
+export type ExpectedField =
+  | { kind: "project_field"; field: "budget" | "startDate" | "endDate" | "description" | "methodology"; check: "positive" | "non_null" | "non_empty" }
+  | { kind: "kb_fact"; titleContains?: string; tag?: string };
+
 export interface ProactiveQuestion {
   question: string;
   context: string;       // what the agent was doing when it hit the gap
@@ -24,6 +35,7 @@ export interface ProactiveQuestion {
   defaultValue?: string;  // what the agent will assume if no answer within timeout
   timeoutHours?: number;  // auto-proceed with default after this many hours
   affectedAction: string; // what's blocked (e.g., "Generate Design phase artefacts")
+  expectedField?: ExpectedField; // declarative gap descriptor — see ExpectedField
 }
 
 /**
@@ -43,7 +55,7 @@ export async function askUser(
   // post — the autonomous cycle doesn't always read fresh state when
   // deciding to ask. So short-circuit here regardless of the dedup.
   try {
-    if (await isGapResolved(projectId, agentId, question.question)) {
+    if (await isGapResolved(projectId, agentId, question)) {
       // Mark any pending proactive_questions on this exact question as
       // answered so the UI's "open questions" counter clears too.
       await markPendingAsResolved(agentId, question.question).catch(() => {});
@@ -234,32 +246,44 @@ export async function askUser(
 
 /**
  * Decide whether the underlying gap that would justify a given proactive
- * question still exists. We pattern-match on the question text against the
- * known recurring asks (budget, sponsor) and check the corresponding state.
+ * question still exists. Three layers, ordered by reliability and cost:
+ *
+ *  1. Declarative — caller set `expectedField`: do a deterministic DB/KB
+ *     lookup. Free, exact, survives any rephrasing of question.question.
+ *  2. Text-pattern — question text contains "budget" / "sponsor": run the
+ *     same DB/KB checks the legacy code did. Fast, free, but misses
+ *     synonyms ("funding allocation", "executive sponsor").
+ *  3. Haiku fallback — ask Claude Haiku whether the project's current
+ *     state already answers the question. Catches the rephrased cases the
+ *     pattern matcher misses. ~$0.0001 per call, only fires when the
+ *     other two layers had no opinion.
  *
  * Returns true if the question should NOT be posted (gap is resolved).
- * Returns false if we can't tell — in that case the dedup logic still
- * gates duplicates by question text in the last 24h.
+ * Returns false if either no resolution was detected, or Haiku is
+ * unavailable / refused — in which case the 24h dedup still applies.
  */
 async function isGapResolved(
   projectId: string,
   agentId: string,
-  questionText: string,
+  question: ProactiveQuestion,
 ): Promise<boolean> {
-  const q = questionText.toLowerCase();
+  // Layer 1 — declarative
+  if (question.expectedField) {
+    const declarativeResult = await checkExpectedField(projectId, agentId, question.expectedField);
+    if (declarativeResult) return true;
+    // If declarative says "not resolved", trust it — caller knew the field,
+    // we don't need the more expensive layers.
+    return false;
+  }
 
-  // Budget — gap is resolved if project.budget > 0 OR a budget fact exists in KB.
+  // Layer 2 — text-pattern (legacy budget + sponsor matchers)
+  const q = question.question.toLowerCase();
   if (q.includes("budget")) {
-    const project = await db.project.findUnique({
-      where: { id: projectId },
-      select: { budget: true },
-    });
+    const project = await db.project.findUnique({ where: { id: projectId }, select: { budget: true } });
     if (project && project.budget != null && project.budget > 0) return true;
     const budgetFact = await db.knowledgeBaseItem.findFirst({
       where: {
-        agentId,
-        projectId,
-        trustLevel: "HIGH_TRUST",
+        agentId, projectId, trustLevel: "HIGH_TRUST",
         OR: [
           { title: { contains: "budget", mode: "insensitive" } },
           { tags: { has: "budget_confirmed" } },
@@ -269,14 +293,10 @@ async function isGapResolved(
     });
     if (budgetFact) return true;
   }
-
-  // Project sponsor — gap is resolved if a HIGH_TRUST sponsor fact exists.
   if (q.includes("sponsor")) {
     const sponsorFact = await db.knowledgeBaseItem.findFirst({
       where: {
-        agentId,
-        projectId,
-        trustLevel: "HIGH_TRUST",
+        agentId, projectId, trustLevel: "HIGH_TRUST",
         title: { contains: "sponsor", mode: "insensitive" },
       },
       select: { id: true },
@@ -284,7 +304,119 @@ async function isGapResolved(
     if (sponsorFact) return true;
   }
 
+  // Layer 3 — Haiku fallback for arbitrary wording
+  return await haikuGapCheck(projectId, agentId, question.question).catch(() => false);
+}
+
+async function checkExpectedField(
+  projectId: string,
+  agentId: string,
+  spec: ExpectedField,
+): Promise<boolean> {
+  if (spec.kind === "project_field") {
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { budget: true, startDate: true, endDate: true, description: true, methodology: true },
+    });
+    if (!project) return false;
+    const v = (project as Record<string, unknown>)[spec.field];
+    if (spec.check === "positive") return typeof v === "number" && v > 0;
+    if (spec.check === "non_null") return v !== null && v !== undefined;
+    if (spec.check === "non_empty") return typeof v === "string" && v.trim().length > 0;
+    return false;
+  }
+  if (spec.kind === "kb_fact") {
+    const fact = await db.knowledgeBaseItem.findFirst({
+      where: {
+        agentId, projectId, trustLevel: "HIGH_TRUST",
+        ...(spec.titleContains ? { title: { contains: spec.titleContains, mode: "insensitive" as const } } : {}),
+        ...(spec.tag ? { tags: { has: spec.tag } } : {}),
+      },
+      select: { id: true },
+    });
+    return !!fact;
+  }
   return false;
+}
+
+/**
+ * Ask Haiku whether the project's current state already answers the question.
+ * Builds a compact summary of project fields + HIGH_TRUST KB titles and asks
+ * for a yes/no plus a short reason. Returns true ONLY when Haiku is confident
+ * the gap is resolved.
+ */
+async function haikuGapCheck(
+  projectId: string,
+  agentId: string,
+  questionText: string,
+): Promise<boolean> {
+  if (!process.env.ANTHROPIC_API_KEY) return false;
+
+  const [project, facts] = await Promise.all([
+    db.project.findUnique({
+      where: { id: projectId },
+      select: { name: true, description: true, budget: true, startDate: true, endDate: true, methodology: true },
+    }),
+    db.knowledgeBaseItem.findMany({
+      where: { agentId, projectId, trustLevel: "HIGH_TRUST" },
+      select: { title: true, content: true },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    }),
+  ]);
+  if (!project) return false;
+
+  const projectLines = [
+    `name: ${project.name}`,
+    `methodology: ${project.methodology ?? "(not set)"}`,
+    `budget: ${project.budget != null ? `£${project.budget}` : "(not set)"}`,
+    `startDate: ${project.startDate ? project.startDate.toISOString().slice(0, 10) : "(not set)"}`,
+    `endDate: ${project.endDate ? project.endDate.toISOString().slice(0, 10) : "(not set)"}`,
+    project.description ? `description: ${project.description.slice(0, 200)}` : "",
+  ].filter(Boolean).join("\n");
+
+  const factLines = facts.map((f) => `- ${f.title}: ${f.content.slice(0, 120)}`).join("\n") || "(no confirmed facts)";
+
+  const prompt = `Decide whether the project's CURRENT STATE already answers the AGENT QUESTION. If a confident reader could answer the question from the state alone, the gap is resolved.
+
+PROJECT STATE:
+${projectLines}
+
+CONFIRMED FACTS (HIGH_TRUST KB items):
+${factLines}
+
+AGENT QUESTION: ${questionText}
+
+Return STRICT JSON only — no preamble:
+{ "alreadyAnswered": true|false, "reason": "<one short sentence>" }
+
+Rules:
+- alreadyAnswered = true ONLY if the state above clearly contains the answer. When in doubt, say false.
+- A field set to "(not set)" means the gap still exists — do NOT mark as answered just because the field exists in the schema.
+- Pre-existing research notes / templates / suggestions are NOT user-confirmed answers.`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!response.ok) return false;
+    const data = await response.json();
+    const text = (data.content?.[0]?.text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    const parsed = JSON.parse(text);
+    return parsed?.alreadyAnswered === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
