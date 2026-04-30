@@ -20,6 +20,14 @@ export interface PrerequisiteEvalContext {
   draftArtefactNames: string[];
   /** Stakeholder roles present on the project (lowercase). */
   stakeholderRoles: string[];
+  /**
+   * Lowercase titles of HIGH_TRUST KB items tagged "user_confirmed".
+   * The chat-agent answer-capture path stores user-confirmed answers
+   * here, so a sponsor-confirmation in chat lands as a KB fact titled
+   * "Project Sponsor" rather than as a Stakeholder row. The prereq
+   * evaluator checks both surfaces. Pass an empty array to disable.
+   */
+  confirmedFactTitles?: string[];
   /** Phase gate approvals that have been marked APPROVED. */
   approvedPhaseGateNames: string[];
   /** True if at least one risk has been logged on the project. */
@@ -160,10 +168,25 @@ export function evaluatePrerequisite(
   // 3. Stakeholder presence
   const stakeholderHint = findStakeholderHint(desc);
   if (stakeholderHint && (descN.includes("identif") || descN.includes("appoint") || descN.includes("confirm"))) {
+    // 3a. Stakeholder Register row with a matching role
     if (rolesMatchHint(ctx.stakeholderRoles, stakeholderHint)) {
       return { ...prereq, state: "met", evidence: `${stakeholderHint} stakeholder identified` };
     }
-    return { ...prereq, state: "unmet", evidence: `No ${stakeholderHint} stakeholder on the register` };
+    // 3b. HIGH_TRUST KB fact with a matching title (chat-agent confirmation path)
+    if (ctx.confirmedFactTitles && ctx.confirmedFactTitles.length > 0) {
+      const hintWords = STAKEHOLDER_ROLE_HINTS[stakeholderHint] ?? [stakeholderHint];
+      const factMatched = ctx.confirmedFactTitles.find(t =>
+        hintWords.some(w => t.includes(w)),
+      );
+      if (factMatched) {
+        return { ...prereq, state: "met", evidence: `Confirmed in chat: "${factMatched}"` };
+      }
+    }
+    return {
+      ...prereq,
+      state: "unmet",
+      evidence: `No ${stakeholderHint} on the Stakeholder Register and no confirmed-fact KB entry`,
+    };
   }
 
   // 4. Risk register populated

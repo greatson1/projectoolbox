@@ -88,6 +88,18 @@ describe("evaluatePrerequisite — stakeholders, risks, gates, manual", () => {
     expect(out.evidence).toContain("sponsor");
   });
 
+  it("met when a HIGH_TRUST KB fact mentions sponsor (chat-confirmation path)", () => {
+    // The chat-agent answer-capture path stores a sponsor confirmation as a
+    // KB fact titled "Project Sponsor", not as a Stakeholder Register row.
+    // This test locks in that the prereq evaluator consults both surfaces.
+    const out = evaluatePrerequisite(
+      prereq({ description: "Sponsor identified and confirmed" }),
+      { ...baseCtx, confirmedFactTitles: ["project sponsor"] },
+    );
+    expect(out.state).toBe("met");
+    expect(out.evidence?.toLowerCase()).toContain("chat");
+  });
+
   it("met when risks have been logged", () => {
     const out = evaluatePrerequisite(
       prereq({ description: "Initial risks identified and assessed" }),

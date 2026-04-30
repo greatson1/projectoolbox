@@ -49,7 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   });
 
   // ── Pull all the project state we need to evaluate prereqs ────────────
-  const [phaseRows, allArtefacts, scaffoldedTasks, stakeholders, phaseGateApprovals, riskCount, completion, manualConfirmations] = await Promise.all([
+  const [phaseRows, allArtefacts, scaffoldedTasks, stakeholders, phaseGateApprovals, riskCount, completion, manualConfirmations, confirmedFacts] = await Promise.all([
     db.phase.findMany({ where: { projectId }, orderBy: { order: "asc" } }),
     db.agentArtefact.findMany({
       where: { projectId },
@@ -76,7 +76,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       where: { projectId, orgId, tags: { has: "prereq_confirmation" } },
       select: { metadata: true },
     }),
+    // HIGH_TRUST KB items the chat agent stored as user-confirmed facts —
+    // used as additional evidence for stakeholder-presence prereqs (e.g.
+    // "Sponsor identified and confirmed" can be ticked by a "Project Sponsor"
+    // KB fact, not just by a Stakeholder Register row).
+    db.knowledgeBaseItem.findMany({
+      where: { projectId, orgId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
+      select: { title: true },
+    }),
   ]);
+  const confirmedFactTitles = confirmedFacts.map(f => f.title.toLowerCase());
 
   const manuallyConfirmed = new Set<string>();
   for (const row of manualConfirmations) {
@@ -150,6 +159,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         .filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW")
         .map(a => a.name),
       stakeholderRoles: stakeholders.map(s => s.role || "").filter(Boolean),
+      confirmedFactTitles,
       approvedPhaseGateNames: phaseGateApprovals.map(a => a.title || ""),
       hasRisks: riskCount > 0,
       manuallyConfirmed,

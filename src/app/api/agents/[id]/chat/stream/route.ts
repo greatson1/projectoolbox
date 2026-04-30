@@ -453,7 +453,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         where: { projectId: project.id },
         orderBy: [{ status: "asc" }, { endDate: "asc" }],
         take: 60,
-        select: { title: true, status: true, priority: true, assigneeName: true, endDate: true, progress: true, isCriticalPath: true, blocked: true, phaseId: true, storyPoints: true },
+        select: { title: true, status: true, priority: true, assigneeName: true, endDate: true, progress: true, isCriticalPath: true, blocked: true, phaseId: true, storyPoints: true, description: true },
       }),
       // Cost entries — all estimates and actuals for budget picture
       db.costEntry.findMany({
@@ -696,19 +696,26 @@ ${await (async () => {
     const optional = phaseDef.artefacts.filter(a => !a.required && a.aiGeneratable);
     const missingRequired = required.filter(a => !generated.has(a.name.toLowerCase()));
     const missingOptional = optional.filter(a => !generated.has(a.name.toLowerCase()));
+    const generatedRequired = required.length - missingRequired.length;
 
     const lines: string[] = [];
+    // Always state the ratio first so the agent never says "all 3 approved"
+    // when the actual requirement is 4 — that exact mistake was reported by
+    // the user on the Pre-Project phase (3 of 4 generated, agent claimed 3
+    // of 3). Source of truth: methodology.phases[*].artefacts.
+    lines.push(`Required artefacts for this phase: ${generatedRequired} of ${required.length} generated.`);
     if (missingRequired.length > 0) {
       lines.push(`⚠️ MISSING REQUIRED (must generate before advancing): ${missingRequired.map(a => a.name).join(", ")}`);
+    } else if (required.length > 0) {
+      lines.push(`✅ All ${required.length} required artefacts have been generated.`);
     }
     if (missingOptional.length > 0) {
       lines.push(`Optional not yet generated: ${missingOptional.map(a => a.name).join(", ")}`);
     }
-    if (lines.length === 0) {
-      lines.push("All required + optional artefacts for this phase have been generated.");
-    }
     lines.push("");
     lines.push("Gate criteria for this phase: " + phaseDef.gate.criteria);
+    lines.push("");
+    lines.push("⚠️ When the user asks 'how many artefacts' or 'are all artefacts done', answer using BOTH numbers above (e.g. 'X of Y required'). Do NOT claim completeness based on the count of approved artefacts alone.");
     return lines.join("\n");
   } catch { return "Phase requirements unavailable."; }
 })()}
@@ -741,6 +748,15 @@ ${recentArtefacts.length > 0
 ## TASK STATUS SUMMARY
 ${(() => {
   if (tasks.length === 0) return "No tasks created yet.";
+  // Tasks tagged "[scaffolded]" in description are PM-overhead pseudo-tasks
+  // that drive the PM Tracker (e.g. "Generate Project Brief", "Submit Phase
+  // Gate approval") — keeping them visible to the agent is essential because
+  // the user often asks "what's left?" referring to them, but they should be
+  // labelled distinctly from real delivery work.
+  const isPmOverhead = (t: any) => typeof t.description === "string" && t.description.includes("[scaffolded]") && !t.description.includes("[scaffolded:delivery]");
+  const pmTasks = tasks.filter(isPmOverhead);
+  const deliveryTasks = tasks.filter((t: any) => !isPmOverhead(t));
+
   const byStatus: Record<string, any[]> = {};
   tasks.forEach(t => { (byStatus[t.status] = byStatus[t.status] || []).push(t); });
   const done      = (byStatus["DONE"] || byStatus["COMPLETE"] || []).length;
@@ -750,11 +766,32 @@ ${(() => {
   const overdue   = tasks.filter(t => t.endDate && new Date(t.endDate) < new Date() && t.status !== "DONE" && t.status !== "COMPLETE");
   const critPath  = tasks.filter(t => t.isCriticalPath && t.status !== "DONE" && t.status !== "COMPLETE");
   const pct       = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
+  const pmDone    = pmTasks.filter(t => t.status === "DONE" || t.status === "COMPLETE").length;
+  const delDone   = deliveryTasks.filter(t => t.status === "DONE" || t.status === "COMPLETE").length;
 
   let out = `**${tasks.length} tasks total — ${done} done (${pct}%), ${inProg} in progress, ${todo} to do, ${blocked} blocked**\n`;
+  if (pmTasks.length > 0) out += `  - PM Tracker (governance/scaffolded): ${pmDone}/${pmTasks.length} done\n`;
+  if (deliveryTasks.length > 0) out += `  - Delivery work: ${delDone}/${deliveryTasks.length} done\n`;
+
+  // PM Tracker: incomplete scaffolded tasks. The user asks "what's on the PM
+  // Tracker?" — answer needs the names, not just counts.
+  const pmIncomplete = pmTasks.filter(t => t.status !== "DONE" && t.status !== "COMPLETE");
+  if (pmIncomplete.length > 0) {
+    out += `\n📋 **PM TRACKER — ${pmIncomplete.length} incomplete:**\n`;
+    out += pmIncomplete.slice(0, 12).map(t => `- ${t.title} [${t.status}]${t.progress > 0 ? ` (${t.progress}%)` : ""}`).join("\n");
+  }
+
+  // Delivery work: list incomplete delivery tasks (not just in-progress)
+  const delIncomplete = deliveryTasks.filter(t => t.status !== "DONE" && t.status !== "COMPLETE");
+  if (delIncomplete.length > 0) {
+    out += `\n\n📦 **DELIVERY — ${delIncomplete.length} incomplete:**\n`;
+    out += delIncomplete.slice(0, 12).map(t =>
+      `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""}${t.endDate ? ` (due ${new Date(t.endDate).toLocaleDateString("en-GB")})` : ""}${t.progress > 0 ? ` (${t.progress}%)` : ""}${t.blocked ? " ⛔ BLOCKED" : ""}`
+    ).join("\n");
+  }
 
   if (overdue.length > 0) {
-    out += `\n⚠️ **OVERDUE (${overdue.length}):**\n`;
+    out += `\n\n⚠️ **OVERDUE (${overdue.length}):**\n`;
     out += overdue.slice(0, 8).map(t =>
       `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""} (due ${new Date(t.endDate).toLocaleDateString("en-GB")})`
     ).join("\n");
@@ -765,12 +802,8 @@ ${(() => {
       `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""}${t.endDate ? ` (due ${new Date(t.endDate).toLocaleDateString("en-GB")})` : ""}`
     ).join("\n");
   }
-  if (inProg > 0) {
-    out += `\n\n🔵 **IN PROGRESS:**\n`;
-    out += (byStatus["IN_PROGRESS"] || []).slice(0, 8).map(t =>
-      `- ${t.title}${t.progress > 0 ? ` (${t.progress}%)` : ""}${t.assigneeName ? ` — ${t.assigneeName}` : ""}`
-    ).join("\n");
-  }
+
+  out += `\n\n⚠️ When the user asks "what's left to do" or "what's on the PM Tracker", name the specific tasks from the lists above. Do NOT redirect them to "go check the PM Tracker" — you already have the names.`;
   return out;
 })()}
 

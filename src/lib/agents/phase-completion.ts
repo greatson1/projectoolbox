@@ -425,7 +425,7 @@ export async function getPhaseCompletion(
       const methodology = getMethodology(methodologyId);
       const phaseDef = methodology.phases.find(p => p.name === phaseName);
       if (phaseDef && phaseDef.gate.preRequisites.length > 0) {
-        const [allArtefacts, stakeholders, gateApprovals, riskCount, manualConfirmations] = await Promise.all([
+        const [allArtefacts, stakeholders, gateApprovals, riskCount, manualConfirmations, confirmedFacts] = await Promise.all([
           db.agentArtefact.findMany({ where: { projectId }, select: { name: true, status: true } }),
           db.stakeholder.findMany({ where: { projectId }, select: { role: true } }),
           db.approval.findMany({
@@ -436,6 +436,12 @@ export async function getPhaseCompletion(
           db.knowledgeBaseItem.findMany({
             where: { projectId, orgId: project.orgId, tags: { has: "prereq_confirmation" } },
             select: { metadata: true },
+          }),
+          // HIGH_TRUST KB facts feed stakeholder-presence prereqs — see
+          // phase-prerequisites.ts for the wiring.
+          db.knowledgeBaseItem.findMany({
+            where: { projectId, orgId: project.orgId, trustLevel: "HIGH_TRUST", tags: { has: "user_confirmed" } },
+            select: { title: true },
           }),
         ]);
         const { evaluatePrerequisites, summarisePrerequisites, manualKey } =
@@ -454,6 +460,7 @@ export async function getPhaseCompletion(
             .filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW")
             .map(a => a.name),
           stakeholderRoles: stakeholders.map(s => s.role || "").filter(Boolean),
+          confirmedFactTitles: confirmedFacts.map(f => f.title.toLowerCase()),
           approvedPhaseGateNames: gateApprovals.map(a => a.title || ""),
           hasRisks: riskCount > 0,
           manuallyConfirmed,
