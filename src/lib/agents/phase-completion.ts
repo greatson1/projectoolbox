@@ -69,6 +69,26 @@ export async function getPhaseCompletion(
     ? [{ phaseId: phaseName }, { phaseId: phaseRow.id }]
     : [{ phaseId: phaseName }];
 
+  // ── Self-heal short-circuit ─────────────────────────────────────────
+  // Both retroactive scans below execute LIKE-based queries
+  // (description CONTAINS '[event:' / '[artefact:') which can't use an
+  // index. They run on EVERY getPhaseCompletion call. The cheap fix is a
+  // single index-backed count on (projectId, status) — if there are zero
+  // non-DONE leaf tasks for this phase, neither self-heal can do anything,
+  // so skip both. On settled projects this turns ~2 LIKE scans into one
+  // counter read.
+  let needsSelfHeal = 1;
+  try {
+    needsSelfHeal = await db.task.count({
+      where: {
+        projectId,
+        OR: phaseIdMatch,
+        status: { not: "DONE" },
+        parentId: { not: null },
+      },
+    });
+  } catch { /* fall through and run the scans */ }
+
   // ── Retroactive event-task self-heal ─────────────────────────────────
   // Scaffolded tasks declare linkedEvents (clarification_complete,
   // gate_request, phase_advanced). The handlers that fire those events
@@ -77,7 +97,7 @@ export async function getPhaseCompletion(
   // them and mark done if the underlying event has effectively happened.
   // This is idempotent — runs on every getPhaseCompletion call (every
   // metrics poll), self-heals legacy state within seconds.
-  try {
+  if (needsSelfHeal > 0) try {
     const eventTasks = await db.task.findMany({
       where: {
         projectId,
@@ -162,8 +182,9 @@ export async function getPhaseCompletion(
   // artefact is approved. This self-heal scans for [artefact:X] tasks that
   // are not DONE and ticks any whose linked artefact actually exists with
   // status DRAFT/PENDING_REVIEW/APPROVED.
-  // Idempotent — runs on every getPhaseCompletion call.
-  try {
+  // Idempotent — runs on every getPhaseCompletion call. Short-circuited
+  // by the same `needsSelfHeal > 0` gate as the event-task scan above.
+  if (needsSelfHeal > 0) try {
     const artefactTasks = await db.task.findMany({
       where: {
         projectId,
@@ -206,9 +227,19 @@ export async function getPhaseCompletion(
     console.error("[phase-completion] retroactive artefact-task self-heal failed:", e);
   }
 
-  // ── 1. Artefacts ──────────────────────────────────────────────────────
-
-  const [artefacts, projectForMethodology] = await Promise.all([
+  // ── Layers 1–3 + KB blocker scan in parallel ─────────────────────────
+  // Artefacts, project methodology, PM tasks, delivery tasks, and the KB
+  // blocker scan are all independent — earlier this paid 5× the round-trip
+  // latency one after another. Now they fan out concurrently against the
+  // pgbouncer pool so wall time is roughly the slowest single query.
+  const phaseLC = phaseName.toLowerCase();
+  const [
+    artefacts,
+    projectForMethodology,
+    pmTasksRaw,
+    deliveryTasks,
+    recentKBItems,
+  ] = await Promise.all([
     db.agentArtefact.findMany({
       where: {
         projectId,
@@ -221,6 +252,51 @@ export async function getPhaseCompletion(
       where: { id: projectId },
       select: { methodology: true },
     }),
+    db.task.findMany({
+      where: {
+        projectId,
+        OR: phaseIdMatch,
+        description: { contains: "[scaffolded]" },
+        // Exclude delivery-tagged scaffolded tasks
+        NOT: { description: { contains: "[scaffolded:delivery]" } },
+        // Only leaf tasks (not parent groupings)
+        parentId: { not: null },
+      },
+      select: { id: true, title: true, status: true, progress: true, description: true },
+    }),
+    db.task.findMany({
+      where: {
+        projectId,
+        OR: [
+          ...phaseIdMatch.map((p) => ({
+            phaseId: p.phaseId,
+            description: { contains: "[source:" },
+          })),
+          ...phaseIdMatch.map((p) => ({
+            phaseId: p.phaseId,
+            description: { contains: "[scaffolded:delivery]" },
+          })),
+          ...phaseIdMatch.map((p) => ({
+            phaseId: p.phaseId,
+            NOT: { description: { contains: "[scaffolded]" } },
+            createdBy: { not: { startsWith: "agent:" } },
+          })),
+        ],
+      },
+      select: { id: true, title: true, status: true, progress: true },
+    }),
+    db.knowledgeBaseItem.findMany({
+      where: {
+        projectId,
+        tags: { hasEvery: [phaseLC] },
+        AND: [{ tags: { hasSome: ["risk", "blocker", "issue", "concern"] } }],
+        trustLevel: { in: ["HIGH_TRUST", "STANDARD"] },
+        createdAt: { gte: new Date(Date.now() - 30 * 86400000) },
+      },
+      select: { title: true, content: true, tags: true },
+      take: 10,
+      orderBy: { createdAt: "desc" },
+    }).catch(() => []),
   ]);
 
   // Resolve the methodology's required artefact list for THIS phase. A
@@ -254,19 +330,7 @@ export async function getPhaseCompletion(
   const artefactsPct = artefactsTotal > 0 ? Math.round((artefactsDone / artefactsTotal) * 100) : 100;
 
   // ── 2. PM Tasks (scaffolded overhead) ─────────────────────────────────
-
-  const pmTasksRaw = await db.task.findMany({
-    where: {
-      projectId,
-      OR: phaseIdMatch,
-      description: { contains: "[scaffolded]" },
-      // Exclude delivery-tagged scaffolded tasks
-      NOT: { description: { contains: "[scaffolded:delivery]" } },
-      // Only leaf tasks (not parent groupings)
-      parentId: { not: null },
-    },
-    select: { id: true, title: true, status: true, progress: true, description: true },
-  });
+  // pmTasksRaw was fetched above in the parallel block.
 
   // Recurring universal tasks (e.g. "Review and update Risk Register",
   // "Stakeholder communication and updates") are scaffolded into every phase
@@ -295,31 +359,7 @@ export async function getPhaseCompletion(
   const pmTasksPct = pmTasksTotal > 0 ? Math.round((pmTasksDone / pmTasksTotal) * 100) : 100;
 
   // ── 3. Delivery Tasks (WBS/schedule + scaffolded delivery) ────────────
-
-  const deliveryTasks = await db.task.findMany({
-    where: {
-      projectId,
-      OR: [
-        // WBS/schedule-sourced tasks
-        ...phaseIdMatch.map((p) => ({
-          phaseId: p.phaseId,
-          description: { contains: "[source:" },
-        })),
-        // Scaffolded delivery tasks
-        ...phaseIdMatch.map((p) => ({
-          phaseId: p.phaseId,
-          description: { contains: "[scaffolded:delivery]" },
-        })),
-        // User-created tasks with phaseId (manual additions)
-        ...phaseIdMatch.map((p) => ({
-          phaseId: p.phaseId,
-          NOT: { description: { contains: "[scaffolded]" } },
-          createdBy: { not: { startsWith: "agent:" } },
-        })),
-      ],
-    },
-    select: { id: true, title: true, status: true, progress: true },
-  });
+  // deliveryTasks was fetched above in the parallel block.
 
   // Deduplicate (OR queries can overlap)
   const seen = new Set<string>();
@@ -342,39 +382,20 @@ export async function getPhaseCompletion(
     : 100;
 
   // ── 4. KB-informed gate check — scan for unresolved risks/blockers ────
+  // recentKBItems was fetched above in the parallel block.
 
-  let kbBlockers: string[] = [];
-  try {
-    const phaseLC = phaseName.toLowerCase();
-    // Only consider KB items EXPLICITLY tagged with this phase — not text-matched
-    const recentKBItems = await db.knowledgeBaseItem.findMany({
-      where: {
-        projectId,
-        tags: { hasEvery: [phaseLC] }, // must be explicitly tagged with the phase
-        // AND at least one risk-related tag
-        AND: [
-          { tags: { hasSome: ["risk", "blocker", "issue", "concern"] } },
-        ],
-        trustLevel: { in: ["HIGH_TRUST", "STANDARD"] },
-        createdAt: { gte: new Date(Date.now() - 30 * 86400000) }, // last 30 days
-      },
-      select: { title: true, content: true, tags: true },
-      take: 10,
-      orderBy: { createdAt: "desc" },
-    });
-
-    const UNRESOLVED_KEYWORDS = [
-      "unresolved", "outstanding", "blocker", "critical",
-      "pending resolution", "tbd", "tbc", "open issue",
-      "awaiting", "blocked by", "stuck",
-    ];
-    for (const item of recentKBItems) {
-      const contentLC = (item.content || "").toLowerCase();
-      if (UNRESOLVED_KEYWORDS.some((k) => contentLC.includes(k))) {
-        kbBlockers.push(`KB flag: "${item.title}"`);
-      }
+  const kbBlockers: string[] = [];
+  const UNRESOLVED_KEYWORDS = [
+    "unresolved", "outstanding", "blocker", "critical",
+    "pending resolution", "tbd", "tbc", "open issue",
+    "awaiting", "blocked by", "stuck",
+  ];
+  for (const item of recentKBItems) {
+    const contentLC = (item.content || "").toLowerCase();
+    if (UNRESOLVED_KEYWORDS.some((k) => contentLC.includes(k))) {
+      kbBlockers.push(`KB flag: "${item.title}"`);
     }
-  } catch {}
+  }
 
   // ── Compute overall + blockers ────────────────────────────────────────
 
@@ -565,10 +586,12 @@ export async function getAllPhasesCompletion(
     select: { name: true },
   });
 
-  const results: PhaseCompletionStatus[] = [];
-  for (const phase of phases) {
-    results.push(await getPhaseCompletion(projectId, phase.name, agentId, config));
-  }
-
-  return results;
+  // Parallel — getPhaseCompletion is independent per phase. Earlier this ran
+  // sequentially in a for-await loop, so a 5-phase methodology paid 5× the
+  // round-trip latency on the PM Tracker page (30+ DB queries serialised).
+  // Promise.all keeps the same total work but executes concurrently against
+  // pgbouncer's pool, so wall time shrinks to roughly the single-phase cost.
+  return Promise.all(
+    phases.map(p => getPhaseCompletion(projectId, p.name, agentId, config)),
+  );
 }
