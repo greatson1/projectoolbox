@@ -767,6 +767,18 @@ export async function answerQuestionInSession(
       console.error("[clarification] clarification_complete event hook failed:", e);
     }
 
+    // Promote any newly-confirmed risk facts to the canonical Risk table.
+    // The user may have answered a question like "What are the main risks?"
+    // and we want those answers to flow through to the Risk Register
+    // immediately, not just live in KB. Idempotent — items already promoted
+    // by an earlier scan get skipped via the "risk_promoted" tag.
+    try {
+      const { promoteKBRisksToCanonical } = await import("@/lib/agents/risk-extractor");
+      await promoteKBRisksToCanonical(projectId);
+    } catch (e) {
+      console.error("[clarification] post-session risk promotion failed:", e);
+    }
+
     // ── CRITICAL: unlock phaseStatus BEFORE the async regeneration kicks off ──
     // Previously this was inside the fire-and-forget IIFE; if any code path
     // threw before reaching the update, phaseStatus stayed on "awaiting_clarification"

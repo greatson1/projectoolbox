@@ -633,6 +633,29 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         }).catch(() => {});
       }
 
+      // ── 3a.5: Promote research-identified risks to the canonical Risk table ──
+      // Without this the Risk Register page stays empty until an Initial Risk
+      // Register artefact is generated and approved (Initiation phase, not
+      // Pre-Project). The extractor scans KB items the research just produced
+      // (titles like "Key Project Risks"), splits the comma-separated list
+      // into discrete risks, and creates Risk rows with sensible defaults.
+      // Idempotent — promoted KB items get a "risk_promoted" tag.
+      try {
+        const { promoteKBRisksToCanonical } = await import("@/lib/agents/risk-extractor");
+        const result = await promoteKBRisksToCanonical(project.id);
+        if (result.created > 0) {
+          await db.agentActivity.create({
+            data: {
+              agentId,
+              type: "risk",
+              summary: `Promoted ${result.created} research-identified risk${result.created === 1 ? "" : "s"} to the Risk Register for "${project.name}"`,
+            },
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.error("[runLifecycleInit] risk promotion failed:", e);
+      }
+
       // ── 3b: Present research findings as enterprise card ──
       if (researchFacts > 0) {
         await db.chatMessage.create({
