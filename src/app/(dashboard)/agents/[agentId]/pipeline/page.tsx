@@ -957,21 +957,48 @@ export default function AgentPipelinePage() {
                 </Link>
               </div>
             )}
-            {data.phaseStatus === "blocked_tasks_incomplete" && data.projectId && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Link href={`/projects/${data.projectId}/pm-tracker`}>
-                  <Button size="sm" variant="outline" className="font-semibold">
-                    <Shield className="w-3.5 h-3.5 mr-1.5" />
-                    Open PM Tracker
-                  </Button>
-                </Link>
-                <Link href={`/projects/${data.projectId}/agile`}>
-                  <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white font-semibold">
-                    Complete Tasks <ArrowRight className="w-3 h-3 ml-1.5" />
-                  </Button>
-                </Link>
-              </div>
-            )}
+            {data.phaseStatus === "blocked_tasks_incomplete" && data.projectId && (() => {
+              // Two task tracks — PM/governance tasks live on the PM Tracker
+              // (scaffolded overhead, ticked manually) and delivery tasks
+              // live on the Agile board / Schedule (real WBS work). The two
+              // are intentionally separate stores. Route the action button to
+              // wherever the blocker actually is, otherwise the user lands on
+              // a board that doesn't show the task they need to finish.
+              const cur = data.phases.find((p) => p.name === data.currentPhase);
+              const pmRem  = Math.max(0, (cur?.pmTasksTotal ?? 0)       - (cur?.pmTasksDone ?? 0));
+              const delRem = Math.max(0, (cur?.deliveryTasksTotal ?? 0) - (cur?.deliveryTasksDone ?? 0));
+              const pmOnly  = pmRem > 0 && delRem === 0;
+              const delOnly = delRem > 0 && pmRem === 0;
+              return (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Link href={`/projects/${data.projectId}/pm-tracker?focus=blocking`}>
+                    <Button size="sm" variant="outline" className="font-semibold">
+                      <Shield className="w-3.5 h-3.5 mr-1.5" />
+                      Open PM Tracker
+                    </Button>
+                  </Link>
+                  {/* Only show the Agile CTA when delivery tasks are part of
+                      the blocker — sending the user to /agile when the only
+                      blocker is a PM task lands them on an empty board. When
+                      it's PM-only, the "Open PM Tracker" button above is the
+                      sole action. */}
+                  {!pmOnly && (
+                    <Link href={`/projects/${data.projectId}/agile?focus=blocking`}>
+                      <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white font-semibold">
+                        {delOnly ? "Complete Delivery Tasks" : "Open Delivery Tasks"} <ArrowRight className="w-3 h-3 ml-1.5" />
+                      </Button>
+                    </Link>
+                  )}
+                  {pmOnly && (
+                    <Link href={`/projects/${data.projectId}/pm-tracker?focus=blocking`}>
+                      <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white font-semibold">
+                        Complete Tasks <ArrowRight className="w-3 h-3 ml-1.5" />
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           );
         })()}
@@ -1314,7 +1341,7 @@ export default function AgentPipelinePage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {data.projectId && (
-                  <Link href={`/projects/${data.projectId}/pm-tracker`}>
+                  <Link href={`/projects/${data.projectId}/pm-tracker?focus=blocking`}>
                     <button className="px-3 py-2 rounded-lg border border-amber-500/40 bg-card text-amber-600 dark:text-amber-400 text-xs font-semibold hover:bg-amber-500/10 transition-colors flex items-center gap-1.5">
                       <Shield className="w-3.5 h-3.5" />
                       Open PM Tracker
