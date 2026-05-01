@@ -62,7 +62,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
             createdBy: `agent:${deployment.agentId}`,
             description: { contains: "[scaffolded]" },
           },
-          select: { id: true, title: true, status: true, progress: true, parentId: true, phaseId: true, description: true },
+          select: { id: true, title: true, status: true, progress: true, parentId: true, phaseId: true, description: true, updatedAt: true },
         })
       : Promise.resolve([]),
     db.stakeholder.findMany({ where: { projectId }, select: { role: true } }),
@@ -137,14 +137,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
           const desc = k.description || "";
           const artMatch = desc.match(/\[artefact:([^\]]+)\]/);
           const evtMatch = desc.match(/\[event:([^\]]+)\]/);
+          const isDone = k.status === "DONE" || (k.progress || 0) >= 100;
           return {
             id: k.id,
             title: k.title,
             status: k.status,
             progress: k.progress || 0,
-            done: k.status === "DONE" || (k.progress || 0) >= 100,
+            done: isDone,
             linkedArtefact: artMatch ? artMatch[1] : undefined,
             linkedEvent: evtMatch ? evtMatch[1] : undefined,
+            // Surface to the UI so the row can render "Last completed: 28 Apr"
+            // for recurring monitoring tasks. We only ship a value when the
+            // task is actually done — otherwise updatedAt would point at the
+            // last time progress was nudged, which isn't useful.
+            completedAt: isDone ? k.updatedAt.toISOString() : null,
           };
         }),
       };

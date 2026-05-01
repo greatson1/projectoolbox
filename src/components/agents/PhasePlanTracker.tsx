@@ -69,6 +69,8 @@ interface TaskChild {
   done: boolean;
   linkedArtefact?: string;
   linkedEvent?: string;
+  /** ISO timestamp — surfaced as "Last completed: …" for recurring tasks. */
+  completedAt?: string | null;
 }
 
 // Maps a task's auto-tick driver to a one-line user-facing hint.
@@ -83,6 +85,51 @@ function autoTickHint(t: { linkedArtefact?: string; linkedEvent?: string }): str
     case "stakeholder_updated":    return "auto — ticks when you add a stakeholder on the People page";
     default:                       return null;
   }
+}
+
+// Maps a task to the page where the underlying action actually happens. Pair
+// with autoTickHint for context: hint = how it auto-ticks, destination = where
+// to do the work. Returns null when there's no useful destination (purely
+// agent-driven events the user can't act on directly, e.g. phase_advanced).
+function taskDestination(
+  t: { linkedArtefact?: string; linkedEvent?: string; title?: string },
+  projectId: string,
+): { href: string; label: string } | null {
+  if (t.linkedArtefact) return { href: `/projects/${projectId}/artefacts`, label: "Open Documents" };
+  switch (t.linkedEvent) {
+    case "clarification_complete": return { href: `/agents/chat`, label: "Open Chat" };
+    case "gate_request":           return { href: `/approvals`, label: "Open Approvals" };
+    case "risk_register_updated":  return { href: `/projects/${projectId}/risk`, label: "Open Risk Register" };
+    case "stakeholder_updated":    return { href: `/projects/${projectId}/stakeholders`, label: "Open People" };
+    case "phase_advanced":         return null; // Nothing the user can click to advance besides the gate
+    default: break;
+  }
+  // Fall back to the task title — covers "soft" tasks without a linkedEvent
+  // (e.g. "Stakeholder communication and updates", "Review and update Risk
+  // Register") so they still get a deep link even though the agent didn't
+  // tag them with an event marker.
+  const title = (t.title || "").toLowerCase();
+  if (title.includes("stakeholder")) return { href: `/projects/${projectId}/stakeholders`, label: "Open People" };
+  if (title.includes("risk"))        return { href: `/projects/${projectId}/risk`, label: "Open Risk Register" };
+  if (title.includes("approval") || title.includes("gate")) return { href: `/approvals`, label: "Open Approvals" };
+  if (title.includes("issue"))       return { href: `/projects/${projectId}/issues`, label: "Open Issues" };
+  if (title.includes("change"))      return { href: `/projects/${projectId}/change-control`, label: "Open Change Control" };
+  if (title.includes("schedule") || title.includes("milestone")) return { href: `/projects/${projectId}/schedule`, label: "Open Schedule" };
+  if (title.includes("cost") || title.includes("budget")) return { href: `/projects/${projectId}/cost`, label: "Open Cost" };
+  if (title.includes("report") || title.includes("status update")) return { href: `/projects/${projectId}/reports`, label: "Open Reports" };
+  if (title.includes("meeting"))     return { href: `/agents/chat`, label: "Open Chat" };
+  return null;
+}
+
+function formatRelative(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const days = Math.floor((Date.now() - t) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7)  return `${days}d ago`;
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 interface TaskGroup {
@@ -359,45 +406,72 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                             // CAN be hand-ticked as a fallback if the user has
                             // already done the work elsewhere.
                             const hint = autoTickHint(t);
+                            const dest = taskDestination(t, projectId);
+                            const lastDoneLabel = formatRelative(t.completedAt);
                             const isArtefactDriven = !!t.linkedArtefact;
                             const canToggle = !isArtefactDriven;
                             const isBlocking = phase.isCurrent && !effectiveDone;
                             return (
                               <div
                                 key={t.id}
-                                className="flex items-center gap-2 py-0.5 rounded"
+                                className="group/task flex items-start gap-2 py-1 rounded transition-colors hover:bg-muted/30"
                                 {...(isBlocking ? { "data-incomplete-pm-task": "true" } : {})}
                               >
                                 {canToggle ? (
                                   <button
                                     type="button"
                                     onClick={() => toggleTaskDone({ ...t, done: effectiveDone })}
-                                    title={effectiveDone ? "Click to reopen" : "Click to mark done"}
-                                    className="flex-shrink-0 hover:scale-110 transition-transform"
+                                    title={effectiveDone ? "Click to reopen" : "Mark done"}
+                                    aria-label={effectiveDone ? "Mark not done" : "Mark done"}
+                                    className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                                      effectiveDone
+                                        ? "bg-emerald-500/15 ring-1 ring-emerald-500/40"
+                                        : "ring-1 ring-muted-foreground/30 hover:ring-foreground/60 hover:bg-muted/60"
+                                    }`}
                                   >
                                     {effectiveDone
                                       ? <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                                      : <Circle className="w-3 h-3 text-muted-foreground/40 hover:text-foreground" />}
+                                      : <Circle className="w-2.5 h-2.5 text-muted-foreground/50 group-hover/task:text-foreground/80" />}
                                   </button>
                                 ) : (
-                                  effectiveDone
-                                    ? <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                                    : <Circle className="w-3 h-3 text-muted-foreground/30 flex-shrink-0" />
+                                  <span className="flex-shrink-0 mt-0.5 w-4 h-4 flex items-center justify-center" title="Auto-driven by artefact existence">
+                                    {effectiveDone
+                                      ? <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                      : <Circle className="w-3 h-3 text-muted-foreground/30" />}
+                                  </span>
                                 )}
-                                <span className={`text-[10px] flex-1 ${effectiveDone ? "text-muted-foreground line-through" : "text-foreground"}`}>
-                                  {t.title}
-                                  {hint && !effectiveDone && (
-                                    <span className="ml-1 text-muted-foreground/60 italic">
-                                      ({hint}{canToggle ? " · or click ○ to mark done" : ""})
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline flex-wrap gap-x-2 gap-y-0.5">
+                                    <span className={`text-[11px] leading-tight ${effectiveDone ? "text-muted-foreground line-through" : "text-foreground font-medium"}`}>
+                                      {t.title}
                                     </span>
+                                    {!effectiveDone && t.progress > 0 && (
+                                      <span className="text-[9px] text-primary tabular-nums">{t.progress}%</span>
+                                    )}
+                                    {effectiveDone && lastDoneLabel && (
+                                      <span className="text-[9px] text-emerald-600/80 dark:text-emerald-400/80">· done {lastDoneLabel}</span>
+                                    )}
+                                  </div>
+                                  {/* Hint + deep link line — same row of context, lighter typography. */}
+                                  {(hint || dest) && (
+                                    <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                                      {hint && !effectiveDone && (
+                                        <span className="text-[9.5px] text-muted-foreground/70 italic">{hint}</span>
+                                      )}
+                                      {dest && (
+                                        <a
+                                          href={dest.href}
+                                          className="text-[9.5px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5"
+                                        >
+                                          {dest.label} <ChevronRight className="w-2.5 h-2.5" />
+                                        </a>
+                                      )}
+                                      {canToggle && !effectiveDone && !hint && (
+                                        <span className="text-[9.5px] text-muted-foreground/70 italic">click the circle to mark done</span>
+                                      )}
+                                    </div>
                                   )}
-                                  {!hint && canToggle && !effectiveDone && (
-                                    <span className="ml-1 text-muted-foreground/60 italic">(click ○ to mark done)</span>
-                                  )}
-                                </span>
-                                {!effectiveDone && t.progress > 0 && (
-                                  <span className="text-[9px] text-primary">{t.progress}%</span>
-                                )}
+                                </div>
                               </div>
                             );
                           })}
