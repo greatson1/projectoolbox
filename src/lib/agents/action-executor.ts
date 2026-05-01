@@ -421,58 +421,26 @@ async function performMutation(
         }
 
         // ── Sham-task detector (Nova "Stakeholder comm - Project initiation approved" bug) ──
-        // The agent sometimes proposes a freshly-named "task" that is really
-        // a duplicate of an existing scaffolded PM task plus a self-asserted
-        // status suffix ("- approved", "- complete", "- done"). It then uses
-        // the new TODO row as cover for claiming the phase is ready to advance.
-        // Two-step defence:
-        //   1. If the title carries a status-claim suffix, strip it before any
-        //      duplicate check and refuse to create — this is never a genuine
-        //      new unit of work.
-        //   2. Fuzzy-match the (cleaned) title against existing scaffolded
-        //      tasks; if ≥2 significant tokens overlap, treat as duplicate
-        //      and refuse with a hint pointing the agent at the real task.
-        const STATUS_CLAIM = /\s*[-–—:]\s*(approved|complete[d]?|done|finished|signed[\s-]?off|ticked|resolved)\s*$/i;
-        const hasStatusClaim = STATUS_CLAIM.test(proposal.description);
-        const cleanTitle = proposal.description.replace(STATUS_CLAIM, "").trim();
+        // Helpers extracted to ./task-similarity for testability.
+        const { hasStatusClaimSuffix, fuzzyMatchScaffolded } = await import("./task-similarity");
+        const hasStatusClaim = hasStatusClaimSuffix(proposal.description);
 
-        const STOP = new Set([
-          "the","and","for","with","that","this","from","into","over","under",
-          "task","new","add","update","review","ensure","make","sure","communication",
-          "approved","complete","completed","done","finished",
-        ]);
-        const tokenise = (s: string): Set<string> => {
-          const toks = s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/);
-          return new Set(toks.filter(t => t.length >= 4 && !STOP.has(t)));
-        };
-        const proposalTokens = tokenise(cleanTitle);
+        const candidates = await db.task.findMany({
+          where: {
+            projectId: context.projectId,
+            description: { contains: "[scaffolded]" },
+          },
+          select: { id: true, title: true, status: true },
+        });
+        const bestMatch = fuzzyMatchScaffolded(proposal.description, candidates);
 
-        if (proposalTokens.size >= 1) {
-          const candidates = await db.task.findMany({
-            where: {
-              projectId: context.projectId,
-              description: { contains: "[scaffolded]" },
-            },
-            select: { id: true, title: true, status: true, description: true },
-          });
-          let bestMatch: { id: string; title: string; overlap: number; status: string } | null = null;
-          for (const c of candidates) {
-            const cTokens = tokenise(c.title);
-            let overlap = 0;
-            for (const t of proposalTokens) if (cTokens.has(t)) overlap++;
-            if (overlap >= 2 && (!bestMatch || overlap > bestMatch.overlap)) {
-              bestMatch = { id: c.id, title: c.title, overlap, status: c.status };
-            }
-          }
-
-          if (bestMatch) {
-            return {
-              action: "blocked_duplicate_scaffolded",
-              reason: `Proposed task duplicates existing scaffolded PM task "${bestMatch.title}" (status: ${bestMatch.status}). The agent must update the existing task on the PM Tracker — not create a new one. No new task created.`,
-              existingTaskId: bestMatch.id,
-              existingTaskTitle: bestMatch.title,
-            };
-          }
+        if (bestMatch) {
+          return {
+            action: "blocked_duplicate_scaffolded",
+            reason: `Proposed task duplicates existing scaffolded PM task "${bestMatch.title}" (status: ${bestMatch.status}). The agent must update the existing task on the PM Tracker — not create a new one. No new task created.`,
+            existingTaskId: bestMatch.id,
+            existingTaskTitle: bestMatch.title,
+          };
         }
 
         if (hasStatusClaim) {

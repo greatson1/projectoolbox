@@ -2588,22 +2588,33 @@ When you mention an action the user must take ("review the artefacts", "approve 
         const isStatusQuery = /\b(what.{0,25}(need|next|do|action|pending|outstanding|status|overview|update)|where (are|am) (we|i)|status update|next step|what.*outstanding|what.*blocking|what.*waiting)\b/i.test(message);
         if (isStatusQuery && deployment?.projectId) {
           try {
-            const [pendingArts, artSession, incompleteTasks] = await Promise.all([
+            // Incomplete tasks for the CURRENT phase — used by the
+            // ProjectStatusCard's "Generate <next phase>" CTA gate. Must
+            // include scaffolded PM-overhead AND delivery work; if EITHER
+            // layer has open items, the phase can't advance.
+            //
+            // We delegate to getPhaseCompletion which already handles the
+            // phaseId-as-name vs phaseId-as-CUID inconsistency that plain
+            // db.task.count({ where: { phaseId: currentPhase.id } }) misses.
+            // Without this delegation the card was reporting 0 incomplete
+            // tasks even when "Stakeholder communication and updates" was
+            // still TODO — surfacing a misleading "Generate Initiation" CTA.
+            const phaseCompletionForCard = currentPhase?.name
+              ? await (async () => {
+                  try {
+                    const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+                    return await getPhaseCompletion(deployment.projectId, currentPhase.name, agentId);
+                  } catch { return null; }
+                })()
+              : null;
+            const incompleteTasks = phaseCompletionForCard
+              ? (phaseCompletionForCard.pmTasks.total - phaseCompletionForCard.pmTasks.done)
+                + (phaseCompletionForCard.deliveryTasks.total - phaseCompletionForCard.deliveryTasks.done)
+              : 0;
+
+            const [pendingArts, artSession] = await Promise.all([
               db.agentArtefact.count({ where: { projectId: deployment.projectId, agentId, status: { in: ["DRAFT", "PENDING_REVIEW"] } } }),
               db.knowledgeBaseItem.findFirst({ where: { agentId, projectId: deployment.projectId, title: "__clarification_session__", tags: { has: "active" } } }),
-              // Incomplete delivery + scaffolded PM tasks for the CURRENT phase.
-              // This is what the "PICKING UP WHERE YOU LEFT OFF" banner counts,
-              // and is the right gate for "should we suggest moving to the next
-              // phase" — if the current phase has open work, we shouldn't.
-              currentPhase?.id
-                ? db.task.count({
-                    where: {
-                      projectId: deployment.projectId,
-                      phaseId: currentPhase.id,
-                      status: { notIn: ["DONE", "completed", "CANCELLED"] },
-                    },
-                  })
-                : Promise.resolve(0),
             ]);
 
             // Real unanswered-question count, not just session-exists boolean.
