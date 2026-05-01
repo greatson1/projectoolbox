@@ -677,7 +677,9 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         console.error("[runLifecycleInit] risk promotion failed:", e);
       }
 
-      // Issues + costs in parallel — independent of each other and of risk.
+      // Issues + costs + milestones in parallel — independent of each
+      // other and of risk. Each extractor is idempotent, so retries on a
+      // re-deploy are safe.
       Promise.all([
         (async () => {
           try {
@@ -700,6 +702,17 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
               }).catch(() => {});
             }
           } catch (e) { console.error("[runLifecycleInit] cost promotion failed:", e); }
+        })(),
+        (async () => {
+          try {
+            const { promoteResearchMilestonesToTasks } = await import("@/lib/agents/milestone-extractor");
+            const r = await promoteResearchMilestonesToTasks(project.id);
+            if (r.created > 0) {
+              await db.agentActivity.create({
+                data: { agentId, type: "document", summary: `Scaffolded ${r.created} milestone task${r.created === 1 ? "" : "s"} from research lead-time hints` },
+              }).catch(() => {});
+            }
+          } catch (e) { console.error("[runLifecycleInit] milestone promotion failed:", e); }
         })(),
       ]).catch(() => {});
 
