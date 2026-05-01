@@ -349,6 +349,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           .catch(e => console.error("[artefact PATCH] artefact seeding failed:", e))
       );
 
+      // Stakeholder prose extraction — runs for EVERY approved artefact, not
+      // just Stakeholder Register. Charters, Project Briefs, and Business
+      // Cases routinely name a Sponsor / PM / Approver in prose; without
+      // this they never reach the People page. Idempotent and filtered
+      // through looksLikeFabricatedName so invented names don't slip in.
+      waitUntil((async () => {
+        try {
+          const { promoteArtefactStakeholders } = await import("@/lib/agents/stakeholder-extractor");
+          await promoteArtefactStakeholders(artefact.projectId);
+        } catch (e) {
+          console.error("[artefact PATCH] stakeholder prose extraction failed:", e);
+        }
+      })());
+
       // ── Action-item extraction ──
       // Parse the artefact's "Summary and Next Actions" table into Task rows
       // tagged "from_artefact" + "action_item" so they show up in the PM

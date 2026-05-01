@@ -651,6 +651,27 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
               summary: `Promoted ${result.created} research-identified risk${result.created === 1 ? "" : "s"} to the Risk Register for "${project.name}"`,
             },
           }).catch(() => {});
+
+          // Score them with Haiku so the user sees realistic probability/
+          // impact + a one-line mitigation instead of the 3×3=9 default.
+          // Fire-and-forget so the lifecycle isn't blocked by the LLM call.
+          (async () => {
+            try {
+              const { scoreRisksWithAI } = await import("@/lib/agents/risk-ai-scorer");
+              const scored = await scoreRisksWithAI({ projectId: project.id });
+              if (scored.scored > 0) {
+                await db.agentActivity.create({
+                  data: {
+                    agentId,
+                    type: "risk",
+                    summary: `AI-scored ${scored.scored} risk${scored.scored === 1 ? "" : "s"} with project-aware probability/impact + mitigation suggestions`,
+                  },
+                }).catch(() => {});
+              }
+            } catch (e) {
+              console.error("[runLifecycleInit] risk AI scoring failed:", e);
+            }
+          })();
         }
       } catch (e) {
         console.error("[runLifecycleInit] risk promotion failed:", e);

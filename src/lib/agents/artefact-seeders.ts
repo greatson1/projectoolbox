@@ -127,11 +127,10 @@ async function seedStakeholders(artefact: ArtefactInput, agentId: string): Promi
   const rows = parseCSV(artefact.content);
   if (rows.length === 0) return;
 
-  // Remove only agent-seeded stakeholders so manual additions are preserved
-  await db.stakeholder.deleteMany({
-    where: { projectId: artefact.projectId },
-    // Note: Stakeholder has no createdBy — we delete all and re-seed
-  });
+  // Merge-by-name — never deleteMany. The earlier delete-then-create wiped
+  // the deploy-form sponsor/PM, the clarification-promoted stakeholders,
+  // and any rows the user manually added on the People page. Now we upsert
+  // by (projectId, name) and never touch rows that aren't in the artefact.
 
   // Build a set of user-confirmed names so we can preserve any the user
   // explicitly provided during clarification. Everything else must match
@@ -200,24 +199,46 @@ async function seedStakeholders(artefact: ArtefactInput, agentId: string): Promi
     const sentiment = engagementToSentiment(engageCur);
 
     try {
-      await db.stakeholder.create({
-        data: {
-          projectId: artefact.projectId,
-          name: name.slice(0, 200),
-          role: (roleHint || col(row, ["Role", "Job Title", "Designation"])).slice(0, 200) || null,
-          organisation: org.slice(0, 200) || null,
-          power,
-          interest,
-          sentiment: sentiment || null,
-          email: email.slice(0, 200) || null,
-        },
+      const trimmedName = name.slice(0, 200).trim();
+      const role = (roleHint || col(row, ["Role", "Job Title", "Designation"])).slice(0, 200) || null;
+      const existing = await db.stakeholder.findFirst({
+        where: { projectId: artefact.projectId, name: trimmedName },
+        select: { id: true, role: true, email: true, organisation: true },
       });
+      if (existing) {
+        // Don't overwrite a role/email/org the user already set — those
+        // came from the deploy form, clarification, or a manual edit.
+        await db.stakeholder.update({
+          where: { id: existing.id },
+          data: {
+            role: existing.role || role,
+            organisation: existing.organisation || org.slice(0, 200) || null,
+            power,
+            interest,
+            sentiment: sentiment || undefined,
+            email: existing.email || email.slice(0, 200) || null,
+          },
+        });
+      } else {
+        await db.stakeholder.create({
+          data: {
+            projectId: artefact.projectId,
+            name: trimmedName,
+            role,
+            organisation: org.slice(0, 200) || null,
+            power,
+            interest,
+            sentiment: sentiment || null,
+            email: email.slice(0, 200) || null,
+          },
+        });
+      }
       created++;
     } catch (e) {
-      console.error("[stakeholder-seeder] Failed to create:", name, e);
+      console.error("[stakeholder-seeder] Failed to upsert:", name, e);
     }
   }
-  console.log(`[artefact-seeders] Stakeholder Register: ${created} stakeholders seeded`);
+  console.log(`[artefact-seeders] Stakeholder Register: ${created} stakeholders merged`);
 }
 
 function parseHML(raw: string): number {
@@ -287,15 +308,19 @@ async function seedRisks(artefact: ArtefactInput, agentId: string): Promise<void
   const rows = parseCSV(artefact.content);
   if (rows.length === 0) return;
 
-  // Remove previously agent-seeded risks
-  // Risk has no createdBy field — use a convention: risks without an assigneeId that were seeded
-  // We'll delete all risks and re-seed (user-added ones are expected to be added via the UI POST)
-  await db.risk.deleteMany({ where: { projectId: artefact.projectId } });
-
+  // Merge-by-title — never deleteMany. The earlier delete-then-create flow
+  // was destroying any risks the user had added via the UI, the agent had
+  // promoted from research (risk-extractor.ts), or that arrived via an
+  // escalation tool — every approval of the Risk Register artefact wiped
+  // them. Now we upsert: existing rows get refreshed with the artefact's
+  // values, new ones get created. Anything not in the artefact is left
+  // alone. Idempotent on re-approve.
   let created = 0;
+  let updated = 0;
   for (const row of rows) {
     const title = col(row, ["Title", "Risk", "Risk Title", "Risk Description", "Name"]);
     if (!title) continue;
+    const trimmedTitle = title.slice(0, 255).trim();
 
     const description  = col(row, ["Description", "Details", "Risk Description"]);
     const category     = col(row, ["Category", "Type", "Risk Category", "Risk Type"]);
@@ -312,26 +337,50 @@ async function seedRisks(artefact: ArtefactInput, agentId: string): Promise<void
     const status      = normaliseRiskStatus(statusRaw);
 
     try {
-      await db.risk.create({
-        data: {
-          projectId: artefact.projectId,
-          title: title.slice(0, 255),
-          description: description || null,
-          category: category || null,
-          probability,
-          impact,
-          score,
-          status,
-          owner: sanitiseOwnerName(owner) || null,
-          mitigation: mitigation || null,
-        },
+      const existing = await db.risk.findFirst({
+        where: { projectId: artefact.projectId, title: trimmedTitle },
+        select: { id: true, mitigation: true, owner: true },
       });
-      created++;
+      if (existing) {
+        // Refresh artefact-driven fields. We DON'T overwrite mitigation /
+        // owner if the user has already filled them in via the UI — the
+        // user's value wins over the artefact's regenerated guess.
+        await db.risk.update({
+          where: { id: existing.id },
+          data: {
+            description: description || undefined,
+            category: category || undefined,
+            probability,
+            impact,
+            score,
+            status,
+            owner: existing.owner || sanitiseOwnerName(owner) || null,
+            mitigation: existing.mitigation || mitigation || null,
+          },
+        });
+        updated++;
+      } else {
+        await db.risk.create({
+          data: {
+            projectId: artefact.projectId,
+            title: trimmedTitle,
+            description: description || null,
+            category: category || null,
+            probability,
+            impact,
+            score,
+            status,
+            owner: sanitiseOwnerName(owner) || null,
+            mitigation: mitigation || null,
+          },
+        });
+        created++;
+      }
     } catch (e) {
-      console.error("[risk-seeder] Failed to create:", title, e);
+      console.error("[risk-seeder] Failed to upsert:", trimmedTitle, e);
     }
   }
-  console.log(`[artefact-seeders] Risk Register: ${created} risks seeded`);
+  console.log(`[artefact-seeders] Risk Register: ${created} created, ${updated} updated (merge-by-title)`);
 }
 
 function parseRating(raw: string, defaultVal: number): number {
