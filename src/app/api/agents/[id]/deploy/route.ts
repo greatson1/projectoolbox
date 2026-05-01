@@ -70,6 +70,133 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { status: "ACTIVE" },
   });
 
+  // ── Persist deploy-form data to canonical tables ─────────────────────────
+  // The wizard collects budget, sponsor/PM/stakeholders, and team members. Up
+  // until now those values were only kept inside deployment.config JSON, so
+  // pages reading from db.stakeholder / db.projectMember / project.budget
+  // showed empty even though the user had filled the form. This block lifts
+  // that data into the dedicated tables on first deployment so every page
+  // (Stakeholders, Cost, Resources, PM Tracker prereqs) has it from t=0.
+  try {
+    const cfg = (config as any) || {};
+
+    // Project-level fields — only set when project doesn't already have them
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { budget: true, startDate: true, endDate: true, description: true },
+    });
+    if (project) {
+      const projectUpdate: Record<string, unknown> = {};
+      const formBudget = typeof cfg.budget === "number" ? cfg.budget : parseFloat(cfg.budget || "");
+      if (!project.budget && Number.isFinite(formBudget) && formBudget > 0) {
+        projectUpdate.budget = formBudget;
+      }
+      if (!project.startDate && cfg.startDate) {
+        const d = new Date(cfg.startDate);
+        if (!isNaN(d.getTime())) projectUpdate.startDate = d;
+      }
+      if (!project.endDate && cfg.endDate) {
+        const d = new Date(cfg.endDate);
+        if (!isNaN(d.getTime())) projectUpdate.endDate = d;
+      }
+      if (!project.description && typeof cfg.description === "string" && cfg.description.trim()) {
+        projectUpdate.description = cfg.description.trim();
+      }
+      if (Object.keys(projectUpdate).length > 0) {
+        await db.project.update({ where: { id: projectId }, data: projectUpdate });
+      }
+    }
+
+    // Stakeholders — { name, role, org, power, interest } from the wizard
+    if (Array.isArray(cfg.stakeholders)) {
+      for (const s of cfg.stakeholders) {
+        const name = typeof s?.name === "string" ? s.name.trim() : "";
+        if (!name) continue;
+        // Upsert by (projectId, name) — re-deploys shouldn't duplicate.
+        const existing = await db.stakeholder.findFirst({
+          where: { projectId, name },
+          select: { id: true },
+        });
+        if (existing) {
+          await db.stakeholder.update({
+            where: { id: existing.id },
+            data: {
+              role: s.role || undefined,
+              organisation: s.org || undefined,
+              power: typeof s.power === "number" ? s.power : undefined,
+              interest: typeof s.interest === "number" ? s.interest : undefined,
+            },
+          });
+        } else {
+          await db.stakeholder.create({
+            data: {
+              projectId,
+              name,
+              role: s.role || null,
+              organisation: s.org || null,
+              power: typeof s.power === "number" ? s.power : 50,
+              interest: typeof s.interest === "number" ? s.interest : 50,
+            },
+          });
+        }
+      }
+    }
+
+    // Sponsor + project manager — captured separately on the wizard. Promote
+    // to Stakeholder rows with a clear role tag so the People page surfaces
+    // them and downstream prereq checks (e.g. "Sponsor identified and
+    // confirmed") evaluate as met.
+    const promoteSingle = async (raw: unknown, role: string) => {
+      const name = typeof raw === "string" ? raw.trim() : "";
+      if (!name) return;
+      const existing = await db.stakeholder.findFirst({
+        where: { projectId, name },
+        select: { id: true, role: true },
+      });
+      if (existing) {
+        if (!existing.role) {
+          await db.stakeholder.update({ where: { id: existing.id }, data: { role } });
+        }
+      } else {
+        await db.stakeholder.create({
+          data: { projectId, name, role, power: 80, interest: 80 },
+        });
+      }
+    };
+    await promoteSingle(cfg.sponsor, "Project Sponsor");
+    await promoteSingle(cfg.projectManager || cfg.pm, "Project Manager");
+
+    // Team members — wizard's team array → ProjectMember rows. Each entry
+    // typically has { userId | name, role, hourlyRate }. We only persist
+    // entries with a userId (the team page uses the User join); name-only
+    // entries fall through to free-text display elsewhere.
+    if (Array.isArray(cfg.team)) {
+      for (const m of cfg.team) {
+        const userId = typeof m?.userId === "string" ? m.userId : null;
+        if (!userId) continue;
+        const exists = await db.projectMember.findFirst({
+          where: { projectId, userId },
+          select: { id: true },
+        });
+        if (!exists) {
+          await db.projectMember.create({
+            data: {
+              projectId,
+              userId,
+              role: m.role || "MEMBER",
+              hourlyRate: typeof m.hourlyRate === "number" ? m.hourlyRate : null,
+              skills: Array.isArray(m.skills) ? m.skills : [],
+            },
+          });
+        }
+      }
+    }
+  } catch (e) {
+    // Persistence failures here must NOT block deployment — the agent can
+    // still operate, the user can fix any missing rows from the UI later.
+    console.error("[deploy] persist deploy-form data failed:", e);
+  }
+
   // Auto-generate agent email address namespaced by org slug
   const existingEmail = await db.agentEmail.findUnique({ where: { agentId } });
   if (!existingEmail) {

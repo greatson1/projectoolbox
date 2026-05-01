@@ -481,6 +481,7 @@ export default function ArtefactsPage() {
       <AgentStatusBanner
         items={items}
         project={project}
+        projectId={projectId}
         generating={generating}
         onGenerate={handleGenerate}
       />
@@ -638,13 +639,22 @@ export default function ArtefactsPage() {
 
 // ── Agent Status Banner ──────────────────────────────────────────────────────
 function AgentStatusBanner({
-  items, project, generating, onGenerate,
+  items, project, projectId, generating, onGenerate,
 }: {
   items: any[];
   project: any;
+  projectId: string;
   generating: boolean;
   onGenerate: (phase?: string) => void;
 }) {
+  // Phase reversion modal — replaces the legacy prompt() flow with a proper
+  // dialog that lets the user pick the target phase, capture a multi-line
+  // reason, and see exactly what will happen before submitting.
+  const [revertModalOpen, setRevertModalOpen] = useState(false);
+  const [revertTargetPhase, setRevertTargetPhase] = useState<string>("");
+  const [revertReason, setRevertReason] = useState("");
+  const [reverting, setReverting] = useState(false);
+
   if (!project) return null;
 
   // Filter to current phase artefacts for banner state (avoid mixing phases)
@@ -660,11 +670,39 @@ function AgentStatusBanner({
   const approved  = currentPhaseItems.filter((a: any) => a.status === "APPROVED").length;
   const pending   = currentPhaseItems.filter((a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
   const rejected  = currentPhaseItems.filter((a: any) => a.status === "REJECTED").length;
-  const total     = currentPhaseItems.length;
-  const pct       = total > 0 ? Math.round((approved / total) * 100) : 0;
-  // A phase is only "complete" when EVERY artefact is approved. Rejected artefacts
-  // block progression — they need to be fixed/regenerated and re-approved.
-  const allDone   = total > 0 && approved === total && !generating;
+  const generated = currentPhaseItems.length;
+
+  // Required-by-methodology count — same source PM Tracker uses, so the two
+  // pages can never disagree. Earlier `total` was just `currentPhaseItems.
+  // length`, which made "3/3 approved" render even when the methodology
+  // required 4 (Project Brief missing). Now `total` is the methodology's
+  // required count, with `generated` shown as the denominator only when the
+  // agent has over-delivered.
+  const requiredCount = (() => {
+    const meth = (project as any)?.methodology;
+    if (!meth || !activePhaseForFilter?.name) return 0;
+    try {
+      const def = getMethodology(meth);
+      const phaseDef = def.phases.find(p => p.name === activePhaseForFilter.name);
+      if (!phaseDef) return 0;
+      // `required` artefacts only — bonus/optional artefacts shouldn't gate
+      // the "all approved" check or the X/Y label.
+      return phaseDef.artefacts.filter((a: any) => a.required).length;
+    } catch {
+      return 0;
+    }
+  })();
+  const total = Math.max(requiredCount, generated);
+  const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
+  // Are any required artefacts missing? Used to keep the banner honest when
+  // every generated draft is approved but the methodology lists more.
+  const missingRequired = Math.max(0, requiredCount - generated);
+  // A phase is only "complete" when EVERY required artefact has been
+  // generated AND every generated draft is approved. The earlier check was
+  // `approved === total` where total was just generated.length — meaning a
+  // phase with 3 of 4 required docs all approved would render "phase
+  // complete" even though Project Brief was never created.
+  const allDone   = total > 0 && approved === total && missingRequired === 0 && !generating;
   const hasRejections = rejected > 0 && !generating;
   const noneYet   = total === 0 && !generating;
 
@@ -722,8 +760,12 @@ function AgentStatusBanner({
       badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
       badgeText: "Awaiting Review",
       icon: <AlertCircle className="w-4 h-4" />,
-      headline: `Review ${pending} document${pending === 1 ? "" : "s"} to advance`,
-      sub: `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, your agent will automatically generate the ${nextPhase ? nextPhase.name : "next"} phase documents.`,
+      headline: missingRequired > 0
+        ? `${missingRequired} required document${missingRequired === 1 ? "" : "s"} not yet generated`
+        : `Review ${pending} document${pending === 1 ? "" : "s"} to advance`,
+      sub: missingRequired > 0
+        ? `${approved}/${total} approved · ${missingRequired} of the ${requiredCount} required documents for ${phaseName} haven't been generated yet. Click "Generate Artefacts" to produce the missing ones, then review and approve. Once all ${total} are approved, your agent will move on to ${nextPhase ? nextPhase.name : "the next phase"}.`
+        : `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, your agent will automatically generate the ${nextPhase ? nextPhase.name : "next"} phase documents.`,
     },
     rejected: {
       border: "border-red-500/30 bg-red-500/5",
@@ -859,27 +901,13 @@ function AgentStatusBanner({
             {/* Revert to previous phase — only show if not on first phase */}
             {phaseNumber > 1 && (
               <Button size="sm" variant="ghost" className="text-xs text-muted-foreground"
-                onClick={async () => {
-                  const prevPhase = project.phases?.[phaseNumber - 2]; // 0-indexed, go back one
-                  if (!prevPhase) return;
-                  const reason = prompt(`Revert to ${prevPhase.name}?\n\nPlease provide a reason:`);
-                  if (!reason) return;
-                  try {
-                    const res = await fetch(`/api/projects/${project.id}/phases/revert`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ targetPhase: prevPhase.name, reason }),
-                    });
-                    const data = await res.json();
-                    if (data.data?.pendingApproval) {
-                      toast.success("Phase reversion submitted for approval", { duration: 4000 });
-                    } else if (data.data?.reverted) {
-                      toast.success(`Reverted to ${prevPhase.name}`, { duration: 4000 });
-                      window.location.reload();
-                    } else {
-                      toast.error(data.error || "Reversion failed");
-                    }
-                  } catch { toast.error("Network error"); }
+                onClick={() => {
+                  // Default to the immediate previous phase but the modal
+                  // lets the user pick any earlier one.
+                  const prevPhase = project.phases?.[phaseNumber - 2];
+                  setRevertTargetPhase(prevPhase?.name || "");
+                  setRevertReason("");
+                  setRevertModalOpen(true);
                 }}>
                 ← Revert Phase
               </Button>
@@ -888,6 +916,110 @@ function AgentStatusBanner({
         </div>
       </CardContent>
     </Card>
+
+    {/* Phase reversion modal — replaces the old prompt() flow.
+        Picks any earlier phase (not just immediate prev), captures a
+        multi-line reason, and explains the side-effects up front so the
+        user knows exactly what gets re-opened / deferred / closed before
+        they submit. The reversion itself is gated server-side behind a
+        SCOPE_CHANGE approval (executes only when an admin approves) —
+        the modal makes that explicit too. */}
+    {revertModalOpen && project?.phases && (
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={(e) => { if (e.target === e.currentTarget) setRevertModalOpen(false); }}>
+        <div className="bg-card border border-border rounded-xl shadow-2xl max-w-lg w-full p-5">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-foreground">Revert Phase</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Step the project back to an earlier phase. Submits a SCOPE_CHANGE approval — only takes effect once an admin approves.
+              </p>
+            </div>
+          </div>
+
+          {/* Target phase selector — every phase BEFORE the current one */}
+          <label className="block mb-4">
+            <span className="text-xs font-medium text-muted-foreground mb-1.5 block">Revert to:</span>
+            <select
+              value={revertTargetPhase}
+              onChange={(e) => setRevertTargetPhase(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              {project.phases.slice(0, phaseNumber - 1).map((p: any) => (
+                <option key={p.name} value={p.name}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+
+          {/* Reason — multi-line */}
+          <label className="block mb-4">
+            <span className="text-xs font-medium text-muted-foreground mb-1.5 block">Reason for reverting <span className="text-red-500">*</span></span>
+            <textarea
+              value={revertReason}
+              onChange={(e) => setRevertReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Sponsor changed, baseline assumptions invalid, scope reset…"
+              className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-y"
+            />
+          </label>
+
+          {/* What will happen — explain ALL the side-effects up front */}
+          <div className="mb-4 px-3 py-2.5 rounded-md border border-amber-500/30 bg-amber-500/5">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1.5">If the admin approves, this will:</p>
+            <ul className="text-[11px] text-foreground/80 space-y-0.5 list-disc list-inside">
+              <li>Set <span className="font-semibold">{revertTargetPhase || "target phase"}</span> back to ACTIVE</li>
+              <li>Mark phases between target and current as REVERTED (paused)</li>
+              <li>Re-open the target phase&apos;s artefacts as DRAFT for revision</li>
+              <li>Re-open scaffolded PM tasks tied to those artefacts and the gate-request / phase-advanced events for any reverted phase</li>
+              <li>Auto-defer any pending phase-gate approvals that are no longer advance-ready</li>
+              <li>Close any active clarification session — questions belong to a phase you&apos;re stepping out of</li>
+              <li>Defer pending research-finding approvals scoped to the reverted-from phases</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setRevertModalOpen(false)} disabled={reverting}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+              disabled={!revertTargetPhase || revertReason.trim().length < 5 || reverting}
+              onClick={async () => {
+                setReverting(true);
+                try {
+                  const res = await fetch(`/api/projects/${projectId}/phases/revert`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ targetPhase: revertTargetPhase, reason: revertReason.trim() }),
+                  });
+                  const data = await res.json();
+                  if (data?.data?.pendingApproval) {
+                    toast.success("Phase reversion submitted for approval", { duration: 4500 });
+                    setRevertModalOpen(false);
+                  } else if (data?.data?.reverted) {
+                    toast.success(`Reverted to ${revertTargetPhase}`, { duration: 4000 });
+                    setRevertModalOpen(false);
+                    window.location.reload();
+                  } else {
+                    toast.error(data?.error || "Reversion failed");
+                  }
+                } catch {
+                  toast.error("Network error");
+                } finally {
+                  setReverting(false);
+                }
+              }}
+            >
+              {reverting ? "Submitting…" : "Submit for approval"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

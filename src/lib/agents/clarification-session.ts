@@ -664,6 +664,28 @@ export async function answerQuestionInSession(
       `Q: ${question.question}\nA: ${answer}\n(For artefact: ${question.artefact})`,
       [question.artefact.toLowerCase().replace(/\s+/g, "_"), "user_answer", "user_confirmed"],
     ).catch(() => {});
+
+    // Promote the answer to canonical tables when applicable. Sponsor / PM /
+    // stakeholder names land in the Stakeholder table (so the People page
+    // populates), budget answers update Project.budget (so the Cost page
+    // and EVM math see real numbers), date answers update Project start/end.
+    // Earlier the answer only went to KB, so the dedicated pages stayed empty
+    // even though the user had explicitly answered. Fire-and-forget — never
+    // block the answer flow on a promote failure.
+    (async () => {
+      try {
+        const { promoteAnswerToCanonicalTables } = await import("@/lib/agents/clarification-promote");
+        await promoteAnswerToCanonicalTables({
+          projectId,
+          questionField: question.field || "",
+          questionText: question.question,
+          answer,
+          artefactName: question.artefact,
+        });
+      } catch (e) {
+        console.error("[clarification] canonical promote failed:", e);
+      }
+    })();
   }
 
   // Mark question answered
