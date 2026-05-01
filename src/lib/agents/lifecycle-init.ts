@@ -633,28 +633,28 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
         }).catch(() => {});
       }
 
-      // ── 3a.5: Promote research-identified risks to the canonical Risk table ──
-      // Without this the Risk Register page stays empty until an Initial Risk
-      // Register artefact is generated and approved (Initiation phase, not
-      // Pre-Project). The extractor scans KB items the research just produced
-      // (titles like "Key Project Risks"), splits the comma-separated list
-      // into discrete risks, and creates Risk rows with sensible defaults.
-      // Idempotent — promoted KB items get a "risk_promoted" tag.
+      // ── 3a.5: Promote research findings to canonical tables ────────────
+      // Risks, issues, and cost estimates that research surfaced get lifted
+      // out of KB and into their dedicated tables so the Risk Register,
+      // Issues page, and Cost page populate immediately. All extractors are
+      // idempotent (each tags processed KB items so re-runs are no-ops).
+      // Risk extractor runs first so the AI scorer downstream has rows to
+      // operate on. Issue + cost extractors run in parallel.
       try {
         const { promoteKBRisksToCanonical } = await import("@/lib/agents/risk-extractor");
-        const result = await promoteKBRisksToCanonical(project.id);
-        if (result.created > 0) {
+        const riskResult = await promoteKBRisksToCanonical(project.id);
+        if (riskResult.created > 0) {
           await db.agentActivity.create({
             data: {
               agentId,
               type: "risk",
-              summary: `Promoted ${result.created} research-identified risk${result.created === 1 ? "" : "s"} to the Risk Register for "${project.name}"`,
+              summary: `Promoted ${riskResult.created} research-identified risk${riskResult.created === 1 ? "" : "s"} to the Risk Register for "${project.name}"`,
             },
           }).catch(() => {});
 
-          // Score them with Haiku so the user sees realistic probability/
-          // impact + a one-line mitigation instead of the 3×3=9 default.
-          // Fire-and-forget so the lifecycle isn't blocked by the LLM call.
+          // Score with Haiku so the Risk Register reads with realistic
+          // probability/impact + mitigation, not 3×3 placeholders. Fire-and-
+          // forget so the lifecycle isn't blocked by the LLM round-trip.
           (async () => {
             try {
               const { scoreRisksWithAI } = await import("@/lib/agents/risk-ai-scorer");
@@ -676,6 +676,32 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       } catch (e) {
         console.error("[runLifecycleInit] risk promotion failed:", e);
       }
+
+      // Issues + costs in parallel — independent of each other and of risk.
+      Promise.all([
+        (async () => {
+          try {
+            const { promoteKBIssuesToCanonical } = await import("@/lib/agents/issue-extractor");
+            const r = await promoteKBIssuesToCanonical(project.id);
+            if (r.created > 0) {
+              await db.agentActivity.create({
+                data: { agentId, type: "issue", summary: `Logged ${r.created} active issue${r.created === 1 ? "" : "s"} from research findings` },
+              }).catch(() => {});
+            }
+          } catch (e) { console.error("[runLifecycleInit] issue promotion failed:", e); }
+        })(),
+        (async () => {
+          try {
+            const { promoteResearchCostsToCanonical } = await import("@/lib/agents/cost-extractor");
+            const r = await promoteResearchCostsToCanonical(project.id);
+            if (r.created > 0) {
+              await db.agentActivity.create({
+                data: { agentId, type: "cost_planning", summary: `Captured ${r.created} cost estimate${r.created === 1 ? "" : "s"} from research findings` },
+              }).catch(() => {});
+            }
+          } catch (e) { console.error("[runLifecycleInit] cost promotion failed:", e); }
+        })(),
+      ]).catch(() => {});
 
       // ── 3b: Present research findings as enterprise card ──
       if (researchFacts > 0) {
