@@ -997,6 +997,30 @@ The CURRENT PHASE COMPLETION STATUS section above shows ✅ READY TO ADVANCE or 
 
 - Never contradict your own previous turn within the same conversation. If you said "BLOCKED" two turns ago, the data hasn't changed since (the user just typed a reply); do not flip to "ready to advance" without explaining what changed.
 
+### ANTI-FABRICATION RULES — TASK COMPLETION
+The system will block any of these patterns. Don't even attempt them:
+
+1. **Never create a new task with "approved" / "complete" / "done" / "signed off" in the title.** That is a status claim disguised as a unit of work. The action-executor refuses these outright.
+2. **Never duplicate an existing scaffolded PM task with a new name to imply it's done.** If "Stakeholder communication and updates" is incomplete, do not create "Stakeholder communication — done" or similar. The action-executor compares titles by token-overlap and refuses fuzzy duplicates.
+3. **To complete a scaffolded PM task, the user clicks ○ on the [PM Tracker](/projects/${project?.id || ""}/pm-tracker), or completes the underlying action that auto-ticks it (e.g. adding a stakeholder on the People page auto-ticks "Stakeholder communication and updates").** Send the user there — never claim YOU completed it.
+
+### "REQUIRED" — STRICT MEANING
+Some methodologies (Traditional / Pre-Project among them) define artefacts with required:false for every entry — meaning none are strictly mandated, though several may be AI-generatable. **Do not invent a "required" subset to make a count look better.** If the CURRENT PHASE COMPLETION STATUS section shows Artefacts: 3/4, that is the only count to quote. Never say "3 of 3 required artefacts" if the methodology has no required:true items.
+
+### WHERE EACH PM TASK IS COMPLETED
+The Task Board (/projects/:id/agile) hides scaffolded PM tasks by design — sending the user there to complete one is a dead end. Use this map:
+
+| Scaffolded task | Where the user actually completes it |
+|---|---|
+| Generate \<artefact\> (e.g. "Generate Project Brief") | Auto-ticks when YOU generate the artefact via run_artefact_generation. User can also approve a draft on [Documents](/projects/${project?.id || ""}/artefacts). |
+| Conduct clarification Q&A | Auto-ticks when the user answers your clarification card in chat. |
+| Submit Phase Gate approval | Auto-ticks when the gate is created on [Pending Approvals](/approvals). |
+| Obtain approval for all artefacts | Auto-ticks once the user approves the last artefact on [Documents](/projects/${project?.id || ""}/artefacts). |
+| Review and update Risk Register | Auto-ticks on POST/PATCH to [Risk Register](/projects/${project?.id || ""}/risk). User can also click ○ on the [PM Tracker](/projects/${project?.id || ""}/pm-tracker). |
+| Stakeholder communication and updates | Auto-ticks when a stakeholder is added on [People](/projects/${project?.id || ""}/stakeholders). User can also click ○ on the [PM Tracker](/projects/${project?.id || ""}/pm-tracker). |
+
+**When pointing the user at an incomplete scaffolded task, link them to the [PM Tracker](/projects/${project?.id || ""}/pm-tracker) — never the Task Board.** The Task Board is for delivery work only.
+
 ## EVIDENCE-BASED OUTPUT — CRITICAL
 - NEVER claim you have done something unless it appears in the GENERATED ARTEFACTS or LIFECYCLE STATE above. If you haven't done it, say you WILL do it or PLAN to do it.
 - NEVER fabricate progress, bookings, requests, confirmations, contacts, or vendor names. You are a planner — describe what NEEDS to happen, not what supposedly already happened.
@@ -2443,7 +2467,39 @@ When you mention an action the user must take ("review the artefacts", "approve 
             const { getConfirmedFacts } = await import("@/lib/agents/confirmed-facts");
             const { sanitiseChatResponse } = await import("@/lib/agents/sanitise-chat-response");
             const facts = await getConfirmedFacts(deployment.projectId);
-            const result = sanitiseChatResponse(cleanedContent, facts);
+            // Pull a live phase-completion snapshot so the sanitiser can
+            // invalidate "phase complete" / "ready to advance" claims when
+            // canAdvance is false, and rewrite "X of Y required" prose
+            // against the methodology's actual required count.
+            let phaseSnapshot = undefined;
+            if (currentPhase?.name) {
+              try {
+                const { getPhaseCompletion } = await import("@/lib/agents/phase-completion");
+                const { getMethodology } = await import("@/lib/methodology-definitions");
+                const proj = await db.project.findUnique({
+                  where: { id: deployment.projectId },
+                  select: { methodology: true },
+                });
+                const methodologyId = (proj?.methodology || "traditional").toLowerCase().replace("agile_", "");
+                const methodology = getMethodology(methodologyId);
+                const phaseDef = methodology.phases.find(p => p.name === currentPhase.name);
+                const requiredArtefactCount = phaseDef?.artefacts.filter(a => a.required).length ?? 0;
+                const aiGeneratableArtefactCount = phaseDef?.artefacts.filter(a => a.aiGeneratable).length ?? 0;
+                const comp = await getPhaseCompletion(deployment.projectId, currentPhase.name, agentId);
+                phaseSnapshot = {
+                  phaseName: comp.phaseName,
+                  canAdvance: comp.canAdvance,
+                  artefacts: { done: comp.artefacts.done, total: comp.artefacts.total },
+                  pmTasks: { done: comp.pmTasks.done, total: comp.pmTasks.total },
+                  deliveryTasks: { done: comp.deliveryTasks.done, total: comp.deliveryTasks.total },
+                  requiredArtefactCount,
+                  aiGeneratableArtefactCount,
+                };
+              } catch (e) {
+                console.error("[chat/stream] phase snapshot for sanitiser failed:", e);
+              }
+            }
+            const result = sanitiseChatResponse(cleanedContent, facts, phaseSnapshot);
             if (result.corrections.length > 0) {
               cleanedContent = result.content;
               console.warn(

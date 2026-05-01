@@ -26,10 +26,29 @@
 
 import type { ConfirmedFacts } from "@/lib/agents/confirmed-facts";
 
+/**
+ * Live phase-completion snapshot the chat-stream caller passes alongside
+ * confirmed facts. Used by the sanitiser to invalidate "phase complete"
+ * style assertions when the gate isn't actually ready, and to rewrite
+ * "X of Y required artefacts" claims when the methodology has zero items
+ * marked required:true.
+ */
+export interface PhaseCompletionSnapshot {
+  phaseName: string;
+  canAdvance: boolean;
+  artefacts: { done: number; total: number };
+  pmTasks: { done: number; total: number };
+  deliveryTasks: { done: number; total: number };
+  /** Count of artefacts the methodology marks `required: true` for THIS phase. */
+  requiredArtefactCount: number;
+  /** Count of artefacts the methodology marks `aiGeneratable: true` for THIS phase. */
+  aiGeneratableArtefactCount: number;
+}
+
 export interface ChatSanitiseResult {
   content: string;
   corrections: Array<{
-    kind: "stripped_verified_tag" | "replaced_fabricated_value";
+    kind: "stripped_verified_tag" | "replaced_fabricated_value" | "rewrote_phase_complete_claim" | "rewrote_required_count_claim";
     field?: string;
     before: string;
     after: string;
@@ -42,7 +61,11 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function sanitiseChatResponse(content: string, facts: ConfirmedFacts): ChatSanitiseResult {
+export function sanitiseChatResponse(
+  content: string,
+  facts: ConfirmedFacts,
+  phase?: PhaseCompletionSnapshot,
+): ChatSanitiseResult {
   const corrections: ChatSanitiseResult["corrections"] = [];
   if (!content) return { content, corrections };
 
@@ -138,6 +161,77 @@ export function sanitiseChatResponse(content: string, facts: ConfirmedFacts): Ch
         before: asserted,
         after: replacement,
       });
+    }
+  }
+
+  // ── 5. Phase-complete / ready-to-advance assertions ──
+  // When the gate is NOT ready (canAdvance === false), Sonnet sometimes
+  // still narrates "Pre-Project phase is now complete ✅" or "ready to
+  // advance". This rewrites those claims to match the live status. We only
+  // act when we have a phase snapshot AND the gate is not ready — if we
+  // don't know the truth, we leave the prose alone.
+  if (phase && !phase.canAdvance) {
+    const phaseEsc = escapeRegex(phase.phaseName);
+    // Patterns: "Pre-Project phase is now complete", "phase is complete ✅",
+    // "the phase is complete", "Pre-Project is ready to advance",
+    // "ready for gate approval", "all PM tasks (are/now) complete",
+    // "all artefacts (are/now) approved".
+    const PHASE_DONE_PATTERNS: RegExp[] = [
+      new RegExp(`(${phaseEsc}\\s+phase\\s+is\\s+(?:now\\s+)?complete[!.\\s✅]*)`, "gi"),
+      /(\bphase\s+is\s+(?:now\s+)?complete[!.\s✅]*)/gi,
+      /(\b(?:ready\s+to\s+advance|ready\s+for\s+gate\s+approval|ready\s+for\s+phase\s+gate)[!.\s✅]*)/gi,
+      /(\ball\s+pm\s+tasks?\s+(?:are|now)\s+complete[!.\s✅]*)/gi,
+      /(\ball\s+artefacts?\s+(?:are|now)\s+approved[!.\s✅]*)/gi,
+      /(\bgate\s+(?:is\s+)?(?:ready|good\s+to\s+go)[!.\s✅]*)/gi,
+    ];
+    const blockerLine =
+      `[NOT READY — ${phase.artefacts.done}/${phase.artefacts.total} artefacts approved, ` +
+      `${phase.pmTasks.done}/${phase.pmTasks.total} PM tasks done, ` +
+      `${phase.deliveryTasks.done}/${phase.deliveryTasks.total} delivery tasks done]`;
+    for (const re of PHASE_DONE_PATTERNS) {
+      const matches = Array.from(out.matchAll(re));
+      for (const m of matches) {
+        const before = m[1];
+        out = out.replace(before, blockerLine);
+        corrections.push({
+          kind: "rewrote_phase_complete_claim",
+          field: "phase_complete",
+          before: before.trim(),
+          after: blockerLine,
+        });
+      }
+    }
+  }
+
+  // ── 6. "X of Y required artefacts" claims ──
+  // Nova said "3 of 3 required artefacts are APPROVED" when the methodology
+  // has 0 artefacts marked required:true (4 are ai-generatable). The "3
+  // required" subset is fabricated — there is no required subset. Replace
+  // with the actual numbers.
+  if (phase) {
+    const REQUIRED_COUNT_PATTERNS: RegExp[] = [
+      /(\b(\d+)\s+of\s+(\d+)\s+required\s+artefacts?\b)/gi,
+      /(\b(\d+)\/(\d+)\s+required\s+artefacts?\b)/gi,
+      /(\b(\d+)\s+required\s+artefacts?\s+(?:are|have\s+been)\s+approved\b)/gi,
+    ];
+    const realCount = phase.requiredArtefactCount > 0
+      ? `${phase.artefacts.done} of ${phase.requiredArtefactCount} required artefacts approved (${phase.artefacts.total} total this phase)`
+      : `${phase.artefacts.done}/${phase.aiGeneratableArtefactCount} artefacts generated (this phase has no strictly-required artefacts; ${phase.aiGeneratableArtefactCount} are AI-generatable)`;
+    for (const re of REQUIRED_COUNT_PATTERNS) {
+      const matches = Array.from(out.matchAll(re));
+      for (const m of matches) {
+        const before = m[1];
+        // Skip if the asserted "Y" already matches the real required count.
+        const assertedTotal = parseInt(m[3] ?? m[2] ?? "", 10);
+        if (Number.isFinite(assertedTotal) && assertedTotal === phase.requiredArtefactCount && phase.requiredArtefactCount > 0) continue;
+        out = out.replace(before, realCount);
+        corrections.push({
+          kind: "rewrote_required_count_claim",
+          field: "required_artefacts",
+          before: before.trim(),
+          after: realCount,
+        });
+      }
     }
   }
 
