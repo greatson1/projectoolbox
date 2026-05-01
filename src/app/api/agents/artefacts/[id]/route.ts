@@ -196,6 +196,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           summary: `"${artefact.name}" edited after approval by ${editorName} — reverted to DRAFT and must be re-approved.`,
         },
       });
+      // Reverting an approved artefact may invalidate a pending gate (it
+      // no longer satisfies the artefactThreshold). Sweep PENDING phase
+      // gates and defer any whose phase is no longer advance-ready.
+      const { sweepStalePhaseGateApprovals } = await import("@/lib/agents/phase-gate-guard");
+      await sweepStalePhaseGateApprovals(artefact.projectId, auditAgentId).catch(() => {});
     } catch (e) {
       console.error("[artefact PATCH] revert audit failed:", e);
     }
@@ -412,32 +417,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           });
 
           if (dep && dep.currentPhase === artefact.phaseId) {
-            // Check if a gate approval already exists for this phase
-            const existingGate = await db.approval.findFirst({
-              where: { projectId: artefact.projectId, type: "PHASE_GATE", status: "PENDING" },
-            });
+            // Resolve next phase from methodology
+            const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { methodology: true } });
+            const { getMethodology } = await import("@/lib/methodology-definitions");
+            const methodology = getMethodology((project?.methodology || "traditional").toLowerCase().replace("agile_", ""));
+            const phases = methodology.phases;
+            const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
+            const nextPhase = currentIdx >= 0 && currentIdx < phases.length - 1 ? phases[currentIdx + 1] : null;
 
-            if (!existingGate) {
-              const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { methodology: true } });
-              const { getMethodology } = await import("@/lib/methodology-definitions");
-              const methodology = getMethodology((project?.methodology || "traditional").toLowerCase().replace("agile_", ""));
-              const phases = methodology.phases;
-              const currentIdx = phases.findIndex(p => p.name === artefact.phaseId);
-              const nextPhase = currentIdx >= 0 && currentIdx < phases.length - 1 ? phases[currentIdx + 1] : null;
-
-              if (nextPhase) {
-                await db.approval.create({
-                  data: {
-                    projectId: artefact.projectId,
-                    requestedById: dep.agentId,
-                    type: "PHASE_GATE",
-                    title: `Phase Gate: ${artefact.phaseId} → ${nextPhase.name}`,
-                    description: `All ${phaseArtefacts.length} artefact(s) in the ${artefact.phaseId} phase have been approved. Review and approve to advance to ${nextPhase.name}.`,
-                    status: "PENDING",
-                    urgency: "MEDIUM",
-                    impactScores: { schedule: 2, cost: 1, scope: 1, stakeholder: 1 } as any,
-                  },
-                });
+            if (nextPhase && artefact.phaseId) {
+              // Use the centralised guard so we don't raise a gate while
+              // PM tasks / prereqs / clarification still block advancement.
+              const { createPhaseGateApprovalIfReady } = await import("@/lib/agents/phase-gate-guard");
+              const outcome = await createPhaseGateApprovalIfReady({
+                projectId: artefact.projectId,
+                phaseName: artefact.phaseId,
+                nextPhaseName: nextPhase.name,
+                agentId: dep.agentId,
+                description: `All ${phaseArtefacts.length} artefact(s) in the ${artefact.phaseId} phase have been approved. Review and approve to advance to ${nextPhase.name}.`,
+                urgency: "MEDIUM",
+              });
+              if (outcome.skipped) {
+                console.log(`[artefact-approval] PHASE_GATE creation skipped (${outcome.reason}): ${outcome.blockers.join("; ")}`);
+              } else {
                 await db.agentDeployment.update({
                   where: { id: dep.id },
                   data: { phaseStatus: "pending_approval" },

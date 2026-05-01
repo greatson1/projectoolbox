@@ -877,22 +877,34 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   // Stakeholder: based on risk count (more risks = more stakeholder concern)
   const stakeholderImpact = riskCount > 5 ? 3 : riskCount > 2 ? 2 : 1;
 
-  const gateApproval = await db.approval.create({
-    data: {
-      projectId: project.id,
-      requestedById: agentId,
-      title: `${firstPhase.name} Gate: ${firstPhase.gate.criteria}`,
-      description: `Agent ${agent.name} has completed the ${firstPhase.name} phase. Generated ${artefactCount} artefact(s), identified ${riskCount} risk(s), scaffolded ${taskCount} task(s). Review and approve to advance.`,
-      type: "PHASE_GATE",
-      status: "PENDING",
-      impactScores: { schedule: scheduleImpact, cost: costImpact, scope: scopeImpact, stakeholder: stakeholderImpact } as any,
-      impact: { level: costImpact >= 3 || stakeholderImpact >= 3 ? "HIGH" : "MEDIUM", agentId, agentName: agent.name, artefactCount, riskCount, taskCount } as any,
-    },
+  // Guarded create — refuses if the phase isn't actually advance-ready.
+  // Without this lifecycle-init was raising a gate on every first-phase
+  // bootstrap regardless of whether artefacts/PM tasks/clarification
+  // were complete, which is exactly the misalignment the user reported.
+  const { createPhaseGateApprovalIfReady } = await import("./phase-gate-guard");
+  const nextPhaseDef = methodology.phases[1];
+  const outcome = await createPhaseGateApprovalIfReady({
+    projectId: project.id,
+    phaseName: firstPhase.name,
+    nextPhaseName: nextPhaseDef ? nextPhaseDef.name : "next phase",
+    agentId,
+    description: `Agent ${agent.name} has completed the ${firstPhase.name} phase. Generated ${artefactCount} artefact(s), identified ${riskCount} risk(s), scaffolded ${taskCount} task(s). Review and approve to advance.`,
+    urgency: costImpact >= 3 || stakeholderImpact >= 3 ? "HIGH" : "MEDIUM",
   });
-
-  await db.agentActivity.create({
-    data: { agentId, type: "approval", summary: `Phase gate approval requested: ${firstPhase.name} → awaiting review` },
-  });
+  if (outcome.skipped) {
+    console.log(`[lifecycle-init] gate not raised (${outcome.reason}): ${outcome.blockers.join("; ")}`);
+    await db.agentActivity.create({
+      data: {
+        agentId,
+        type: "approval",
+        summary: `Phase gate not yet raised — ${outcome.blockers.slice(0, 2).join("; ") || "phase not advance-ready"}. Will fire once readiness checks pass.`,
+      },
+    }).catch(() => {});
+  } else {
+    await db.agentActivity.create({
+      data: { agentId, type: "approval", summary: `Phase gate approval requested: ${firstPhase.name} → awaiting review` },
+    });
+  }
   } // end else (no existing gate)
 
   // Mark the job as completed if it exists

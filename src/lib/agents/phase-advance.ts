@@ -187,17 +187,28 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
         requestedById = owner?.id ?? null;
       }
       if (requestedById) {
-        await db.approval.create({
-          data: {
-            projectId: ctx.projectId,
-            requestedById,
-            title: `${ctx.toPhase} Gate: Review and approve to advance`,
-            description: `The agent has completed the ${ctx.toPhase} phase and generated ${result.generated} artefact(s). Review them and approve to advance to the next phase.`,
-            type: "PHASE_GATE",
-            status: "PENDING",
-            impact: { level: "MEDIUM", description: "Phase gate approval" } as any,
-          },
-        }).catch(() => {});
+        // Guarded create — refuses if PM tasks / clarification / prereqs
+        // are still outstanding. Without this we were raising a gate just
+        // because artefacts were generated, missing the other layers.
+        const { createPhaseGateApprovalIfReady } = await import("./phase-gate-guard");
+        const nextPhaseName = (() => {
+          // ctx.toPhase is the phase being advanced INTO; we need the
+          // CURRENT phase + the next as separate names. Use ctx fields if
+          // available, else derive from methodology.
+          // Falls back to "next phase" when not resolvable.
+          return (ctx as any).nextPhase || "next phase";
+        })();
+        const outcome = await createPhaseGateApprovalIfReady({
+          projectId: ctx.projectId,
+          phaseName: ctx.toPhase,
+          nextPhaseName,
+          agentId: ctx.agentId,
+          description: `The agent has completed the ${ctx.toPhase} phase and generated ${result.generated} artefact(s). Review them and approve to advance to the next phase.`,
+          urgency: "MEDIUM",
+        });
+        if (outcome.skipped) {
+          console.log(`[phase-advance] gate not raised (${outcome.reason}): ${outcome.blockers.join("; ")}`);
+        }
       }
       await db.agentActivity.create({
         data: {
