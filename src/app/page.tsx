@@ -115,7 +115,11 @@ export default function LandingPage() {
             <Button variant="ghost" size="sm" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {!mounted || theme !== "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </Button>
-            <Link href="/login"><Button variant="ghost" size="sm">Log In</Button></Link>
+            {/* Waitlist phase — homepage does NOT expose a direct login path.
+                Both header CTAs route to /waitlist; existing-user sign-in is
+                still reachable from the waitlist page itself for invited
+                users. */}
+            <Link href="/waitlist"><Button variant="ghost" size="sm">Get Early Access</Button></Link>
             <Link href="/waitlist"><Button size="sm">Join Waitlist</Button></Link>
             <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileMenu(!mobileMenu)}>
               {mobileMenu ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
