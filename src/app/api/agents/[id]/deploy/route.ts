@@ -24,9 +24,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Idempotency: if this agent is already actively deployed to this project,
   // return the existing deployment instead of stacking a duplicate.
   // Belt-and-braces against double-fires that slipped past upstream guards.
+  // (AgentDeployment uses `deployedAt`, not `createdAt` — a previous
+  // refactor left this query referring to a field that doesn't exist on
+  // the model, which 5xx'd every deploy at the very first DB call.)
   const existingDeployment = await db.agentDeployment.findFirst({
     where: { agentId, projectId, isActive: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: { deployedAt: "desc" },
   });
   if (existingDeployment) {
     return NextResponse.json(
