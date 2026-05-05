@@ -32,8 +32,10 @@ function mapStakeholder(s: any, idx: number): Stakeholder {
     name: s.name || "Unnamed",
     role: s.role || "",
     org: s.org || s.organization || s.organisation || "",
-    power: s.power ?? 3,
-    interest: s.interest ?? 3,
+    // DB stores power/interest as 0-100 (agent-seeded) or 1-5 (manually added).
+    // Normalise everything to the 0-5 scale the UI expects.
+    power: s.power != null ? (s.power > 5 ? Math.round(s.power / 20) : s.power) : 3,
+    interest: s.interest != null ? (s.interest > 5 ? Math.round(s.interest / 20) : s.interest) : 3,
     sentiment: s.sentiment || "unknown",
     email: s.email || "",
     lastContact: s.lastContact || s.last_contact || "",

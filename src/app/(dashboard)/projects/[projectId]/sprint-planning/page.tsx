@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useProjectTasks, useProjectSprints, useCreateSprint, useUpdateTask, useUpdateSprint, useDeleteSprint } from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ export default function SprintPlanningPage() {
   const updateTask = useUpdateTask(projectId);
   const updateSprint = useUpdateSprint(projectId);
   const deleteSprint = useDeleteSprint(projectId);
+  const qc = useQueryClient();
 
   const [showCreateSprint, setShowCreateSprint] = useState(false);
   const [showReplan, setShowReplan] = useState(false);
@@ -135,8 +137,9 @@ export default function SprintPlanningPage() {
 
       toast.success(data.message || "Sprints replanned successfully");
       setShowReplan(false);
-      // Refresh data
-      window.location.reload();
+      // Invalidate React Query caches so the board re-fetches without a full page reload
+      qc.invalidateQueries({ queryKey: ["sprints", projectId] });
+      qc.invalidateQueries({ queryKey: ["tasks", projectId] });
     } catch (e: any) {
       toast.error(e.message || "Failed to replan sprints");
     } finally {

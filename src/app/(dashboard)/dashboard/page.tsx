@@ -39,12 +39,14 @@ export default function DashboardPage() {
   const { setPendingApprovals, setUnreadNotifications, setActiveProject } = useAppStore();
   const currency = useOrgCurrency();
 
-  // Redirect to onboarding if user has no org (first-time Google sign-in)
+  // Redirect to onboarding if user has no org (first-time Google sign-in).
+  // `dash` is undefined (not null) when the API throws (e.g. 403 "No organisation"),
+  // so we check for both null and undefined here.
   useEffect(() => {
-    if (!isLoading && dash === null) {
+    if (!isLoading && (dash === null || dash === undefined) && !error) {
       router.push("/onboarding");
     }
-  }, [isLoading, dash, router]);
+  }, [isLoading, dash, error, router]);
 
   // Sync badge counts
   useEffect(() => {

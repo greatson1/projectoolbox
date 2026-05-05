@@ -137,7 +137,7 @@ export default function ProjectOverviewPage() {
               </Button>
             )}
             {agent && (
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
+              <Link href={`/agents/${agent.id}`} className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold text-white"
                   style={{ background: agent.gradient || "#6366F1" }}>{agent.name[0]}</div>
                 <div>
@@ -145,7 +145,7 @@ export default function ProjectOverviewPage() {
                   <p className="text-xs text-muted-foreground">L{agent.autonomyLevel} · {agent.status}</p>
                 </div>
                 <span className={`w-2 h-2 rounded-full ${agent.status === "ACTIVE" ? "bg-green-400 animate-pulse" : "bg-amber-400"}`} />
-              </div>
+              </Link>
             )}
           </div>
         </div>
@@ -158,7 +158,7 @@ export default function ProjectOverviewPage() {
           <span>{counts.changeRequests || 0} change requests</span>
           <span>{counts.stakeholders || 0} stakeholders</span>
           <span>{counts.approvals || 0} approvals</span>
-          {project.budget && <span className="font-semibold text-foreground">${project.budget.toLocaleString()} budget</span>}
+          {project.budget && <span className="font-semibold text-foreground">{moneyCompact(project.budget)} budget</span>}
         </div>
       </div>
 
