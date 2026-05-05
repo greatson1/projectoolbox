@@ -47,8 +47,8 @@ interface WizardState {
   methodology: string;
   // Step 3
   phases: PhaseGate[];
-  hitlePhaseGates: boolean; hitleBudgetThreshold: string;
-  hitleCommsApproval: boolean; hitleRiskThreshold: string;
+  hitlePhaseGates: boolean;
+  hitleCommsApproval: boolean;
   escalationTimeout: string;
   // Step 4
   team: TeamMember[]; stakeholders: Stakeholder[];
@@ -65,8 +65,8 @@ const INIT_STATE: WizardState = {
   projectName: "", description: "", client: "", startDate: "", endDate: "",
   budget: "", currency: "GBP", priority: "medium", category: "other",
   methodology: "",
-  phases: [], hitlePhaseGates: true, hitleBudgetThreshold: "",
-  hitleCommsApproval: true, hitleRiskThreshold: "high", escalationTimeout: "24",
+  phases: [], hitlePhaseGates: true,
+  hitleCommsApproval: true, escalationTimeout: "24",
   team: [],
   stakeholders: [],
   agentName: "", agentTitle: "", agentGradient: 0, domainTags: "", defaultGreeting: "", monthlyBudget: "",
@@ -428,20 +428,33 @@ export default function ProjectWizardPage() {
 
       // Stage 3: Deploy agent to project
       await advanceStage(3);
+      // HITL controls must be at the TOP LEVEL of the deploy body — the API
+      // reads hitlPhaseGates / hitlCommunications / escalationTimeout as
+      // root-level fields and persists them to AgentDeployment columns.
+      // Previously they were nested inside config only → always got defaults.
       await deployAgent.mutateAsync({
         agentId: agent.id,
         projectId: project.id,
+        // Top-level HITL fields (read by deploy route into DB columns)
+        hitlPhaseGates:    data.hitlePhaseGates,
+        hitlCommunications: data.hitleCommsApproval,
+        hitlBudgetChanges: true,           // budget changes always require approval
+        escalationTimeout: Number(data.escalationTimeout) || 24,
         config: {
-          methodology: data.methodology,
-          phases: data.phases,
-          hitlePhaseGates: data.hitlePhaseGates,
-          hitleBudgetThreshold: data.hitleBudgetThreshold,
-          hitleCommsApproval: data.hitleCommsApproval,
-          hitleRiskThreshold: data.hitleRiskThreshold,
-          escalationTimeout: data.escalationTimeout,
+          methodology:   data.methodology,
+          phases:        data.phases,
           reportSchedule: data.reportSchedule,
+          // Team & stakeholders — deploy route's persist block reads these
+          // from cfg.team and cfg.stakeholders to create DB rows.
+          team:         data.team,
+          stakeholders: data.stakeholders,
+          client:       data.client,        // saved as "Client Organisation" stakeholder
+          // Governance settings stored for reference / future wiring
+          hitlePhaseGates:      data.hitlePhaseGates,
+          hitleCommsApproval:   data.hitleCommsApproval,
+          escalationTimeout:    data.escalationTimeout,
           notifications: { slack: data.notifSlack, email: data.notifEmail, telegram: data.notifTelegram },
-          integrations: { jira: data.intJira, github: data.intGithub, confluence: data.intConfluence },
+          integrations:  { jira: data.intJira, github: data.intGithub, confluence: data.intConfluence },
         },
       });
 
@@ -937,27 +950,18 @@ export default function ProjectWizardPage() {
             <Card className="px-5">
               <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Human-in-the-Loop Controls</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <HitlToggle label="Phase gate approvals" desc="Require human sign-off at every phase gate" checked={data.hitlePhaseGates} onChange={v => upd({ hitlePhaseGates: v })} color={g.color} />
-                <HitlToggle label="Communications approval" desc="Review external stakeholder messages before sending" checked={data.hitleCommsApproval} onChange={v => upd({ hitleCommsApproval: v })} color={g.color} />
-                <FieldGroup label="Budget threshold (£)">
-                  <StyledInput value={data.hitleBudgetThreshold || autoThreshold} onChange={v => upd({ hitleBudgetThreshold: v })} placeholder={autoThreshold || "e.g. 500"} />
-                  <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
-                    {autoThreshold ? `Auto-set to 10% of budget (${money(Number(autoThreshold))})` : "Approve spend above this amount"}
-                  </p>
-                </FieldGroup>
-                <FieldGroup label="Risk escalation threshold">
-                  <select className="w-full px-3 py-2 rounded-[10px] text-[13px]" value={data.hitleRiskThreshold}
-                    onChange={e => upd({ hitleRiskThreshold: e.target.value })}
-                    style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}>
-                    <option value="all">All risks</option>
-                    <option value="high">High + Critical only</option>
-                    <option value="critical">Critical only</option>
-                  </select>
-                </FieldGroup>
+                <HitlToggle label="Phase gate approvals" desc="Require human sign-off at every phase gate before the project advances" checked={data.hitlePhaseGates} onChange={v => upd({ hitlePhaseGates: v })} color={g.color} />
+                <HitlToggle label="Communications approval" desc="Queue external stakeholder messages for your review before they are sent" checked={data.hitleCommsApproval} onChange={v => upd({ hitleCommsApproval: v })} color={g.color} />
                 <FieldGroup label="Escalation timeout (hours)">
                   <StyledInput value={data.escalationTimeout} onChange={v => upd({ escalationTimeout: v })} placeholder="24" />
-                  <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>Auto-escalate if no response within this time</p>
+                  <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>Auto-escalate pending approvals if no response within this time</p>
                 </FieldGroup>
+                <div className="p-3 rounded-[10px] flex flex-col gap-1" style={{ background: `${g.color}06`, border: `1px solid ${g.color}18` }}>
+                  <p className="text-[11px] font-semibold" style={{ color: g.color }}>Always enforced by the agent</p>
+                  <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>✓ Budget changes — all spend proposals queue for approval</p>
+                  <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>✓ HIGH + CRITICAL risks — always escalated regardless of autonomy level</p>
+                  <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>✓ Scope changes — formal change request created for every scope deviation</p>
+                </div>
               </div>
             </Card>
           </div>
@@ -1302,9 +1306,9 @@ export default function ProjectWizardPage() {
               <SummaryCard title="Methodology" items={[
                 ["Framework", METHODOLOGIES.find(m => m.id === data.methodology)?.name || "—"],
                 ["Phases", `${data.phases.length} phases`],
-                ["HITL Gates", data.hitlePhaseGates ? "Enabled" : "Disabled"],
-                ["Budget Threshold", money(Number(data.hitleBudgetThreshold || 0))],
-                ["Escalation", `${data.escalationTimeout}h timeout`],
+                ["Phase Gate Approvals", data.hitlePhaseGates ? "Enabled" : "Disabled"],
+                ["Comms Approval", data.hitleCommsApproval ? "Enabled" : "Disabled"],
+                ["Escalation Timeout", `${data.escalationTimeout}h`],
               ]} />
               <SummaryCard title="Team" items={[
                 ["Members", `${data.team.length} people`],

@@ -168,6 +168,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     };
     await promoteSingle(cfg.sponsor, "Project Sponsor");
     await promoteSingle(cfg.projectManager || cfg.pm, "Project Manager");
+    // Client / commissioning organisation — wizard Step 1 "Client" field
+    await promoteSingle(cfg.client, "Client Organisation");
 
     // Team members — wizard's team array → ProjectMember rows. Each entry
     // typically has { userId | name, role, hourlyRate }. We only persist
