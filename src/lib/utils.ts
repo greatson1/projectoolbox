@@ -5,8 +5,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+/**
+ * @deprecated Prefer formatMoney from @/lib/currency or useFormatMoney from
+ * @/hooks/use-currency — those consult the org's configured currency. This
+ * helper exists only as a fallback and now defaults to GBP/en-GB so any
+ * future caller that forgets to pass a currency at least matches the schema
+ * default (Organisation.currency = "GBP") rather than rendering "$".
+ */
+export function formatCurrency(amount: number, currency = "GBP") {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(amount);
 }
 
 export function formatDate(date: Date | string, style: "short" | "long" = "short") {

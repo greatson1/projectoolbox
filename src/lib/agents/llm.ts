@@ -181,10 +181,12 @@ Output ONLY the JSON array, no markdown fences.`;
   }
 
   static async chat(agentId: string, userMessage: string): Promise<string> {
-    // Get agent config
+    // Get agent config (include org so the system prompt can render the
+    // correct currency symbol — see buildSystemPrompt below).
     const agent = await db.agent.findUnique({
       where: { id: agentId },
       include: {
+        org: { select: { currency: true } },
         deployments: { where: { isActive: true }, include: { project: true } },
       },
     });
@@ -195,9 +197,10 @@ Output ONLY the JSON array, no markdown fences.`;
     const personality = (agent.personality as any) || {};
     const formalLevel = personality.formal || 50;
     const detailLevel = personality.concise || 50;
+    const orgCurrency = (agent as any).org?.currency || "GBP";
 
     // Build system prompt
-    const systemPrompt = buildSystemPrompt(agent, project, formalLevel, detailLevel);
+    const systemPrompt = buildSystemPrompt(agent, project, formalLevel, detailLevel, orgCurrency);
 
     // Get conversation history (last 20 messages)
     const history = await db.chatMessage.findMany({
@@ -278,9 +281,15 @@ async function callOpenAI(messages: any[]): Promise<string> {
   return data.choices[0]?.message?.content || "I apologize, I couldn't generate a response.";
 }
 
-function buildSystemPrompt(agent: any, project: any, formalLevel: number, detailLevel: number): string {
+function buildSystemPrompt(agent: any, project: any, formalLevel: number, detailLevel: number, orgCurrency: string = "GBP"): string {
   const tone = formalLevel < 30 ? "formal and data-driven" : formalLevel < 70 ? "professional but approachable" : "friendly and conversational";
   const detail = detailLevel < 30 ? "concise and to-the-point" : detailLevel < 70 ? "balanced with key details" : "thorough and comprehensive";
+  // Single source of truth for the currency symbol — the org row lives at
+  // Organisation.currency (default "GBP"). Hardcoding "$" here was the
+  // reason chat replies showed "$12,000" on UK-tenant orgs even when the
+  // setting was correct.
+  const { currencySymbol } = require("@/lib/currency") as typeof import("@/lib/currency");
+  const sym = currencySymbol(orgCurrency);
 
   return `You are Agent ${agent.name}, an AI Project Manager deployed by Projectoolbox.
 
@@ -293,7 +302,8 @@ ${project ? `PROJECT CONTEXT:
 - Project: ${project.name}
 - Methodology: ${project.methodology}
 - Description: ${project.description || "Not specified"}
-- Budget: ${project.budget ? `$${project.budget.toLocaleString()}` : "Not set"}
+- Currency: ${orgCurrency} (${sym}) — ALWAYS use this symbol for any monetary value you mention; never invent a different currency.
+- Budget: ${project.budget ? `${sym}${project.budget.toLocaleString()}` : "Not set"}
 - Start: ${project.startDate || "Not set"}, End: ${project.endDate || "Not set"}
 - Status: ${project.status}` : "No project currently assigned."}
 
