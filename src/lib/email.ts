@@ -222,4 +222,88 @@ export class EmailService {
       `,
     });
   }
+
+  /**
+   * Confirmation email to a user who just joined the waitlist. Branded
+   * "you're in" message; doesn't claim a specific access date because we
+   * don't know one. Sent immediately so the user sees confirmation in
+   * their inbox without depending on Kit's double-opt-in being configured.
+   */
+  static async sendWaitlistConfirmation(to: string, data: { name?: string | null; sector?: string | null }) {
+    try {
+      await getResend().emails.send({
+        from: "Projectoolbox <noreply@projectoolbox.com>",
+        to,
+        subject: "You're on the Projectoolbox waitlist 🎉",
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #6366F1, #8B5CF6); padding: 32px 24px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 22px;">You're in.</h1>
+              <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">Thanks${data.name ? `, ${data.name}` : ""} — we've added you to the Projectoolbox waitlist.</p>
+            </div>
+            <div style="padding: 24px; background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 0; border-radius: 0 0 12px 12px;">
+              <p style="color: #0F172A; font-size: 14px; line-height: 1.6;">
+                Projectoolbox is an AI-driven project management platform that runs end-to-end project
+                lifecycles for you — research, clarification, document generation, risk + stakeholder
+                management, and phase-gate governance. We're rolling out access in waves.
+              </p>
+              <p style="color: #0F172A; font-size: 14px; line-height: 1.6; margin-top: 16px;">
+                What happens next:
+              </p>
+              <ol style="color: #64748B; font-size: 14px; line-height: 1.8; padding-left: 20px;">
+                <li>You'll receive an invite link the moment your spot opens up.</li>
+                <li>Until then, expect 1–2 emails with a behind-the-scenes look at how the agents work.</li>
+                <li>If you'd like priority access, reply to this email and tell us a sentence about your project type.</li>
+              </ol>
+              ${data.sector ? `<p style="color: #94A3B8; font-size: 12px; margin-top: 24px;">Registered sector: <strong>${data.sector}</strong></p>` : ""}
+              <p style="margin-top: 32px; color: #94A3B8; font-size: 12px;">
+                Projectoolbox · UK-based · Reply to unsubscribe.
+              </p>
+            </div>
+          </div>
+        `,
+      });
+      return true;
+    } catch (e: any) {
+      console.error("[email] Waitlist confirmation send failed:", e.message);
+      return false;
+    }
+  }
+
+  /**
+   * Internal heads-up that a new waitlist signup landed. Sent to whatever
+   * address is in WAITLIST_NOTIFY_EMAIL (set on Vercel) so the team sees
+   * signups land without having to open the admin page or Kit dashboard.
+   */
+  static async sendWaitlistAdminNotification(data: { email: string; name?: string | null; sector?: string | null; total?: number }) {
+    const to = process.env.WAITLIST_NOTIFY_EMAIL;
+    if (!to) return false;
+    try {
+      await getResend().emails.send({
+        from: "Projectoolbox <noreply@projectoolbox.com>",
+        to,
+        subject: `New waitlist signup — ${data.email}${data.sector ? ` (${data.sector})` : ""}`,
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 560px; margin: 0 auto;">
+            <div style="background: #0F172A; padding: 20px 24px; border-radius: 10px 10px 0 0;">
+              <p style="color: rgba(255,255,255,0.6); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin: 0;">Projectoolbox · Waitlist</p>
+              <h1 style="color: white; margin: 4px 0 0; font-size: 18px;">New signup</h1>
+            </div>
+            <div style="padding: 20px 24px; background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 0; border-radius: 0 0 10px 10px;">
+              <table style="width: 100%; font-size: 13px; color: #0F172A; border-collapse: collapse;">
+                <tr><td style="padding: 4px 0; color: #64748B; width: 80px;">Email</td><td><strong>${data.email}</strong></td></tr>
+                ${data.name ? `<tr><td style="padding: 4px 0; color: #64748B;">Name</td><td>${data.name}</td></tr>` : ""}
+                ${data.sector ? `<tr><td style="padding: 4px 0; color: #64748B;">Sector</td><td>${data.sector}</td></tr>` : ""}
+                ${typeof data.total === "number" ? `<tr><td style="padding: 4px 0; color: #64748B;">Total signups</td><td>${data.total}</td></tr>` : ""}
+              </table>
+            </div>
+          </div>
+        `,
+      });
+      return true;
+    } catch (e: any) {
+      console.error("[email] Waitlist admin notification failed:", e.message);
+      return false;
+    }
+  }
 }

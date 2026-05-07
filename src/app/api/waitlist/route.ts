@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after as waitUntil } from "next/server";
 import { db } from "@/lib/db";
+import { EmailService } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,25 @@ export async function POST(req: NextRequest) {
   await db.waitlistEntry.create({
     data: { email, name: name?.trim() || null, sector: sector || null },
   });
+
+  // ── Confirmation emails ─────────────────────────────────────────────────
+  // Two emails fire after every successful signup:
+  //   1. To the user — branded "you're in" confirmation (always fires).
+  //   2. To the team — internal notification (fires only when
+  //      WAITLIST_NOTIFY_EMAIL is set on Vercel).
+  // Both wrapped in waitUntil so the user sees the API response instantly;
+  // the lambda stays alive long enough to actually send before freezing.
+  const total = await db.waitlistEntry.count().catch(() => undefined);
+  waitUntil((async () => {
+    try {
+      await Promise.all([
+        EmailService.sendWaitlistConfirmation(email, { name: name?.trim() || null, sector: sector || null }),
+        EmailService.sendWaitlistAdminNotification({ email, name: name?.trim() || null, sector: sector || null, total }),
+      ]);
+    } catch (e) {
+      console.error("[waitlist] confirmation emails failed:", e);
+    }
+  })());
 
   // ── Sync to Kit (V4 API) ─────────────────────────────────────────────────
   // Kit V4 uses Bearer token auth and a different endpoint structure.
