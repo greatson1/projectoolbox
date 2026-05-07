@@ -692,30 +692,35 @@ ${await (async () => {
       })
       .map((a: any) => a.name.toLowerCase()));
 
-    const required = phaseDef.artefacts.filter(a => a.required && a.aiGeneratable);
-    const optional = phaseDef.artefacts.filter(a => !a.required && a.aiGeneratable);
-    const missingRequired = required.filter(a => !generated.has(a.name.toLowerCase()));
-    const missingOptional = optional.filter(a => !generated.has(a.name.toLowerCase()));
-    const generatedRequired = required.length - missingRequired.length;
+    // Show the FLAT methodology-defined artefact list for this phase, with
+    // generated/missing status. Earlier this split into "required" vs
+    // "optional" — but several methodologies (Traditional / Pre-Project
+    // among them) mark every artefact required:false. The split then read
+    // as "0 required, 4 optional" which encouraged the agent to dismiss
+    // the 4 as skippable and claim "0 of 0 required artefacts approved" —
+    // exactly the Nova hallucination the user reported.
+    const expected = phaseDef.artefacts.filter(a => a.aiGeneratable);
+    const missing = expected.filter(a => !generated.has(a.name.toLowerCase()));
+    const generatedCount = expected.length - missing.length;
+    const strictlyRequired = expected.filter(a => a.required);
 
     const lines: string[] = [];
-    // Always state the ratio first so the agent never says "all 3 approved"
-    // when the actual requirement is 4 — that exact mistake was reported by
-    // the user on the Pre-Project phase (3 of 4 generated, agent claimed 3
-    // of 3). Source of truth: methodology.phases[*].artefacts.
-    lines.push(`Required artefacts for this phase: ${generatedRequired} of ${required.length} generated.`);
-    if (missingRequired.length > 0) {
-      lines.push(`⚠️ MISSING REQUIRED (must generate before advancing): ${missingRequired.map(a => a.name).join(", ")}`);
-    } else if (required.length > 0) {
-      lines.push(`✅ All ${required.length} required artefacts have been generated.`);
+    lines.push(`This phase defines ${expected.length} ai-generatable artefact${expected.length === 1 ? "" : "s"}: ${expected.map(a => a.name).join(", ")}.`);
+    lines.push(`Generated so far: ${generatedCount} of ${expected.length}.`);
+    if (missing.length > 0) {
+      lines.push(`⚠️ Not yet drafted: ${missing.map(a => a.name).join(", ")} — generate these before claiming the phase is complete.`);
+    } else {
+      lines.push(`✅ Every methodology-defined artefact for this phase has been drafted.`);
     }
-    if (missingOptional.length > 0) {
-      lines.push(`Optional not yet generated: ${missingOptional.map(a => a.name).join(", ")}`);
+    if (strictlyRequired.length === 0) {
+      lines.push(`Note: this phase has 0 strictly-required artefacts (every entry is required:false). Do NOT translate that into "all required artefacts done" — the user expects you to deliver every artefact the methodology defines unless they have explicitly told you to skip one.`);
+    } else {
+      lines.push(`Of those, ${strictlyRequired.length} are strictly required: ${strictlyRequired.map(a => a.name).join(", ")}.`);
     }
     lines.push("");
     lines.push("Gate criteria for this phase: " + phaseDef.gate.criteria);
     lines.push("");
-    lines.push("⚠️ When the user asks 'how many artefacts' or 'are all artefacts done', answer using BOTH numbers above (e.g. 'X of Y required'). Do NOT claim completeness based on the count of approved artefacts alone.");
+    lines.push("⚠️ When the user asks 'how many artefacts' or 'are all artefacts done', answer using the numbers above (e.g. 'X of Y drafted'). Do NOT invent a smaller 'required' subset to make the count look better.");
     return lines.join("\n");
   } catch { return "Phase requirements unavailable."; }
 })()}

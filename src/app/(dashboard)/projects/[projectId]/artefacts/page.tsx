@@ -672,31 +672,38 @@ function AgentStatusBanner({
   const rejected  = currentPhaseItems.filter((a: any) => a.status === "REJECTED").length;
   const generated = currentPhaseItems.length;
 
-  // Required-by-methodology count — same source PM Tracker uses, so the two
-  // pages can never disagree. Earlier `total` was just `currentPhaseItems.
-  // length`, which made "3/3 approved" render even when the methodology
-  // required 4 (Project Brief missing). Now `total` is the methodology's
-  // required count, with `generated` shown as the denominator only when the
-  // agent has over-delivered.
-  const requiredCount = (() => {
+  // Expected artefact count — every artefact the methodology defines as
+  // ai-generatable for this phase. Same source PM Tracker uses, so the two
+  // pages can never disagree.
+  //
+  // Earlier this filtered by `a.required === true`. For methodologies like
+  // Traditional / Pre-Project where every artefact is `required: false`,
+  // the count collapsed to 0 and `total` fell through to `generated.length`
+  // (3) — silently hiding that Project Brief had never been drafted. The
+  // PM Tracker happily showed Project Brief as "Missing" while this page
+  // showed "3/3 approved", and the user couldn't reconcile the two.
+  //
+  // Now we count every `aiGeneratable` artefact the methodology defines.
+  // The `required` flag still gates phase ADVANCEMENT (handled server-side
+  // in phase-completion.ts), but it doesn't gate visibility here.
+  const expectedCount = (() => {
     const meth = (project as any)?.methodology;
     if (!meth || !activePhaseForFilter?.name) return 0;
     try {
       const def = getMethodology(meth);
       const phaseDef = def.phases.find(p => p.name === activePhaseForFilter.name);
       if (!phaseDef) return 0;
-      // `required` artefacts only — bonus/optional artefacts shouldn't gate
-      // the "all approved" check or the X/Y label.
-      return phaseDef.artefacts.filter((a: any) => a.required).length;
+      return phaseDef.artefacts.filter((a: any) => a.aiGeneratable).length;
     } catch {
       return 0;
     }
   })();
-  const total = Math.max(requiredCount, generated);
+  const total = Math.max(expectedCount, generated);
   const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
-  // Are any required artefacts missing? Used to keep the banner honest when
-  // every generated draft is approved but the methodology lists more.
-  const missingRequired = Math.max(0, requiredCount - generated);
+  // Are any methodology-defined artefacts missing? Used to keep the banner
+  // honest when every generated draft is approved but the methodology lists
+  // more (e.g. 3 approved, Project Brief never drafted → not "all done").
+  const missingRequired = Math.max(0, expectedCount - generated);
   // A phase is only "complete" when EVERY required artefact has been
   // generated AND every generated draft is approved. The earlier check was
   // `approved === total` where total was just generated.length — meaning a
@@ -761,10 +768,10 @@ function AgentStatusBanner({
       badgeText: "Awaiting Review",
       icon: <AlertCircle className="w-4 h-4" />,
       headline: missingRequired > 0
-        ? `${missingRequired} required document${missingRequired === 1 ? "" : "s"} not yet generated`
+        ? `${missingRequired} document${missingRequired === 1 ? "" : "s"} not yet generated`
         : `Review ${pending} document${pending === 1 ? "" : "s"} to advance`,
       sub: missingRequired > 0
-        ? `${approved}/${total} approved · ${missingRequired} of the ${requiredCount} required documents for ${phaseName} haven't been generated yet. Click "Generate Artefacts" to produce the missing ones, then review and approve. Once all ${total} are approved, your agent will move on to ${nextPhase ? nextPhase.name : "the next phase"}.`
+        ? `${approved}/${total} approved · ${missingRequired} of the ${expectedCount} documents the methodology defines for ${phaseName} haven't been generated yet. Click "Generate Artefacts" to produce the missing ones, then review and approve. Once all ${total} are approved, your agent will move on to ${nextPhase ? nextPhase.name : "the next phase"}.`
         : `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, your agent will automatically generate the ${nextPhase ? nextPhase.name : "next"} phase documents.`,
     },
     rejected: {
