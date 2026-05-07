@@ -507,7 +507,7 @@ function ImpactCalibrationHint({ type }: { type: string }) {
   );
 }
 
-const FILTERS = ["All", "High Priority", "Phase Gates", "Change Requests", "Scope & Risk", "Communications"];
+const FILTERS = ["All", "High Priority", "Phase Gates", "Research", "Change Requests", "Scope & Risk", "Communications"];
 
 const RISK_TIER_COLORS: Record<string, { bg: string; text: string }> = {
   LOW: { bg: "bg-emerald-500/10", text: "text-emerald-500" },
@@ -569,6 +569,21 @@ export default function ApprovalsPage() {
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
+  // Reject modal — replaces native confirm() so the user MUST supply a reason.
+  // Also unifies the two reject paths (compact-card "Reject" link and the
+  // expanded-card bottom "Reject" button) into one flow with type-aware
+  // "what happens next" copy. Holds a minimal snapshot of the approval so the
+  // modal can render outside the .map() scope without re-querying.
+  const [rejectModalItem, setRejectModalItem] = useState<{ id: string; title: string; type: string; iteration?: number } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+
+  function openRejectModal(item: any) {
+    setRejectModalItem({ id: item.id, title: item.title, type: item.type, iteration: item.iteration });
+    // Pre-fill with whatever the user has typed in the inline feedback box —
+    // they may have started writing changes and decided to reject instead.
+    setRejectReason((feedbackId === item.id ? feedbackText : "") || "");
+  }
 
   if (isLoading) return (
     <div className="max-w-[1000px] space-y-4">
@@ -609,7 +624,8 @@ export default function ApprovalsPage() {
     if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
     if (filter === "Scope & Risk") return item.type === "SCOPE_CHANGE" || item.type === "RISK_RESPONSE" || item.type === "RESOURCE";
     if (filter === "Phase Gates") return item.type === "PHASE_GATE";
-    if (filter === "Change Requests") return item.type === "CHANGE_REQUEST" || item.type === "BUDGET";
+    if (filter === "Research") return item.type === "CHANGE_REQUEST" && (item.impact as any)?.subtype === "research_finding";
+    if (filter === "Change Requests") return (item.type === "CHANGE_REQUEST" && (item.impact as any)?.subtype !== "research_finding") || item.type === "BUDGET";
     if (filter === "Communications") return item.type === "COMMUNICATION";
     return true;
   });
@@ -676,7 +692,8 @@ export default function ApprovalsPage() {
           const count = f === "All" ? items.length
             : f === "High Priority" ? items.filter((i: any) => i.urgency === "HIGH" || i.urgency === "CRITICAL").length
             : f === "Phase Gates" ? items.filter((i: any) => i.type === "PHASE_GATE").length
-            : f === "Change Requests" ? items.filter((i: any) => i.type === "CHANGE_REQUEST" || i.type === "BUDGET").length
+            : f === "Research" ? items.filter((i: any) => i.type === "CHANGE_REQUEST" && (i.impact as any)?.subtype === "research_finding").length
+            : f === "Change Requests" ? items.filter((i: any) => (i.type === "CHANGE_REQUEST" && (i.impact as any)?.subtype !== "research_finding") || i.type === "BUDGET").length
             : f === "Scope & Risk" ? items.filter((i: any) => i.type === "SCOPE_CHANGE" || i.type === "RISK_RESPONSE" || i.type === "RESOURCE").length
             : f === "Communications" ? items.filter((i: any) => i.type === "COMMUNICATION").length
             : 0;
@@ -818,7 +835,8 @@ export default function ApprovalsPage() {
                       placeholder="Describe what changes you'd like the agent to make..."
                       className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none resize-y h-20" />
                     <div className="flex justify-between items-center mt-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleAction(item.id, "reject")}>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"
+                        onClick={() => openRejectModal(item)}>
                         <X className="h-3.5 w-3.5 mr-1" /> Reject
                       </Button>
                       <Button size="sm" disabled={!feedbackText.trim()} onClick={() => handleAction(item.id, "request_changes", feedbackText)}>
@@ -1066,12 +1084,9 @@ export default function ApprovalsPage() {
                         }}>
                           <MessageSquare className="h-4 w-4 mr-1" /> Request Changes
                         </Button>
-                        <Button variant="ghost" className="text-destructive" onClick={() => {
-                          if (confirm("Reject this request? The agent will be notified and may revise its approach.")) {
-                            handleAction(item.id, "reject");
-                          }
-                        }}>
-                          Reject
+                        <Button variant="ghost" className="text-destructive hover:bg-destructive/10"
+                          onClick={() => openRejectModal(item)}>
+                          <X className="h-4 w-4 mr-1" /> Reject
                         </Button>
                       </div>
                     </div>
@@ -1096,6 +1111,104 @@ export default function ApprovalsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Reject modal — replaces native confirm() and the silent compact-card
+          reject link. Captures a required reason (min 5 chars) and shows
+          type-aware consequences so the user knows what happens before
+          submitting. The reason flows through handleAction → /api/approvals
+          → agent chat / activity log / KB event tracker, so the agent has
+          actionable feedback on every reject (previously many rejects went
+          through with "No specific feedback provided"). */}
+      {rejectModalItem && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget && !rejecting) setRejectModalItem(null); }}
+        >
+          <div className="bg-card border border-border rounded-xl shadow-2xl max-w-lg w-full p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-destructive/15">
+                <X className="w-5 h-5 text-destructive" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-semibold text-foreground">Reject approval</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{rejectModalItem.title}</p>
+              </div>
+            </div>
+
+            <label className="block mb-4">
+              <span className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                Reason <span className="text-red-500">*</span>{" "}
+                <span className="font-normal text-muted-foreground/60">(the agent uses this to revise its approach)</span>
+              </span>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Schedule slip not justified, baseline assumptions out of date, scope wasn't agreed with sponsor…"
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-destructive/40 resize-y"
+                autoFocus
+              />
+              {rejectReason.length > 0 && rejectReason.trim().length < 5 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">Reason must be at least 5 characters.</p>
+              )}
+            </label>
+
+            {/* Type-aware "what happens" — same copy as the in-card "If Rejected" panel
+                but surfaced at the moment of decision so the user can't miss it. */}
+            <div className="mb-4 px-3 py-2.5 rounded-md border border-destructive/30 bg-destructive/5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-destructive mb-1.5">If you reject:</p>
+              <ul className="text-[11px] text-foreground/80 space-y-0.5 list-disc list-inside">
+                {rejectModalItem.type === "PHASE_GATE" ? (
+                  <>
+                    <li>The project stays in the current phase — no advancement</li>
+                    <li>Approved artefacts in this phase are re-opened as DRAFT for revision</li>
+                    <li>The agent receives your reason in chat and resubmits a revised gate</li>
+                    <li>Iteration {rejectModalItem.iteration || 1} of 3 — after 3 rejects the agent pauses and notifies the org owner</li>
+                  </>
+                ) : rejectModalItem.type === "CHANGE_REQUEST" || rejectModalItem.type === "BUDGET" ? (
+                  <>
+                    <li>The proposed change will NOT be applied</li>
+                    <li>Schedule, budget and scope baselines stay as-is</li>
+                    <li>If this is a research-finding bundle, the underlying KB rows are discarded</li>
+                    <li>The agent logs the rejection and continues monitoring</li>
+                  </>
+                ) : (
+                  <>
+                    <li>The agent will not proceed with this action</li>
+                    <li>Your reason is posted to the agent's chat and activity log</li>
+                    <li>The agent may present a revised proposal based on your feedback</li>
+                  </>
+                )}
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setRejectModalItem(null)} disabled={rejecting}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={rejectReason.trim().length < 5 || rejecting}
+                onClick={async () => {
+                  if (!rejectModalItem) return;
+                  setRejecting(true);
+                  try {
+                    await handleAction(rejectModalItem.id, "reject", rejectReason.trim());
+                    setRejectModalItem(null);
+                    setRejectReason("");
+                  } finally {
+                    setRejecting(false);
+                  }
+                }}
+              >
+                {rejecting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <X className="h-3.5 w-3.5 mr-1" />}
+                {rejecting ? "Rejecting…" : "Reject"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
