@@ -167,7 +167,23 @@ export default function ArtefactsPage() {
       refreshArtefacts(); // background sync
     } else {
       rollback();
-      toast.error("Approval failed");
+      // Parse the actual API error so the user knows what to fix
+      let errMsg = "Approval failed";
+      try {
+        const body = await res.json();
+        if (body.error === "Artefact contains fabricated names" && Array.isArray(body.fabricatedNames)) {
+          const count = body.fabricatedNames.length;
+          const samples = body.fabricatedNames.slice(0, 3).map((v: any) => v.name || v).join(", ");
+          errMsg = `Can't approve — ${count} invented name${count === 1 ? "" : "s"} found (${samples}${count > 3 ? "…" : ""}). Open the document, replace them with [TBC] markers, then re-approve.`;
+        } else if (body.error === "Artefact contradicts confirmed facts" && Array.isArray(body.contradictions)) {
+          errMsg = `${body.contradictions.length} contradiction${body.contradictions.length === 1 ? "" : "s"} with confirmed facts. Open the document and click "Approve anyway" if you're happy to proceed.`;
+        } else if (body.message) {
+          errMsg = body.message.slice(0, 200);
+        } else if (body.error) {
+          errMsg = body.error.slice(0, 200);
+        }
+      } catch {}
+      toast.error(errMsg, { duration: 8000 });
     }
   };
 
