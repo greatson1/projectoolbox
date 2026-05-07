@@ -97,6 +97,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               },
             });
           }
+
+          // Promote any budget / date / sponsor mentions in the freshly-
+          // confirmed facts to the canonical tables. With allowOverwrite
+          // = true so an email saying "budget reduced to £8k" actually
+          // updates project.budget instead of being silently ignored
+          // because £10k was already set. Fire-and-forget — never block
+          // the chat reply.
+          (async () => {
+            try {
+              const dep = await db.agentDeployment.findFirst({
+                where: { agentId, isActive: true },
+                select: { projectId: true },
+              });
+              if (!dep?.projectId) return;
+              const refreshed = await db.knowledgeBaseItem.findMany({
+                where: { id: { in: ids } },
+                select: { title: true, content: true },
+              });
+              const { promoteKBFactToCanonical } = await import("@/lib/agents/clarification-promote");
+              for (const r of refreshed) {
+                await promoteKBFactToCanonical({
+                  projectId: dep.projectId,
+                  title: r.title,
+                  content: r.content,
+                  allowOverwrite: true,
+                });
+              }
+            } catch (e) {
+              console.error("[chat/stream] post-email-confirm promote failed:", e);
+            }
+          })();
           const factCount = ids.length - (typeof meta.kbItemId === "string" ? 1 : 0);
           await db.chatMessage.create({
             data: {

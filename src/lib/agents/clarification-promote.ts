@@ -222,3 +222,130 @@ export async function promoteAnswerToCanonicalTables(input: PromoteInput): Promi
 
   return result;
 }
+
+// ─── Generic KB-fact → canonical promoter ──────────────────────────────────────
+
+interface PromoteKBFactInput {
+  projectId: string;
+  /** Free-form KB item title (e.g. "Budget update", "Sponsor change"). */
+  title: string;
+  /** Free-form KB item content (e.g. "Budget reduced to £8,000 due to scope cut"). */
+  content: string;
+  /**
+   * When true, overwrite existing canonical values rather than only filling
+   * blanks. Use this for email-confirmed updates (the user is intentionally
+   * changing a value) but NOT for first-pass clarification answers (which
+   * should never overwrite a deliberate later edit).
+   */
+  allowOverwrite?: boolean;
+}
+
+/**
+ * Same intent as promoteAnswerToCanonicalTables but driven by a KB row's
+ * title + content rather than a structured question/answer pair. Used by
+ * the email-fact confirmation flow (chat/stream) and the inbox process
+ * route — wherever a confirmed fact lands in KB and might also need to
+ * update project.budget / startDate / endDate / Stakeholder rows.
+ *
+ * The user's reported case: an inbound email said the budget had decreased.
+ * They confirmed the fact in chat. The KB row got tagged user_confirmed but
+ * project.budget stayed at the old value because nothing scanned the
+ * confirmed fact for budget patterns. This closes that gap.
+ *
+ * Idempotent — safe to call multiple times on the same KB item; only acts
+ * when it can parse a usable value.
+ */
+export async function promoteKBFactToCanonical(input: PromoteKBFactInput): Promise<{
+  budgetUpdated: boolean;
+  startDateUpdated: boolean;
+  endDateUpdated: boolean;
+  stakeholdersAdded: number;
+}> {
+  const { projectId, title, content, allowOverwrite = false } = input;
+  const result = { budgetUpdated: false, startDateUpdated: false, endDateUpdated: false, stakeholdersAdded: 0 };
+
+  const haystack = `${title}\n${content}`;
+  const haystackLC = haystack.toLowerCase();
+
+  // Strip provenance prefix the storeFactToKB helper adds:
+  // "[User confirmed dd/mm/yyyy] body"
+  const stripped = content.replace(/^\[(?:user confirmed|research|email|meeting)[^\]]*\]\s*/i, "");
+
+  // ── Budget ───────────────────────────────────────────────────────────────
+  // Only act when the title or content explicitly mentions budget. Numbers
+  // alone in an email aren't enough — could be a quote, a venue capacity, a
+  // page count. We require lexical evidence the number IS a budget.
+  if (/budget|total\s*cost|allocated\s*funds|funding/.test(haystackLC)) {
+    try {
+      const amount = parseAmount(stripped);
+      if (amount) {
+        const existing = await db.project.findUnique({
+          where: { id: projectId },
+          select: { budget: true },
+        });
+        // Update if (a) blank and we should fill, or (b) overwrite is
+        // explicitly allowed and the new value differs from current.
+        const shouldWrite =
+          !existing?.budget ||
+          (allowOverwrite && existing.budget !== amount);
+        if (shouldWrite) {
+          await db.project.update({ where: { id: projectId }, data: { budget: amount } });
+          result.budgetUpdated = true;
+        }
+      }
+    } catch (e) {
+      console.error("[promote-kb-fact] budget update failed:", e);
+    }
+  }
+
+  // ── Dates ────────────────────────────────────────────────────────────────
+  const isStart = /\b(start\s*date|kick\s*off|launch\s*date|project\s*start)\b/.test(haystackLC);
+  const isEnd   = /\b(end\s*date|completion|deadline|target\s*date|go[-\s]?live|delivery\s*date)\b/.test(haystackLC);
+  if (isStart || isEnd) {
+    try {
+      const d = parseDate(stripped);
+      if (d) {
+        const existing = await db.project.findUnique({
+          where: { id: projectId },
+          select: { startDate: true, endDate: true },
+        });
+        if (isStart) {
+          const shouldWrite = !existing?.startDate || (allowOverwrite && existing.startDate?.getTime() !== d.getTime());
+          if (shouldWrite) {
+            await db.project.update({ where: { id: projectId }, data: { startDate: d } });
+            result.startDateUpdated = true;
+          }
+        }
+        if (isEnd) {
+          const shouldWrite = !existing?.endDate || (allowOverwrite && existing.endDate?.getTime() !== d.getTime());
+          if (shouldWrite) {
+            await db.project.update({ where: { id: projectId }, data: { endDate: d } });
+            result.endDateUpdated = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[promote-kb-fact] date update failed:", e);
+    }
+  }
+
+  // ── Sponsor / PM / Stakeholder ───────────────────────────────────────────
+  if (/sponsor|project[\s_]?manager|\bpm\b|stakeholder|owner|champion/.test(haystackLC)) {
+    try {
+      const role = inferRole("", haystackLC);
+      const names = extractNames(stripped);
+      for (const name of names) {
+        const isSponsorish = role === "Project Sponsor" || role === "Executive Sponsor";
+        const isPMish = role === "Project Manager" || role === "Programme Manager";
+        const power    = isSponsorish ? 90 : isPMish ? 70 : 50;
+        const interest = isSponsorish ? 80 : isPMish ? 80 : 50;
+        await upsertStakeholder(projectId, name, role, power, interest);
+        result.stakeholdersAdded++;
+      }
+    } catch (e) {
+      console.error("[promote-kb-fact] stakeholder upsert failed:", e);
+    }
+  }
+
+  return result;
+}

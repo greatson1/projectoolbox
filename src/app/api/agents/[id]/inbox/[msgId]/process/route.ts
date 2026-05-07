@@ -83,6 +83,29 @@ export async function POST(
     data: { status: "PROCESSED", processedAs: "kb_extraction" },
   });
 
+  // Promote any budget / date / sponsor mentions in the extracted facts to
+  // the canonical tables so the dashboard reflects the email's update
+  // immediately. allowOverwrite=true because the user clicked "Process into
+  // KB" — that's an explicit acknowledgement that they want the email's
+  // facts applied. Without this, an email saying "Budget reduced to £8k"
+  // would land in KB but project.budget would stay at the old value and
+  // the Cost / EVM pages would show the wrong number.
+  if (projectId && saved.length > 0) {
+    try {
+      const { promoteKBFactToCanonical } = await import("@/lib/agents/clarification-promote");
+      for (const item of extracted) {
+        await promoteKBFactToCanonical({
+          projectId,
+          title: item.title,
+          content: item.content,
+          allowOverwrite: true,
+        });
+      }
+    } catch (e) {
+      console.error("[inbox/process] canonical promote failed:", e);
+    }
+  }
+
   // Log activity
   await db.agentActivity.create({
     data: {
