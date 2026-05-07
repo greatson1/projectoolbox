@@ -24,7 +24,15 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AgentState = "questions_waiting" | "research_approval_waiting" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "setup" | "paused" | "monitoring" | "idle";
+// NOTE: src/lib/agents/current-state.ts is meant to be the single source of
+// truth for "what is the agent currently doing?" but the status-bar still
+// derives its own state because the bar's AgentState union has surface-
+// specific states (research_approval_waiting, blocked_by_tasks, setup,
+// paused) that the canonical resolver doesn't cover. Eventually this
+// component should consume getAgentCurrentState and only layer the
+// surface-specific states on top — until then, keep the mappings in
+// deriveState aligned with the labels in current-state.ts.
+type AgentState = "questions_waiting" | "research_approval_waiting" | "researching" | "generating" | "review" | "phase_complete" | "blocked_by_tasks" | "setup" | "paused" | "monitoring" | "idle";
 
 interface RawActivity {
   id?: string;
@@ -72,6 +80,9 @@ interface AgentSlot {
 const COLOURS: Record<AgentState, { border: string; glow: string; badge: string; badgeBg: string; ring: string; pulse: string }> = {
   questions_waiting: { border: "#F97316", glow: "rgba(249,115,22,0.25)", badge: "#F97316", badgeBg: "rgba(249,115,22,0.13)", ring: "#F97316", pulse: "rgba(249,115,22,0.4)" },
   research_approval_waiting: { border: "#3B82F6", glow: "rgba(59,130,246,0.22)", badge: "#3B82F6", badgeBg: "rgba(59,130,246,0.13)", ring: "#3B82F6", pulse: "rgba(59,130,246,0.35)" },
+  // researching uses pipeline-page blue so the colour is consistent across
+  // surfaces — same hue ps === "researching" maps to on the pipeline strip.
+  researching:    { border: "#3B82F6", glow: "rgba(59,130,246,0.22)", badge: "#3B82F6", badgeBg: "rgba(59,130,246,0.13)", ring: "#3B82F6", pulse: "rgba(59,130,246,0.35)" },
   review:         { border: "#F59E0B", glow: "rgba(245,158,11,0.22)", badge: "#F59E0B", badgeBg: "rgba(245,158,11,0.13)", ring: "#F59E0B", pulse: "rgba(245,158,11,0.35)" },
   generating:     { border: "#6366F1", glow: "rgba(99,102,241,0.22)",  badge: "#6366F1", badgeBg: "rgba(99,102,241,0.13)",  ring: "#6366F1", pulse: "rgba(99,102,241,0.35)"  },
   phase_complete: { border: "#10B981", glow: "rgba(16,185,129,0.22)",  badge: "#10B981", badgeBg: "rgba(16,185,129,0.13)",  ring: "#10B981", pulse: "rgba(16,185,129,0.35)"  },
@@ -140,7 +151,10 @@ function deriveState(
   // with no live session means the user just finished answering and the
   // server-side phaseStatus update is in flight; show the next state instead
   // of a misleading "Questions waiting".
-  if (phaseStatus === "researching") return "generating"; // research pulses too
+  // Research is its OWN state — distinct from "generating" (drafting
+  // artefacts). Conflating them caused the bar to say "Writing pre-project
+  // documents" when the agent was actually still researching the phase.
+  if (phaseStatus === "researching") return "researching";
   if (phaseStatus === "pending_approval" || phaseStatus === "waiting_approval") return "review";
 
   // Fallback signals when phaseStatus is "active" or unset
@@ -168,7 +182,7 @@ function deriveState(
 
 /** Priority for auto-focus: lower = more urgent */
 function statePriority(s: AgentState): number {
-  return { questions_waiting: 0, research_approval_waiting: 1, review: 2, blocked_by_tasks: 3, generating: 4, phase_complete: 5, setup: 6, paused: 7, monitoring: 8, idle: 9 }[s] ?? 10;
+  return { questions_waiting: 0, research_approval_waiting: 1, review: 2, blocked_by_tasks: 3, generating: 4, researching: 4, phase_complete: 5, setup: 6, paused: 7, monitoring: 8, idle: 9 }[s] ?? 10;
 }
 
 function gradientColour(gradient: string | null | undefined): string {
@@ -186,6 +200,7 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
   // quoted inside state-specific messages like "Writing X documents — '<stale text>'".
   const relevantTypes: Record<string, Set<string>> = {
     generating:     new Set(["document", "artefact_generated", "artefact", "lifecycle_init"]),
+    researching:    new Set(["research", "research_finding", "lifecycle_init"]),
     review:         new Set(["document", "artefact_generated", "artefact"]),
     phase_complete: new Set(["approval", "document", "artefact_generated"]),
     monitoring:     new Set(["monitoring", "risk", "proactive_alert", "report", "decision"]),
@@ -203,6 +218,11 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
 
     case "research_approval_waiting":
       return `${slot.agentName} has research findings waiting in the Approvals queue — review which ones to keep before they can shape ${phase} artefacts.`;
+
+    case "researching":
+      return actText
+        ? `Researching ${phase} context — ${actText.slice(0, 120)}`
+        : `Researching ${phase} context — facts will be summarised for your approval before any artefacts are drafted.`;
 
     case "generating":
       return actText
@@ -255,6 +275,7 @@ function badgeLabel(slot: AgentSlot): string {
     case "questions_waiting": return "Questions waiting";
     case "research_approval_waiting": return "Research to review";
     case "review":         return `${slot.pendingCount} doc${slot.pendingCount === 1 ? "" : "s"} to review`;
+    case "researching":    return "Researching…";
     case "generating":     return "Writing…";
     case "phase_complete": return slot.nextPhase ? `Start ${slot.nextPhase}` : "All done";
     case "blocked_by_tasks": {
@@ -840,6 +861,7 @@ function StateBadge({ label, colour, bg, state }: {
   const ico: Record<AgentState, React.ReactNode> = {
     questions_waiting: <MessageSquare size={10} />,
     research_approval_waiting: <Sparkles size={10} />,
+    researching:    <RefreshCw size={10} className="animate-spin" />,
     review:         <AlertCircle size={10} />,
     generating:     <RefreshCw size={10} className="animate-spin" />,
     phase_complete: <CheckCircle2 size={10} />,
@@ -850,7 +872,7 @@ function StateBadge({ label, colour, bg, state }: {
     idle:           <Bot size={10} />,
   };
   // Add glow when actively working so the label stands out
-  const activeStates: AgentState[] = ["generating", "questions_waiting", "review"];
+  const activeStates: AgentState[] = ["generating", "researching", "questions_waiting", "review"];
   const isActive = activeStates.includes(state);
   return (
     <span
