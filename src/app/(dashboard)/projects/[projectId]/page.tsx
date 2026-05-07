@@ -44,6 +44,8 @@ export default function ProjectOverviewPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: project, isLoading } = useProject(projectId);
   const { setActiveProject } = useAppStore();
+  const currency = useOrgCurrency();
+  const moneyCompact = (n: number) => formatMoney(n, currency, { compact: true });
 
   useEffect(() => {
     if (project) setActiveProject(project.id, project.name);
