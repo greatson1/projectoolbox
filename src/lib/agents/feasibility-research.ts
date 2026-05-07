@@ -14,6 +14,83 @@
 import { db } from "@/lib/db";
 import { isN8nEnabled, forwardToN8n } from "@/lib/n8n";
 
+/**
+ * Pull the user-confirmed facts that should anchor research-query
+ * generation. Without these, Haiku defaults to conventional values
+ * (e.g. "family of 4") and produces queries that silently disagree
+ * with the project's actual scope.
+ *
+ * Sources, in priority order:
+ *   1. ConfirmedFacts (project row + stakeholders + KB)
+ *   2. KB items tagged `user_confirmed` or `user_answer` — these are
+ *      the clarification answers ("family size: 5 (2 adults + 3 kids)")
+ *      that don't fit the structured ConfirmedFacts shape.
+ *   3. Stakeholder rows (so the agent doesn't ignore named people).
+ *
+ * Returns short string phrases ready to drop into a prompt bullet list.
+ */
+async function loadConfirmedFactsForResearch(projectId: string): Promise<string[]> {
+  try {
+    const [structured, kbItems, stakeholders] = await Promise.all([
+      import("@/lib/agents/confirmed-facts").then(m => m.getConfirmedFacts(projectId)).catch(() => null),
+      db.knowledgeBaseItem.findMany({
+        where: {
+          projectId,
+          tags: { hasSome: ["user_confirmed", "user_answer"] },
+        },
+        select: { title: true, content: true },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+      }),
+      db.stakeholder.findMany({
+        where: { projectId },
+        select: { name: true, role: true },
+        take: 10,
+      }),
+    ]);
+
+    const facts: string[] = [];
+
+    if (structured) {
+      if (structured.budget != null) {
+        const cur = structured.currency || "GBP";
+        facts.push(`Budget: ${cur === "GBP" ? "£" : cur + " "}${structured.budget.toLocaleString()}`);
+      }
+      if (structured.startDate) facts.push(`Start date: ${structured.startDate}`);
+      if (structured.endDate) facts.push(`End date: ${structured.endDate}`);
+      if (structured.sponsor) facts.push(`Sponsor: ${structured.sponsor}`);
+      if (structured.projectManager) facts.push(`Project manager: ${structured.projectManager}`);
+      if (structured.scope) facts.push(`Scope: ${structured.scope}`);
+    }
+
+    for (const s of stakeholders) {
+      if (s.name && s.role) facts.push(`Stakeholder: ${s.name} (${s.role})`);
+    }
+
+    for (const item of kbItems) {
+      // Trim to one short clause per fact. Long KB content carries detail
+      // we don't want bloating the Haiku prompt — a short title-style
+      // statement is enough to anchor query generation.
+      const t = (item.title || "").trim();
+      const c = (item.content || "").trim().split(/[\.\n]/)[0].slice(0, 200);
+      if (t && c && t.length < 80) facts.push(`${t}: ${c}`);
+      else if (c) facts.push(c);
+    }
+
+    // Dedup by lowercase whole-string
+    const seen = new Set<string>();
+    return facts.filter(f => {
+      const k = f.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    }).slice(0, 25);
+  } catch (e) {
+    console.error("[feasibility-research] loadConfirmedFactsForResearch failed:", e);
+    return [];
+  }
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ResearchSection {
@@ -493,12 +570,16 @@ export async function runFeasibilityResearch(
     const firstPhase = phases[0];
     const artefactNames = Array.isArray(firstPhase?.artefacts) ? (firstPhase!.artefacts as string[]) : [];
     if (firstPhase && artefactNames.length > 0) {
-      const { buildArtefactDrivenQueries } = await import("@/lib/agents/research-query-builder");
+      const [{ buildArtefactDrivenQueries }, confirmedFacts] = await Promise.all([
+        import("@/lib/agents/research-query-builder"),
+        loadConfirmedFactsForResearch(projectId),
+      ]);
       firstPhaseTargetedQueries = await buildArtefactDrivenQueries({
         project: project as ProjectContext,
         phaseName: firstPhase.name,
         artefactNames,
         methodology: project.methodology,
+        confirmedFacts,
       });
     }
   } catch (e) {
@@ -768,12 +849,16 @@ export async function runPhaseResearch(
     });
     const artefactNames = Array.isArray(phaseRow?.artefacts) ? (phaseRow!.artefacts as string[]) : [];
     if (artefactNames.length > 0) {
-      const { buildArtefactDrivenQueries } = await import("@/lib/agents/research-query-builder");
+      const [{ buildArtefactDrivenQueries }, confirmedFacts] = await Promise.all([
+        import("@/lib/agents/research-query-builder"),
+        loadConfirmedFactsForResearch(projectId),
+      ]);
       targetedQueries = await buildArtefactDrivenQueries({
         project: project as ProjectContext,
         phaseName,
         artefactNames,
         methodology: project.methodology,
+        confirmedFacts,
       });
     }
   } catch (e) {

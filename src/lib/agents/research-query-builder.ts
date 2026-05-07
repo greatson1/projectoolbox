@@ -40,6 +40,18 @@ export interface BuildQueriesInput {
   artefactNames: string[];
   /** Project methodology (e.g. "traditional", "scrum") — used in prompt context. */
   methodology?: string | null;
+  /**
+   * User-confirmed facts the agent has gathered (clarification answers,
+   * stakeholder rows, KB items tagged user_confirmed). Each entry is a
+   * short phrase like "Family size: 5 (2 adults, 3 children)" or
+   * "Travel dates: 18-25 May 2026". Haiku is instructed to USE these
+   * verbatim and never contradict — without them it defaults to
+   * conventional values (e.g. "family of 4") and produces queries that
+   * silently disagree with the project's actual scope.
+   *
+   * Empty array is fine; the prompt notes that none have been confirmed.
+   */
+  confirmedFacts?: string[];
 }
 
 export async function buildArtefactDrivenQueries(input: BuildQueriesInput): Promise<TargetedQuery[]> {
@@ -56,6 +68,10 @@ export async function buildArtefactDrivenQueries(input: BuildQueriesInput): Prom
     : "unknown duration";
   const budget = p.budget ? `£${p.budget.toLocaleString()}` : "TBC";
 
+  const facts = input.confirmedFacts && input.confirmedFacts.length > 0
+    ? input.confirmedFacts.map(f => `  • ${f}`).join("\n")
+    : "  (none yet — DO NOT invent values for things the user has not confirmed)";
+
   const prompt = `You are designing web research queries for a project management agent. Your goal: produce 2-4 specific, current (${nowYear}) queries that gather information the agent NEEDS to populate the listed artefacts accurately.
 
 PROJECT
@@ -65,6 +81,9 @@ PROJECT
 - Budget: ${budget}
 - Timing: ${projectMonth}, duration ${duration}
 - Methodology: ${input.methodology || "traditional"}
+
+USER-CONFIRMED FACTS (MUST be used verbatim — never contradict, never substitute conventional defaults)
+${facts}
 
 PHASE: ${input.phaseName}
 
@@ -77,6 +96,7 @@ Your task: write 2-4 web search queries that will surface CURRENT data the agent
 3. Be time-anchored to ${nowYear} — explicit "as of ${nowYear}" or "current ${nowYear} rates"
 4. Cite-source-friendly (UK regulatory framing if the project is UK-based)
 5. Cover the highest-value gaps — pick the artefacts where external research will most reduce hallucination/fabrication
+6. **Use every USER-CONFIRMED FACT verbatim** — if the user said "family of 5", the query MUST say "family of 5", not "family of 4" or "family". Do not substitute conventional defaults for confirmed values. If the user has confirmed a duration, dates, group size, location, or budget, those MUST appear in the query exactly as confirmed.
 
 Examples of GOOD queries:
 - For a "Cost Management Plan" on a UK training project: "Current UK trainer day rates and venue hire costs as of ${nowYear} for residential 5-day technical training (50 delegates, London). Cite published rate cards or industry benchmarks."
