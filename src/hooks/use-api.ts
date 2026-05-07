@@ -218,12 +218,16 @@ export function useProjectIssues(projectId: string | null) {
   });
 }
 
-export function useProjectArtefacts(projectId: string | null) {
+export function useProjectArtefacts(projectId: string | null, options?: { polling?: boolean }) {
   return useQuery({
     queryKey: ["project-artefacts", projectId],
     queryFn: () => api<any[]>(`/api/projects/${projectId}/artefacts`),
     enabled: !!projectId,
-    // no polling — uses staleTime from QueryClient defaults
+    // Poll every 4s when generation is active so the list updates live.
+    // The artefacts page passes polling=true while the Generate button is
+    // loading; it stops polling once all expected artefacts have appeared.
+    refetchInterval: options?.polling ? 4000 : false,
+    refetchIntervalInBackground: false,
   });
 }
 

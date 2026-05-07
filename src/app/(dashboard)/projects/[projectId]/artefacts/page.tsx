@@ -47,15 +47,17 @@ function markdownToHtml(md: string): string {
 
 export default function ArtefactsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: artefacts, isLoading } = useProjectArtefacts(projectId);
+  const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  // Poll every 4 s while generation is running so the list updates live
+  // without the user needing to manually refresh.
+  const { data: artefacts, isLoading } = useProjectArtefacts(projectId, { polling: generating || regenerating });
   const { data: project } = useProject(projectId);
   const qc = useQueryClient();
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [editorArt, setEditorArt] = useState<any>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
 
   /** Invalidate cache so next render fetches fresh data from server */
   const refreshArtefacts = () => {

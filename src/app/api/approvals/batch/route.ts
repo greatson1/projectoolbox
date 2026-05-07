@@ -39,7 +39,16 @@ export async function POST(req: NextRequest) {
 
   // Batch approve
   let approved = 0;
-  for (const id of lowRiskIds) {
+  const researchFindingIds: string[] = [];
+
+  // Fetch full approval data so we can check subtypes
+  const fullApprovals = await db.approval.findMany({
+    where: { id: { in: lowRiskIds } },
+    select: { id: true, type: true, impact: true, requestedById: true, projectId: true },
+  });
+
+  for (const approval of fullApprovals) {
+    const id = approval.id;
     try {
       await db.approval.update({
         where: { id },
@@ -52,14 +61,37 @@ export async function POST(req: NextRequest) {
         data: { status: "APPROVED" as any },
       });
 
-      // Execute the approved action
-      try {
-        const { executeApprovedAction } = await import("@/lib/agents/action-executor");
-        await executeApprovedAction(id);
-      } catch {}
+      // Research-finding subtypes need their own handler (which also checks
+      // if all findings are now approved and kicks off clarification/generation).
+      const isResearch = approval.type === "CHANGE_REQUEST" && (approval.impact as any)?.subtype === "research_finding";
+      if (isResearch) {
+        researchFindingIds.push(id);
+      } else {
+        try {
+          const { executeApprovedAction } = await import("@/lib/agents/action-executor");
+          await executeApprovedAction(id);
+        } catch {}
+      }
 
       approved++;
     } catch {}
+  }
+
+  // Apply research-finding decisions after ALL are marked approved so the
+  // "stillPending === 0" check in applyResearchApprovalDecision fires correctly
+  // on the last one and triggers the clarification → generation sequence.
+  if (researchFindingIds.length > 0) {
+    const { applyResearchApprovalDecision } = await import("@/lib/agents/research-approval");
+    for (const id of researchFindingIds) {
+      try {
+        const approval = fullApprovals.find(a => a.id === id);
+        if (approval) {
+          await applyResearchApprovalDecision({ id: approval.id, impact: approval.impact }, "APPROVED");
+        }
+      } catch (e) {
+        console.error("[batch-approve] applyResearchApprovalDecision failed for", id, e);
+      }
+    }
   }
 
   // Audit log
