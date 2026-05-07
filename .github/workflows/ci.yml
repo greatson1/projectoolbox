@@ -1,0 +1,119 @@
+name: CI
+
+# Tier-1 (lint + typecheck + unit tests) and tier-3 smoke (no auth, no
+# secrets, no real LLM calls). Runs on every push and PR.
+#
+# Tier-2 integration tests + the authenticated golden-path E2E live in
+# ci-integration.yml because they need TEST_DATABASE_URL and
+# E2E_AUTH_BYPASS_TOKEN secrets.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+# Cancel previous runs on the same branch when a new push lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: lint · typecheck · unit · smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Postgres service container — needed because Prisma client init reads
+    # DATABASE_URL eagerly and the dev server boot would otherwise fail.
+    # The smoke E2E doesn't actually query the DB (it just tests that
+    # /login renders, /dashboard redirects, 404s come back clean), but
+    # the boot path needs a reachable Postgres.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: projectoolbox_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/projectoolbox_ci
+      # NextAuth refuses to boot without this. Any random string works
+      # for CI — never reused across environments.
+      NEXTAUTH_SECRET: ci-only-not-a-real-secret-just-needs-to-exist-32chars
+      AUTH_SECRET: ci-only-not-a-real-secret-just-needs-to-exist-32chars
+      # Belt-and-braces: no agent code path will reach a real LLM even
+      # if a smoke test path accidentally drives one.
+      ANTHROPIC_FAKE: "1"
+      PERPLEXITY_FAKE: "1"
+      # Quiet Next.js telemetry in CI.
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Push Prisma schema to CI database
+        run: npx prisma db push --accept-data-loss
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests (tier 1)
+        run: npm test
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Start dev server in background
+        run: |
+          npm run start &
+          echo "DEV_PID=$!" >> $GITHUB_ENV
+          # Wait until /login responds with anything 2xx-4xx (not 5xx).
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/login | grep -qE "^[234]"; then
+              echo "Server is up after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start within 60s"
+          exit 1
+
+      - name: Smoke E2E (tier 3, no auth)
+        env:
+          E2E: "1"
+          BASE_URL: http://localhost:3000
+        run: npm run test:e2e -- smoke
+
+      - name: Stop dev server
+        if: always()
+        run: |
+          if [ -n "$DEV_PID" ]; then kill $DEV_PID || true; fi
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-smoke
+          path: playwright-report/
+          retention-days: 7

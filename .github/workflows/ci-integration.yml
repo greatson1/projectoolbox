@@ -1,0 +1,182 @@
+name: CI · Integration + Golden-path
+
+# Tier-2 (DB-backed integration tests) and tier-3 golden-path E2E
+# (authenticated via the bypass provider, LLM calls faked).
+#
+# Runs ONLY on PRs to master/main — too slow to fire on every push,
+# but cheap insurance before merge. Skipped on PRs that touch only
+# docs / READMEs to keep the gate fast.
+#
+# Required repository secrets:
+#   E2E_AUTH_BYPASS_TOKEN  — 32+ char random hex string. Same value
+#                            used by the dev server and by the test
+#                            runner. Rotate if it ever leaks.
+#   E2E_TEST_USER_ID       — id of a seeded user on the integration DB.
+#                            The seeding step below creates one named
+#                            "ci-test-user@projectoolbox.local" and
+#                            uses its CUID. If you'd rather pin a
+#                            specific id, set the secret and skip the
+#                            seeding step.
+
+on:
+  pull_request:
+    branches: [master, main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  # Manual run-on-demand from the Actions tab.
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: tier-2 integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: projectoolbox_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/projectoolbox_test
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/projectoolbox_test
+      NEXTAUTH_SECRET: ci-only-not-a-real-secret-just-needs-to-exist-32chars
+      AUTH_SECRET: ci-only-not-a-real-secret-just-needs-to-exist-32chars
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Push Prisma schema
+        run: npx prisma db push --accept-data-loss
+
+      - name: Run tier-2 integration tests
+        run: npm run test:integration
+
+  golden-path:
+    name: tier-3 authenticated E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Skip if the bypass token isn't configured — keeps the workflow
+    # green on forks / first-time contributors who can't read repo
+    # secrets. The integration job above still runs.
+    if: ${{ vars.HAS_E2E_BYPASS_TOKEN == 'true' || secrets.E2E_AUTH_BYPASS_TOKEN != '' }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: projectoolbox_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/projectoolbox_e2e
+      NEXTAUTH_SECRET: ci-only-not-a-real-secret-just-needs-to-exist-32chars
+      AUTH_SECRET: ci-only-not-a-real-secret-just-needs-to-exist-32chars
+      ANTHROPIC_FAKE: "1"
+      PERPLEXITY_FAKE: "1"
+      E2E_AUTH_BYPASS: "1"
+      E2E_AUTH_BYPASS_TOKEN: ${{ secrets.E2E_AUTH_BYPASS_TOKEN }}
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Push Prisma schema
+        run: npx prisma db push --accept-data-loss
+
+      - name: Seed CI test user + capture user id
+        id: seed
+        run: |
+          USER_ID=$(node -e "
+            const { PrismaClient } = require('@prisma/client');
+            (async () => {
+              const db = new PrismaClient();
+              const user = await db.user.upsert({
+                where: { email: 'ci-test-user@projectoolbox.local' },
+                update: {},
+                create: {
+                  email: 'ci-test-user@projectoolbox.local',
+                  name: 'CI Test User',
+                  onboardingComplete: true,
+                },
+              });
+              const org = await db.organisation.upsert({
+                where: { slug: 'ci-test-org' },
+                update: {},
+                create: { name: 'CI Test Org', slug: 'ci-test-org', currency: 'GBP' },
+              });
+              await db.user.update({ where: { id: user.id }, data: { orgId: org.id } });
+              process.stdout.write(user.id);
+              await db.\$disconnect();
+            })().catch(e => { console.error(e); process.exit(1); });
+          ")
+          echo "USER_ID=$USER_ID" >> $GITHUB_OUTPUT
+          echo "Seeded CI test user: $USER_ID"
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Start dev server with bypass + fakes
+        run: |
+          npm run start &
+          echo "DEV_PID=$!" >> $GITHUB_ENV
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:3000/login; then
+              echo "Server up after ${i} attempts"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start"; exit 1
+
+      - name: Run authenticated golden-path E2E
+        env:
+          E2E: "1"
+          BASE_URL: http://localhost:3000
+          E2E_TEST_USER_ID: ${{ steps.seed.outputs.USER_ID }}
+        run: npm run test:e2e -- golden-path
+
+      - name: Stop dev server
+        if: always()
+        run: |
+          if [ -n "$DEV_PID" ]; then kill $DEV_PID || true; fi
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-golden-path
+          path: playwright-report/
+          retention-days: 7
