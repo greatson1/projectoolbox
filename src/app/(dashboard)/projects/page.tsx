@@ -3,6 +3,8 @@
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useOrgCurrency } from "@/hooks/use-currency";
+import { formatMoney } from "@/lib/currency";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,8 @@ export default function ProjectsPage() {
   const { setActiveProject, activeProjectId, setActiveProject: clearProject } = useAppStore();
   const { data: projects, isLoading } = useProjects(tab === "archived" ? { include: "only-archived" } : undefined);
   const qc = useQueryClient();
+  const currency = useOrgCurrency();
+  const fmtBudget = (n: number) => formatMoney(n, currency, { compact: true });
 
   const deleteProject = async (id: string, name: string) => {
     setDeletingId(id);
@@ -133,7 +137,7 @@ export default function ProjectsPage() {
                     <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-3">
                       <span>{p._count?.tasks || 0} tasks</span>
                       <span>{p._count?.risks || 0} risks</span>
-                      {p.budget && <span>${(p.budget / 1000).toFixed(0)}K budget</span>}
+                      {p.budget && <span>{fmtBudget(p.budget)} budget</span>}
                     </div>
 
                     {agent && (

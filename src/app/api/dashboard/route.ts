@@ -133,7 +133,7 @@ export async function GET() {
         budget: p.budget,
         taskCount: p._count.tasks,
         riskCount: p._count.risks,
-        agent: p.agents[0]?.agent ? { name: p.agents[0].agent.name, gradient: p.agents[0].agent.gradient, status: p.agents[0].agent.status } : null,
+        agent: p.agents[0]?.agent ? { id: p.agents[0].agent.id, name: p.agents[0].agent.name, gradient: p.agents[0].agent.gradient, status: p.agents[0].agent.status } : null,
       })),
       agents,
       activities: recentActivities.map(a => ({
