@@ -155,7 +155,21 @@ function deriveState(
   // artefacts). Conflating them caused the bar to say "Writing pre-project
   // documents" when the agent was actually still researching the phase.
   if (phaseStatus === "researching") return "researching";
-  if (phaseStatus === "pending_approval" || phaseStatus === "waiting_approval") return "review";
+  // ── REVIEW vs BLOCKED priority ─────────────────────────────────────
+  // When the deployment has explicitly parked at pending_approval and
+  // the gate is reachable (canAdvance is true OR unknown), "review" is
+  // the right state — approving the drafts WILL clear the gate.
+  //
+  // But if canAdvance is explicitly FALSE (PM tasks incomplete, gate
+  // prereqs unmet, clarification missing), the banner used to say
+  // "approve them to unlock Initiation" which is a lie — approving the
+  // drafts doesn't unlock anything because other blockers remain.
+  // Demote to "blocked_by_tasks" so the banner shows the actual
+  // blocker list instead.
+  if (phaseStatus === "pending_approval" || phaseStatus === "waiting_approval") {
+    if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
+    return "review";
+  }
 
   // Fallback signals when phaseStatus is "active" or unset
   const fourMinAgo = Date.now() - 4 * 60 * 1000;
@@ -164,7 +178,13 @@ function deriveState(
          new Date(activityAt(a)).getTime() > fourMinAgo
   );
   if (isGenerating)           return "generating";
-  if (pendingCount > 0)       return "review";
+  if (pendingCount > 0) {
+    // Same priority logic as the pending_approval branch above —
+    // approving the pending draft only unlocks the phase IF nothing
+    // else is blocking. canAdvance === false means something else IS.
+    if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
+    return "review";
+  }
   if (totalArtefacts > 0) {
     // Don't claim "phase_complete" (which renders the green "Click Generate"
     // banner) when getPhaseCompletion says we cannot advance because PM tasks
@@ -229,8 +249,17 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
         ? `Writing ${phase} documents — ${actText.slice(0, 120)}`
         : `Writing ${phase} phase documents — ready in ~30–60 s`;
 
-    case "review":
-      return `${pendingCount} ${phase} document${pendingCount === 1 ? "" : "s"} ready for your review. Approve them to unlock ${next}.`;
+    case "review": {
+      // We only reach "review" when canAdvance is true or unknown
+      // (deriveState demotes to "blocked_by_tasks" when canAdvance is
+      // explicitly false). Even so — approving the listed drafts is
+      // only one step; the user still needs to click "Approve gate"
+      // afterwards. Honest copy reflects that.
+      const docCopy = `${pendingCount} ${phase} document${pendingCount === 1 ? "" : "s"} ready for your review`;
+      return slot.canAdvance === true
+        ? `${docCopy}. Approve them, then submit the phase gate to advance to ${next}.`
+        : `${docCopy}. Approving them clears one gate — other ${phase} requirements may still block advancement to ${next}.`;
+    }
 
     case "phase_complete":
       return `All ${phase} documents approved. Click Generate to start the ${next} phase.`;
