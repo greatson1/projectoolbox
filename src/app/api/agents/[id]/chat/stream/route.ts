@@ -756,10 +756,12 @@ ${await (async () => {
   } catch { return "Phase requirements unavailable."; }
 })()}
 
-## PENDING APPROVALS (HITL GATES)
+## PENDING APPROVALS (HITL GATES) — Currently pending: ${pendingApprovals.length}
 ${pendingApprovals.length > 0
   ? pendingApprovals.map(a => `- **${a.title}** — ${a.description} [${a.type}]`).join("\n")
-  : "No pending approvals."}
+  : `**ZERO pending approvals.** Do NOT tell the user there are approvals awaiting review. The Approvals page is empty.
+
+If your earlier reply in this conversation, or an activity log entry, or any artefact mentions an approval that was "awaiting review" or "needs your attention" — that approval has since been APPROVED, REJECTED, or auto-resolved. Reference its outcome (approved/rejected/withdrawn), not its old pending state.`}
 
 ## GENERATED ARTEFACTS (${recentArtefacts.length} total)
 ${recentArtefacts.length > 0
