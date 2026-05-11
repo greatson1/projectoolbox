@@ -63,7 +63,7 @@ jobs:
         with: { node-version: 22, cache: npm }
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Push Prisma schema
         run: npx prisma db push --accept-data-loss
@@ -78,7 +78,10 @@ jobs:
     # Skip if the bypass token isn't configured — keeps the workflow
     # green on forks / first-time contributors who can't read repo
     # secrets. The integration job above still runs.
-    if: ${{ vars.HAS_E2E_BYPASS_TOKEN == 'true' || secrets.E2E_AUTH_BYPASS_TOKEN != '' }}
+    # Only run when the repository variable is explicitly enabled.
+    # Set HAS_E2E_BYPASS_TOKEN=true in repo Settings → Actions → Variables
+    # once you've also added the E2E_AUTH_BYPASS_TOKEN secret.
+    if: ${{ vars.HAS_E2E_BYPASS_TOKEN == 'true' }}
 
     services:
       postgres:
@@ -109,7 +112,7 @@ jobs:
         with: { node-version: 22, cache: npm }
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium

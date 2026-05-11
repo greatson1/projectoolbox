@@ -64,7 +64,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # --omit=optional skips arch-specific optional packages such as
+        # @rolldown/binding-wasm32-wasi (cpu: wasm32) whose transitive deps
+        # (@emnapi/runtime, @emnapi/core) are not present in the lock file
+        # when the lock was generated on Windows/macOS.
+        run: npm ci --omit=optional
 
       - name: Push Prisma schema to CI database
         run: npx prisma db push --accept-data-loss
