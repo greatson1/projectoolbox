@@ -11,6 +11,7 @@ import { getPlaybook } from "./methodology-playbooks";
 import { isSpreadsheetArtefact, getArtefactColumns } from "@/lib/artefact-types";
 import { cleanMarkdownLeakage } from "./markdown-cleanup";
 import { sanitiseArtefactContent } from "./sanitise-artefact-content";
+import { filterTBCItemsByArtefactPurpose } from "./tbc-topic-filter";
 
 /**
  * Generate artefacts for the current (or specified) phase of a project.
@@ -2293,7 +2294,7 @@ ${agentProtocol(name)}`;
  * Returns deduplicated list of { artefactName, item } pairs.
  */
 export function extractTBCItems(artefacts: { name: string; content: string }[]): { artefactName: string; item: string }[] {
-  const results: { artefactName: string; item: string }[] = [];
+  const raw: { artefactName: string; item: string }[] = [];
   const seen = new Set<string>();
 
   // Match [TBC — ...] or [TBC - ...] or TBC — ... in a table cell
@@ -2307,12 +2308,25 @@ export function extractTBCItems(artefacts: { name: string; content: string }[]):
       const key = `${name}::${item.toLowerCase()}`;
       if (!seen.has(key) && item.length > 4) {
         seen.add(key);
-        results.push({ artefactName: name, item });
+        raw.push({ artefactName: name, item });
       }
     }
   }
 
-  return results;
+  // Drop TBCs whose topic class doesn't fit the parent artefact's
+  // purpose (e.g. role TBCs in a Definition of Done, or any TBC in a
+  // Product Backlog). Without this filter the clarification queue
+  // serves nonsense pairings like "Definition of Done — What is the
+  // compliance lead?" which the user can't meaningfully answer and
+  // wouldn't update the DoD anyway.
+  const { kept, dropped } = filterTBCItemsByArtefactPurpose(raw);
+  if (dropped.length > 0) {
+    console.warn(
+      `[extractTBCItems] dropped ${dropped.length} misplaced TBC${dropped.length === 1 ? "" : "s"}: ` +
+      dropped.slice(0, 5).map(d => `"${d.item}"(${d.topicClass}) in "${d.artefactName}"`).join(", "),
+    );
+  }
+  return kept;
 }
 
 /**
