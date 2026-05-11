@@ -64,11 +64,15 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        # --omit=optional skips arch-specific optional packages such as
-        # @rolldown/binding-wasm32-wasi (cpu: wasm32) whose transitive deps
-        # (@emnapi/runtime, @emnapi/core) are not present in the lock file
-        # when the lock was generated on Windows/macOS.
-        run: npm ci --omit=optional
+        # npm ci fails on this repo because @rolldown/binding-wasm32-wasi
+        # (optional, cpu:wasm32) has transitive deps (@emnapi/runtime,
+        # @emnapi/core) that are only resolvable on the wasm32 platform and
+        # therefore absent from a lock file generated on Windows/macOS.
+        # --ignore-scripts skips `prisma generate` (handled by the next step).
+        run: npm install --ignore-scripts
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Push Prisma schema to CI database
         run: npx prisma db push --accept-data-loss
