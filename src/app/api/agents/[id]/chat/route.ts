@@ -82,6 +82,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     lowerMsg.includes("reassign") || lowerMsg.includes("create") || lowerMsg.includes("update") ||
     lowerMsg.includes("send") || lowerMsg.includes("generate report") || lowerMsg.includes("change");
 
+  // ── Fabrication sanitiser ──
+  // Same pass the streaming chat route runs. Without it, the non-streaming
+  // fallback was a clean bypass — bracketed context-marker leaks like
+  // [I asked the user]: "..." (options: ...) were landing in chat history
+  // verbatim because they only got stripped on the streaming path.
+  try {
+    const deployment = await db.agentDeployment.findFirst({
+      where: { agentId, isActive: true },
+      select: { projectId: true },
+    });
+    if (deployment?.projectId) {
+      const { getConfirmedFacts } = await import("@/lib/agents/confirmed-facts");
+      const { sanitiseChatResponse } = await import("@/lib/agents/sanitise-chat-response");
+      const facts = await getConfirmedFacts(deployment.projectId);
+      const result = sanitiseChatResponse(responseContent, facts);
+      if (result.corrections.length > 0) {
+        responseContent = result.content;
+        console.warn(
+          `[chat] sanitised ${result.corrections.length} fabrication(s): ${result.corrections.map(c => c.kind).join(", ")}`,
+        );
+      }
+    }
+  } catch (e) {
+    console.error("[chat] sanitiser failed:", e);
+  }
+
   // Save agent response with metadata
   const agentMsg = await db.chatMessage.create({
     data: {
