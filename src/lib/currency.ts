@@ -50,8 +50,14 @@ export function formatMoney(
     const abs = Math.abs(amount);
     const sign = amount < 0 ? "-" : "";
     const sym = CURRENCY_SYMBOL[code];
-    if (abs >= 1_000_000) return `${sign}${sym}${(abs / 1_000_000).toFixed(2)}M`;
-    if (abs >= 1_000) return `${sign}${sym}${(abs / 1_000).toFixed(0)}K`;
+    // Strip trailing ".0" so "10.0K" reads as "10K", but "9.5K" stays.
+    // Earlier .toFixed(0) on the K branch turned 9,500 into "10K" — a loss
+    // of precision the user noticed when an email-confirmed budget update
+    // (£9,500) still rendered as "£10K" on every dashboard tile.
+    const trim = (s: string) => s.replace(/\.0+$/, "");
+    if (abs >= 1_000_000) return `${sign}${sym}${trim((abs / 1_000_000).toFixed(2))}M`;
+    if (abs >= 10_000)    return `${sign}${sym}${trim((abs / 1_000).toFixed(0))}K`;
+    if (abs >= 1_000)     return `${sign}${sym}${trim((abs / 1_000).toFixed(1))}K`;
     return `${sign}${sym}${abs.toLocaleString(CURRENCY_LOCALE[code])}`;
   }
 
