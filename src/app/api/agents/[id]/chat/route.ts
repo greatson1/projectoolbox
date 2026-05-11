@@ -164,7 +164,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     orderBy: { createdAt: "desc" },
     take: 100,
   });
-  const ordered = recent.reverse();
+  // Read-path strip of context-marker leaks. Defence in depth — any
+  // historical message persisted before the write-path sanitiser
+  // landed (or any future write path that bypasses it) gets cleaned
+  // here so the UI never renders `[I asked the user]: "..."` etc.
+  // Cheap regex; we only touch agent-role messages with non-sentinel
+  // content (sentinels like __CLARIFICATION_SESSION__ are card-driven
+  // and never leak prose).
+  const { stripContextMarkerLeaks } = await import("@/lib/agents/sanitise-chat-response");
+  const ordered = recent.reverse().map((m) => {
+    if (m.role !== "agent" || !m.content || m.content.startsWith("__")) return m;
+    const cleaned = stripContextMarkerLeaks(m.content);
+    return cleaned === m.content ? m : { ...m, content: cleaned };
+  });
 
   // Pull pause / resume activities that fall inside the chat window so the
   // client can render faint timeline dividers ("— Agent paused 18:42 —").

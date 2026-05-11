@@ -2434,7 +2434,7 @@ export async function createClarificationMessage(
 
   // Don't start a new session if one is already active
   try {
-    const { getActiveSession, startTBCClarificationSession } = await import("@/lib/agents/clarification-session");
+    const { getActiveSession, startTBCClarificationSession, phraseTBCQuestions } = await import("@/lib/agents/clarification-session");
     const existing = await getActiveSession(agentId, projectId);
     if (existing) return; // Session already active — don't stack
 
@@ -2495,17 +2495,31 @@ export async function createClarificationMessage(
     }
 
     // ── Phase 2: ask only for the genuinely missing items ──
-    const questions = unresolved.slice(0, 20).map((item, i) => ({
-      id: `tbc_${i}`,
-      artefact: item.artefactName,
-      field: item.item.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
-      question: `What is the ${item.item.toLowerCase()}?`,
-      type: "text" as const,
-      answered: false,
-    }));
+    // Send the unresolved TBC topics through the LLM phrasing pass so each
+    // question gets the right interrogative (Who/When/How many/Has) and the
+    // right widget type (text/date/number/yesno/choice). Falls back to a
+    // deterministic heuristic on any LLM failure — caller never sees a
+    // regression to the old `What is the X?` template.
+    const projectForPrompt = await db.project.findUnique({
+      where: { id: projectId },
+      select: { name: true, description: true },
+    }).catch(() => null);
+    // Cap at 20 questions per session so the user isn't asked 50+ in one
+    // sitting. The remainder stays as [TBC] markers in the artefacts and
+    // can be filled later from the Artefacts tab. The intro message
+    // ALWAYS reports the count actually being asked — not unresolved.length
+    // — so the user doesn't see "33 details" with only 20 questions
+    // queued.
+    const QUESTION_CAP = 20;
+    const cappedUnresolved = unresolved.slice(0, QUESTION_CAP);
+    const questions = await phraseTBCQuestions(projectForPrompt, cappedUnresolved);
 
     await startTBCClarificationSession(agentId, projectId, orgId, questions);
 
+    const askedCount = questions.length;
+    const remainingNote = unresolved.length > askedCount
+      ? ` (${unresolved.length - askedCount} more remain as [TBC] markers in the artefacts — you can fill those directly on the Artefacts tab.)`
+      : "";
     const autoFillNote = autoFilled > 0
       ? ` (I also filled ${autoFilled} from your earlier answers / research.)`
       : "";
@@ -2515,7 +2529,7 @@ export async function createClarificationMessage(
       data: {
         agentId,
         role: "agent",
-        content: `Your artefacts are ready for review, but I have **${unresolved.length} detail${unresolved.length !== 1 ? "s" : ""}** I couldn't find from research or your earlier answers.${autoFillNote} I'll ask you about each one now — your answers will update the documents automatically.`,
+        content: `Your artefacts are ready for review, but I have **${askedCount} detail${askedCount !== 1 ? "s" : ""}** I couldn't find from research or your earlier answers.${autoFillNote} I'll ask you about each one now — your answers will update the documents automatically.${remainingNote}`,
       },
     }).catch(() => {});
   } catch (e) {

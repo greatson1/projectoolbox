@@ -48,7 +48,7 @@ export interface PhaseCompletionSnapshot {
 export interface ChatSanitiseResult {
   content: string;
   corrections: Array<{
-    kind: "stripped_verified_tag" | "replaced_fabricated_value" | "rewrote_phase_complete_claim" | "rewrote_required_count_claim";
+    kind: "stripped_verified_tag" | "replaced_fabricated_value" | "rewrote_phase_complete_claim" | "rewrote_required_count_claim" | "stripped_context_marker_leak";
     field?: string;
     before: string;
     after: string;
@@ -56,6 +56,55 @@ export interface ChatSanitiseResult {
 }
 
 const VERIFIED_TAG_REGEX = /\s*\[(?:VERIFIED|CONFIRMED|SOURCE\s*:\s*[^\]]+|VERIFIED\s+BY\s+[^\]]+)\]/gi;
+
+// Context-marker leaks. The chat-stream feeds Claude an inbound history with
+// <prior_question>, <prior_clarification>, <prior_event> XML wrappers (and
+// previously [I asked the user]: "..." prose). Despite the system-prompt
+// rule "NEVER echo these", Claude occasionally regurgitates the format —
+// the user sees `[I asked the user]: "What should be the primary comms…"`
+// as the agent's reply instead of an actual response. Strip every variant
+// post-stream so a single slip never reaches the chat UI.
+//
+// We strip the WHOLE element (wrapper + inner text), not just the tags —
+// the inner text without its wrapper would be dangling context (e.g. a
+// bare "Who is the compliance lead?" with no question prompt around it).
+const PRIOR_XML_PAIRED_REGEX = /<prior_(question|clarification|event)(?:\s+[^>]*)?>[\s\S]*?<\/prior_\1>/gi;
+const PRIOR_XML_SELF_REGEX = /<prior_(?:question|clarification|event)(?:\s+[^>]*)?\/>/gi;
+// Catch any nested <effect ...>...</effect> children that survive after the
+// outer <prior_event kind="tool_effects"> is stripped above.
+const PRIOR_XML_EFFECT_REGEX = /<effect(?:\s+[^>]*)?>[\s\S]*?<\/effect>/gi;
+// Legacy bracketed natural-language form. Old chat history (and a few
+// stubborn models) still produces lines like `[I asked the user]: "..."`
+// or `[I posted a project status card]`. After the closing `]`, if
+// followed by `:` we consume the rest of the line — that catches the
+// trailing quoted text + options block regardless of whether the model
+// used ASCII or smart quotes, and avoids the trap where a smart
+// apostrophe (’ — same codepoint as the closing single quote) would
+// fool a pedantic quote-pair matcher into stopping mid-string.
+const LEGACY_BRACKET_LEAK_REGEX = /\[I\s+(?:asked(?:\s+a\s+clarification\s+question)?|posted|flagged|proposed|suggested|confirmed|executed)(?:\s+the\s+user)?[^\]]*\](?:\s*:[^\n]*)?/gi;
+
+/**
+ * Cheap, no-dependency read-path strip — call this on agent messages
+ * returned from `/api/agents/:id/chat` so any historical or new leak
+ * gets removed before the UI sees it.
+ *
+ * Defence in depth — even if a future write path bypasses the full
+ * sanitiseChatResponse pass (e.g. lifecycle-init creating a static
+ * message that itself was templated from leaked context), the UI never
+ * renders the leak.
+ *
+ * Pure regex; doesn't read confirmed facts; safe to call on every
+ * agent-role message on read.
+ */
+export function stripContextMarkerLeaks(content: string): string {
+  if (!content) return content;
+  let out = content;
+  out = out.replace(PRIOR_XML_PAIRED_REGEX, "");
+  out = out.replace(PRIOR_XML_SELF_REGEX, "");
+  out = out.replace(PRIOR_XML_EFFECT_REGEX, "");
+  out = out.replace(LEGACY_BRACKET_LEAK_REGEX, "");
+  return out.replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+/gm, "").trim();
+}
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -70,6 +119,29 @@ export function sanitiseChatResponse(
   if (!content) return { content, corrections };
 
   let out = content;
+
+  // ── 0. Strip leaked context markers ──
+  // <prior_question>, <prior_clarification>, <prior_event>, <effect>, and
+  // legacy [I asked the user]: "..." prose. These should ONLY appear in the
+  // inbound history; if Claude echoes them they need to be removed before
+  // the user sees them. Run this first so later regex passes operate on
+  // clean prose.
+  const captureLeak = (re: RegExp) => {
+    const matches = out.match(re);
+    if (matches && matches.length > 0) {
+      for (const m of matches) {
+        corrections.push({ kind: "stripped_context_marker_leak", before: m.slice(0, 200), after: "" });
+      }
+      out = out.replace(re, "");
+    }
+  };
+  captureLeak(PRIOR_XML_PAIRED_REGEX);
+  captureLeak(PRIOR_XML_SELF_REGEX);
+  captureLeak(PRIOR_XML_EFFECT_REGEX);
+  captureLeak(LEGACY_BRACKET_LEAK_REGEX);
+  // Collapse any double spaces / leading whitespace left behind so the
+  // sanitised reply doesn't show weird gaps where the markers used to be.
+  out = out.replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+/gm, "").trim();
 
   // ── 1. Strip self-asserted verification tags ──
   // [VERIFIED], [CONFIRMED], [SOURCE: agent], [verified by Sonnet] etc.

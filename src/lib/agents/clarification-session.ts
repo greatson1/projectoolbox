@@ -23,13 +23,11 @@ import { RULE_RESEARCH_BEFORE_ASK, detectMetaQuestion } from "./agent-operating-
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type QuestionType =
-  | "text"       // free text — name, venue, description
-  | "choice"     // single select from a list of options
-  | "multi"      // pick several from a list
-  | "yesno"      // simple yes / no
-  | "number"     // numeric value (budget, count, etc.)
-  | "date";      // a specific date
+// `QuestionType` lives in clarification-types.ts so pure helpers can import
+// it without pulling in Prisma. Re-exported here so existing callers don't
+// have to change their import path.
+export type { QuestionType } from "./clarification-types";
+import type { QuestionType } from "./clarification-types";
 
 export interface ClarificationQuestion {
   id: string;                // e.g. "q1", "q2"
@@ -332,6 +330,138 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
   } catch (e) {
     console.error("[clarification-session] question generation failed:", e);
     return [];
+  }
+}
+
+// ─── TBC question phrasing ────────────────────────────────────────────────────
+
+// Pure fallback lives in phrase-tbc-question.ts so it can be unit-tested
+// without Prisma. Re-exported so existing callers (and the LLM path below)
+// can use it.
+export { phraseTBCQuestionFallback } from "./phrase-tbc-question";
+import { phraseTBCQuestionFallback, normalisePersonHintQuestion } from "./phrase-tbc-question";
+
+/**
+ * Phrases a batch of unresolved [TBC] items as proper clarification questions
+ * (right interrogative + right input widget type), using Claude Haiku in one
+ * call. Falls back to the deterministic heuristic above on any failure, so the
+ * caller is guaranteed a valid question array.
+ *
+ * This replaces the old `What is the ${item}?` template that asked "What is
+ * the compliance lead?" instead of "Who is the compliance lead?" — same
+ * underlying TBC items, but the LLM picks the right interrogative AND the
+ * right widget type so the user can answer with a date picker / yes-no / etc.
+ * instead of a free-text box every time.
+ */
+export async function phraseTBCQuestions(
+  project: { name?: string | null; description?: string | null } | null,
+  unresolved: { artefactName: string; item: string }[],
+): Promise<ClarificationQuestion[]> {
+  if (unresolved.length === 0) return [];
+
+  // Local closure that wraps the deterministic fallback for a single item —
+  // used both as the LLM-failure path and when individual LLM rows are dropped
+  // for being malformed.
+  const buildFallback = (i: number, tbc: { artefactName: string; item: string }): ClarificationQuestion => {
+    const { question, type } = phraseTBCQuestionFallback(tbc.item);
+    return {
+      id: `tbc_${i}`,
+      artefact: tbc.artefactName,
+      field: tbc.item.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
+      question,
+      type,
+      answered: false,
+    };
+  };
+
+  // No API key — straight to fallback so we never block the user flow.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return unresolved.map((tbc, i) => buildFallback(i, tbc));
+  }
+
+  const prompt = `You phrase clarification questions for missing pieces of information that were left as [TBC — X] in already-generated project documents.
+
+PROJECT: ${project?.name || "Untitled project"}
+${project?.description ? `DESCRIPTION: ${project.description}\n` : ""}
+For each TBC item below, return ONE properly phrased question. Choose the interrogative AND the input type based on what the topic is:
+
+- Person / role / owner / lead / contact → "Who is the X?" with type "text"
+- Date / deadline / milestone / kickoff / go-live → "When is the X?" with type "date"
+- Count / headcount / team size / hours / days → "How many X?" with type "number"
+- Budget / cost / fee / rate / amount → "What is the X?" with type "number"
+- Confirmation (booked? signed? approved? in place?) → "Has the X been confirmed?" with type "yesno"
+- Has obvious 3-6 options (methodology, format, channel) → "Which X?" with type "choice" and an options array (always include "Other (please specify)" last)
+- Otherwise free text → "What is the X?" with type "text"
+
+NEVER ask the user to do research the agent should be doing. Phrase the question for an answer the user is expected to know directly.
+
+TBC items (return one question per item, in the SAME order):
+${unresolved.map((u, i) => `${i + 1}. [artefact: ${u.artefactName}] ${u.item}`).join("\n")}
+
+Return ONLY a JSON array, no preamble. Exact shape:
+[
+  { "id": "tbc_0", "artefact": "<artefact name verbatim>", "field": "<snake_case slug of the topic>", "question": "<properly phrased question>", "type": "text" | "choice" | "yesno" | "number" | "date", "options": ["..."] }
+]
+`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!response.ok) throw new Error(`Haiku ${response.status}`);
+    const data = await response.json();
+    const text = (data.content?.[0]?.text || "").trim();
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error("no JSON array in response");
+    const raw = JSON.parse(match[0]) as any[];
+
+    // Re-key by index so a partial / re-ordered response still maps back to
+    // the correct TBC item. Anything malformed falls through to the heuristic
+    // for THAT row only, not the whole batch — so one bad row can't break the
+    // whole clarification session.
+    return unresolved.map((tbc, i) => {
+      const llm = raw[i];
+      const validType = ["text", "choice", "multi", "yesno", "number", "date"].includes(llm?.type)
+        ? (llm.type as QuestionType)
+        : null;
+      if (!llm || typeof llm.question !== "string" || llm.question.trim().length < 5 || !validType) {
+        return buildFallback(i, tbc);
+      }
+      // Drop meta-questions ("can you research X?") — same guard as
+      // generateQuestions uses, so the user is never pushed to do agent work.
+      if (detectMetaQuestion(llm.question)) {
+        return buildFallback(i, tbc);
+      }
+      // Defensive normaliser — Haiku occasionally ignores the
+      // "Person / role → Who is the X?" prompt rule and emits
+      // "What is the X?" for role topics. Fix it here so users never
+      // see "What is the compliance lead?".
+      const normalised = normalisePersonHintQuestion(llm.question.trim(), validType);
+      return {
+        id: `tbc_${i}`,
+        artefact: tbc.artefactName, // ALWAYS use the source artefact, never trust the LLM here
+        field: typeof llm.field === "string" && llm.field ? llm.field.slice(0, 50) : tbc.item.toLowerCase().replace(/\s+/g, "_").slice(0, 50),
+        question: normalised.question,
+        type: normalised.type,
+        options: normalised.type === "choice" || normalised.type === "multi"
+          ? (Array.isArray(llm.options) && llm.options.length >= 2 ? llm.options.slice(0, 8) : undefined)
+          : undefined,
+        answered: false,
+      };
+    });
+  } catch (e) {
+    console.warn("[clarification-session] phraseTBCQuestions LLM call failed, falling back to heuristic:", e);
+    return unresolved.map((tbc, i) => buildFallback(i, tbc));
   }
 }
 
