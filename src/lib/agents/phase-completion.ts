@@ -342,15 +342,18 @@ export async function getPhaseCompletion(
     "review and update risk register",
     "stakeholder communication and updates",
   ]);
-  // Bookkeeping tasks whose linkedEvent is "phase_advanced" only tick DONE
-  // AFTER the phase advances. Counting them as a gate-blocker creates a
-  // deadlock — the phase can't advance because the task isn't done, and
-  // the task can't be done because the phase hasn't advanced. Exempt them.
+  // Gate / advancement bookkeeping tasks. Two event markers in the wild:
+  //   [event:phase_advanced]  — task ticks DONE only after the phase advances
+  //   [event:gate_request]    — task ticks DONE when the user submits the gate
+  // Both create deadlocks if counted as gate-blockers: the gate IS the phase
+  // completion, so requiring the gate-submission task to be done before the
+  // phase reaches 100% is circular. Submit Phase Gate approval is the
+  // most common case and seeds with [event:gate_request].
   const pmTasks = pmTasksRaw.filter((t) => {
     const title = (t.title || "").trim().toLowerCase();
     if (RECURRING_UNIVERSAL_TITLES.has(title)) return false;
     const desc = (t.description || "").toLowerCase();
-    if (desc.includes("[event:phase_advanced]")) return false;
+    if (desc.includes("[event:phase_advanced]") || desc.includes("[event:gate_request]")) return false;
     return true;
   });
 

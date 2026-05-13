@@ -66,12 +66,15 @@ export async function generatePhaseArtefacts(
 
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
 
-  // Resolve Phase row early — it stores the user's artefact selections AND we need phaseId
+  // Resolve Phase row early — it stores the user's artefact selections AND we need phaseId.
+  // Fall back to the phase NAME if the row hasn't been created yet (race during initial
+  // deploy). The phase-tracker matcher accepts both forms (row id OR name), so name as a
+  // string still wires the artefact correctly. NULL leaves the artefact orphaned forever.
   const phaseRow = await db.phase.findFirst({
     where: { projectId, name: targetPhaseName },
     select: { id: true, artefacts: true },
   });
-  const phaseId = phaseRow?.id ?? null;
+  const phaseId: string = phaseRow?.id ?? targetPhaseName;
 
   // AI-generatable capability filter from methodology definition
   const aiGeneratableSet = new Set(phaseDef.artefacts.filter(a => a.aiGeneratable).map(a => a.name.toLowerCase()));
