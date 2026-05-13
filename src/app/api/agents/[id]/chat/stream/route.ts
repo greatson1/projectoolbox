@@ -595,6 +595,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 ${agent.title ? `Your role: ${agent.title}.` : ""}
 ${domainTags.length > 0 ? `Your domain specialisations: ${domainTags.join(", ")}. Apply this expertise to all your recommendations, risk assessments, and artefact content.` : ""}
 
+## ⚠️ INTERNAL CONTEXT MARKERS — NEVER ECHO THESE
+Your conversation history contains XML-style markers like \`<prior_question>\`, \`<prior_clarification>\`, and \`<prior_event>\`. These are internal context — they record what an earlier turn did so you understand the thread. They are NOT a template for your replies.
+
+- NEVER include \`<prior_*>\` tags, \`[I asked the user]\`, \`[I posted ...]\`, \`[I flagged ...]\`, or any similar bracketed self-reference in your response to the user.
+- Speak naturally as the agent. If you need to refer to something you asked earlier, paraphrase it in plain English ("Earlier I asked you about the comms method — …"), do NOT quote the marker.
+- If you need to ask a question, ask it directly. Do not wrap it in a \`<prior_question>\` tag — those only ever appear in the inbound history.
+
 ## ⚠️ ZERO FABRICATION — #1 RULE (OVERRIDES EVERYTHING ELSE)
 NEVER invent personal names, company names, vendor names, contact details, booking references, venue names, addresses, or ANY specific fact not explicitly provided in the project data below.
 - Use ROLE TITLES (e.g. "Project Manager", "Executive Sponsor") instead of names
@@ -1284,12 +1291,21 @@ ${deployment?.projectId ? `
 
 When you mention an action the user must take ("review the artefacts", "approve the phase gate"), include the link to the screen so they can jump straight there.`;
 
-  // Load the full conversation history — last 100 messages, filter hidden system kickoffs.
-  // We keep 100 so the agent has genuine memory of previous sessions.
+  // Load recent conversation history — last 30 messages, filter hidden system
+  // kickoffs. Previously fetched 100, but every chat turn replays the full
+  // window as input tokens to Sonnet. With prompt caching that's cheap on
+  // back-to-back turns; cache TTL is 5 min, so any gap that long re-bills
+  // the entire history at full price. Empirically this was the single
+  // biggest per-turn credit cost in the agent loop. 30 keeps enough recent
+  // context for the model to follow the thread (clarification answers,
+  // last approval, last research finding) while cutting input tokens by
+  // ~70% on cache misses. Older context still lives in the KB and is
+  // pulled in via getProjectKnowledgeContext, so we are not losing memory
+  // — only reducing redundant replay.
   const historyAll = await db.chatMessage.findMany({
     where: { agentId },
     orderBy: { createdAt: "desc" },
-    take: 100,
+    take: 30,
   });
 
   // Rehydrate sentinel messages — interactive cards are stored with content
@@ -1301,54 +1317,76 @@ When you mention an action the user must take ("review the artefacts", "approve 
   // human-readable summary built from metadata so the conversation reads
   // coherently end-to-end. Returns the original content unchanged for
   // normal text messages.
+  //
+  // FORMAT NOTE: every rehydrated string is wrapped in `<prior_*>` XML-style
+  // tags. The earlier `[I asked the user]: "..."` natural-language format
+  // looked like prose, so Claude regularly echoed it back as its own reply
+  // ("[I asked the user]: 'What should be the comms method?' (options: …)"
+  // leaking into the chat UI). XML wrappers are visually distinct from
+  // assistant prose, paired with an explicit rule in the system prompt
+  // ("NEVER output `<prior_*>` tags in your reply") — together this stops
+  // the leak. Do NOT revert these to bracketed natural language without
+  // restoring that guard.
   function rehydrateSentinelContent(content: string, metadata: any): string {
     if (!content || !content.startsWith("__")) return content;
     if (!metadata || typeof metadata !== "object") return content;
     const meta: any = metadata;
+    const escape = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     switch (meta.type) {
       case "agent_question": {
         const q = meta.question;
         if (!q?.question) return content;
-        const opts = Array.isArray(q.options) && q.options.length > 0 ? ` (options: ${q.options.join(", ")})` : "";
-        const idx = meta.totalQuestions > 1 ? ` [${(meta.questionIndex ?? 0) + 1}/${meta.totalQuestions}]` : "";
-        return `[I asked the user${idx}]: "${q.question}"${opts}`;
+        const optsAttr = Array.isArray(q.options) && q.options.length > 0
+          ? ` options="${escape(q.options.join(" | "))}"`
+          : "";
+        const idx = meta.totalQuestions > 1
+          ? ` idx="${(meta.questionIndex ?? 0) + 1}/${meta.totalQuestions}"`
+          : "";
+        return `<prior_question${idx}${optsAttr}>${escape(q.question)}</prior_question>`;
       }
       case "clarification_question": {
         const q = meta.question;
         const text = q?.question || q?.text;
         if (!text) return content;
-        const idx = meta.totalQuestions ? ` [${(meta.questionIndex ?? 0) + 1}/${meta.totalQuestions}]` : "";
-        return `[I asked a clarification question${idx}]: "${text}"`;
+        const idx = meta.totalQuestions
+          ? ` idx="${(meta.questionIndex ?? 0) + 1}/${meta.totalQuestions}"`
+          : "";
+        return `<prior_clarification${idx}>${escape(text)}</prior_clarification>`;
       }
       case "clarification_complete": {
         const n = meta.questionsCount || meta.totalQuestions || 0;
-        return `[I confirmed the clarification session is complete${n ? ` (${n} questions answered)` : ""} and offered to generate documents]`;
+        return `<prior_event kind="clarification_complete"${n ? ` answered="${n}"` : ""}/>`;
       }
       case "project_status": {
-        const phase = meta.phase ? `, current phase: ${meta.phase}` : "";
-        return `[I posted a project status card for "${meta.projectName || "the project"}"${phase}]`;
+        const phase = meta.phase ? ` phase="${escape(meta.phase)}"` : "";
+        return `<prior_event kind="project_status" project="${escape(meta.projectName || "the project")}"${phase}/>`;
       }
       case "change_proposal": {
-        const trig = meta.trigger ? ` (triggered by: ${meta.trigger})` : "";
-        return `[I proposed a change: "${meta.title || "untitled"}"${trig} — pending your approval]`;
+        const trig = meta.trigger ? ` trigger="${escape(meta.trigger)}"` : "";
+        return `<prior_event kind="change_proposal" title="${escape(meta.title || "untitled")}"${trig} status="pending_approval"/>`;
       }
       case "pending_decision": {
-        const by = meta.by ? ` (by ${meta.by})` : "";
-        const cert = meta.certainty ? ` — certainty: ${meta.certainty}` : "";
-        return `[I flagged a pending decision for the user to confirm: "${meta.decisionText}"${by}${cert}]`;
+        const by = meta.by ? ` by="${escape(meta.by)}"` : "";
+        const cert = meta.certainty ? ` certainty="${escape(meta.certainty)}"` : "";
+        return `<prior_event kind="pending_decision"${by}${cert}>${escape(meta.decisionText || "")}</prior_event>`;
       }
       case "action_suggestion": {
-        return `[I suggested applying the decision "${meta.decisionText}" to the open ${meta.itemType}: "${meta.itemTitle}"]`;
+        return `<prior_event kind="action_suggestion" item_type="${escape(meta.itemType || "")}" item="${escape(meta.itemTitle || "")}">${escape(meta.decisionText || "")}</prior_event>`;
       }
       case "research_findings": {
-        const sections = Array.isArray(meta.sections) && meta.sections.length > 0 ? ` across sections: ${meta.sections.join(", ")}` : "";
-        return `[I posted research findings: ${meta.factsCount || 0} facts${sections}${meta.phase ? ` for phase ${meta.phase}` : ""}]`;
+        const sections = Array.isArray(meta.sections) && meta.sections.length > 0
+          ? ` sections="${escape(meta.sections.join(" | "))}"`
+          : "";
+        const phase = meta.phase ? ` phase="${escape(meta.phase)}"` : "";
+        return `<prior_event kind="research_findings" facts="${meta.factsCount || 0}"${sections}${phase}/>`;
       }
       case "tool_effects": {
         const effects = Array.isArray(meta.effects) ? meta.effects : [];
         if (effects.length === 0) return content;
-        const lines = effects.map((e: any) => `- ${e.status === "error" ? "FAILED" : "OK"}: ${e.summary}`).join("\n");
-        return `[I executed ${effects.length} action${effects.length === 1 ? "" : "s"} this turn:\n${lines}]`;
+        const lines = effects
+          .map((e: any) => `  <effect status="${e.status === "error" ? "failed" : "ok"}">${escape(e.summary || "")}</effect>`)
+          .join("\n");
+        return `<prior_event kind="tool_effects" count="${effects.length}">\n${lines}\n</prior_event>`;
       }
       default:
         return content;
@@ -1366,14 +1404,16 @@ When you mention an action the user must take ("review the artefacts", "approve 
       content: rehydrateSentinelContent(m.content, m.metadata),
     }));
 
-  // If we have more than 60 messages, summarise the oldest half into a single context block
-  // rather than sending all tokens verbatim. This keeps the window focused on recent exchanges
-  // while preserving the substance of earlier decisions and artefacts.
+  // If we have more than 20 messages (after the take:30 cut), summarise the
+  // oldest half into a single compact block — keeps the last 15 verbatim for
+  // tight thread coherence while preserving the substance of earlier
+  // decisions and artefacts. The summary block is just truncated lines, not
+  // an LLM call, so this stays cheap.
   let messages: { role: "user" | "assistant"; content: string }[];
 
-  if (historyFiltered.length > 60) {
-    const older = historyFiltered.slice(0, historyFiltered.length - 40);
-    const recent = historyFiltered.slice(historyFiltered.length - 40);
+  if (historyFiltered.length > 20) {
+    const older = historyFiltered.slice(0, historyFiltered.length - 15);
+    const recent = historyFiltered.slice(historyFiltered.length - 15);
 
     // Build a compact summary of older messages as a single assistant turn
     const olderSummary = older
@@ -2259,6 +2299,18 @@ When you mention an action the user must take ("review the artefacts", "approve 
                   continue;
                 }
 
+                // Resolve phaseId. Never write NULL — orphaned artefacts halve the
+                // visible completion % because the phase-tracker joins on phaseId.
+                // Prefer the live Phase row id; fall back to the deployment's
+                // currentPhase NAME (phase-tracker matches either form).
+                let resolvedPhaseId: string = depForArt?.currentPhase || "Unknown";
+                if (depForArt?.projectId && depForArt?.currentPhase) {
+                  const phaseRow = await db.phase.findFirst({
+                    where: { projectId: depForArt.projectId, name: depForArt.currentPhase },
+                    select: { id: true },
+                  }).catch(() => null);
+                  if (phaseRow?.id) resolvedPhaseId = phaseRow.id;
+                }
                 const artefact = await db.agentArtefact.create({
                   data: {
                     agentId,
@@ -2268,7 +2320,7 @@ When you mention an action the user must take ("review the artefacts", "approve 
                     format: artFormat,
                     status: "DRAFT",
                     version: 1,
-                    phaseId: depForArt?.currentPhase || null,
+                    phaseId: resolvedPhaseId,
                   },
                 });
 

@@ -198,6 +198,23 @@ export async function POST(req: NextRequest) {
         if (!agentId || !projectId) {
           return NextResponse.json({ error: "Missing agentId or projectId" }, { status: 400 });
         }
+        // Resolve phaseId server-side when the caller didn't supply one. NULL
+        // here would orphan the artefact (phase-tracker joins on phaseId).
+        // Prefer Phase row id, fall back to deployment.currentPhase name.
+        let resolvedPhaseId: string | null = (data.phaseId as string | undefined) || null;
+        if (!resolvedPhaseId) {
+          const dep = await db.agentDeployment.findFirst({
+            where: { agentId, projectId, isActive: true },
+            select: { currentPhase: true },
+          }).catch(() => null);
+          if (dep?.currentPhase) {
+            const phaseRow = await db.phase.findFirst({
+              where: { projectId, name: dep.currentPhase },
+              select: { id: true },
+            }).catch(() => null);
+            resolvedPhaseId = phaseRow?.id ?? dep.currentPhase;
+          }
+        }
         const artefact = await db.agentArtefact.create({
           data: {
             agentId,
@@ -206,7 +223,7 @@ export async function POST(req: NextRequest) {
             format: data.format || "markdown",
             content: data.content,
             status: "DRAFT",
-            phaseId: data.phaseId || null,
+            phaseId: resolvedPhaseId || "Unknown",
           },
         });
         results.push({ artefactId: artefact.id, name: artefact.name });

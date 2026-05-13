@@ -45,6 +45,31 @@ export async function GET(req: NextRequest) {
       await generateDailyDigest();
     } catch {}
 
+    // 0b1. Self-heal orphan artefacts (phaseId IS NULL).
+    //      AgentArtefact rows must always have a phaseId — otherwise the
+    //      phase-tracker can't count them and the visible completion %
+    //      silently halves. Several create paths can leak NULL on edge
+    //      cases (race against Phase row creation, webhook callers that
+    //      forget to include phaseId, etc). This relinks each orphan to
+    //      its project's active deployment currentPhase name, recovering
+    //      within ~1 minute of the leak.
+    try {
+      const healed = await db.$executeRawUnsafe<number>(`
+        UPDATE "AgentArtefact" a
+        SET "phaseId" = d."currentPhase", "updatedAt" = NOW()
+        FROM "AgentDeployment" d
+        WHERE a."phaseId" IS NULL
+          AND d."projectId" = a."projectId"
+          AND d."isActive" = true
+          AND d."currentPhase" IS NOT NULL
+      `);
+      if (typeof healed === "number" && healed > 0) {
+        console.log(`[agent-tick] Self-healed ${healed} orphan artefact(s) by relinking phaseId.`);
+      }
+    } catch (e) {
+      console.error("[agent-tick] orphan artefact self-heal failed:", e);
+    }
+
     // 0b2. Fire any due report schedules (fire-and-forget, runs hourly effective)
     try {
       const dueSchedules = await db.reportSchedule.findMany({
