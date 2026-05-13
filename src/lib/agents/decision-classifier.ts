@@ -12,6 +12,12 @@
  *   CRITICAL: 15–16 → ALWAYS requires human approval
  */
 
+// Static ES import — domain-actions only imports a `type` from this file
+// (`import type { ActionProposal }`), so there's no runtime circular dep.
+// Previously this was a `require()` inside classifyDecision to break the
+// import cycle defensively; the ES form is what eslint wants.
+import { proposalToCapability, getCapabilityAction } from "./domain-actions";
+
 // ─── Types ───
 
 export type RiskTier = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -205,7 +211,6 @@ export function classifyDecision(
 
   // ── Per-Level Capability Matrix check (Section 2.6) ──
   try {
-    const { proposalToCapability, getCapabilityAction } = require("./domain-actions");
     const capability = proposalToCapability(proposal);
     const capAction = getCapabilityAction(capability, effectiveLevel);
     if (capAction === "—") {

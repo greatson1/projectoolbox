@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import type { ActionProposal } from "./decision-classifier";
+import { currencySymbol } from "@/lib/currency";
 
 // Agent LLM service — abstracted to support OpenAI or Anthropic
 export class AgentLLM {
@@ -288,7 +289,6 @@ function buildSystemPrompt(agent: any, project: any, formalLevel: number, detail
   // Organisation.currency (default "GBP"). Hardcoding "$" here was the
   // reason chat replies showed "$12,000" on UK-tenant orgs even when the
   // setting was correct.
-  const { currencySymbol } = require("@/lib/currency") as typeof import("@/lib/currency");
   const sym = currencySymbol(orgCurrency);
 
   return `You are Agent ${agent.name}, an AI Project Manager deployed by Projectoolbox.
