@@ -141,6 +141,31 @@ export default function BillingPage() {
   const [alertChannel, setAlertChannel] = useState<"email" | "slack" | "both">("email");
   const [invoicePage, setInvoicePage] = useState(0);
 
+  // Hooks MUST be declared before any conditional return (Rules of Hooks).
+  const monthlySpendData = useMemo(() => {
+    const invoiceList: any[] = data?.invoices || [];
+    const map: Record<string, number> = {};
+    invoiceList.forEach((inv: any) => {
+      const d = new Date(inv.createdAt || inv.date || Date.now());
+      const key = d.toLocaleString("en-GB", { month: "short", year: "2-digit" });
+      map[key] = (map[key] || 0) + (inv.amount || 0);
+    });
+    return Object.entries(map).map(([month, spend]) => ({ month, spend }));
+  }, [data?.invoices]);
+
+  const creditChartData = useMemo(() => {
+    const txns: any[] = data?.creditTransactions || [];
+    const map: Record<string, { purchased: number; consumed: number }> = {};
+    txns.forEach((t: any) => {
+      const d = new Date(t.createdAt || Date.now());
+      const key = d.toLocaleString("en-GB", { month: "short", year: "2-digit" });
+      if (!map[key]) map[key] = { purchased: 0, consumed: 0 };
+      if ((t.amount || 0) > 0) map[key].purchased += t.amount;
+      else map[key].consumed += Math.abs(t.amount || 0);
+    });
+    return Object.entries(map).map(([month, v]) => ({ month, ...v }));
+  }, [data?.creditTransactions]);
+
   if (isLoading) {
     return (
       <div className="space-y-6 max-w-[1200px]">
@@ -167,30 +192,6 @@ export default function BillingPage() {
   const customPrice = Math.round(topupCustom * 0.018);
 
   const invoices = invoicesFromAPI;
-
-  const monthlySpendData = useMemo(() => {
-    const invoiceList: any[] = data?.invoices || [];
-    const map: Record<string, number> = {};
-    invoiceList.forEach((inv: any) => {
-      const d = new Date(inv.createdAt || inv.date || Date.now());
-      const key = d.toLocaleString("en-GB", { month: "short", year: "2-digit" });
-      map[key] = (map[key] || 0) + (inv.amount || 0);
-    });
-    return Object.entries(map).map(([month, spend]) => ({ month, spend }));
-  }, [data?.invoices]);
-
-  const creditChartData = useMemo(() => {
-    const txns: any[] = data?.creditTransactions || [];
-    const map: Record<string, { purchased: number; consumed: number }> = {};
-    txns.forEach((t: any) => {
-      const d = new Date(t.createdAt || Date.now());
-      const key = d.toLocaleString("en-GB", { month: "short", year: "2-digit" });
-      if (!map[key]) map[key] = { purchased: 0, consumed: 0 };
-      if ((t.amount || 0) > 0) map[key].purchased += t.amount;
-      else map[key].consumed += Math.abs(t.amount || 0);
-    });
-    return Object.entries(map).map(([month, v]) => ({ month, ...v }));
-  }, [data?.creditTransactions]);
 
   return (
     <div className="space-y-6 max-w-[1200px]">

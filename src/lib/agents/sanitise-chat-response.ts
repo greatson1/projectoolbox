@@ -75,13 +75,27 @@ const PRIOR_XML_SELF_REGEX = /<prior_(?:question|clarification|event)(?:\s+[^>]*
 const PRIOR_XML_EFFECT_REGEX = /<effect(?:\s+[^>]*)?>[\s\S]*?<\/effect>/gi;
 // Legacy bracketed natural-language form. Old chat history (and a few
 // stubborn models) still produces lines like `[I asked the user]: "..."`
-// or `[I posted a project status card]`. After the closing `]`, if
-// followed by `:` we consume the rest of the line — that catches the
-// trailing quoted text + options block regardless of whether the model
-// used ASCII or smart quotes, and avoids the trap where a smart
-// apostrophe (’ — same codepoint as the closing single quote) would
-// fool a pedantic quote-pair matcher into stopping mid-string.
-const LEGACY_BRACKET_LEAK_REGEX = /\[I\s+(?:asked(?:\s+a\s+clarification\s+question)?|posted|flagged|proposed|suggested|confirmed|executed)(?:\s+the\s+user)?[^\]]*\](?:\s*:[^\n]*)?/gi;
+// or `[I posted a project status card]` or `[I generated 3 risks]`.
+//
+// We catch `[I <verb>...]` where the verb is either:
+//   - a regular past-tense form ending in -ed / -ied (asked, posted,
+//     generated, created, updated, scheduled, ...), OR
+//   - one of the common irregular past-tense forms we've seen leak
+//     (sent, made, set, told, wrote, got, did, put, kept, found, built,
+//      met, gave, took, ran, threw, won, drew).
+//
+// This is intentionally broader than a fixed verb list — any first-person
+// past-tense narration in brackets is overwhelmingly a context-marker
+// leak from the inbound history, not legitimate prose.
+//
+// After the closing `]`, if followed by `:` we consume the rest of the
+// line — that catches the trailing quoted text + options block
+// regardless of whether the model used ASCII or smart quotes, and avoids
+// the trap where a smart apostrophe (’ — same codepoint as the closing
+// single quote) would fool a pedantic quote-pair matcher into stopping
+// mid-string.
+const LEGACY_BRACKET_LEAK_REGEX =
+  /\[I\s+(?:[a-z]+(?:ied|ed)|sent|made|set|told|wrote|got|did|put|kept|found|built|met|gave|took|ran|threw|won|drew|saw|knew|came|went|left|paid|hit|cut|spent|swept|stood|read|let|brought|caught)\b[^\]]*\](?:\s*:[^\n]*)?/gi;
 
 /**
  * Cheap, no-dependency read-path strip — call this on agent messages

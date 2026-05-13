@@ -194,6 +194,59 @@ describe("sanitiseChatResponse — leaked context markers (regression)", () => {
     expect(out.content).toContain("Continuing now.");
   });
 
+  // Broadened verb coverage — the LEGACY_BRACKET_LEAK_REGEX used to enumerate
+  // a fixed list (asked, posted, flagged, proposed, suggested, confirmed,
+  // executed). Sonnet can produce any reporting verb in this format, so the
+  // regex now matches any -ed/-ied past-tense verb + common irregulars.
+  // These tests pin the broader coverage so a future tightening doesn't
+  // silently regress.
+  it.each([
+    "[I generated a new risk register]",
+    "[I created 3 milestones]",
+    "[I updated the budget figure]",
+    "[I scheduled a meeting]",
+    "[I noted the stakeholder concern]",
+    "[I drafted an email]",
+    "[I approved the artefact]",
+    "[I rejected the proposal]",
+    "[I extracted 4 risks from research]",
+    "[I logged the decision]",
+    "[I checked the dependencies]",
+    "[I started the research phase]",
+    "[I completed the kickoff]",
+    "[I reviewed the charter]",
+    "[I sent a notification]",
+    "[I made an assumption]",
+    "[I wrote the cost plan]",
+    "[I told the user about the gate]",
+    "[I found 2 issues]",
+    "[I built the risk matrix]",
+  ])("strips broadened past-tense verb leak: %s", (leaked) => {
+    const input = `Earlier: ${leaked}. Moving on.`;
+    const out = sanitiseChatResponse(input, emptyFacts);
+    expect(out.content).not.toContain(leaked);
+    expect(out.content).toContain("Moving on.");
+    expect(out.corrections.some(c => c.kind === "stripped_context_marker_leak")).toBe(true);
+  });
+
+  it("leaves [I am the agent] alone (not past-tense)", () => {
+    const clean = "Hello — [I am the agent assigned to this project]. How can I help?";
+    const out = sanitiseChatResponse(clean, emptyFacts);
+    expect(out.content).toContain("[I am the agent assigned to this project]");
+  });
+
+  it("leaves [I think ...] alone (not past-tense)", () => {
+    const clean = "Quick note — [I think we should split the work] before continuing.";
+    const out = sanitiseChatResponse(clean, emptyFacts);
+    expect(out.content).toContain("[I think we should split the work]");
+  });
+
+  it("leaves [I will ...] alone (not past-tense)", () => {
+    const clean = "Next — [I will draft a milestone plan] and share it.";
+    const out = sanitiseChatResponse(clean, emptyFacts);
+    expect(out.content).toContain("[I will draft a milestone plan]");
+  });
+
   it("leaves clean prose untouched", () => {
     const clean = "Sure — here are the two options I'd recommend. Which fits best?";
     const out = sanitiseChatResponse(clean, emptyFacts);

@@ -140,31 +140,54 @@ export default function ArtefactsPage() {
     const rollback = optimisticPatch(artId, { status: "APPROVED" });
     setEditorArt(null); // close editor, show list (already has updated cache)
 
-    // Check if this is the last non-approved artefact in the CURRENT ACTIVE PHASE only
-    // (not across all phases — that was the bug causing premature phase advancement)
-    const activePhaseName = project?.phases?.find((p: any) => p.status === "ACTIVE")?.name;
-    const currentPhaseItems = activePhaseName
-      ? items.filter((a: any) => a.phaseName === activePhaseName)
-      : items;
-    const pendingAfter = currentPhaseItems.filter((a: any) =>
-      a.id !== artId && (a.status === "DRAFT" || a.status === "PENDING_REVIEW")
-    );
-    const wasLastPending = pendingAfter.length === 0 && currentPhaseItems.length > 0;
-
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "APPROVED", ...(isConfirmIntentional ? { confirmIntentional: true } : {}) }),
     });
     if (res.ok) {
-      if (wasLastPending) {
-        toast.success("All artefacts approved! Generating next phase documents…", { duration: 5000 });
-        // Delay slightly so the phase-advance DB write propagates before we hit the generate endpoint
-        setTimeout(() => handleGenerate(), 1500);
-      } else {
-        toast.success("Artefact approved ✓");
-      }
       refreshArtefacts(); // background sync
+      // ── Phase-advance gate ──
+      // Previously: counted pending artefacts in the local items[] array and
+      // fired handleGenerate() the moment the last DRAFT was approved. That
+      // bypassed PM tasks, gate prerequisites, delivery threshold and active
+      // clarification — i.e. it advanced the phase even when getPhaseCompletion
+      // would have blocked it. The user then saw "Generating next phase…"
+      // while the tracker still showed open blockers.
+      //
+      // Now: defer the decision to the authoritative /phase-completion endpoint
+      // (the single source of truth used by gate creation, gate approval,
+      // pipeline, metrics and tracker). Only fire handleGenerate when the
+      // endpoint says canAdvance === true; otherwise surface the blockers
+      // so the user knows exactly what's left.
+      const agentId = project?.agents?.[0]?.agent?.id;
+      if (!agentId) {
+        toast.success("Artefact approved ✓");
+      } else {
+        try {
+          const pcRes = await fetch(`/api/agents/${agentId}/phase-completion`);
+          const pcJson = pcRes.ok ? await pcRes.json() : null;
+          const currentPhaseName: string | undefined = pcJson?.data?.currentPhase;
+          const currentCompletion = Array.isArray(pcJson?.data?.phases)
+            ? pcJson.data.phases.find((p: any) => p.phaseName === currentPhaseName)
+            : null;
+          if (currentCompletion?.canAdvance) {
+            toast.success("All gate requirements met — generating next phase…", { duration: 5000 });
+            // Delay slightly so the phase-advance DB write propagates before we hit the generate endpoint
+            setTimeout(() => handleGenerate(), 1500);
+          } else if (Array.isArray(currentCompletion?.blockers) && currentCompletion.blockers.length > 0) {
+            const n = currentCompletion.blockers.length;
+            toast.success(
+              `Artefact approved ✓ — ${n} blocker${n === 1 ? "" : "s"} remain before the phase can advance. Open the PM Tracker to clear them.`,
+              { duration: 6000 },
+            );
+          } else {
+            toast.success("Artefact approved ✓");
+          }
+        } catch {
+          toast.success("Artefact approved ✓");
+        }
+      }
     } else {
       rollback();
       // Parse the actual API error so the user knows what to fix

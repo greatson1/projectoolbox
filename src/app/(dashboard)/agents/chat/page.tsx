@@ -22,6 +22,7 @@ import { ResearchFindingsCard } from "@/components/agents/ResearchFindingsCard";
 import { SentimentFeedback } from "@/components/ml/SentimentFeedback";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { stripContextMarkerLeaks } from "@/lib/agents/sanitise-chat-response";
 
 const METHOD_LABEL: Record<string, string> = {
   PRINCE2: "Traditional", prince2: "Traditional", WATERFALL: "Waterfall", waterfall: "Waterfall",
@@ -501,7 +502,12 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
   const rawContent = content
     .replace(/^__(?:AGENT_QUESTION|CLARIFICATION_SESSION|CLARIFICATION_COMPLETE|PROJECT_STATUS|CHANGE_PROPOSAL)__$/g, "");
   // Strip <ASK> tags entirely — clarification questions are rendered via dedicated ClarificationCard widgets
-  const cleanContent = rawContent.replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
+  const askStripped = rawContent.replace(/<ASK\s+[^>]*>[^<]*<\/ASK>/gi, "").trim();
+  // Layer 2 defence — strip any context-marker leaks (`[I asked ...]`,
+  // `<prior_question>`, `<effect>`, etc.) that slipped past the server-side
+  // sanitiser. Pure regex, runs once per render. If a new write path ever
+  // bypasses the server pass, the UI still never paints the leak.
+  const cleanContent = msg.role === "agent" ? stripContextMarkerLeaks(askStripped) : askStripped;
 
   // Default text — render with proper markdown (tables, headings, lists, bold, etc.)
   return (

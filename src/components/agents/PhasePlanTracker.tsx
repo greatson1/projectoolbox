@@ -156,8 +156,14 @@ interface PhaseBlock {
   };
   completion: {
     artefactsPct: number;
+    artefactsDone?: number;
+    artefactsTotal?: number;
     pmTasksPct: number;
+    pmTasksDone?: number;
+    pmTasksTotal?: number;
     deliveryPct: number;
+    deliveryDone?: number;
+    deliveryTotal?: number;
     overall: number;
     canAdvance: boolean;
     blockers: string[];
@@ -174,10 +180,15 @@ interface PhasePlanTrackerProps {
 }
 
 const PHASE_BADGE: Record<string, { label: string; bg: string; text: string }> = {
-  COMPLETED: { label: "Done",    bg: "bg-emerald-500/10",         text: "text-emerald-600 dark:text-emerald-400" },
-  ACTIVE:    { label: "Active",  bg: "bg-primary/10",             text: "text-primary" },
-  PENDING:   { label: "Pending", bg: "bg-muted",                  text: "text-muted-foreground" },
-  BLOCKED:   { label: "Blocked", bg: "bg-red-500/10",             text: "text-red-600 dark:text-red-400" },
+  COMPLETED: { label: "Done",     bg: "bg-emerald-500/10",         text: "text-emerald-600 dark:text-emerald-400" },
+  ACTIVE:    { label: "Active",   bg: "bg-primary/10",             text: "text-primary" },
+  PENDING:   { label: "Pending",  bg: "bg-muted",                  text: "text-muted-foreground" },
+  BLOCKED:   { label: "Blocked",  bg: "bg-red-500/10",             text: "text-red-600 dark:text-red-400" },
+  // REVERTED phases — set when the user has stepped back to an earlier
+  // phase. The phase row was previously COMPLETED or ACTIVE; now it's
+  // paused until the project re-advances through it. Amber matches the
+  // "needs your attention" tone of the reversion modal.
+  REVERTED:  { label: "Reverted", bg: "bg-amber-500/10",           text: "text-amber-600 dark:text-amber-400" },
 };
 
 const ARTEFACT_BADGE: Record<string, { label: string; cls: string }> = {
@@ -346,7 +357,15 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                   <FileText className="w-3 h-3 text-muted-foreground" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Artefacts</span>
                   <span className="text-[10px] text-muted-foreground/60">
-                    {phase.artefacts.filter(a => a.status === "APPROVED").length}/{phase.artefacts.length} approved
+                    {/* Prefer the canonical done/total triple from
+                        getPhaseCompletion (single source of truth used by
+                        the gate creator, pipeline + metrics). Falls back
+                        to the local list count if the API hasn't shipped
+                        the new fields yet, so older deploys don't show
+                        "undefined/undefined". */}
+                    {phase.completion?.artefactsTotal !== undefined
+                      ? `${phase.completion.artefactsDone}/${phase.completion.artefactsTotal} approved`
+                      : `${phase.artefacts.filter(a => a.status === "APPROVED").length}/${phase.artefacts.length} approved`}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">

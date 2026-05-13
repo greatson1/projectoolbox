@@ -191,11 +191,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         prerequisites: evaluatedPrereqs,
         summary: prereqSummary,
       },
+      // Expose the raw done/total triples from getPhaseCompletion alongside
+      // the percentages — the UI was previously recomputing "X of Y approved"
+      // from the inline `phaseArtefacts` list (which is keyed by methodology
+      // and silently drops over-delivered artefacts), so the tracker could
+      // show a different "approved" count than the gate creator / metrics
+      // endpoint. Same snapshot, same numbers everywhere now.
       completion: comp
         ? {
             artefactsPct: comp.artefacts.pct,
+            artefactsDone: comp.artefacts.done,
+            artefactsTotal: comp.artefacts.total,
             pmTasksPct: comp.pmTasks.pct,
+            pmTasksDone: comp.pmTasks.done,
+            pmTasksTotal: comp.pmTasks.total,
             deliveryPct: comp.deliveryTasks.pct,
+            deliveryDone: comp.deliveryTasks.done,
+            deliveryTotal: comp.deliveryTasks.total,
             overall: comp.overall,
             canAdvance: comp.canAdvance,
             blockers: comp.blockers,

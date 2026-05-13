@@ -532,17 +532,29 @@ export async function GET(
     );
     const startedAt = genActivity?.createdAt?.toISOString();
 
+    // ── Authoritative counts ──
+    // Drive `approvedCount` and `target` from getPhaseCompletion so the
+    // Generation step's progress numbers, the auto-gate logic at line ~254,
+    // the phase-tracker page and the metrics endpoint can never disagree.
+    // Earlier this filtered currentPhaseArtefacts inline and applied its
+    // own over-delivery rule — independent of phase-completion's notion of
+    // done/total — which is the disagreement class the audit flagged.
+    // `generatedCount` stays as a local count of DB rows because it is a
+    // distinct concept from "done": it counts rows that exist, not rows
+    // that satisfy the methodology requirement.
+    const comp = await loadCompletion();
     const expectedArtefacts = Array.isArray(currentPhaseObj?.artefacts)
       ? (currentPhaseObj!.artefacts as string[]).length
       : 0;
     const generatedCount = currentPhaseArtefacts.length;
+    // Keep the APPROVED artefact records around — needed for approver
+    // attribution + last-approved-at timestamp below.
     const approvedArtefacts = currentPhaseArtefacts.filter((a) => a.status === "APPROVED");
-    const approvedCount = approvedArtefacts.length;
-    // Honour over-delivery — if the agent produced more than the template,
-    // the target is the actual generated count rather than `2 of 4` style copy.
-    const target = expectedArtefacts > 0
-      ? Math.max(expectedArtefacts, generatedCount)
-      : generatedCount;
+    // …but read the NUMBERS from completion so every consumer sees the same.
+    const approvedCount = comp?.artefacts?.done ?? approvedArtefacts.length;
+    const target = (comp?.artefacts?.total ?? 0) > 0
+      ? comp!.artefacts.total
+      : (expectedArtefacts > 0 ? Math.max(expectedArtefacts, generatedCount) : generatedCount);
 
     // Approver attribution for the "approved by …" suffix on the done state.
     const approvers = new Set<string>();
