@@ -864,9 +864,17 @@ function AgentStatusBanner({
       headline: missingRequired > 0
         ? `${missingRequired} document${missingRequired === 1 ? "" : "s"} not yet generated`
         : `Review ${pending} document${pending === 1 ? "" : "s"} to advance`,
+      // Honest copy about the actual advance sequence. Approving every
+      // artefact doesn't trigger Initiation generation — it creates a
+      // phase gate that the user has to approve, and the gate may have
+      // other prerequisites (PM tasks, manual confirmations) the user
+      // can see on the PM Tracker. The old "automatically generate the
+      // Initiation phase documents" line skipped 4 intermediate steps
+      // (gate approval → research → research-finding approval →
+      // clarification → THEN generation).
       sub: missingRequired > 0
-        ? `${approved}/${total} approved · ${missingRequired} of the ${expectedCount} documents the methodology defines for ${phaseName} haven't been generated yet. Click "Generate Artefacts" to produce the missing ones, then review and approve. Once all ${total} are approved, your agent will move on to ${nextPhase ? nextPhase.name : "the next phase"}.`
-        : `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, your agent will automatically generate the ${nextPhase ? nextPhase.name : "next"} phase documents.`,
+        ? `${approved}/${total} approved · ${missingRequired} of the ${expectedCount} documents the methodology defines for ${phaseName} haven't been generated yet. Click "Generate Artefacts" to produce the missing ones, then review and approve.`
+        : `Open each document below, review it, then click the green ✓ to approve. Once all ${total} are approved, a phase gate appears on the Approvals page; gate prerequisites on the PM Tracker may also need ticking before ${nextPhase ? nextPhase.name : "the next phase"} starts. After you approve the gate, the agent runs research and any clarification questions before generating ${nextPhase ? nextPhase.name : "next-phase"} documents.`,
     },
     rejected: {
       border: "border-red-500/30 bg-red-500/5",
