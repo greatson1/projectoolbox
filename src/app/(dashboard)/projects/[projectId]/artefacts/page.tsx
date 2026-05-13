@@ -551,11 +551,24 @@ export default function ArtefactsPage() {
                         {/* Source badge — methodology-defined vs bespoke (chat-created or uploaded).
                             Inferred from whether the name appears in the project methodology's
                             artefact catalogue. Bespoke ones don't gate phase advancement. */}
-                        {methodologyArtefactSet.size > 0 && (
-                          methodologyArtefactSet.has(art.name.toLowerCase())
-                            ? <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30" title="Defined by the project's methodology — counts toward phase gate when required.">Methodology</Badge>
-                            : <Badge variant="outline" className="text-[9px] text-amber-400 border-amber-400/30" title="Custom document created via chat or upload — does not gate phase advancement.">Custom</Badge>
-                        )}
+                        {methodologyArtefactSet.size > 0 && (() => {
+                          const itemName = (art.name || "").toLowerCase().trim();
+                          // Exact match → Methodology. Otherwise check fuzzy
+                          // match against the set so a custom-named upload
+                          // like "Project Brief - Family Trip to Lagos" is
+                          // recognised as fulfilling "Project Brief" and
+                          // labelled Methodology — same logic the banner
+                          // uses to count fulfilment.
+                          if (methodologyArtefactSet.has(itemName)) {
+                            return <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30" title="Defined by the project's methodology — counts toward phase gate when required.">Methodology</Badge>;
+                          }
+                          for (const canonical of methodologyArtefactSet) {
+                            if (itemName.includes(canonical) || canonical.includes(itemName)) {
+                              return <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30" title={`Custom name matches the methodology's "${canonical}" — counts toward phase fulfilment.`}>Methodology</Badge>;
+                            }
+                          }
+                          return <Badge variant="outline" className="text-[9px] text-amber-400 border-amber-400/30" title="Custom document created via chat or upload — does not gate phase advancement.">Custom</Badge>;
+                        })()}
                         <span className="text-[10px] text-muted-foreground ml-auto">v{art.version || 1}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -675,16 +688,56 @@ function AgentStatusBanner({
 
   if (!project) return null;
 
-  // Filter to current phase artefacts for banner state (avoid mixing phases)
+  // Filter to current phase artefacts for banner state (avoid mixing phases).
+  // We start with phase-matched items, then add ANY items whose name fuzzy-
+  // matches a methodology-defined name for this phase even if they have no
+  // phaseId set. That's what catches custom uploads like
+  // "Project Brief - Family Trip to Lagos" that the user named themselves
+  // and uploaded via the Upload Document button — strict phase filtering
+  // dropped those, so the banner reported "0/4 approved, 3 not generated"
+  // while the stats card said "2 documents, 1 approved".
   const activePhaseForFilter = project.phases?.find((p: any) => p.status === "ACTIVE");
-  const currentPhaseItems = activePhaseForFilter
+  const phaseMatchedItems = activePhaseForFilter
     ? items.filter((a: any) => {
         const artPhase = a.phaseId || a.phaseName || "";
-        // Match by phase name or phase ID
         return artPhase === activePhaseForFilter.name || artPhase === activePhaseForFilter.id;
       })
     : items;
-  // Use current phase items for banner state, all items for total count
+
+  // Pull methodology-expected names for the active phase — used both for
+  // expectedCount AND for absorbing custom-named items that fulfil a
+  // canonical artefact slot.
+  const methodologyExpectedNamesForPhase = (() => {
+    const meth = (project as any)?.methodology;
+    if (!meth || !activePhaseForFilter?.name) return [] as string[];
+    try {
+      const def = getMethodology(meth);
+      const phaseDef = def.phases.find((p: any) => p.name === activePhaseForFilter.name);
+      if (!phaseDef) return [];
+      return phaseDef.artefacts
+        .filter((a: any) => a.aiGeneratable)
+        .map((a: any) => a.name as string);
+    } catch {
+      return [];
+    }
+  })();
+
+  // Absorb un-tagged items whose name fuzzy-matches a methodology name for
+  // this phase (case-insensitive substring either direction). Already-phase-
+  // matched items are kept verbatim.
+  const phaseMatchedIds = new Set(phaseMatchedItems.map((i: any) => i.id).filter(Boolean));
+  const fuzzyAbsorbed = items.filter((a: any) => {
+    if (phaseMatchedIds.has(a.id)) return false;
+    const itemName = (a.name || "").toLowerCase().trim();
+    if (!itemName) return false;
+    return methodologyExpectedNamesForPhase.some((canonical: string) => {
+      const c = canonical.toLowerCase().trim();
+      return itemName === c || itemName.includes(c) || c.includes(itemName);
+    });
+  });
+  const currentPhaseItems = [...phaseMatchedItems, ...fuzzyAbsorbed];
+
+  // Use current phase items (including fuzzy-absorbed) for banner state.
   const approved  = currentPhaseItems.filter((a: any) => a.status === "APPROVED").length;
   const pending   = currentPhaseItems.filter((a: any) => a.status === "DRAFT" || a.status === "PENDING_REVIEW").length;
   const rejected  = currentPhaseItems.filter((a: any) => a.status === "REJECTED").length;
