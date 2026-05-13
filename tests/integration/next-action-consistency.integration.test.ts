@@ -126,4 +126,64 @@ describe("getNextRequiredStep — phase step resolver", () => {
     expect(result.bannerLabel.toLowerCase()).toContain("review");
     expect(result.bannerLabel.toLowerCase()).not.toContain("initiation");
   });
+
+  describe("research/clarification self-heal — Griffin screenshot scenario", () => {
+    it("does NOT return 'research' when artefacts already exist for the phase", async () => {
+      // Scenario: agent ran research and generation but
+      // `researchCompletedAt` was never written (older deployment OR
+      // research came in via a path that didn't call markResearchComplete).
+      // Resolver used to say "Researching Pre-Project..." even though
+      // the chat was clearly past artefact generation. Self-heal detects
+      // downstream artefact evidence and backfills the timestamp.
+      const ctx = await createTestProject(orgId, {
+        methodology: "WATERFALL",
+        primaryPhaseName: "Pre-Project",
+        artefacts: [
+          { name: "Outline Business Case", status: "DRAFT" },
+        ],
+      });
+      // Phase has NO researchCompletedAt or clarificationCompletedAt set —
+      // the test fixture leaves them null by default.
+
+      const result = await getNextRequiredStep({
+        agentId: ctx.agentId,
+        projectId: ctx.projectId,
+        phaseName: "Pre-Project",
+      });
+
+      expect(result.step).not.toBe("research");
+      // Should land on review_artefacts (artefact is DRAFT, not approved)
+      expect(["review_artefacts", "clarification", "generation"]).toContain(result.step);
+    });
+
+    it("backfills researchCompletedAt as a side effect of the self-heal", async () => {
+      const ctx = await createTestProject(orgId, {
+        methodology: "WATERFALL",
+        primaryPhaseName: "Pre-Project",
+        artefacts: [{ name: "Problem Statement", status: "APPROVED" }],
+      });
+
+      // Sanity: starts null
+      const { db } = await import("@/lib/db");
+      const before = await db.phase.findFirst({
+        where: { projectId: ctx.projectId, name: "Pre-Project" },
+        select: { researchCompletedAt: true },
+      });
+      expect(before?.researchCompletedAt).toBeNull();
+
+      // Trigger resolver
+      await getNextRequiredStep({
+        agentId: ctx.agentId,
+        projectId: ctx.projectId,
+        phaseName: "Pre-Project",
+      });
+
+      // Self-heal should have stamped the timestamp
+      const after = await db.phase.findFirst({
+        where: { projectId: ctx.projectId, name: "Pre-Project" },
+        select: { researchCompletedAt: true },
+      });
+      expect(after?.researchCompletedAt).not.toBeNull();
+    });
+  });
 });

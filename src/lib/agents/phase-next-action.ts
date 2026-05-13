@@ -90,14 +90,35 @@ export async function getNextRequiredStep({
   }
 
   // Step 1 — research must complete before any other work.
+  //
+  // Self-heal: research-step bypass detector. If `researchCompletedAt`
+  // is null but there's downstream evidence that research clearly
+  // happened — artefacts already drafted/approved, clarification
+  // session run, research-tagged KB items present — backfill the
+  // timestamp instead of falsely claiming the agent is still in the
+  // research step. This was the bug behind the chat banner saying
+  // "Researching Pre-Project" while the chat body discussed artefact
+  // review.
+  //
+  // Two failure modes this protects against:
+  //   1. Deployments older than the audit-timestamp mechanism that
+  //      never had `markResearchComplete` wired
+  //   2. Research that ran via a non-feasibility-research path (KB
+  //      import, manual fact entry, n8n) without calling the helper
   if (!phase.researchCompletedAt) {
-    return {
-      step: "research",
-      reason: `Phase research has not been completed for ${phaseName}.`,
-      blockedBy: ["research"],
-      bannerLabel: `Researching ${phaseName}…`,
-      awaitingUser: false,
-    };
+    const downstreamEvidence = await detectResearchAlreadyHappened(projectId, phaseName, phase.id, agentId);
+    if (downstreamEvidence) {
+      await markResearchComplete(projectId, phaseName).catch(() => {});
+      // Treat as completed for this resolution pass; carry on to step 1b.
+    } else {
+      return {
+        step: "research",
+        reason: `Phase research has not been completed for ${phaseName}.`,
+        blockedBy: ["research"],
+        bannerLabel: `Researching ${phaseName}…`,
+        awaitingUser: false,
+      };
+    }
   }
 
   // Step 1b — research findings must be approved by the user. If a
@@ -151,13 +172,24 @@ export async function getNextRequiredStep({
           awaitingUser: true,
         };
       }
-      return {
-        step: "clarification",
-        reason: `Clarification has not been completed for ${phaseName}.`,
-        blockedBy: ["clarification"],
-        bannerLabel: `Clarification questions waiting`,
-        awaitingUser: true,
-      };
+      // Self-heal mirror of the research step. If clarification timestamp
+      // is null but artefacts have been drafted/approved (clarification
+      // is a gate that precedes generation), the agent has clearly moved
+      // past clarification and the missing timestamp is a bookkeeping
+      // miss, not a real "clarification still pending" signal.
+      const clarificationBypassed = await detectClarificationAlreadyHappened(projectId, phaseName, phase.id, agentId);
+      if (clarificationBypassed) {
+        await markClarificationSkipped(projectId, phaseName, "no_questions_needed").catch(() => {});
+        // Fall through to step 3
+      } else {
+        return {
+          step: "clarification",
+          reason: `Clarification has not been completed for ${phaseName}.`,
+          blockedBy: ["clarification"],
+          bannerLabel: `Clarification questions waiting`,
+          awaitingUser: true,
+        };
+      }
     }
   }
 
@@ -287,4 +319,96 @@ export async function markGateApproved(projectId: string, phaseName: string): Pr
     where: { projectId, name: phaseName, gateApprovedAt: null },
     data: { gateApprovedAt: new Date() },
   }).catch(() => {});
+}
+
+// ─── Self-heal detectors ──────────────────────────────────────────────────────
+//
+// The resolver returns the EARLIEST step whose timestamp is null. That's
+// correct when the agent is genuinely still at that step — but if a
+// downstream step has already happened (artefacts drafted, user has
+// answered questions, gate has been approved), then the missing
+// timestamp is a bookkeeping miss, not a real "still pending" signal.
+// The helpers below detect that pattern and the resolver backfills the
+// timestamp so the banner reflects real state.
+
+/**
+ * True if there's clear evidence research has happened for this phase
+ * even though `Phase.researchCompletedAt` is null. Signals (any one
+ * sufficient):
+ *   - Any artefact exists for this phase (artefacts can't be generated
+ *     without research being the prior gate)
+ *   - Research-tagged KB items exist for this phase
+ *   - Clarification has happened (clarification follows research)
+ *   - Gate was already approved
+ */
+async function detectResearchAlreadyHappened(
+  projectId: string,
+  phaseName: string,
+  phaseId: string,
+  agentId: string,
+): Promise<boolean> {
+  try {
+    const [anyArtefact, researchKB] = await Promise.all([
+      db.agentArtefact.findFirst({
+        where: {
+          projectId,
+          OR: [{ phaseId }, { phaseId: phaseName }],
+        },
+        select: { id: true },
+      }),
+      db.knowledgeBaseItem.findFirst({
+        where: {
+          projectId,
+          agentId,
+          tags: { hasSome: ["research", "feasibility", "phase_research"] },
+        },
+        select: { id: true },
+      }),
+    ]);
+    return !!(anyArtefact || researchKB);
+  } catch (e) {
+    console.error("[phase-next-action] detectResearchAlreadyHappened failed:", e);
+    return false;
+  }
+}
+
+/**
+ * True if there's clear evidence clarification has happened for this
+ * phase even though both `clarificationCompletedAt` and
+ * `clarificationSkippedReason` are null. Signals:
+ *   - Any artefact exists for this phase (clarification precedes
+ *     generation in the canonical flow, so an artefact's existence
+ *     implies clarification ran or was rationally skipped)
+ *   - The user has answered at least one clarification question in
+ *     the past for this project (user_confirmed / user_answer KB items)
+ */
+async function detectClarificationAlreadyHappened(
+  projectId: string,
+  phaseName: string,
+  phaseId: string,
+  agentId: string,
+): Promise<boolean> {
+  try {
+    const [anyArtefact, userAnswers] = await Promise.all([
+      db.agentArtefact.findFirst({
+        where: {
+          projectId,
+          OR: [{ phaseId }, { phaseId: phaseName }],
+        },
+        select: { id: true },
+      }),
+      db.knowledgeBaseItem.findFirst({
+        where: {
+          projectId,
+          agentId,
+          tags: { hasSome: ["user_confirmed", "user_answer"] },
+        },
+        select: { id: true },
+      }),
+    ]);
+    return !!(anyArtefact || userAnswers);
+  } catch (e) {
+    console.error("[phase-next-action] detectClarificationAlreadyHappened failed:", e);
+    return false;
+  }
 }
