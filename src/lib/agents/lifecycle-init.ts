@@ -2263,6 +2263,111 @@ Project ${project.name} is hereby formally closed. All obligations have been met
 ${agentProtocol("Closure Report")}`;
   }
 
+  // ── Definition of Done ──
+  // DoD is a completion-criteria checklist — NOT a personnel roster.
+  // Prior bug: the generic prompt let Claude emit [TBC — compliance lead]
+  // inside a DoD, which then flowed into the clarification queue as
+  // "What is the compliance lead?" tagged to Definition of Done. The
+  // post-generation tbc-topic-filter strips those, but the cleaner fix
+  // is to never produce them in the first place.
+  if (n.includes("definition of done") || n.includes("acceptance criteria framework")) {
+    return `Generate a **Definition of Done** for ${project.name}.
+
+## Document Control
+| Field | Value |
+|-------|-------|
+| Document | Definition of Done |
+| Project | ${project.name} |
+| Version | 1.0 DRAFT |
+| Date | ${today} |
+| Status | Draft — Awaiting Team Agreement |
+
+## Purpose
+A Definition of Done is the agreed CHECKLIST every work item must satisfy
+to be considered complete. It is a quality contract — not a personnel
+record. Do NOT list people, roles, owners, sponsors, or contacts in this
+document. Other artefacts (Stakeholder Register, RACI) capture those.
+
+## Done Criteria
+[8–15 specific, objective, testable criteria appropriate for ${project.name}.
+Examples of well-formed criteria — adapt the topics to this project's
+domain:]
+- All code reviewed and merged to main
+- Unit tests written; coverage ≥ [TBC — coverage threshold]
+- Integration tests pass on the target environment
+- Documentation updated (user guide + changelog entry)
+- Accessibility scan passes (WCAG AA)
+- Performance budget met (page load < [TBC — performance threshold])
+- Security scan: no high/critical findings
+- Deployed to staging and smoke-tested
+- Product owner sign-off recorded
+
+## Quality Thresholds
+| Metric | Threshold | Source |
+|--------|-----------|--------|
+[Concrete numeric thresholds — code coverage, perf budgets, error rates.
+Use [TBC — <metric>] for thresholds you don't know yet. ALL TBCs in this
+document MUST be metric thresholds, NOT people.]
+
+## Exit Criteria for Sprint / Iteration
+[The minimum bar that lets a sprint be declared complete.]
+
+⚠️ STRICT RULES for this document:
+- TBC markers are ONLY for measurable thresholds (coverage %, perf ms,
+  error rate, etc) and standards references. Never use [TBC — <person/role>]
+  here. Personnel data lives in the Stakeholder Register / RACI.
+- Do NOT include a Sources & Assumptions appendix unless the criteria
+  genuinely cite external sources (e.g. WCAG, OWASP).
+${agentProtocol("Definition of Done")}`;
+  }
+
+  // ── Product Backlog / Initial Backlog ──
+  // The backlog is a LIST OF USER STORIES. At day zero it is intentionally
+  // sparse — populated incrementally during refinement sessions. Trying to
+  // fill a starter backlog with TBC placeholders for sponsor / dates /
+  // budget is nonsense; that data lives in Charter / Schedule / Budget.
+  if (n.includes("product backlog") || n.includes("initial backlog") || n.includes("sprint backlog")) {
+    return `Generate an initial **${name}** for ${project.name}.
+
+## Document Control
+| Field | Value |
+|-------|-------|
+| Document | ${name} |
+| Project | ${project.name} |
+| Version | 1.0 DRAFT |
+| Date | ${today} |
+
+## Purpose
+A ${name} is a prioritised list of USER STORIES (or epics) describing the
+work the team will deliver. It is populated INCREMENTALLY during
+refinement — at project start it contains the most-understood items only
+and grows as the team learns. This is NOT the place for personnel,
+budget, sponsor, dates, or risk data.
+
+## Stories
+| ID | As a … | I want … | So that … | Priority | Acceptance Criteria | Estimate |
+|----|--------|---------|-----------|----------|---------------------|----------|
+[3-8 high-level user stories derived from ${project.name}'s description.
+Each story uses the standard format. Estimates default to "TBC — refine
+in next session" — story-point estimation belongs to the team, not the
+agent. Acceptance criteria reference the Definition of Done.]
+
+## Refinement Notes
+[What's known to be incomplete; what the team will refine in upcoming
+sessions.]
+
+⚠️ STRICT RULES for this document:
+- The body is user stories ONLY. Do NOT include personnel, budget,
+  sponsor, dates, or risks here — those belong in Charter, Schedule,
+  Cost Plan, and Risk Register respectively.
+- TBC markers, if used at all, must reference story-level details
+  (acceptance criteria, estimate). Never use [TBC — <person/role>],
+  [TBC — sponsor], [TBC — budget], [TBC — kickoff date] here.
+- Skip the Sources & Assumptions appendix — backlogs cite the user
+  stories themselves, not external research.
+${agentProtocol(name)}`;
+  }
+
   // ── Default for any other artefact ──
   return `Generate a complete, professional **${name}** for ${project.name}.
 

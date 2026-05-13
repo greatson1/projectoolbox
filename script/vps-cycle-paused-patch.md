@@ -11,6 +11,53 @@ whichever matches the VPS bot's query style.
 
 ---
 
+## ⚡ Quickest path — paste this into SSH
+
+```bash
+# 1. SSH to the VPS (key from MEMORY.md)
+ssh -i ~/.ssh/pmgtsclaw_v2 root@187.77.182.159
+
+# 2. Identify which file holds the autonomous-cycle dispatcher.
+#    Search the running container for a query that pulls
+#    AgentDeployment rows with nextCycleAt:
+docker exec openclaw-zj3a-openclaw-1 sh -c \
+  "grep -rEl 'AgentDeployment.*nextCycleAt|getDueDeployments' /data/openclaw 2>/dev/null"
+
+# 3. For each file the grep returns, find the WHERE block that
+#    queries AgentDeployment and add ONE line so paused deployments
+#    are excluded. Examples by query style:
+#
+#    Prisma:       cyclePaused: false,
+#    supabase-js:  .eq("cyclePaused", false)
+#    Raw SQL:      AND "cyclePaused" = false
+#
+# 4. Restart the container so the new code takes effect:
+cd /docker/openclaw-zj3a && docker compose restart
+
+# 5. Verify by listing what the bot now considers "due":
+docker exec openclaw-zj3a-openclaw-1 sh -c \
+  "node -e 'const{PrismaClient}=require(\"@prisma/client\");(async()=>{const db=new PrismaClient();console.log(await db.agentDeployment.findMany({where:{isActive:true,cyclePaused:false,OR:[{nextCycleAt:null},{nextCycleAt:{lte:new Date()}}]},select:{id:true,agentId:true,cyclePaused:true}}));})()'"
+```
+
+If the verification command returns paused deployments, the patch
+didn't take. Re-check the file the grep flagged and confirm the
+filter is in the same Prisma `where` block (or `.eq()` chain, etc.)
+NOT a separate query.
+
+### Sanity check before/after
+
+```bash
+# Cycles burned in the last 24h (BEFORE patch — expect numbers in the dozens):
+docker exec openclaw-zj3a-openclaw-1 sh -c \
+  "node -e 'const{PrismaClient}=require(\"@prisma/client\");(async()=>{const db=new PrismaClient();const since=new Date(Date.now()-24*3600000);console.log(\"autonomous_cycle activities in last 24h:\",await db.agentActivity.count({where:{type:\"autonomous_cycle\",createdAt:{gte:since}}}));})()'"
+```
+
+After the patch, that count should fall to roughly (number of NON-paused
+deployments) × (cycles per day) — and zero for any deployment with
+`cyclePaused: true`.
+
+---
+
 ## 1. Postgres / Supabase REST direct query
 
 If the VPS runs raw SQL or the Supabase HTTP API:

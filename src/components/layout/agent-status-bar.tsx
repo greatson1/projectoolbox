@@ -118,6 +118,14 @@ function activityAt(a: RawActivity): string {
   return a.date ?? a.createdAt ?? new Date().toISOString();
 }
 
+// Refactored: shared semantics (researching, generating, review, blocked,
+// monitoring, complete, idle) are now derived by getAgentCurrentState in
+// src/lib/agents/current-state.ts so the bar and any other surface that
+// adopts it stay aligned automatically. This function layers the bar's
+// surface-specific extras (paused / research_approval_waiting / setup /
+// blocked_by_tasks-when-canAdvance-false) on top.
+import { getAgentCurrentState, type AgentCurrentState } from "@/lib/agents/current-state";
+
 function deriveState(
   agentDeployed: boolean,
   pendingCount: number,
@@ -131,73 +139,65 @@ function deriveState(
 ): AgentState {
   if (!agentDeployed) return "idle";
 
+  // ── Bar-specific overrides FIRST ──
   // PAUSED is an explicit user action and overrides everything else — we
   // never want to show "Monitoring · everything is under control" when the
   // user has actively stopped the agent.
   if (agentStatus === "PAUSED") return "paused";
-
   // Research-approval gate: when the strict-sequencing flow has parked the
   // deployment in awaiting_research_approval, surface that. The agent will
   // resume the lifecycle as soon as the user clears the queue.
   if (phaseStatus === "awaiting_research_approval") return "research_approval_waiting";
 
-  // hasActiveSession is the LIVE source of truth — phaseStatus can lag if the
-  // deployment column update missed (recovered on next pipeline fetch via
-  // self-heal). Always trust the active session presence first.
-  if (phaseStatus === "blocked_tasks_incomplete") return "blocked_by_tasks";
-  if (hasActiveSession) return "questions_waiting";
-  // Only fall back to phaseStatus when there's no active session — and only if
-  // it's a definitive non-clarification status. A stale "awaiting_clarification"
-  // with no live session means the user just finished answering and the
-  // server-side phaseStatus update is in flight; show the next state instead
-  // of a misleading "Questions waiting".
-  // Research is its OWN state — distinct from "generating" (drafting
-  // artefacts). Conflating them caused the bar to say "Writing pre-project
-  // documents" when the agent was actually still researching the phase.
-  if (phaseStatus === "researching") return "researching";
-  // ── REVIEW vs BLOCKED priority ─────────────────────────────────────
-  // When the deployment has explicitly parked at pending_approval and
-  // the gate is reachable (canAdvance is true OR unknown), "review" is
-  // the right state — approving the drafts WILL clear the gate.
-  //
-  // But if canAdvance is explicitly FALSE (PM tasks incomplete, gate
-  // prereqs unmet, clarification missing), the banner used to say
-  // "approve them to unlock Initiation" which is a lie — approving the
-  // drafts doesn't unlock anything because other blockers remain.
-  // Demote to "blocked_by_tasks" so the banner shows the actual
-  // blocker list instead.
-  if (phaseStatus === "pending_approval" || phaseStatus === "waiting_approval") {
-    if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
-    return "review";
-  }
-
-  // Fallback signals when phaseStatus is "active" or unset
-  const fourMinAgo = Date.now() - 4 * 60 * 1000;
-  const isGenerating = activities.some(
-    a => (a.type === "document" || a.type === "lifecycle_init" || a.type === "decision") &&
-         new Date(activityAt(a)).getTime() > fourMinAgo
+  // ── Recent activity window — fed to the canonical resolver as
+  // minutesSinceLastArtefact so it can detect ongoing generation. The bar
+  // historically used a 4-min window; the resolver uses 5-min. Use the
+  // tighter one (4m) so we're at least as conservative.
+  const FOUR_MIN_AGO = Date.now() - 4 * 60 * 1000;
+  const lastArtefactActivity = activities.find(
+    a => (a.type === "document" || a.type === "lifecycle_init" || a.type === "decision")
+         && new Date(activityAt(a)).getTime() > FOUR_MIN_AGO,
   );
-  if (isGenerating)           return "generating";
-  if (pendingCount > 0) {
-    // Same priority logic as the pending_approval branch above —
-    // approving the pending draft only unlocks the phase IF nothing
-    // else is blocking. canAdvance === false means something else IS.
-    if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
-    return "review";
+  const minutesSinceLastArtefact = lastArtefactActivity
+    ? Math.floor((Date.now() - new Date(activityAt(lastArtefactActivity)).getTime()) / 60_000)
+    : null;
+
+  // ── Delegate the shared semantics ──
+  const canonical: AgentCurrentState = getAgentCurrentState({
+    phaseStatus: phaseStatus ?? null,
+    hasActiveClarificationSession: hasActiveSession,
+    draftArtefactCount: pendingCount,
+    approvedArtefactCount: 0, // bar doesn't carry this separately; resolver only uses it for "complete"
+    totalArtefactsInPhase: totalArtefacts,
+    hasPendingPhaseGate: false,
+    hasActiveDeployment: agentDeployed,
+    hasNextPhase: true,
+    minutesSinceLastArtefact,
+  }).state;
+
+  // canAdvance-false override — approving more artefacts won't help when
+  // other gates (PM tasks, prereqs, clarification) are still blocking.
+  // Applies to every state where the bar would otherwise promise unlock.
+  const canAdvanceBlocked = hasCompletionData && canAdvance === false;
+
+  switch (canonical) {
+    case "blocked": return "blocked_by_tasks";
+    case "questions_waiting": return "questions_waiting";
+    case "researching": return "researching";
+    case "generating": return canAdvanceBlocked ? "blocked_by_tasks" : "generating";
+    case "awaiting_approval":
+    case "review":
+      return canAdvanceBlocked ? "blocked_by_tasks" : "review";
+    case "complete":
+      return canAdvanceBlocked ? "blocked_by_tasks" : "phase_complete";
+    case "monitoring":
+      // Bar refines monitoring → setup when nothing has happened yet,
+      // because "Monitoring · everything is under control" is a lie at
+      // deployment time.
+      if (totalArtefacts === 0 && !hasActiveSession) return "setup";
+      return canAdvanceBlocked && totalArtefacts > 0 ? "blocked_by_tasks" : "monitoring";
+    case "idle": return "idle";
   }
-  if (totalArtefacts > 0) {
-    // Don't claim "phase_complete" (which renders the green "Click Generate"
-    // banner) when getPhaseCompletion says we cannot advance because PM tasks
-    // or delivery tasks are still outstanding. Surface the blockers instead.
-    if (hasCompletionData && canAdvance === false) return "blocked_by_tasks";
-    return "phase_complete";
-  }
-  // No artefacts yet AND no active clarification session AND no recent
-  // generating activity → the agent has just deployed and is preparing the
-  // project context. "monitoring everything is under control" is a lie at
-  // this stage; "setup" makes the actual state clear and tells the user
-  // what's coming.
-  return "setup";
 }
 
 /** Priority for auto-focus: lower = more urgent */
