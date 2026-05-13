@@ -305,6 +305,7 @@ export async function getPhaseCompletion(
   // Management Plan / Schedule were never produced. Detect those gaps
   // and add them to the blocker list.
   let missingRequired: string[] = [];
+  let requiredArtefactCount = 0;
   try {
     const { getMethodology } = await import("@/lib/methodology-definitions");
     const methodologyId = (projectForMethodology?.methodology || "traditional").toLowerCase().replace("agile_", "");
@@ -312,8 +313,9 @@ export async function getPhaseCompletion(
     const phaseDef = methodology.phases.find(p => p.name === phaseName);
     if (phaseDef) {
       const generatedNames = new Set(artefacts.map(a => a.name.toLowerCase()));
-      missingRequired = phaseDef.artefacts
-        .filter(a => a.required && a.aiGeneratable)
+      const requiredList = phaseDef.artefacts.filter(a => a.required && a.aiGeneratable);
+      requiredArtefactCount = requiredList.length;
+      missingRequired = requiredList
         .map(a => a.name)
         .filter(n => !generatedNames.has(n.toLowerCase()));
     }
@@ -326,7 +328,12 @@ export async function getPhaseCompletion(
   // so they should never appear as "not yet approved" blockers.
   const liveArtefacts = artefacts.filter((a) => a.status !== "REJECTED");
   const artefactsDone = liveArtefacts.filter((a) => a.status === "APPROVED").length;
-  const artefactsTotal = liveArtefacts.length;
+  // Denominator is the methodology's REQUIRED count — not just the count of
+  // artefacts that happen to exist in the DB. Otherwise a phase that requires
+  // 4 documents but only ever generates 1 (approved) would report 100%.
+  // If methodology lookup somehow fails (requiredArtefactCount=0), fall back
+  // to the live count so we don't suddenly tank everyone's numbers.
+  const artefactsTotal = Math.max(requiredArtefactCount, liveArtefacts.length);
   const artefactsPct = artefactsTotal > 0 ? Math.round((artefactsDone / artefactsTotal) * 100) : 100;
 
   // ── 2. PM Tasks (scaffolded overhead) ─────────────────────────────────
