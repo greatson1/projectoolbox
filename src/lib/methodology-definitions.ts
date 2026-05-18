@@ -71,7 +71,7 @@ export interface MethodologyDefinition {
 
 const TRADITIONAL: MethodologyDefinition = {
   id: "traditional",
-  name: "Traditional (PMI-Style)",
+  name: "Traditional",
   framework: "traditional",
   description: "Structured project management with phase gates and controlled stages",
   phases: [

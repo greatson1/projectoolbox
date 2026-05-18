@@ -775,21 +775,24 @@ const PHASE_RESEARCH_QUERIES: Record<string, (project: ProjectContext) => string
   "closure": (p) => [
     `Project closure best practices for "${p.name}": benefit realisation tracking, lessons learned frameworks, handover to BAU teams, contract closure, team transition. ${p.description?.slice(0, 200) || ""}`,
   ],
-  // ── PRINCE2-specific phase aliases (PRINCE2 uses these names) ──────────
+  // ── Legacy phase-name aliases (kept for projects whose Phase rows were
+  // created under the old PRINCE2 methodology, which is no longer active).
+  // Query text rewritten to be framework-neutral so Perplexity doesn't
+  // anchor the research on a specific framework the user didn't choose.
   "directing": (p) => [
-    `PRINCE2 "Directing a Project" process best practices for "${p.name}": Project Board governance, stage boundary decisions, exception management, senior user/supplier engagement. ${p.description?.slice(0, 200) || ""}`,
+    `Senior governance and project-board best practices for "${p.name}": stage-boundary decision making, exception management, executive sponsor engagement, escalation pathways. ${p.description?.slice(0, 200) || ""}`,
   ],
   "starting up": (p) => [
-    `PRINCE2 "Starting Up a Project" (SU) best practices for "${p.name}": Project Brief development, Executive and Project Manager appointments, project approach selection. ${p.description?.slice(0, 200) || ""}`,
+    `Project startup best practices for "${p.name}": project brief development, sponsor and project-manager appointments, approach selection, initial assumptions log. ${p.description?.slice(0, 200) || ""}`,
   ],
   "controlling a stage": (p) => [
-    `PRINCE2 "Controlling a Stage" best practices for "${p.name}": work package authorisation, stage progress reporting, issue and risk management, exception handling. ${p.description?.slice(0, 200) || ""}`,
+    `Stage / phase control best practices for "${p.name}": work package authorisation, progress reporting cadence, issue and risk management, exception handling. ${p.description?.slice(0, 200) || ""}`,
   ],
   "managing product delivery": (p) => [
-    `PRINCE2 "Managing Product Delivery" best practices for "${p.name}": work package acceptance, product quality review, team management across suppliers. ${p.description?.slice(0, 200) || ""}`,
+    `Work-package and delivery management best practices for "${p.name}": work package acceptance, product quality review, supplier and team management. ${p.description?.slice(0, 200) || ""}`,
   ],
   "managing a stage boundary": (p) => [
-    `PRINCE2 "Managing a Stage Boundary" best practices for "${p.name}": stage plan preparation, lessons report, next stage authorisation, business case update. ${p.description?.slice(0, 200) || ""}`,
+    `Stage / phase boundary best practices for "${p.name}": next-stage plan preparation, lessons report, business case update, gate authorisation criteria. ${p.description?.slice(0, 200) || ""}`,
   ],
 };
 

@@ -64,9 +64,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Map methodology keys to Prisma enum values (handles any casing from the deploy wizard).
-    // The DB enum value PRINCE2 is kept for backward-compat — internally we
-    // resolve it via getMethodology() to the Traditional (PMI-Style) definition.
-    // The deploy wizard now sends "traditional"; older payloads still send "prince2".
+    // The DB enum value PRINCE2 is kept ONLY for backward-compat with legacy rows —
+    // it's an internal alias for "Traditional" and never surfaced to users. The
+    // deploy wizard now sends "traditional"; getMethodology() resolves both to
+    // the Traditional methodology definition.
     const METHODOLOGY_MAP: Record<string, string> = {
       traditional: "PRINCE2", prince2: "PRINCE2",
       waterfall: "WATERFALL", scrum: "AGILE_SCRUM",

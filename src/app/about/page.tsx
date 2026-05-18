@@ -51,7 +51,7 @@ export default function AboutPage() {
               <a href="https://pmgts.uk" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
                 PMGTS
               </a>.
-              Everything we teach — risk management, earned value, PRINCE2, Agile governance —
+              Everything we teach — risk management, earned value, traditional + agile governance —
               is embedded into the Projectoolbox platform. It&apos;s not just a tool; it&apos;s decades
               of PM knowledge in an agent.
             </p>

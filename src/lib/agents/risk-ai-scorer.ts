@@ -37,7 +37,7 @@ interface AIScore {
  * matched on title so the LLM can't drift the order. Strict 1–5 scoring
  * for probability + impact (Excel/PMI convention).
  */
-const SYSTEM_PROMPT = `You are a senior project risk analyst scoring risks against PMI/PRINCE2 conventions.
+const SYSTEM_PROMPT = `You are a senior project risk analyst scoring risks using the standard 5×5 probability × impact matrix.
 
 For each risk, return:
 - probability: integer 1-5 (1=rare, 5=almost certain)

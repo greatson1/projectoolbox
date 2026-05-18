@@ -92,7 +92,7 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
 const METHODOLOGIES = [
   { id: "scrum", name: "Scrum", icon: "🔄", desc: "Iterative sprints with ceremonies and retrospectives", bestFor: "Software teams needing fast feedback loops", rec: false },
   { id: "kanban", name: "Kanban", icon: "📋", desc: "Continuous flow with WIP limits and visual boards", bestFor: "Support teams, ongoing work with variable priority", rec: false },
-  { id: "traditional", name: "Traditional (PMI-Style)", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
+  { id: "traditional", name: "Traditional", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
   { id: "safe", name: "SAFe", icon: "🏢", desc: "Scaled agile for enterprise-level programme coordination", bestFor: "Multiple teams, cross-functional dependencies, portfolios", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },
@@ -135,7 +135,7 @@ const ARTEFACT_APP_FEATURES: Record<string, string> = {
 
 // Short descriptions for each artefact type — shown as a tooltip in the wizard
 const ARTEFACT_DESCRIPTIONS: Record<string, string> = {
-  // Traditional (PMI-Style)
+  // Traditional
   "Problem Statement": "Define the business problem or opportunity this project addresses",
   "Options Analysis": "Compare the available options for solving the problem with costs and benefits",
   "Outline Business Case": "High-level justification: why this project, what value it delivers",
@@ -1124,7 +1124,7 @@ export default function ProjectWizardPage() {
 
                   {/* Domain Tags */}
                   <FieldGroup label="Domain / Specialism Tags">
-                    <StyledInput value={data.domainTags || ""} onChange={v => upd({ domainTags: v })} placeholder="e.g. Agile, PRINCE2, Construction, IT Ops (comma-separated)" />
+                    <StyledInput value={data.domainTags || ""} onChange={v => upd({ domainTags: v })} placeholder="e.g. Agile, Traditional, Construction, IT Ops (comma-separated)" />
                   </FieldGroup>
 
                   {/* Default Greeting */}
