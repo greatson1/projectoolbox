@@ -16,7 +16,8 @@ export type MethodologyId =
   | "scrum"
   | "kanban"
   | "safe"
-  | "hybrid";
+  | "hybrid"
+  | "travel";
 
 export type GateStatus =
   | "NOT_STARTED"
@@ -616,6 +617,109 @@ const HYBRID: MethodologyDefinition = {
   ],
 };
 
+// Travel / trip methodology — used for holidays, business trips, family
+// trips, and short events. The corporate methodologies (hybrid, scrum,
+// kanban, traditional) forced artefacts like "Definition of Done",
+// "Sprint Plans", "Business Case", "Team Charter" onto trips, which
+// produced nonsense (the "What is the compliance lead?" bug on a Lagos
+// trip came from a Definition of Done generated for a family holiday).
+//
+// Design choice: REUSE artefact names that lifecycle-init already has
+// trip-aware spreadsheet prompts for ("Schedule with Dependencies",
+// "Initial Risk Register", "Initial Stakeholder Register",
+// "Cost Management Plan") so the existing rich content generation
+// (Nigeria-specific risks, Lagos accommodation areas, yellow fever
+// requirements, etc.) fires without further changes. The new names
+// ("Trip Brief", "Booking Tracker", "Documentation Checklist",
+// "Packing List", "Expense Tracker", "Incident Log", "Research Notes")
+// fall through to the generic-document prompt path.
+const TRAVEL: MethodologyDefinition = {
+  id: "travel",
+  name: "Travel & Trip",
+  framework: "hybrid",
+  description: "Trip lifecycle for holidays, business travel, and family trips: plan, book, travel, wrap-up. Trip-appropriate artefacts and gates — no sprints, no DoD, no business case.",
+  phases: [
+    {
+      name: "Plan",
+      description: "Confirm travellers, scope the trip, draft budget, identify risks, do destination research",
+      color: "#6366F1",
+      artefacts: [
+        { name: "Trip Brief", required: true, aiGeneratable: true },
+        { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Research Notes", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Plan Approved",
+        criteria: "Travellers confirmed, budget agreed, key risks identified",
+        preRequisites: [
+          { description: "Travellers confirmed", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Budget agreed", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Risk register populated", category: "document", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Book",
+      description: "Secure transport, accommodation, travel documentation, insurance, and vaccinations",
+      color: "#8B5CF6",
+      artefacts: [
+        { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
+        { name: "Booking Tracker", required: true, aiGeneratable: true },
+        { name: "Documentation Checklist", required: true, aiGeneratable: true },
+        { name: "Packing List", required: false, aiGeneratable: true },
+        { name: "Risk Reviews", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Trip Ready",
+        criteria: "All bookings confirmed, documents secured, travellers prepared",
+        preRequisites: [
+          { description: "Transport booked", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Accommodation booked", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Travel documents secured", category: "document", isMandatory: true, requiresHumanApproval: false },
+          { description: "Travel insurance in place", category: "approval", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Travel",
+      description: "Execute the trip — daily log, expense tracking, incident management",
+      color: "#10B981",
+      artefacts: [
+        { name: "Status Reports", required: false, aiGeneratable: true },
+        { name: "Expense Tracker", required: false, aiGeneratable: true },
+        { name: "Incident Log", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Trip Complete",
+        criteria: "All travellers safely returned, expenses captured",
+        preRequisites: [
+          { description: "All travellers safely returned", category: "assessment", isMandatory: true, requiresHumanApproval: true },
+          { description: "Expense tracking up to date", category: "document", isMandatory: false, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Wrap-up",
+      description: "Reconcile expenses, capture lessons learned, archive memories and documents",
+      color: "#F59E0B",
+      artefacts: [
+        { name: "Lessons Learned", required: false, aiGeneratable: true },
+        { name: "Closure Report", required: true, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Trip Closed",
+        criteria: "Expenses reconciled, lessons captured, trip archived",
+        preRequisites: [
+          { description: "Final expenses reconciled", category: "document", isMandatory: true, requiresHumanApproval: false },
+          { description: "Lessons learned captured", category: "document", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+  ],
+};
+
 // ─── Registry ───
 
 export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
@@ -625,6 +729,7 @@ export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
   kanban: KANBAN,
   safe: SAFE,
   hybrid: HYBRID,
+  travel: TRAVEL,
 };
 
 export const METHODOLOGY_LIST: MethodologyDefinition[] = Object.values(METHODOLOGIES);

@@ -306,6 +306,55 @@ const HYBRID_PLAYBOOK: PhasePlaybook[] = [
   },
 ];
 
+// Travel / trip playbook — phase order must match TRAVEL methodology
+// definition (Plan → Book → Travel → Wrap-up). Actions are trip-oriented
+// (booking reminders, vaccinations, expense reconciliation) not corporate
+// (sprint cycles, governance milestones, burndown).
+const TRAVEL_PLAYBOOK: PhasePlaybook[] = [
+  {
+    name: "Plan",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate trip brief: purpose, travellers, dates, destination, budget", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "RISK_RESPONSE", description: "Assess destination-specific risks (visa, health, security, weather)", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Draft budget across transport, accommodation, daily spend, contingency", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Build stakeholder/traveller register including emergency contacts", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Travellers confirmed", "Budget agreed", "Risks identified"],
+    artefacts: ["Trip Brief", "Cost Management Plan", "Initial Risk Register", "Initial Stakeholder Register"],
+  },
+  {
+    name: "Book",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate detailed itinerary with day-by-day schedule and dependencies", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "TASK_ASSIGNMENT", description: "Track booking status: transport, accommodation, transfers, activities", trigger: "weekly", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Build documentation checklist: passports, visas, vaccinations, insurance", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Create packing list tailored to destination, weather, and trip length", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Transport booked", "Accommodation booked", "Travel documents secured", "Insurance in place"],
+    artefacts: ["Schedule with Dependencies", "Booking Tracker", "Documentation Checklist", "Packing List"],
+  },
+  {
+    name: "Travel",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Log daily status: where, what, who, any incidents or changes", trigger: "daily", riskLevel: "LOW" },
+      { type: "TASK_ASSIGNMENT", description: "Track expenses against budget — alert on >10% variance", trigger: "daily", riskLevel: "LOW" },
+      { type: "RISK_RESPONSE", description: "Capture any incidents (lost item, missed connection, health issue) for insurance claims", trigger: "daily", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["All travellers safely returned", "Expense tracking up to date"],
+    artefacts: ["Status Reports", "Expense Tracker", "Incident Log"],
+  },
+  {
+    name: "Wrap-up",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Reconcile final expenses against budget — highlight overruns and savings", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Capture lessons learned: what worked, what to do differently next time", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Generate trip closure report: summary, photos, mementos, costs vs plan", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Final expenses reconciled", "Lessons learned captured"],
+    artefacts: ["Closure Report", "Lessons Learned"],
+  },
+];
+
 // ─── Playbook Registry ───
 
 const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
@@ -316,6 +365,7 @@ const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
   kanban: KANBAN_PLAYBOOK,
   safe: SAFE_PLAYBOOK,
   hybrid: HYBRID_PLAYBOOK,
+  travel: TRAVEL_PLAYBOOK,
   // Legacy aliases — old DB rows / VPS agent payloads use these
   prince2: TRADITIONAL_PLAYBOOK,
   PRINCE2: TRADITIONAL_PLAYBOOK,

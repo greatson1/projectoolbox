@@ -96,6 +96,7 @@ const METHODOLOGIES = [
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
   { id: "safe", name: "SAFe", icon: "🏢", desc: "Scaled agile for enterprise-level programme coordination", bestFor: "Multiple teams, cross-functional dependencies, portfolios", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },
+  { id: "travel", name: "Travel & Trip", icon: "✈️", desc: "Trip lifecycle: Plan → Book → Travel → Wrap-up", bestFor: "Holidays, business trips, family travel, short events", rec: false },
 ];
 
 // Derive PHASE_TEMPLATES from the single source of truth
@@ -307,8 +308,16 @@ export default function ProjectWizardPage() {
     if (data.category === "marketing") return "kanban";
     if (data.category === "research") return "hybrid";
 
-    // Travel & personal: short trips → Kanban, longer planning → Hybrid
-    if (data.category === "travel" || data.category === "personal") {
+    // Travel: trip lifecycle (Plan → Book → Travel → Wrap-up) regardless of
+    // duration. Previously routed to kanban or hybrid, both of which forced
+    // sprint cycles / DoD / business case artefacts onto trips — the
+    // "compliance lead" question from a Lagos family trip came from exactly
+    // this path (DoD generated for a holiday).
+    if (data.category === "travel") return "travel";
+    // Personal projects keep the old kanban/hybrid routing — they often
+    // ARE iterative (home renovation, learning a language) and benefit
+    // from the sprint structure.
+    if (data.category === "personal") {
       return durationDays && durationDays <= 5 ? "kanban" : "hybrid";
     }
 

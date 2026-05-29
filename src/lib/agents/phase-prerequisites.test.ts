@@ -202,3 +202,74 @@ describe("summarisePrerequisites", () => {
     expect(sum.canAdvance).toBe(false);
   });
 });
+
+describe("evaluatePrerequisite — travel methodology prereqs", () => {
+  // The Travel methodology adds Plan-gate prereqs that none of the
+  // pre-existing rules picked up. These tests lock the new branches in
+  // so a future refactor of the artefact-keyword / role-hint maps can't
+  // silently regress a Lagos family trip back to all-manual prereqs.
+
+  it("'Travellers confirmed' ticks when Stakeholder Register has Primary Traveller", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Travellers confirmed" }),
+      { ...baseCtx, stakeholderRoles: ["Primary Traveller", "Travel Insurance Provider"] },
+    );
+    expect(out.state).toBe("met");
+    expect(out.evidence).toMatch(/traveller/i);
+  });
+
+  it("'Travellers confirmed' falls to unmet when no traveller in the register", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Travellers confirmed" }),
+      { ...baseCtx, stakeholderRoles: ["Airline", "Hotel"] },
+    );
+    expect(out.state).toBe("unmet");
+  });
+
+  it("'Budget agreed' ticks when Cost Management Plan is approved", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Budget agreed" }),
+      { ...baseCtx, approvedArtefactNames: ["Cost Management Plan"] },
+    );
+    expect(out.state).toBe("met");
+    expect(out.evidence).toContain("Cost Management Plan");
+  });
+
+  it("'Budget agreed' marked draft when Cost Plan is in DRAFT", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Budget agreed" }),
+      { ...baseCtx, draftArtefactNames: ["Cost Management Plan"] },
+    );
+    expect(out.state).toBe("draft");
+  });
+
+  it("'Budget agreed' stays manual when no Cost Plan exists yet", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Budget agreed" }),
+      baseCtx,
+    );
+    expect(out.state).toBe("manual");
+  });
+
+  it("'Lessons learned captured' ticks when Lessons Learned artefact is approved", () => {
+    // Previously failed: the artefact list had only "Lessons Learnt Report"
+    // (British spelling). The travel/hybrid methodology calls it
+    // "Lessons Learned" — without both spellings the prereq fell through
+    // to manual even when the artefact was approved.
+    const out = evaluatePrerequisite(
+      prereq({ description: "Lessons learned captured" }),
+      { ...baseCtx, approvedArtefactNames: ["Lessons Learned"] },
+    );
+    expect(out.state).toBe("met");
+  });
+
+  it("'Risk register populated' still ticks via the existing risk rule", () => {
+    // Regression — the new budget-rules branch sits BEFORE the
+    // stakeholder/risk branches; make sure it doesn't shadow them.
+    const out = evaluatePrerequisite(
+      prereq({ description: "Risk register populated" }),
+      { ...baseCtx, approvedArtefactNames: ["Initial Risk Register"] },
+    );
+    expect(out.state).toBe("met");
+  });
+});

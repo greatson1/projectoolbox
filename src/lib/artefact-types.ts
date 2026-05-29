@@ -25,6 +25,12 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Flow Metrics Reports",
   "Change Request Register",
   "Backlog",
+  // Travel methodology artefacts — all inherently tabular.
+  "Booking Tracker",
+  "Documentation Checklist",
+  "Packing List",
+  "Expense Tracker",
+  "Incident Log",
 ]);
 
 /** Column definitions per artefact type — used in the generation prompt and xlsx formatting */
@@ -47,6 +53,12 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Change Request Register": ["CR ID", "Title", "Description", "Requested By", "Date Raised", "Category", "Priority", "Impact on Schedule", "Impact on Cost (£)", "Impact on Scope", "Status", "Decision", "Decision Date", "Implemented By", "Notes"],
   "Risk Register": ["Risk ID", "Category", "Title", "Description", "Likelihood (1-5)", "Impact (1-5)", "Score", "Risk Rating", "Owner", "Mitigation Actions", "Contingency Plan", "Residual Score", "Status", "Last Reviewed"],
   "Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
+  // ── Travel methodology artefacts ──
+  "Booking Tracker": ["Booking ID", "Type", "Provider / Vendor", "Description", "Reference / PNR", "Travel Date", "Confirmed", "Cost (£)", "Paid", "Cancellation Policy", "Owner", "Status", "Notes"],
+  "Documentation Checklist": ["Document", "Required For", "Status", "Expiry / Valid Until", "Held By", "Notes"],
+  "Packing List": ["Item", "Category", "Quantity", "For Whom", "Packed", "Notes"],
+  "Expense Tracker": ["Date", "Category", "Description", "Vendor", "Amount", "Currency", "GBP Equivalent", "Paid By", "Receipt Held", "Reimbursable", "Notes"],
+  "Incident Log": ["Date", "Category", "Description", "Travellers Affected", "Severity", "Action Taken", "Insurance Claimable", "Status", "Notes"],
 };
 
 /** Returns true if this artefact should be generated as CSV and shown in SpreadsheetViewer */

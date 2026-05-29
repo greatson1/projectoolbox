@@ -73,7 +73,14 @@ const ARTEFACT_KEYWORDS = [
   "Work Breakdown Structure",
   "Project Initiation Document",
   "Lessons Learnt Report",
+  // "Lessons Learned" — the Travel/Hybrid methodologies spell the
+  // closing artefact this way (American). Without both spellings the
+  // "Lessons learned captured" prereq falls through to manual and
+  // doesn't auto-tick when the artefact is approved.
+  "Lessons Learned",
   "Closure Report",
+  // Travel methodology artefacts
+  "Trip Brief",
 ];
 
 function normalize(s: string): string {
@@ -107,6 +114,11 @@ const STAKEHOLDER_ROLE_HINTS: Record<string, string[]> = {
   team: ["team", "delivery team", "developer", "engineer"],
   board: ["project board", "steering"],
   customer: ["customer", "client"],
+  // Travel methodology — "Travellers confirmed" prereq on the Plan gate.
+  // Auto-ticks when the Stakeholder Register contains a Primary Traveller
+  // or family-member row, so the user doesn't have to manually confirm
+  // something the agent already wrote into the register.
+  traveller: ["traveller", "traveler", "primary traveller", "family", "passenger"],
 };
 
 function findStakeholderHint(description: string): string | null {
@@ -163,6 +175,23 @@ export function evaluatePrerequisite(
     if (ctx.approvedPhaseGateNames.length > 0) {
       return { ...prereq, state: "met", evidence: `Phase gate approved` };
     }
+  }
+
+  // 2a. Budget-agreed style prereqs map to Cost Management Plan approval.
+  // The Plan gate on the Travel methodology has a "Budget agreed" prereq;
+  // none of the ARTEFACT_KEYWORDS picks up the bare word "budget" so this
+  // would otherwise fall through to manual. Treat an approved Cost
+  // Management Plan as evidence the budget is agreed.
+  if (descN.includes("budget") && (descN.includes("agree") || descN.includes("approv") || descN.includes("baseline") || descN.includes("set"))) {
+    const cmpApproved = findArtefactInList("Cost Management Plan", ctx.approvedArtefactNames);
+    if (cmpApproved) {
+      return { ...prereq, state: "met", evidence: `Cost Management Plan is APPROVED` };
+    }
+    const cmpDraft = findArtefactInList("Cost Management Plan", ctx.draftArtefactNames);
+    if (cmpDraft) {
+      return { ...prereq, state: "draft", evidence: `Cost Management Plan is in DRAFT — needs approval` };
+    }
+    // Fall through to manual — no Cost Plan exists yet.
   }
 
   // 3. Stakeholder presence

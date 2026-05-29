@@ -228,11 +228,17 @@ ${isTravel ? `TRAVEL PROJECT QUESTION HINTS — prioritise these types of questi
 Ask only the questions that are genuinely needed — typically 3-12 depending on how much detail the project description already provides. A detailed description may only need 2-3 questions; a vague one-liner may need 10-12. Never pad with unnecessary questions but never skip a question that would prevent a [TBC] marker in the final documents. Prioritise fields that appear across multiple documents.
 Do NOT ask about things already in the description or KB above.
 
+⚠️ "artefact" field MUST match one of the artefact names listed at the top
+of this prompt verbatim — those are the documents you're about to generate.
+Do NOT invent artefact names like "Detailed Trip Plan" or "Trip Itinerary"
+that aren't in that list; the UI shows the tag verbatim and inventing a name
+makes the user think a phantom document exists.
+
 Return ONLY a JSON array in this exact format — no preamble, no explanation:
 [
   {
     "id": "q1",
-    "artefact": "Detailed Trip Plan",
+    "artefact": "Trip Brief",
     "field": "accommodation_type",
     "question": "What type of accommodation have you arranged or are planning to book?",
     "type": "choice",
@@ -240,14 +246,14 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
   },
   {
     "id": "q2",
-    "artefact": "Detailed Trip Plan",
+    "artefact": "Booking Tracker",
     "field": "flights_booked",
     "question": "Have the flights been booked yet?",
     "type": "yesno"
   },
   {
     "id": "q3",
-    "artefact": "Detailed Trip Plan",
+    "artefact": "Booking Tracker",
     "field": "hotel_name",
     "question": "What is the name and area of the hotel or accommodation you will be staying at?",
     "type": "text",
@@ -255,7 +261,7 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
   },
   {
     "id": "q4",
-    "artefact": "Budget Tracker",
+    "artefact": "Cost Management Plan",
     "field": "num_travellers",
     "question": "How many people are travelling on this trip?",
     "type": "number"
@@ -1127,9 +1133,9 @@ Extract every fact the user confirmed. For each fact:
 
 Return ONLY a JSON array:
 [
-  { "title": "Accommodation Type", "value": "Hotel", "questionId": "q1", "artefact": "Detailed Trip Plan", "isTBC": false },
-  { "title": "Flights Booked", "value": "Yes", "questionId": "q2", "artefact": "Detailed Trip Plan", "isTBC": false },
-  { "title": "Hotel Name", "value": "TBC", "questionId": "q3", "artefact": "Detailed Trip Plan", "isTBC": true }
+  { "title": "Accommodation Type", "value": "Hotel", "questionId": "q1", "artefact": "Trip Brief", "isTBC": false },
+  { "title": "Flights Booked", "value": "Yes", "questionId": "q2", "artefact": "Booking Tracker", "isTBC": false },
+  { "title": "Hotel Name", "value": "TBC", "questionId": "q3", "artefact": "Booking Tracker", "isTBC": true }
 ]
 
 If the user's message doesn't answer any questions, return [].`;
