@@ -1837,6 +1837,14 @@ When you mention an action the user must take ("review the artefacts", "approve 
           if (event.type === "message_delta" && event.delta?.stop_reason) {
             stopReason = event.delta.stop_reason;
           }
+          if (event.type === "message_delta" && event.usage) {
+            const u = event.usage;
+            console.log(
+              `[chat/stream] phase=2 agent=${agentId} input=${u.input_tokens ?? "?"} ` +
+              `cache_read=${u.cache_read_input_tokens ?? 0} cache_create=${u.cache_creation_input_tokens ?? 0} ` +
+              `output=${u.output_tokens ?? "?"}`,
+            );
+          }
         } catch {}
       }
     }
@@ -2003,7 +2011,16 @@ When you mention an action the user must take ("review the artefacts", "approve 
           body: JSON.stringify({
             model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
             max_tokens: 4096,
-            system: systemPrompt,
+            // Anthropic prompt cache. Block form lets the API return
+            // `cache_creation_input_tokens` / `cache_read_input_tokens` in the
+            // usage object. Phase 1 typically misses (prompt body differs each
+            // turn as project state evolves), but Phase 2 of the same request
+            // — fired below at the tool-result roundtrip with the same
+            // systemPrompt — hits the cache for ~10% of full input cost, and
+            // back-to-back user messages within the 5-min TTL also hit when
+            // state is stable. Minimum cacheable size is 1024 tokens; this
+            // prompt is ~25K, so it always qualifies.
+            system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
             messages,
             tools: agentTools,
             stream: true,
@@ -2110,6 +2127,18 @@ When you mention an action the user must take ("review the artefacts", "approve 
 
               if (event.type === "message_delta" && event.delta?.stop_reason) {
                 p1StopReason = event.delta.stop_reason;
+              }
+
+              // Anthropic emits final usage stats on `message_delta` (the last
+              // one before message_stop). Log so the cache-hit rate is visible
+              // in Vercel logs alongside the sanitiser telemetry.
+              if (event.type === "message_delta" && event.usage) {
+                const u = event.usage;
+                console.log(
+                  `[chat/stream] phase=1 agent=${agentId} input=${u.input_tokens ?? "?"} ` +
+                  `cache_read=${u.cache_read_input_tokens ?? 0} cache_create=${u.cache_creation_input_tokens ?? 0} ` +
+                  `output=${u.output_tokens ?? "?"}`,
+                );
               }
             } catch {}
           }
@@ -2486,7 +2515,11 @@ When you mention an action the user must take ("review the artefacts", "approve 
               body: JSON.stringify({
                 model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
                 max_tokens: 2048,
-                system: systemPrompt,
+                // Same cache_control breakpoint as Phase 1 — this is the call
+                // that benefits MOST from caching. Phase 1 just wrote the cache
+                // entry; Phase 2 fires within milliseconds with an identical
+                // system prompt and reads it back at ~10% of full cost.
+                system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
                 messages: followUpMessages,
                 tools: agentTools,
                 stream: true,

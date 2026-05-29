@@ -112,6 +112,17 @@ export async function cancelAgentJobs(agentId: string) {
   });
 }
 
+/**
+ * Per-tick fan-out cap for the agent-tick cron. The cron route runs each due
+ * deployment serially through monitoring + Sonnet + alerts + KB scan + outreach
+ * + calibration (~5-15s each on a hot path); at scale the 30s `maxDuration` on
+ * the route will time out long before we drain a large queue. Anything we don't
+ * pick this tick stays `nextCycleAt <= now()` and gets drained on the next tick
+ * (~5 min later). Tune up only after we add concurrency or move the heavy work
+ * to the VPS queue.
+ */
+export const AGENT_TICK_FANOUT_CAP = 25;
+
 /** Get active deployments that are due for an autonomous cycle */
 export async function getDueDeployments() {
   return db.agentDeployment.findMany({
@@ -128,6 +139,9 @@ export async function getDueDeployments() {
       agent: { select: { id: true, name: true, autonomyLevel: true, orgId: true, org: { select: { id: true } } } },
       project: { select: { id: true, name: true, methodology: true } },
     },
+    // Process oldest-due first so no deployment starves under load.
+    orderBy: { nextCycleAt: { sort: "asc", nulls: "first" } },
+    take: AGENT_TICK_FANOUT_CAP,
   });
 }
 

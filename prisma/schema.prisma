@@ -1077,6 +1077,11 @@ model KnowledgeBaseItem {
   @@index([orgId, layer])
   @@index([agentId, type])
   @@index([projectId])
+  // GIN index supports the ~50 `tags: { has: ... }` / `hasSome: [...]` queries
+  // scattered across clarification-session, phase-completion, phase-next-action,
+  // etc. Without this each predicate sequentially scans the table; cost grows
+  // linearly with project age.
+  @@index([tags(ops: raw("array_ops"))], type: Gin)
 }
 
 // ─── Project Decisions ───
