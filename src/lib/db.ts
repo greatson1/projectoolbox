@@ -4,10 +4,33 @@ import { stripContextMarkerLeaks } from "@/lib/agents/sanitise-chat-response";
 
 const globalForPrisma = globalThis as unknown as { prisma: ReturnType<typeof createClient> };
 
+// Telemetry: every leak the extension scrubs means Layer 1 (route sanitiser)
+// either missed it OR was bypassed. We log a structured one-liner so the
+// signal is grep-able in Vercel logs + easy to forward to Sentry later. The
+// 120-char before/after slice is enough to identify the pattern without
+// flooding the log line. agentId is captured when present on the create args.
+function logSanitiserCorrection(opts: {
+  op: "create" | "createMany" | "update";
+  agentId?: string | null;
+  before: string;
+  after: string;
+}) {
+  const droppedChars = opts.before.length - opts.after.length;
+  console.warn(
+    `[chat-sanitiser] op=${opts.op} agent=${opts.agentId ?? "?"} dropped=${droppedChars}ch ` +
+    `before="${opts.before.slice(0, 120).replace(/\n/g, " ")}" ` +
+    `after="${opts.after.slice(0, 120).replace(/\n/g, " ")}"`,
+  );
+}
+
 function createClient() {
   // Use Transaction mode pooler (port 6543 + pgbouncer=true) to avoid
   // "max clients reached" errors in Session mode.
-  const rawUrl = process.env.DATABASE_URL!;
+  const rawUrl = process.env.DATABASE_URL || process.env.TEST_DATABASE_URL || "";
+
+  if (!rawUrl) {
+    throw new Error("DATABASE_URL (or TEST_DATABASE_URL for integration tests) is not configured");
+  }
 
   let connectionString = rawUrl;
   if (!rawUrl.includes("pgbouncer=true")) {
@@ -44,10 +67,11 @@ function createClient() {
     query: {
       chatMessage: {
         async create({ args, query }) {
-          const d = args.data as { role?: string | null; content?: string | null } | undefined;
+          const d = args.data as { role?: string | null; content?: string | null; agentId?: string | null } | undefined;
           if (d && d.role === "agent" && typeof d.content === "string" && d.content.length > 0) {
             const stripped = stripContextMarkerLeaks(d.content);
             if (stripped !== d.content) {
+              logSanitiserCorrection({ op: "create", agentId: d.agentId, before: d.content, after: stripped });
               args.data = { ...(args.data as object), content: stripped } as typeof args.data;
             }
           }
@@ -56,10 +80,13 @@ function createClient() {
         async createMany({ args, query }) {
           if (Array.isArray(args.data)) {
             args.data = args.data.map((row) => {
-              const d = row as { role?: string | null; content?: string | null };
+              const d = row as { role?: string | null; content?: string | null; agentId?: string | null };
               if (d && d.role === "agent" && typeof d.content === "string" && d.content.length > 0) {
                 const stripped = stripContextMarkerLeaks(d.content);
-                if (stripped !== d.content) return { ...(row as object), content: stripped } as typeof row;
+                if (stripped !== d.content) {
+                  logSanitiserCorrection({ op: "createMany", agentId: d.agentId, before: d.content, after: stripped });
+                  return { ...(row as object), content: stripped } as typeof row;
+                }
               }
               return row;
             });
@@ -76,6 +103,7 @@ function createClient() {
           if (d && typeof d.content === "string" && d.content.length > 0) {
             const stripped = stripContextMarkerLeaks(d.content);
             if (stripped !== d.content) {
+              logSanitiserCorrection({ op: "update", agentId: null, before: d.content, after: stripped });
               args.data = { ...(args.data as object), content: stripped } as typeof args.data;
             }
           }
@@ -89,3 +117,4 @@ function createClient() {
 export const db = globalForPrisma.prisma ?? createClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+
