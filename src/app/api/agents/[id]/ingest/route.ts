@@ -21,6 +21,7 @@ import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
 import { CreditService, orgCanUseFeature, getOrgPlan } from "@/lib/credits/service";
 import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
+import { checkRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!caller) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: agentId } = await params;
+
+  // Rate limit: 10 req/min per org. Ingest includes Whisper + extraction
+  // — heavy + slow. A burst of large audio uploads can saturate function
+  // concurrency, so the cap is tight. Scoped by org so one user can't
+  // exhaust the bucket for the rest of the team.
+  const rl = await checkRateLimit("ingest", `org:${caller.orgId}`);
+  if (!rl.ok) return rateLimitedResponse(rl) as NextResponse;
 
   // Verify agent belongs to caller's org
   const agent = await db.agent.findUnique({ where: { id: agentId }, select: { orgId: true, name: true } });

@@ -3,6 +3,7 @@ import { after as waitUntil } from "next/server";
 import { db } from "@/lib/db";
 import { CreditService } from "@/lib/credits/service";
 import { resolveApiCaller } from "@/lib/api-auth";
+import { checkRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -18,6 +19,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id: agentId } = await params;
   const orgId = caller.orgId;
+
+  // Rate limit: 30 req/min per (org, agent). Each turn fires 2× Anthropic +
+  // ~12 DB queries; this caps a misbehaving client without blocking normal
+  // chat cadence (a fast human types ~5/min, agentic loops up to ~20/min).
+  const rl = await checkRateLimit("chatStream", `org:${orgId}:agent:${agentId}`);
+  if (!rl.ok) return rateLimitedResponse(rl) as NextResponse;
+
   const body = await req.json();
   const { message, conversationId } = body;
 

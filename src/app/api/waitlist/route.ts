@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { after as waitUntil } from "next/server";
 import { db } from "@/lib/db";
 import { EmailService } from "@/lib/email";
+import { checkRateLimit, rateLimitedResponse, extractClientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 // ─── POST — join waitlist ────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Rate limit: 5 req per 10 min per IP. Endpoint is unauthed → only signal
+  // we have is the requester IP. Cap is tight because a script can otherwise
+  // pollute the waitlist DB + burn through Resend send quota + Kit subscribes.
+  const rl = await checkRateLimit("waitlist", `ip:${extractClientIp(req)}`);
+  if (!rl.ok) return rateLimitedResponse(rl) as NextResponse;
+
   const body = await req.json();
   const { email, name, sector } = body;
 
