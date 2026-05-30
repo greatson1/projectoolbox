@@ -20,6 +20,7 @@ import { useOrgCurrency, useUpdateOrgCurrency } from "@/hooks/use-currency";
 import { SUPPORTED_CURRENCIES, CURRENCY_NAME, CURRENCY_SYMBOL, CurrencyCode } from "@/lib/currency";
 import { toast } from "sonner";
 import { MfaCard } from "@/components/settings/MfaCard";
+import { ExportButton } from "@/components/settings/ExportButton";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: User },
@@ -135,6 +136,13 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <Button size="sm">Save Changes</Button>
+                <div className="pt-2 border-t border-border">
+                  <ExportButton
+                    endpoint="/api/account/export"
+                    label="Export my data"
+                    description="Download every record we hold about you (GDPR Article 15 right of access)."
+                  />
+                </div>
               </CardContent>
             </Card>
           )}
@@ -262,6 +270,13 @@ export default function SettingsPage() {
                 </div>
                 <CurrencyPicker />
                 <Button size="sm">Save Changes</Button>
+                <div className="pt-2 border-t border-border">
+                  <ExportButton
+                    endpoint="/api/org/export"
+                    label="Export organisation data"
+                    description="Owner-only. Downloads every project, member, agent, KB item, audit log entry and operational record for the organisation (GDPR Article 20 portability)."
+                  />
+                </div>
               </CardContent>
             </Card>
           )}
