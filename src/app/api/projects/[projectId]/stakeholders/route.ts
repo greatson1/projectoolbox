@@ -28,7 +28,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   // stakeholder" and typing the same name twice produced two rows; same
   // for the People-page Add form being submitted with a trailing space.
   const { normaliseStakeholderName, stakeholderNameKey } = await import("@/lib/agents/stakeholder-name");
+  const { looksLikePlaceholderName } = await import("@/lib/agents/fabricated-names-pure");
   const cleanName = normaliseStakeholderName(body?.name);
+  if (cleanName && looksLikePlaceholderName(cleanName)) {
+    return NextResponse.json(
+      { error: `"${cleanName}" looks like a placeholder rather than a person's name. Use a real name or role title (e.g. "Project Sponsor") and update later.` },
+      { status: 400 },
+    );
+  }
   if (cleanName) {
     const allExisting = await db.stakeholder.findMany({
       where: { projectId },

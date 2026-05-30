@@ -115,8 +115,13 @@ async function upsertStakeholder(
   // different clarification answers ends up as three separate stakeholders
   // on the People page.
   const { normaliseStakeholderName, stakeholderNameKey } = await import("./stakeholder-name");
+  const { looksLikePlaceholderName } = await import("./fabricated-names-pure");
   const trimmed = normaliseStakeholderName(name);
   if (!trimmed) return;
+  // Placeholder filter — a clarification answer of "To Be Assigned" or
+  // "TBC" should never produce a Stakeholder row. The agent will re-ask
+  // for the actual name on the next clarification cycle.
+  if (looksLikePlaceholderName(trimmed)) return;
   // Case + whitespace insensitive lookup against existing rows for this project.
   const allExisting = await db.stakeholder.findMany({
     where: { projectId },

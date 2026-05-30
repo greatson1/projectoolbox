@@ -22,7 +22,7 @@
  */
 
 import { db } from "@/lib/db";
-import { looksLikeFabricatedName } from "./fabricated-names-pure";
+import { looksLikeFabricatedName, looksLikePlaceholderName } from "./fabricated-names-pure";
 import { normaliseStakeholderName, stakeholderNameKey } from "./stakeholder-name";
 
 export interface StakeholderExtractResult {
@@ -142,6 +142,12 @@ export async function promoteArtefactStakeholders(projectId: string): Promise<St
       // doesn't sneak a name past it.
       const cleanName = normaliseStakeholderName(f.name);
       if (!cleanName) continue;
+      // Placeholder filter — "To Be Assigned" / "TBC" / "approval
+      // Dependencies" pass the capitalised-word regex but are never a
+      // real person. Drop them unconditionally; the user-knows escape
+      // hatch below doesn't apply since the user couldn't possibly
+      // "confirm" a placeholder as a stakeholder.
+      if (looksLikePlaceholderName(cleanName)) continue;
       const isFab = looksLikeFabricatedName(cleanName);
       const userKnows = confirmedText.includes(cleanName.toLowerCase());
       if (isFab && !userKnows) continue;

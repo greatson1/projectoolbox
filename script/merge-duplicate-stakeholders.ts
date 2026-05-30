@@ -28,12 +28,16 @@
  *   # Scope to one stakeholder name (case-insensitive) within the project:
  *   NAME="Ty Beetseh" POWER=5 INTEREST=4 npx tsx -r dotenv/config script/merge-duplicate-stakeholders.ts "Family Trip"
  *
+ *   # Also strip placeholder rows ("To Be Assigned" / "TBC" / etc.):
+ *   STRIP_PLACEHOLDERS=1 DRY_RUN=1 npx tsx -r dotenv/config script/merge-duplicate-stakeholders.ts "Family Trip"
+ *
  * POWER / INTEREST take 1-5 (Pi grid scale) or 0-100 (DB raw scale).
  * Values 1-5 are auto-mapped: 1=10, 2=30, 3=50, 4=70, 5=90.
  */
 
 import { db } from "../src/lib/db";
 import { normaliseStakeholderName, stakeholderNameKey } from "../src/lib/agents/stakeholder-name";
+import { looksLikePlaceholderName } from "../src/lib/agents/fabricated-names-pure";
 
 function mapScale(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -93,6 +97,8 @@ async function main() {
   let totalDeleted = 0;
   let totalRenamed = 0;
   let totalTuned = 0;
+  let totalPlaceholdersDeleted = 0;
+  const stripPlaceholders = process.env.STRIP_PLACEHOLDERS === "1";
 
   for (const project of projects) {
     const stakeholders = await db.stakeholder.findMany({
@@ -103,8 +109,31 @@ async function main() {
       },
     });
 
+    // ── Placeholder strip pass ─────────────────────────────────────
+    // Rows whose name is "To Be Assigned" / "TBC" / "approval Dependencies"
+    // etc. are never real people — drop them up-front so they don't
+    // pollute the dup-groups view. Opt-in via STRIP_PLACEHOLDERS=1.
+    if (stripPlaceholders) {
+      const placeholders = stakeholders.filter(s => looksLikePlaceholderName(s.name));
+      if (placeholders.length > 0) {
+        console.log(`📁 ${project.name} (${project.id}) — ${placeholders.length} placeholder row${placeholders.length === 1 ? "" : "s"}:`);
+        for (const p of placeholders) {
+          console.log(`     ${dryRun ? "WOULD DELETE" : "DELETING"} ${p.id} {"name":"${p.name}","role":"${p.role ?? ""}"}`);
+        }
+        if (!dryRun) {
+          await db.stakeholder.deleteMany({ where: { id: { in: placeholders.map(p => p.id) } } });
+        }
+        totalPlaceholdersDeleted += placeholders.length;
+      }
+    }
+
+    // Re-fetch live rows (only matters when we just deleted placeholders).
+    const liveStakeholders = stripPlaceholders
+      ? stakeholders.filter(s => !looksLikePlaceholderName(s.name))
+      : stakeholders;
+
     const groups = new Map<string, typeof stakeholders>();
-    for (const s of stakeholders) {
+    for (const s of liveStakeholders) {
       const key = stakeholderNameKey(s.name);
       if (!key) continue;
       if (targetName && key !== targetName) continue;
@@ -197,7 +226,10 @@ async function main() {
   console.log(`\n📊 Summary:`);
   console.log(`   Duplicate groups:   ${totalGroups}`);
   console.log(`   Kept (one per group): ${totalKept}`);
-  console.log(`   ${dryRun ? "Would delete" : "Deleted"}:    ${totalDeleted}`);
+  console.log(`   ${dryRun ? "Would delete" : "Deleted"} (dups):    ${totalDeleted}`);
+  if (stripPlaceholders) {
+    console.log(`   ${dryRun ? "Would delete" : "Deleted"} (placeholders): ${totalPlaceholdersDeleted}`);
+  }
   console.log(`   Renamed (whitespace/case): ${totalRenamed}`);
   console.log(`   Tuned (power/interest):    ${totalTuned}`);
   console.log();

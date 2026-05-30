@@ -115,6 +115,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // additions) using the same case + whitespace insensitive dedup as
     // the extractor and POST endpoint.
     const { normaliseStakeholderName, stakeholderNameKey } = await import("@/lib/agents/stakeholder-name");
+    const { looksLikePlaceholderName } = await import("@/lib/agents/fabricated-names-pure");
+    // The wizard's defaults occasionally pre-fill sponsor/PM/client with
+    // "To Be Assigned" — drop those silently rather than persist as
+    // stakeholder rows. The user can fill the real name later via the
+    // People page or the next clarification cycle.
 
     // Stakeholders — { name, role, org, power, interest } from the wizard
     if (Array.isArray(cfg.stakeholders)) {
@@ -127,6 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       for (const s of cfg.stakeholders) {
         const name = normaliseStakeholderName(s?.name);
         if (!name) continue;
+        if (looksLikePlaceholderName(name)) continue;
         const existing = byKey.get(stakeholderNameKey(name));
         if (existing) {
           await db.stakeholder.update({
@@ -164,6 +170,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const promoteSingle = async (raw: unknown, role: string) => {
       const name = normaliseStakeholderName(typeof raw === "string" ? raw : "");
       if (!name) return;
+      if (looksLikePlaceholderName(name)) return;
       const allExisting = await db.stakeholder.findMany({
         where: { projectId },
         select: { id: true, name: true, role: true },
