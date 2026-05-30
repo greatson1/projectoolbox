@@ -19,6 +19,7 @@ import { useAppStore, type AccentTheme } from "@/stores/app";
 import { useOrgCurrency, useUpdateOrgCurrency } from "@/hooks/use-currency";
 import { SUPPORTED_CURRENCIES, CURRENCY_NAME, CURRENCY_SYMBOL, CurrencyCode } from "@/lib/currency";
 import { toast } from "sonner";
+import { MfaCard } from "@/components/settings/MfaCard";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: User },
@@ -173,13 +174,7 @@ export default function SettingsPage() {
                   </div>
                   <Button variant="outline" size="sm" disabled>Change Password</Button>
                 </div>
-                <div className="flex items-center justify-between py-3 border-b border-border">
-                  <div>
-                    <p className="text-sm font-medium">Two-Factor Authentication</p>
-                    <p className="text-xs text-muted-foreground">Add an extra layer of security to your account</p>
-                  </div>
-                  <Button variant="outline" size="sm">Enable 2FA</Button>
-                </div>
+                <MfaCard />
                 <div className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-medium">Active Sessions</p>

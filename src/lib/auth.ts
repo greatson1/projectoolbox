@@ -4,6 +4,10 @@ import GoogleProvider from "next-auth/providers/google";
 import MicrosoftEntraIDProvider from "next-auth/providers/microsoft-entra-id";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
+import { verifySync as verifyTotp } from "otplib";
+
+// Same ±30s tolerance as the enrollment route — accounts for clock drift.
+const TOTP_EPOCH_TOLERANCE_SECONDS = 30;
 
 // ── E2E auth bypass — DEV/TEST ONLY ──
 // Active only when BOTH env vars are set:
@@ -81,6 +85,10 @@ const baseProviders = [
     credentials: {
       email: { label: "Email", type: "email" },
       password: { label: "Password", type: "password" },
+      // Optional second-factor field. The login UI only renders it once the
+      // first authorize attempt returns the MFA_REQUIRED error, so most
+      // logins still flow through with only email + password.
+      mfaCode: { label: "MFA Code", type: "text" },
     },
     async authorize(credentials) {
       if (!credentials?.email || !credentials?.password) return null;
@@ -97,6 +105,28 @@ const baseProviders = [
       );
 
       if (!valid) return null;
+
+      // ── MFA gate ──────────────────────────────────────────────────────
+      // If the user has TOTP enrolled, require a valid 6-digit code before
+      // minting a session. Error string "MFA_REQUIRED" / "MFA_INVALID" are
+      // contracted with the login page — see /(auth)/login/page.tsx — which
+      // pivots to the code-entry form on the former and shows an inline
+      // error on the latter. Both throws keep NextAuth from minting a
+      // session; the user sees the appropriate state on the login page.
+      if (user.mfaEnabled && user.mfaSecret) {
+        const code = (credentials.mfaCode as string | undefined)?.replace(/\s+/g, "") || "";
+        if (!code) {
+          throw new Error("MFA_REQUIRED");
+        }
+        const codeOk = verifyTotp({
+          secret: user.mfaSecret,
+          token: code,
+          epochTolerance: TOTP_EPOCH_TOLERANCE_SECONDS,
+        }).valid;
+        if (!codeOk) {
+          throw new Error("MFA_INVALID");
+        }
+      }
 
       return { id: user.id, email: user.email, name: user.name, image: user.image };
     },

@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +17,12 @@ export default function LoginPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // MFA challenge state — flipped on by the credentials provider throwing
+  // MFA_REQUIRED. We keep the email + password in state so the second submit
+  // posts both factors together; NextAuth's Credentials authorize runs once
+  // per signIn call and needs all three at the same time.
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,13 +32,25 @@ export default function LoginPage() {
     const result = await signIn("credentials", {
       email,
       password,
+      mfaCode: mfaRequired ? mfaCode : undefined,
       redirect: false,
     });
 
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid email or password");
+      // NextAuth surfaces the error message via `result.error`. Match the
+      // sentinels thrown from authorize() in lib/auth.ts. Anything else is
+      // treated as "invalid credentials" — we deliberately do NOT reveal
+      // whether email or password was wrong.
+      if (result.error.includes("MFA_REQUIRED")) {
+        setMfaRequired(true);
+        setError("");
+      } else if (result.error.includes("MFA_INVALID")) {
+        setError("That code is invalid or expired — codes rotate every 30 seconds.");
+      } else {
+        setError("Invalid email or password");
+      }
     } else {
       router.push("/dashboard");
     }
@@ -50,56 +68,104 @@ export default function LoginPage() {
         <Card>
           <CardContent className="pt-6 space-y-5">
             <div className="text-center">
-              <h1 className="text-xl font-bold">Welcome back</h1>
-              <p className="text-sm text-muted-foreground mt-1">Sign in to your account</p>
+              <h1 className="text-xl font-bold">
+                {mfaRequired ? "Two-factor verification" : "Welcome back"}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                {mfaRequired ? "Enter the 6-digit code from your authenticator app" : "Sign in to your account"}
+              </p>
             </div>
 
-            {/* Social login */}
-            <div>
-              <Button variant="outline" onClick={() => signIn("google", { callbackUrl: "/dashboard" })} className="text-xs w-full">
-                <span className="w-4 h-4 rounded-sm bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center mr-2">G</span>
-                Continue with Google
-              </Button>
-            </div>
+            {!mfaRequired && (
+              <>
+                {/* Social login */}
+                <div>
+                  <Button variant="outline" onClick={() => signIn("google", { callbackUrl: "/dashboard" })} className="text-xs w-full">
+                    <span className="w-4 h-4 rounded-sm bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center mr-2">G</span>
+                    Continue with Google
+                  </Button>
+                </div>
 
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-muted-foreground">or</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground">or</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              </>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="email" className="text-xs">Email</Label>
-                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="you@company.com" className="mt-1" required />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <Label htmlFor="password" className="text-xs">Password</Label>
-                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">Forgot password?</Link>
+              {!mfaRequired && (
+                <>
+                  <div>
+                    <Label htmlFor="email" className="text-xs">Email</Label>
+                    <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                      placeholder="you@company.com" className="mt-1" required />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <Label htmlFor="password" className="text-xs">Password</Label>
+                      <Link href="/forgot-password" className="text-xs text-primary hover:underline">Forgot password?</Link>
+                    </div>
+                    <div className="relative">
+                      <Input id="password" type={showPwd ? "text" : "password"} value={password}
+                        onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="pr-10" required />
+                      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        onClick={() => setShowPwd(!showPwd)}>
+                        {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {mfaRequired && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground p-3 rounded-lg bg-muted/40 border border-border">
+                    <ShieldCheck className="w-4 h-4 text-primary flex-shrink-0" />
+                    <span>Signed in as <strong>{email}</strong></span>
+                  </div>
+                  <div>
+                    <Label htmlFor="mfa-code" className="text-xs">Verification code</Label>
+                    <Input
+                      id="mfa-code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123 456"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      className="mt-1 text-center tracking-widest text-lg"
+                      maxLength={9}
+                      autoFocus
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="relative">
-                  <Input id="password" type={showPwd ? "text" : "password"} value={password}
-                    onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="pr-10" required />
-                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    onClick={() => setShowPwd(!showPwd)}>
-                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
+              )}
 
               {error && <p className="text-xs text-destructive">{error}</p>}
 
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Signing in...</> : "Sign In"}
+                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{mfaRequired ? "Verifying..." : "Signing in..."}</> : (mfaRequired ? "Verify & sign in" : "Sign In")}
               </Button>
+
+              {mfaRequired && (
+                <button
+                  type="button"
+                  onClick={() => { setMfaRequired(false); setMfaCode(""); setError(""); }}
+                  className="block w-full text-center text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Use a different account
+                </button>
+              )}
             </form>
 
-            <p className="text-center text-xs text-muted-foreground">
-              Don&apos;t have an account?{" "}
-              <Link href="/signup" className="font-semibold text-primary hover:underline">Sign up</Link>
-            </p>
+            {!mfaRequired && (
+              <p className="text-center text-xs text-muted-foreground">
+                Don&apos;t have an account?{" "}
+                <Link href="/signup" className="font-semibold text-primary hover:underline">Sign up</Link>
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
