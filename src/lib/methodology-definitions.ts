@@ -17,7 +17,8 @@ export type MethodologyId =
   | "kanban"
   | "safe"
   | "hybrid"
-  | "travel";
+  | "travel"
+  | "pmbok";
 
 export type GateStatus =
   | "NOT_STARTED"
@@ -720,6 +721,149 @@ const TRAVEL: MethodologyDefinition = {
   ],
 };
 
+// PMBOK methodology — PMI's five Process Groups as phases. Differs from
+// Traditional in vocabulary (PMI canonical artefact names like
+// "Project Management Plan", "Issue Log", "Stakeholder Engagement Plan")
+// and in giving Monitoring & Controlling its own phase rather than
+// folding it into Execution. Use this when the team explicitly works
+// to PMBOK Guide standards, audit requirements reference PMI, or the
+// PM is certified PMP and expects PMI vocabulary throughout.
+//
+// Phase order matches the five Process Groups:
+//   1. Initiating  — authorise the project, identify stakeholders.
+//   2. Planning    — produce the integrated Project Management Plan and
+//                    all subsidiary plans (one per knowledge area).
+//   3. Executing   — direct and manage project work, deliver scope.
+//   4. Monitoring & Controlling — track performance, manage changes,
+//                    forecast completion; runs in parallel with Executing
+//                    in real life but represented here as a distinct
+//                    review-and-control phase so the agent can produce
+//                    a clean set of performance artefacts.
+//   5. Closing     — formal acceptance, lessons, archive.
+const PMBOK: MethodologyDefinition = {
+  id: "pmbok",
+  name: "PMBOK",
+  framework: "traditional",
+  description: "PMI's PMBOK Guide — five Process Groups: Initiating, Planning, Executing, Monitoring & Controlling, Closing. Knowledge-area subsidiary plans.",
+  phases: [
+    {
+      name: "Initiating",
+      description: "Authorise the project, identify stakeholders, document high-level requirements",
+      color: "#6366F1",
+      artefacts: [
+        { name: "Project Charter", required: true, aiGeneratable: true },
+        { name: "Business Case", required: false, aiGeneratable: true },
+        { name: "Initial Stakeholder Register", required: true, aiGeneratable: true },
+        { name: "Assumption Log", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Initiation Approval",
+        criteria: "Charter signed, stakeholders identified, project authorised",
+        preRequisites: [
+          { description: "Project Charter approved", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Sponsor identified and confirmed", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Stakeholder register populated", category: "document", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Planning",
+      description: "Produce the integrated Project Management Plan and all subsidiary plans across the 10 knowledge areas",
+      color: "#8B5CF6",
+      artefacts: [
+        { name: "Project Management Plan", required: true, aiGeneratable: true },
+        { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
+        { name: "Cost Management Plan", required: true, aiGeneratable: true },
+        { name: "Risk Management Plan", required: true, aiGeneratable: true },
+        { name: "Initial Risk Register", required: true, aiGeneratable: true },
+        { name: "Quality Management Plan", required: false, aiGeneratable: true },
+        { name: "Resource Management Plan", required: false, aiGeneratable: true },
+        { name: "Communication Plan", required: false, aiGeneratable: true },
+        { name: "Procurement Management Plan", required: false, aiGeneratable: true },
+        { name: "Stakeholder Engagement Plan", required: false, aiGeneratable: true },
+        { name: "Change Control Plan", required: false, aiGeneratable: true },
+        { name: "RACI Matrix", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Planning Baseline Approval",
+        criteria: "Project Management Plan approved, all baselines set, ready to execute",
+        preRequisites: [
+          { description: "Project Management Plan approved", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Schedule baselined", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Budget approved", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "WBS complete and reviewed", category: "review", isMandatory: true, requiresHumanApproval: false },
+          { description: "Risk register populated", category: "document", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Executing",
+      description: "Direct and manage project work; produce deliverables; manage stakeholder engagement and team",
+      color: "#22D3EE",
+      artefacts: [
+        { name: "Status Reports", required: true, aiGeneratable: true },
+        { name: "Issue Log", required: true, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
+        { name: "Quality Review Records", required: false, aiGeneratable: true },
+        { name: "Risk Reviews", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Execution Review",
+        criteria: "Deliverables in progress, change control active, no critical open issues",
+        preRequisites: [
+          { description: "Status reports current", category: "document", isMandatory: true, requiresHumanApproval: false },
+          { description: "Issue log up to date", category: "document", isMandatory: true, requiresHumanApproval: false },
+          { description: "No critical open risks", category: "assessment", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Monitoring & Controlling",
+      description: "Track performance, manage changes, forecast variance, control scope/schedule/cost baselines",
+      color: "#10B981",
+      artefacts: [
+        { name: "Performance Report", required: true, aiGeneratable: true },
+        { name: "Earned Value Report", required: false, aiGeneratable: true },
+        { name: "Variance Analysis", required: false, aiGeneratable: true },
+        { name: "Forecast Report", required: false, aiGeneratable: true },
+        { name: "Change Request Register", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Performance Review",
+        criteria: "Performance against baselines reviewed, exceptions actioned, forecast confirmed",
+        preRequisites: [
+          { description: "Performance Report approved", category: "review", isMandatory: true, requiresHumanApproval: true },
+          { description: "Variance analysis reviewed", category: "review", isMandatory: true, requiresHumanApproval: false },
+          { description: "Forecast confirmed", category: "approval", isMandatory: false, requiresHumanApproval: false },
+        ],
+      },
+    },
+    {
+      name: "Closing",
+      description: "Formal acceptance, procurement closure, lessons learned, project archive",
+      color: "#F59E0B",
+      artefacts: [
+        { name: "Final Project Report", required: true, aiGeneratable: true },
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
+        { name: "Acceptance Certificate", required: false, aiGeneratable: true },
+        { name: "Procurement Closure", required: false, aiGeneratable: true },
+        { name: "Closure Report", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Project Closure",
+        criteria: "All deliverables accepted, lessons captured, procurements closed, project archived",
+        preRequisites: [
+          { description: "Final Project Report approved", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Sponsor acceptance sign-off", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Lessons learned captured", category: "document", isMandatory: true, requiresHumanApproval: false },
+          { description: "All procurements closed", category: "approval", isMandatory: false, requiresHumanApproval: false },
+        ],
+      },
+    },
+  ],
+};
+
 // ─── Registry ───
 
 export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
@@ -730,9 +874,43 @@ export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
   safe: SAFE,
   hybrid: HYBRID,
   travel: TRAVEL,
+  pmbok: PMBOK,
 };
 
-export const METHODOLOGY_LIST: MethodologyDefinition[] = Object.values(METHODOLOGIES);
+/**
+ * Methodologies that are CURRENTLY ACTIVE in the deploy wizard.
+ * SAFe and Kanban are intentionally hidden — keep their definitions in
+ * the registry so legacy projects still render correctly, but stop
+ * surfacing them to new users until they're explicitly reactivated.
+ *
+ * To reactivate one: remove it from this set. To retire one: also
+ * delete its METHODOLOGIES entry + Prisma enum value (irreversible —
+ * legacy projects with that methodology will break).
+ *
+ * Display code should read from METHODOLOGY_LIST (which respects this
+ * filter) rather than iterating METHODOLOGIES directly.
+ */
+const DISABLED_METHODOLOGY_IDS: Set<MethodologyId> = new Set(["safe", "kanban"]);
+
+export function isMethodologyActive(id: string): boolean {
+  const raw = String(id).toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Don't disable based on raw match for legacy aliases like prince2
+  // — those resolve to traditional, which IS active.
+  if (raw === "prince2") return true;
+  return !DISABLED_METHODOLOGY_IDS.has(raw as MethodologyId);
+}
+
+// Active methodologies only — what the deploy wizard shows. SAFe and
+// Kanban are hidden via DISABLED_METHODOLOGY_IDS (see above) without
+// removing their definitions, so legacy projects still load correctly.
+export const METHODOLOGY_LIST: MethodologyDefinition[] = Object.values(METHODOLOGIES).filter(
+  m => isMethodologyActive(m.id),
+);
+
+// Full list including disabled — for places that need to render legacy
+// projects (e.g. agents list, project detail). Display still uses the
+// proper label via getMethodologyLabel; only the picker filters.
+export const METHODOLOGY_LIST_INCLUDING_DISABLED: MethodologyDefinition[] = Object.values(METHODOLOGIES);
 
 /**
  * Get a methodology definition by ID (case-insensitive).
@@ -784,6 +962,7 @@ export function getMethodologyLabel(id: string | null | undefined): string {
   if (raw === "safe") return "SAFe";
   if (raw === "hybrid") return "Hybrid";
   if (raw === "travel") return "Travel & Trip";
+  if (raw === "pmbok") return "PMBOK";
   return String(id); // fall back to raw so a brand-new id at least shows something
 }
 
@@ -817,6 +996,7 @@ export function toMethodologyEnum(input: string | null | undefined): string | nu
   if (raw === "safe") return "SAFE";
   if (raw === "hybrid") return "HYBRID";
   if (raw === "travel") return "TRAVEL";
+  if (raw === "pmbok") return "PMBOK";
   return null;
 }
 

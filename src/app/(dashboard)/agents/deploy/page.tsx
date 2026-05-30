@@ -89,12 +89,18 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
   { id: "other", label: "Other", icon: "📁" },
 ];
 
+// Active methodology list for the deploy wizard. SAFe and Kanban are
+// intentionally NOT included while we focus on the core five — they
+// remain in the methodology-definitions registry so legacy projects
+// still load, but new users can't pick them. To reactivate, add their
+// entry back here AND remove them from DISABLED_METHODOLOGY_IDS in
+// methodology-definitions.ts. PMBOK replaces SAFe's role of "formal,
+// structured framework for governance-heavy projects".
 const METHODOLOGIES = [
   { id: "scrum", name: "Scrum", icon: "🔄", desc: "Iterative sprints with ceremonies and retrospectives", bestFor: "Software teams needing fast feedback loops", rec: false },
-  { id: "kanban", name: "Kanban", icon: "📋", desc: "Continuous flow with WIP limits and visual boards", bestFor: "Support teams, ongoing work with variable priority", rec: false },
   { id: "traditional", name: "Traditional", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
+  { id: "pmbok", name: "PMBOK", icon: "📘", desc: "PMI's five Process Groups with knowledge-area subsidiary plans", bestFor: "PMI-aligned teams, audit / certification requirements, PMP-led projects", rec: false },
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
-  { id: "safe", name: "SAFe", icon: "🏢", desc: "Scaled agile for enterprise-level programme coordination", bestFor: "Multiple teams, cross-functional dependencies, portfolios", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },
   { id: "travel", name: "Travel & Trip", icon: "✈️", desc: "Trip lifecycle: Plan → Book → Travel → Wrap-up", bestFor: "Holidays, business trips, family travel, short events", rec: false },
 ];
@@ -295,17 +301,27 @@ export default function ProjectWizardPage() {
       ? Math.max(1, Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / 86400000))
       : null;
 
-    // Hard category rules first
+    // Auto-recommend logic. SAFe and Kanban are currently disabled so
+    // their previous targets re-route as follows:
+    //   - SAFe (was: enterprise software, large programmes) → PMBOK
+    //     (formal PMI-aligned governance covers the same need without
+    //     the scaled-agile machinery).
+    //   - Kanban (was: short bursts, marketing, ongoing flow) → Hybrid
+    //     (lighter governance + iterative delivery — closest fit for
+    //     short cadence work without forcing sprints).
+    // If SAFe/Kanban are reactivated, restore the previous targets.
     if (data.category === "software") {
-      if (budget > 500000) return "safe";          // enterprise software → SAFe
+      if (budget > 500000) return "pmbok";         // enterprise software (was: safe)
       if (durationDays && durationDays > 180) return "scrum"; // long software → Scrum
       return "scrum";
     }
     if (data.category === "construction") return "waterfall";
     if (data.category === "events") {
-      return durationDays && durationDays <= 7 ? "kanban" : "waterfall";
+      // Was: kanban for ≤7d, waterfall for longer. Without kanban, short
+      // events go to hybrid (planning phase + iterative day-of delivery).
+      return durationDays && durationDays <= 7 ? "hybrid" : "waterfall";
     }
-    if (data.category === "marketing") return "kanban";
+    if (data.category === "marketing") return "hybrid"; // was: kanban
     if (data.category === "research") return "hybrid";
 
     // Travel: trip lifecycle (Plan → Book → Travel → Wrap-up) regardless of
@@ -314,28 +330,28 @@ export default function ProjectWizardPage() {
     // "compliance lead" question from a Lagos family trip came from exactly
     // this path (DoD generated for a holiday).
     if (data.category === "travel") return "travel";
-    // Personal projects keep the old kanban/hybrid routing — they often
-    // ARE iterative (home renovation, learning a language) and benefit
-    // from the sprint structure.
-    if (data.category === "personal") {
-      return durationDays && durationDays <= 5 ? "kanban" : "hybrid";
-    }
+    // Personal projects: short ones get hybrid (was: kanban), longer ones
+    // also hybrid. Without kanban, hybrid is the lighter-weight option for
+    // home renovations / learning projects.
+    if (data.category === "personal") return "hybrid";
 
     // Budget signals (apply to any category)
-    if (budget > 1000000) return "traditional";  // Very large budget → formal governance
+    if (budget > 1000000) return "pmbok";  // Very large budget → formal PMI governance
     if (budget > 500000) return "traditional";
 
     // Keyword signals in project name / description
     if (/\b(sprint|agile|mvp|iteration|backlog|epic)\b/.test(text)) return "scrum";
+    if (/\b(pmbok|pmi|pmp|knowledge area|process group)\b/.test(text)) return "pmbok";
     if (/\b(compliance|audit|regul|govern|formal|gate)\b/.test(text)) return "traditional";
-    if (/\b(flow|support|maintenance|ongoing|continuous)\b/.test(text)) return "kanban";
     if (/\b(construction|build|civil|infra|infrastructure)\b/.test(text)) return "waterfall";
-    if (/\b(enterprise|programme|portfolio|transformation)\b/.test(text)) return "safe";
+    // "enterprise / programme / portfolio / transformation" used to route
+    // to SAFe; PMBOK now picks up the formal-governance side of that.
+    if (/\b(enterprise|programme|portfolio|transformation)\b/.test(text)) return "pmbok";
 
     // Duration signals (when no other signal fires)
     if (durationDays) {
-      if (durationDays <= 14) return "kanban";   // short bursts → Kanban
-      if (durationDays <= 90) return "scrum";    // 2 weeks–3 months → Scrum
+      if (durationDays <= 14) return "hybrid";  // was: kanban
+      if (durationDays <= 90) return "scrum";   // 2 weeks–3 months → Scrum
       if (durationDays > 365) return "traditional";  // 1 year+ → formal governance
     }
 
@@ -776,11 +792,12 @@ export default function ProjectWizardPage() {
                         if (data.methodology === recommended) {
                           const reasons: Record<string, string> = {
                             scrum: "iterative sprints suit this type of work well, letting the agent deliver in short feedback loops.",
-                            kanban: "a visual flow board with no fixed sprints is ideal for short or ongoing work like this.",
                             waterfall: "sequential phases with clear gates suit this project's fixed scope and requirements.",
                             traditional: "formal governance and stage-gate controls are warranted at this budget scale.",
+                            pmbok: "PMI's five Process Groups give you the structured planning + monitoring & controlling cadence this project needs.",
                             hybrid: "a mix of upfront planning and agile delivery gives you structure without overhead.",
-                            safe: "enterprise-level programme coordination across multiple teams is best handled by SAFe.",
+                            travel: "trip lifecycle (Plan → Book → Travel → Wrap-up) with trip-appropriate artefacts fits this best.",
+                            // kanban + safe — currently disabled; rationale retained for reactivation.
                           };
                           return `${signalStr}${reasons[recommended] || "This methodology is the best fit for your project."}`;
                         }

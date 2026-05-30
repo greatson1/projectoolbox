@@ -53,6 +53,15 @@ model User {
   passwordHash       String?
   image              String?
   role               UserRole             @default(MEMBER)
+  // ── MFA / TOTP ────────────────────────────────────────────────────────────
+  // mfaSecret: base32 secret produced by otplib at enrollment time. Persisted
+  //   only when mfaEnabled is true (or briefly during the enroll → verify gap).
+  //   Compromised secrets allow unlimited TOTP codes, so this column is
+  //   treated as a credential — never returned to the client, never logged.
+  // mfaEnabled: gates the login challenge. Disabling MUST clear mfaSecret
+  //   atomically (see /api/auth/mfa/disable).
+  mfaSecret          String?
+  mfaEnabled         Boolean              @default(false)
   onboardingComplete Boolean              @default(false)
   notificationPrefs  Json?
   orgId              String?              // Active org (last selected)
@@ -1141,6 +1150,10 @@ enum Methodology {
   // a user picking it would fall back to WATERFALL and lose the trip
   // lifecycle entirely.
   TRAVEL
+  // PMBOK — PMI's five Process Groups (Initiating → Planning → Executing
+  // → Monitoring & Controlling → Closing). Distinct from Traditional in
+  // vocabulary and in giving Monitoring & Controlling its own phase.
+  PMBOK
 }
 
 enum AgentStatus {

@@ -355,6 +355,76 @@ const TRAVEL_PLAYBOOK: PhasePlaybook[] = [
   },
 ];
 
+// PMBOK playbook — five PMI Process Groups. Vocabulary follows the
+// PMBOK Guide (Project Management Plan, Issue Log, Stakeholder
+// Engagement Plan, performance baselines, EVM forecasts) so a PMP-
+// certified user sees the terms they expect. Distinct from Traditional
+// in that Monitoring & Controlling has its own phase with its own
+// performance-reporting cadence.
+const PMBOK_PLAYBOOK: PhasePlaybook[] = [
+  {
+    name: "Initiating",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Draft the Project Charter — authorise the project and name the PM", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Identify and register stakeholders with power/interest assessment", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Open the Assumption Log to track decisions made under uncertainty", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Charter approved", "Sponsor confirmed", "Stakeholders registered"],
+    artefacts: ["Project Charter", "Initial Stakeholder Register", "Assumption Log"],
+  },
+  {
+    name: "Planning",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Produce the integrated Project Management Plan with all subsidiary plans", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Decompose deliverables into the WBS, then build the schedule and cost baselines", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "RISK_RESPONSE", description: "Run risk identification + qualitative + quantitative analysis across all knowledge areas", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Produce subsidiary plans for each knowledge area (quality, resource, comms, procurement, stakeholder)", trigger: "on_entry", riskLevel: "LOW" },
+    ],
+    gateCriteria: ["Project Management Plan approved", "Schedule baselined", "Budget approved", "WBS complete", "Risk register populated"],
+    artefacts: [
+      "Project Management Plan",
+      "Work Breakdown Structure",
+      "Schedule with Dependencies",
+      "Cost Management Plan",
+      "Risk Management Plan",
+      "Initial Risk Register",
+    ],
+  },
+  {
+    name: "Executing",
+    actions: [
+      { type: "TASK_ASSIGNMENT", description: "Direct and manage project work according to the baselined plan", trigger: "daily", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Publish weekly status reports with progress, issues, risks", trigger: "weekly", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Maintain the Issue Log — record every open issue with owner and target date", trigger: "weekly", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Route every scope/cost/schedule change through the Change Request Register", trigger: "on_gate_ready", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["Status reports current", "Issue log up to date", "No critical open risks"],
+    artefacts: ["Status Reports", "Issue Log", "Change Request Register"],
+  },
+  {
+    name: "Monitoring & Controlling",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Generate Performance Reports comparing actuals to baselines (scope/schedule/cost)", trigger: "weekly", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Run Earned Value calculations and produce variance analysis", trigger: "weekly", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Forecast cost-to-complete (EAC) and schedule-to-complete; flag exceptions", trigger: "weekly", riskLevel: "MEDIUM" },
+      { type: "RISK_RESPONSE", description: "Re-assess risks and update the register; trigger response plans for materialised risks", trigger: "weekly", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["Performance Report approved", "Variance analysis reviewed", "Forecast confirmed"],
+    artefacts: ["Performance Report", "Earned Value Report", "Variance Analysis", "Forecast Report"],
+  },
+  {
+    name: "Closing",
+    actions: [
+      { type: "DOCUMENT_GENERATION", description: "Produce the Final Project Report with outcomes vs baselines", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Capture Lessons Learned across all knowledge areas", trigger: "on_entry", riskLevel: "LOW" },
+      { type: "DOCUMENT_GENERATION", description: "Close procurements: formal acceptance from each supplier", trigger: "on_entry", riskLevel: "MEDIUM" },
+      { type: "COMMUNICATION", description: "Obtain formal acceptance sign-off from sponsor; archive project artefacts", trigger: "on_completion", riskLevel: "MEDIUM" },
+    ],
+    gateCriteria: ["Final Project Report approved", "Sponsor sign-off", "Lessons learned captured", "Procurements closed"],
+    artefacts: ["Final Project Report", "Lessons Learned", "Acceptance Certificate"],
+  },
+];
+
 // ─── Playbook Registry ───
 
 const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
@@ -366,6 +436,7 @@ const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
   safe: SAFE_PLAYBOOK,
   hybrid: HYBRID_PLAYBOOK,
   travel: TRAVEL_PLAYBOOK,
+  pmbok: PMBOK_PLAYBOOK,
   // Legacy aliases — old DB rows / VPS agent payloads use these
   prince2: TRADITIONAL_PLAYBOOK,
   PRINCE2: TRADITIONAL_PLAYBOOK,
@@ -375,6 +446,8 @@ const PLAYBOOKS: Record<string, PhasePlaybook[]> = {
   AGILE_KANBAN: KANBAN_PLAYBOOK,
   SAFE: SAFE_PLAYBOOK,
   HYBRID: HYBRID_PLAYBOOK,
+  TRAVEL: TRAVEL_PLAYBOOK,
+  PMBOK: PMBOK_PLAYBOOK,
 };
 
 /**

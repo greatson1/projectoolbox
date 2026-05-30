@@ -84,6 +84,85 @@ describe("Travel methodology", () => {
   });
 });
 
+describe("PMBOK methodology", () => {
+  it("is registered under id 'pmbok'", () => {
+    expect(METHODOLOGIES.pmbok).toBeDefined();
+    expect(getMethodology("pmbok").id).toBe("pmbok");
+    expect(getMethodology("PMBOK").id).toBe("pmbok");
+  });
+
+  it("has the five PMI Process Groups as phases in order", () => {
+    const phases = getMethodology("pmbok").phases.map(p => p.name);
+    expect(phases).toEqual([
+      "Initiating",
+      "Planning",
+      "Executing",
+      "Monitoring & Controlling",
+      "Closing",
+    ]);
+  });
+
+  it("Planning phase has the integrated Project Management Plan as a required artefact", () => {
+    const planning = getMethodology("pmbok").phases.find(p => p.name === "Planning")!;
+    const pmp = planning.artefacts.find(a => a.name === "Project Management Plan");
+    expect(pmp).toBeDefined();
+    expect(pmp!.required).toBe(true);
+  });
+
+  it("Monitoring & Controlling phase has Performance Report as a required artefact", () => {
+    const mAndC = getMethodology("pmbok").phases.find(p => p.name === "Monitoring & Controlling")!;
+    const perf = mAndC.artefacts.find(a => a.name === "Performance Report");
+    expect(perf).toBeDefined();
+    expect(perf!.required).toBe(true);
+  });
+
+  it("Closing phase has Final Project Report + Lessons Learned as required artefacts", () => {
+    const closing = getMethodology("pmbok").phases.find(p => p.name === "Closing")!;
+    const required = closing.artefacts.filter(a => a.required).map(a => a.name);
+    expect(required).toContain("Final Project Report");
+    expect(required).toContain("Lessons Learned");
+  });
+});
+
+describe("SAFe + Kanban are currently disabled but legacy projects still load", () => {
+  // Both definitions stay in the registry so legacy projects render
+  // correctly, but isMethodologyActive returns false to keep them off
+  // the deploy wizard picker.
+  it("SAFe definition still resolves for legacy rows", () => {
+    expect(getMethodology("safe").id).toBe("safe");
+    expect(getMethodology("SAFE").id).toBe("safe");
+  });
+
+  it("Kanban definition still resolves for legacy rows", () => {
+    expect(getMethodology("kanban").id).toBe("kanban");
+    expect(getMethodology("AGILE_KANBAN").id).toBe("kanban");
+  });
+
+  // METHODOLOGY_LIST is the export the deploy wizard reads — it must
+  // NOT contain SAFe or Kanban while they're disabled.
+  // (Imported here so the assertion exercises the same export consumers use.)
+  it("METHODOLOGY_LIST excludes SAFe and Kanban while disabled", async () => {
+    const mod = await import("./methodology-definitions");
+    const ids = mod.METHODOLOGY_LIST.map(m => m.id);
+    expect(ids).not.toContain("safe");
+    expect(ids).not.toContain("kanban");
+    // …but the active ones must still be present.
+    expect(ids).toContain("traditional");
+    expect(ids).toContain("pmbok");
+    expect(ids).toContain("scrum");
+    expect(ids).toContain("waterfall");
+    expect(ids).toContain("hybrid");
+    expect(ids).toContain("travel");
+  });
+
+  it("METHODOLOGY_LIST_INCLUDING_DISABLED has every methodology including SAFe + Kanban", async () => {
+    const mod = await import("./methodology-definitions");
+    const ids = mod.METHODOLOGY_LIST_INCLUDING_DISABLED.map(m => m.id);
+    expect(ids).toContain("safe");
+    expect(ids).toContain("kanban");
+  });
+});
+
 describe("getMethodologyLabel — UI display normalisation", () => {
   // Original bug: a user picked "Traditional" and the agents-list badge
   // showed "PRINCE2" because that page read project.methodology directly
@@ -104,6 +183,7 @@ describe("getMethodologyLabel — UI display normalisation", () => {
   it("maps the new canonical enum values to UI labels", () => {
     expect(getMethodologyLabel("TRADITIONAL")).toBe("Traditional");
     expect(getMethodologyLabel("TRAVEL")).toBe("Travel & Trip");
+    expect(getMethodologyLabel("PMBOK")).toBe("PMBOK");
   });
 
   it("maps canonical lowercase ids", () => {
@@ -152,6 +232,12 @@ describe("toMethodologyEnum — DB write normalisation", () => {
     expect(toMethodologyEnum("travel")).toBe("TRAVEL");
     expect(toMethodologyEnum("Travel")).toBe("TRAVEL");
     expect(toMethodologyEnum("TRAVEL")).toBe("TRAVEL");
+  });
+
+  it("pmbok ids map to PMBOK", () => {
+    expect(toMethodologyEnum("pmbok")).toBe("PMBOK");
+    expect(toMethodologyEnum("PMBOK")).toBe("PMBOK");
+    expect(toMethodologyEnum("Pmbok")).toBe("PMBOK");
   });
 
   it("scrum / kanban shortforms map to AGILE_ enum values", () => {
