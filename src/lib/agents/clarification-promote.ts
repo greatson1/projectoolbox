@@ -110,17 +110,30 @@ async function upsertStakeholder(
   power = 50,
   interest = 50,
 ): Promise<void> {
-  const trimmed = name.trim();
+  // Use the shared normaliser so "Ty Beetseh" / "Ty  Beetseh" / "TY Beetseh"
+  // map to the same DB row. Without it the same person added via three
+  // different clarification answers ends up as three separate stakeholders
+  // on the People page.
+  const { normaliseStakeholderName, stakeholderNameKey } = await import("./stakeholder-name");
+  const trimmed = normaliseStakeholderName(name);
   if (!trimmed) return;
-  const existing = await db.stakeholder.findFirst({
-    where: { projectId, name: trimmed },
-    select: { id: true, role: true },
+  // Case + whitespace insensitive lookup against existing rows for this project.
+  const allExisting = await db.stakeholder.findMany({
+    where: { projectId },
+    select: { id: true, name: true, role: true },
   });
+  const targetKey = stakeholderNameKey(trimmed);
+  const existing = allExisting.find(s => stakeholderNameKey(s.name) === targetKey);
   if (existing) {
     // Only fill in role if it's currently blank — never overwrite a richer
     // role the user set explicitly elsewhere.
-    if (role && !existing.role) {
-      await db.stakeholder.update({ where: { id: existing.id }, data: { role } });
+    const updates: { role?: string; name?: string } = {};
+    if (role && !existing.role) updates.role = role;
+    // If the existing row stored a sloppier form ("Ty  Beetseh"), tidy it
+    // to the normalised version while we're here.
+    if (existing.name !== trimmed) updates.name = trimmed;
+    if (Object.keys(updates).length > 0) {
+      await db.stakeholder.update({ where: { id: existing.id }, data: updates });
     }
   } else {
     await db.stakeholder.create({

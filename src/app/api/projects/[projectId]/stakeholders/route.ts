@@ -24,7 +24,40 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const blocked = await ensureProjectMutable(projectId);
   if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
 
-  const stakeholder = await db.stakeholder.create({ data: { ...body, projectId } });
+  // Normalise + dedup on the create path. Without this, clicking "Add
+  // stakeholder" and typing the same name twice produced two rows; same
+  // for the People-page Add form being submitted with a trailing space.
+  const { normaliseStakeholderName, stakeholderNameKey } = await import("@/lib/agents/stakeholder-name");
+  const cleanName = normaliseStakeholderName(body?.name);
+  if (cleanName) {
+    const allExisting = await db.stakeholder.findMany({
+      where: { projectId },
+      select: { id: true, name: true, role: true, organisation: true, power: true, interest: true },
+    });
+    const dup = allExisting.find(s => stakeholderNameKey(s.name) === stakeholderNameKey(cleanName));
+    if (dup) {
+      // Merge the inbound payload into the existing row instead of creating
+      // a second one. The user gets the row back; the UI's optimistic
+      // update treats it as if it were freshly created. Only fill blank
+      // fields — never overwrite values the user already set.
+      const patch: Record<string, unknown> = {};
+      const fields = ["role", "organisation", "email", "sentiment"] as const;
+      for (const f of fields) {
+        if (!((dup as Record<string, unknown>)[f]) && body[f]) patch[f] = body[f];
+      }
+      if (typeof body.power === "number" && dup.power === 50) patch.power = body.power;
+      if (typeof body.interest === "number" && dup.interest === 50) patch.interest = body.interest;
+      if (dup.name !== cleanName) patch.name = cleanName;
+      const merged = Object.keys(patch).length > 0
+        ? await db.stakeholder.update({ where: { id: dup.id }, data: patch })
+        : dup;
+      return NextResponse.json({ data: merged, deduped: true });
+    }
+  }
+
+  const stakeholder = await db.stakeholder.create({
+    data: { ...body, ...(cleanName ? { name: cleanName } : {}), projectId },
+  });
 
   // Track new stakeholder in KB
   import("@/lib/agents/kb-event-tracker").then(({ trackStakeholderChange }) => {

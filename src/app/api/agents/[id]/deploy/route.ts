@@ -110,20 +110,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
+    // Shared normaliser — keep the deploy wizard's three upsert paths
+    // (wizard stakeholders array, sponsor/PM/client promote, future
+    // additions) using the same case + whitespace insensitive dedup as
+    // the extractor and POST endpoint.
+    const { normaliseStakeholderName, stakeholderNameKey } = await import("@/lib/agents/stakeholder-name");
+
     // Stakeholders — { name, role, org, power, interest } from the wizard
     if (Array.isArray(cfg.stakeholders)) {
+      // Read once, dedup in-memory.
+      const allExisting = await db.stakeholder.findMany({
+        where: { projectId },
+        select: { id: true, name: true },
+      });
+      const byKey = new Map(allExisting.map(s => [stakeholderNameKey(s.name), s] as const));
       for (const s of cfg.stakeholders) {
-        const name = typeof s?.name === "string" ? s.name.trim() : "";
+        const name = normaliseStakeholderName(s?.name);
         if (!name) continue;
-        // Upsert by (projectId, name) — re-deploys shouldn't duplicate.
-        const existing = await db.stakeholder.findFirst({
-          where: { projectId, name },
-          select: { id: true },
-        });
+        const existing = byKey.get(stakeholderNameKey(name));
         if (existing) {
           await db.stakeholder.update({
             where: { id: existing.id },
             data: {
+              ...(existing.name !== name ? { name } : {}),
               role: s.role || undefined,
               organisation: s.org || undefined,
               power: typeof s.power === "number" ? s.power : undefined,
@@ -131,7 +140,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             },
           });
         } else {
-          await db.stakeholder.create({
+          const created = await db.stakeholder.create({
             data: {
               projectId,
               name,
@@ -141,6 +150,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               interest: typeof s.interest === "number" ? s.interest : 50,
             },
           });
+          // Keep the in-memory dedup map in sync so later sponsor/PM/client
+          // promotions see this row.
+          byKey.set(stakeholderNameKey(name), { id: created.id, name });
         }
       }
     }
@@ -150,15 +162,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // them and downstream prereq checks (e.g. "Sponsor identified and
     // confirmed") evaluate as met.
     const promoteSingle = async (raw: unknown, role: string) => {
-      const name = typeof raw === "string" ? raw.trim() : "";
+      const name = normaliseStakeholderName(typeof raw === "string" ? raw : "");
       if (!name) return;
-      const existing = await db.stakeholder.findFirst({
-        where: { projectId, name },
-        select: { id: true, role: true },
+      const allExisting = await db.stakeholder.findMany({
+        where: { projectId },
+        select: { id: true, name: true, role: true },
       });
+      const targetKey = stakeholderNameKey(name);
+      const existing = allExisting.find(s => stakeholderNameKey(s.name) === targetKey);
       if (existing) {
-        if (!existing.role) {
-          await db.stakeholder.update({ where: { id: existing.id }, data: { role } });
+        const updates: { role?: string; name?: string } = {};
+        if (!existing.role) updates.role = role;
+        if (existing.name !== name) updates.name = name;
+        if (Object.keys(updates).length > 0) {
+          await db.stakeholder.update({ where: { id: existing.id }, data: updates });
         }
       } else {
         await db.stakeholder.create({
