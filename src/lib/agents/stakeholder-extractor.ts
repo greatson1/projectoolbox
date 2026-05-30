@@ -23,6 +23,7 @@
 
 import { db } from "@/lib/db";
 import { looksLikeFabricatedName } from "./fabricated-names-pure";
+import { normaliseStakeholderName, stakeholderNameKey } from "./stakeholder-name";
 
 export interface StakeholderExtractResult {
   scanned: number;
@@ -137,15 +138,22 @@ export async function promoteArtefactStakeholders(projectId: string): Promise<St
   for (const art of artefacts) {
     const found = harvestNames(art.content);
     for (const f of found) {
-      const isFab = looksLikeFabricatedName(f.name);
-      const userKnows = confirmedText.includes(f.name.toLowerCase());
+      // Normalise BEFORE the fabricated-name check so trailing whitespace
+      // doesn't sneak a name past it.
+      const cleanName = normaliseStakeholderName(f.name);
+      if (!cleanName) continue;
+      const isFab = looksLikeFabricatedName(cleanName);
+      const userKnows = confirmedText.includes(cleanName.toLowerCase());
       if (isFab && !userKnows) continue;
-      const key = f.name.toLowerCase();
+      // Dedup key: case-folded + whitespace-collapsed. Closes the
+      // "Ty Beetseh" vs "Ty  Beetseh" vs "TY Beetseh" gap that previously
+      // produced duplicate Stakeholder rows.
+      const key = stakeholderNameKey(cleanName);
       const existing = byKey.get(key);
       if (existing) {
         if (!existing.sources.includes(art.name)) existing.sources.push(art.name);
       } else {
-        byKey.set(key, { name: f.name, role: f.role, sources: [art.name] });
+        byKey.set(key, { name: cleanName, role: f.role, sources: [art.name] });
       }
     }
   }
@@ -166,12 +174,21 @@ export async function promoteArtefactStakeholders(projectId: string): Promise<St
     "Lead":              { power: 60, interest: 70 },
   };
 
+  // Pull every existing stakeholder once and index by normalised name —
+  // case- and whitespace-insensitive. Doing exact `findFirst({ name })`
+  // per agg used to miss "Ty Beetseh" when a previous run had stored
+  // "ty beetseh", producing the duplicate rows reported on the People page.
+  const allExisting = await db.stakeholder.findMany({
+    where: { projectId },
+    select: { id: true, name: true, role: true, organisation: true },
+  });
+  const existingByKey = new Map(
+    allExisting.map(s => [stakeholderNameKey(s.name), s] as const),
+  );
+
   for (const agg of byKey.values()) {
     try {
-      const existing = await db.stakeholder.findFirst({
-        where: { projectId, name: agg.name },
-        select: { id: true, role: true, organisation: true },
-      });
+      const existing = existingByKey.get(stakeholderNameKey(agg.name));
       if (existing) {
         // Only fill in role if it's still blank — never overwrite a richer
         // value the user set on the People page or via clarification.
