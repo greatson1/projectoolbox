@@ -483,7 +483,12 @@ export default function StakeholdersPage() {
       </Card>
 
       {/* Stakeholder Table */}
-      <Card className="p-0">
+      {/* overflow-x-auto + sticky right Actions column: keep the Edit /
+          Delete affordances reachable on every viewport. Previously a
+          narrow viewport (or the user's full-page screenshot) cropped
+          the rightmost Actions column out of view, making it look like
+          stakeholders couldn't be edited at all. */}
+      <Card className="p-0 overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border">
@@ -492,7 +497,7 @@ export default function StakeholdersPage() {
                   {h}
                 </th>
               ))}
-              <th className="px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <th className="sticky right-0 z-10 bg-card px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-l border-border shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]">
                 Actions
               </th>
             </tr>
@@ -548,12 +553,13 @@ export default function StakeholdersPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{s.lastContact || "-"}</td>
-                    <td className="px-4 py-3">
+                    <td className="sticky right-0 z-10 bg-card px-4 py-3 border-l border-border shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
+                          title="Edit power, interest, role + sentiment"
                           aria-label={`Edit ${s.name}`}
                           onClick={(e) => { e.stopPropagation(); openEdit(s); }}
                         >
@@ -563,6 +569,7 @@ export default function StakeholdersPage() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-destructive hover:text-destructive"
+                          title="Delete stakeholder"
                           aria-label={`Delete ${s.name}`}
                           disabled={deleteStakeholder.isPending}
                           onClick={(e) => { e.stopPropagation(); handleDelete(s); }}

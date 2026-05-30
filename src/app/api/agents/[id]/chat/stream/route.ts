@@ -2047,6 +2047,17 @@ When you mention an action the user must take ("review the artefacts", "approve 
         if (!phase1Response.ok || !phase1Response.body) {
           const errBody = await phase1Response.text().catch(() => "no body");
           console.error(`[chat/stream] Anthropic API error: ${phase1Response.status} — ${errBody}`);
+          // 401 (auth) and 5xx (Anthropic infra) are operator-actionable — capture to
+          // Sentry. 429/529 (rate limit / overload) are filtered by `ignoreErrors`
+          // in sentry.server.config.ts, so capturing here is safe and won't spam.
+          try {
+            const { captureMessage } = await import("@sentry/nextjs");
+            captureMessage(`[chat/stream] Anthropic API ${phase1Response.status}`, {
+              level: phase1Response.status === 401 ? "error" : phase1Response.status >= 500 ? "error" : "warning",
+              tags: { route: "chat/stream", phase: "phase1", anthropic_status: String(phase1Response.status) },
+              extra: { body: errBody.slice(0, 500), agentId },
+            });
+          } catch {}
           const status = phase1Response.status;
           const userMsg = status === 401 ? "API key is invalid or expired. Please check your ANTHROPIC_API_KEY."
             : status === 429 ? "Rate limited by Anthropic — please wait a moment and try again."

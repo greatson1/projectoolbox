@@ -16,11 +16,24 @@ function logSanitiserCorrection(opts: {
   after: string;
 }) {
   const droppedChars = opts.before.length - opts.after.length;
+  const beforeSnip = opts.before.slice(0, 120).replace(/\n/g, " ");
+  const afterSnip = opts.after.slice(0, 120).replace(/\n/g, " ");
   console.warn(
     `[chat-sanitiser] op=${opts.op} agent=${opts.agentId ?? "?"} dropped=${droppedChars}ch ` +
-    `before="${opts.before.slice(0, 120).replace(/\n/g, " ")}" ` +
-    `after="${opts.after.slice(0, 120).replace(/\n/g, " ")}"`,
+    `before="${beforeSnip}" after="${afterSnip}"`,
   );
+  // Sentry breadcrumb — if a subsequent error fires in the same request, the
+  // sanitiser corrections show up in the trail so we can correlate a leak with
+  // a downstream failure. No event sent on its own; trail-only.
+  try {
+    const Sentry = require("@sentry/nextjs");
+    Sentry.addBreadcrumb({
+      category: "chat-sanitiser",
+      message: `${opts.op} dropped ${droppedChars} chars`,
+      level: "warning",
+      data: { agentId: opts.agentId ?? null, op: opts.op, before: beforeSnip, after: afterSnip },
+    });
+  } catch {}
 }
 
 function createClient() {
@@ -62,7 +75,32 @@ function createClient() {
   // rows so user messages and system markers pass through unchanged. If
   // `stripContextMarkerLeaks` returns the input unchanged, we return the
   // original args object (no allocation churn for clean writes).
+  // Retry-on-pgbouncer-drop wrapper.
+  // Supabase's transaction-mode pooler recycles connections aggressively; under
+  // bursty load we see "Connection terminated unexpectedly" / "Server has
+  // closed the connection" intermittently on what would otherwise be a healthy
+  // query. Retry once with a small back-off so the next acquired pool slot
+  // succeeds. We only retry on connection-loss markers — query errors (bad
+  // SQL, validation, FK violations) pass through unchanged.
+  const isTransientConnError = (e: unknown): boolean => {
+    const msg = (e as any)?.message || String(e);
+    return /Connection terminated unexpectedly|Server has closed the connection|Connection ended|ECONNRESET/i.test(msg);
+  };
+
   return client.$extends({
+    name: "transientConnRetry",
+    query: {
+      async $allOperations({ args, query }) {
+        try {
+          return await query(args);
+        } catch (e) {
+          if (!isTransientConnError(e)) throw e;
+          await new Promise((r) => setTimeout(r, 100));
+          return await query(args);
+        }
+      },
+    },
+  }).$extends({
     name: "chatMessageLeakSanitiser",
     query: {
       chatMessage: {
