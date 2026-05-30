@@ -553,6 +553,24 @@ export function useCreateStakeholder(projectId: string) {
   });
 }
 
+export function useUpdateStakeholder(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stakeholderId, ...data }: any) =>
+      api(`/api/projects/${projectId}/stakeholders`, { method: "PATCH", body: JSON.stringify({ stakeholderId, ...data }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stakeholders", projectId] }),
+  });
+}
+
+export function useDeleteStakeholder(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stakeholderId: string) =>
+      api(`/api/projects/${projectId}/stakeholders`, { method: "DELETE", body: JSON.stringify({ stakeholderId }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stakeholders", projectId] }),
+  });
+}
+
 // ── Risks ──
 
 export function useUpdateRisk(projectId: string) {

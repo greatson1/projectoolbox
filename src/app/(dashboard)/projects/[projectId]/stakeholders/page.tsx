@@ -2,13 +2,35 @@
 
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
-import { useProjectStakeholders } from "@/hooks/use-api";
+import {
+  useProjectStakeholders,
+  useCreateStakeholder,
+  useUpdateStakeholder,
+  useDeleteStakeholder,
+} from "@/hooks/use-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { parseSource, SourceBadge, RowReasoning, ExpandChevron } from "@/components/artefacts/source-prefix";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, Plus, ShieldAlert, Heart, Eye, Download } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Users, Plus, ShieldAlert, Heart, Eye, Download, Pencil, Trash2 } from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
 import { toast } from "sonner";
 
@@ -51,11 +73,69 @@ const SENTIMENT_BADGE: Record<string, "default" | "secondary" | "destructive" | 
   unknown: "outline",
 };
 
+const SENTIMENT_OPTIONS = ["unknown", "supportive", "neutral", "resistant"] as const;
+
+interface FormState {
+  name: string;
+  role: string;
+  organisation: string;
+  email: string;
+  power: number;
+  interest: number;
+  sentiment: string;
+}
+
+const EMPTY_FORM: FormState = {
+  name: "",
+  role: "Stakeholder",
+  organisation: "",
+  email: "",
+  power: 3,
+  interest: 3,
+  sentiment: "unknown",
+};
+
+/** Clickable 1-5 rating selector used for Power / Interest in the form. */
+function RatingSelector({
+  value,
+  onChange,
+  colour,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  colour: string;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      {Array.from({ length: 5 }, (_, i) => {
+        const level = i + 1;
+        return (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Set to ${level}`}
+            onClick={() => onChange(level)}
+            className={`w-6 h-6 rounded-md border transition-colors ${
+              level <= value ? colour : "bg-transparent border-border hover:bg-muted"
+            }`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function StakeholdersPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: raw, isLoading, refetch } = useProjectStakeholders(projectId);
-  const [adding, setAdding] = useState(false);
+  const { data: raw, isLoading } = useProjectStakeholders(projectId);
+  const createStakeholder = useCreateStakeholder(projectId);
+  const updateStakeholder = useUpdateStakeholder(projectId);
+  const deleteStakeholder = useDeleteStakeholder(projectId);
+
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
   const stakeholders: Stakeholder[] = (raw ?? []).map(mapStakeholder);
 
@@ -71,24 +151,178 @@ export default function StakeholdersPage() {
   const keepInformed = stakeholders.filter(s => s.power < 4 && s.interest >= 4).length;
   const monitor = stakeholders.filter(s => s.power < 4 && s.interest < 4).length;
 
-  /* ---- Add stakeholder ---- */
-  function handleAdd() {
-    const name = prompt("Stakeholder name:");
-    if (!name?.trim()) return;
-    setAdding(true);
-    fetch(`/api/projects/${projectId}/stakeholders`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), role: "Stakeholder", power: 3, interest: 3 }),
-    })
-      .then(res => {
-        if (!res.ok) throw new Error("Failed");
-        toast.success("Stakeholder added");
-        refetch();
-      })
-      .catch(() => toast.error("Failed to add stakeholder"))
-      .finally(() => setAdding(false));
+  const saving = createStakeholder.isPending || updateStakeholder.isPending;
+
+  /* ---- Dialog open helpers ---- */
+  function openAdd() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setDialogOpen(true);
   }
+
+  function openEdit(s: Stakeholder) {
+    setEditingId(s.id);
+    setForm({
+      name: s.name === "Unnamed" ? "" : s.name,
+      role: s.role,
+      organisation: s.org,
+      email: s.email,
+      power: s.power,
+      interest: s.interest,
+      sentiment: s.sentiment,
+    });
+    setDialogOpen(true);
+  }
+
+  /* ---- Save (add or edit) ---- */
+  function handleSave() {
+    if (!form.name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    const payload = {
+      name: form.name.trim(),
+      role: form.role.trim() || "Stakeholder",
+      organisation: form.organisation.trim(),
+      email: form.email.trim(),
+      power: form.power,
+      interest: form.interest,
+      sentiment: form.sentiment,
+    };
+
+    if (editingId) {
+      updateStakeholder.mutate(
+        { stakeholderId: editingId, ...payload },
+        {
+          onSuccess: () => {
+            toast.success("Stakeholder updated");
+            setDialogOpen(false);
+          },
+          onError: () => toast.error("Failed to update stakeholder"),
+        },
+      );
+    } else {
+      createStakeholder.mutate(payload, {
+        onSuccess: () => {
+          toast.success("Stakeholder added");
+          setDialogOpen(false);
+        },
+        onError: () => toast.error("Failed to add stakeholder"),
+      });
+    }
+  }
+
+  /* ---- Delete ---- */
+  function handleDelete(s: Stakeholder) {
+    if (!window.confirm(`Remove ${s.name} from the stakeholder register?`)) return;
+    deleteStakeholder.mutate(s.id, {
+      onSuccess: () => toast.success("Stakeholder removed"),
+      onError: () => toast.error("Failed to remove stakeholder"),
+    });
+  }
+
+  /* ---- Reusable add/edit dialog ---- */
+  const formDialog = (
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{editingId ? "Edit stakeholder" : "Add stakeholder"}</DialogTitle>
+          <DialogDescription>
+            Set this stakeholder&apos;s details and their position on the power / interest grid.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="sh-name">Name</Label>
+              <Input
+                id="sh-name"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Jane Smith"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sh-role">Role</Label>
+              <Input
+                id="sh-role"
+                value={form.role}
+                onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                placeholder="Sponsor"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="sh-org">Organisation</Label>
+              <Input
+                id="sh-org"
+                value={form.organisation}
+                onChange={e => setForm(f => ({ ...f, organisation: e.target.value }))}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sh-email">Email</Label>
+              <Input
+                id="sh-email"
+                type="email"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="jane@acme.com"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Power ({form.power}/5)</Label>
+              <RatingSelector
+                value={form.power}
+                onChange={v => setForm(f => ({ ...f, power: v }))}
+                colour="bg-primary border-primary"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Interest ({form.interest}/5)</Label>
+              <RatingSelector
+                value={form.interest}
+                onChange={v => setForm(f => ({ ...f, interest: v }))}
+                colour="bg-cyan-400 border-cyan-400"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="sh-sentiment">Sentiment</Label>
+            <Select value={form.sentiment} onValueChange={v => setForm(f => ({ ...f, sentiment: v ?? "unknown" }))}>
+              <SelectTrigger id="sh-sentiment">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SENTIMENT_OPTIONS.map(opt => (
+                  <SelectItem key={opt} value={opt} className="capitalize">
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : editingId ? "Save changes" : "Add stakeholder"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   /* ---- Loading ---- */
   if (isLoading) {
@@ -110,7 +344,7 @@ export default function StakeholdersPage() {
       <div className="space-y-6 max-w-[1400px]">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Stakeholders</h1>
-          <Button size="sm" onClick={handleAdd} disabled={adding}>
+          <Button size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4 mr-1" /> Add Stakeholder
           </Button>
         </div>
@@ -119,10 +353,11 @@ export default function StakeholdersPage() {
             <Users className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
             <h2 className="text-lg font-bold mb-2">No stakeholders registered</h2>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Your AI agent identifies and registers stakeholders from project documentation and meetings.
+              Your AI agent identifies and registers stakeholders from project documentation and meetings, or you can add them manually.
             </p>
           </div>
         </Card>
+        {formDialog}
       </div>
     );
   }
@@ -156,7 +391,7 @@ export default function StakeholdersPage() {
             <Download className="w-3.5 h-3.5 mr-1" />
             Download CSV
           </Button>
-          <Button size="sm" onClick={handleAdd} disabled={adding}>
+          <Button size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4 mr-1" /> Add Stakeholder
           </Button>
         </div>
@@ -257,6 +492,9 @@ export default function StakeholdersPage() {
                   {h}
                 </th>
               ))}
+              <th className="px-4 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -310,10 +548,33 @@ export default function StakeholdersPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{s.lastContact || "-"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          aria-label={`Edit ${s.name}`}
+                          onClick={(e) => { e.stopPropagation(); openEdit(s); }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          aria-label={`Delete ${s.name}`}
+                          disabled={deleteStakeholder.isPending}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(s); }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                   {isExpanded && hasReasoning && (
                     <tr className="bg-muted/10 border-b border-border/30">
-                      <td colSpan={7} className="py-3 px-6">
+                      <td colSpan={8} className="py-3 px-6">
                         <RowReasoning source={parsed} label="Why this stakeholder + this engagement strategy?" />
                       </td>
                     </tr>
@@ -324,6 +585,8 @@ export default function StakeholdersPage() {
           </tbody>
         </table>
       </Card>
+
+      {formDialog}
     </div>
   );
 }
