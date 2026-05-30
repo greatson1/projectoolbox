@@ -721,6 +721,40 @@ export default function ProjectWizardPage() {
               ))}
             </div>
 
+            {/* Travel ↔ methodology mismatch warning.
+                Non-blocking — the user can still proceed — but flags the
+                two edge cases where the picked methodology and the
+                project category are likely to confuse the artefact set:
+                  a) category=travel but methodology≠travel: the trip
+                     would get sprint plans / DoD / business case it
+                     doesn't need.
+                  b) methodology=travel but category≠travel: the project
+                     would get a Plan→Book→Travel→Wrap-up phase set that
+                     doesn't fit a software / construction / etc. build.
+                Both are unusual user choices but worth surfacing so
+                they aren't a surprise after deploy. */}
+            {data.methodology && (
+              (data.category === "travel" && data.methodology !== "travel") ||
+              (data.methodology === "travel" && data.category !== "travel" && data.category !== "personal")
+            ) && (
+              <div className="p-3 rounded-[12px] flex items-start gap-3"
+                style={{ background: "#F59E0B0F", border: "1px solid #F59E0B40" }}>
+                <span className="text-[16px] mt-0.5">⚠️</span>
+                <div className="flex-1">
+                  <p className="text-[12px] font-semibold mb-0.5" style={{ color: "#92400E" }}>
+                    {data.category === "travel"
+                      ? `Travel project on ${METHODOLOGIES.find(m => m.id === data.methodology)?.name} methodology`
+                      : `${data.category} project on Travel methodology`}
+                  </p>
+                  <p className="text-[11px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+                    {data.category === "travel"
+                      ? `Travel & Trip is purpose-built for holidays / business travel — Plan → Book → Travel → Wrap-up with trip-appropriate artefacts (Booking Tracker, Packing List, Daily Trip Log). With ${METHODOLOGIES.find(m => m.id === data.methodology)?.name} your trip will be asked to produce sprint plans / business cases / a Definition of Done. You can still proceed if you have a specific reason.`
+                      : `Travel & Trip gives you a Plan → Book → Travel → Wrap-up lifecycle with trip-shaped artefacts. For a ${data.category} project this likely won't fit — consider ${METHODOLOGIES.find(m => m.id === recommended)?.name || "another methodology"} instead. You can still proceed if you have a specific reason.`}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* AI rationale */}
             {data.methodology && (
               <div className="p-4 rounded-[12px]" style={{ background: `${g.color}06`, border: `1px solid ${g.color}18` }}>
