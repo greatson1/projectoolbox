@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { GitBranch, ArrowRight, Info, Sparkles } from "lucide-react";
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 interface SimilarProject {
   projectId: string;
@@ -97,7 +98,7 @@ export function SimilarProjectsWidget({ projectId }: { projectId: string }) {
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1.5">
                       {p.category && <span>{p.category}</span>}
-                      {p.methodology && <><span>·</span><span>{p.methodology}</span></>}
+                      {p.methodology && <><span>·</span><span>{getMethodologyLabel(p.methodology)}</span></>}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="inline-block w-20 h-1 rounded-full bg-muted overflow-hidden">

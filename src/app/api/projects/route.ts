@@ -63,23 +63,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ data: recentDuplicate, idempotent: true }, { status: 200 });
     }
 
-    // Map methodology keys to Prisma enum values (handles any casing from the deploy wizard).
-    // The DB enum value PRINCE2 is kept ONLY for backward-compat with legacy rows —
-    // it's an internal alias for "Traditional" and never surfaced to users. The
-    // deploy wizard now sends "traditional"; getMethodology() resolves both to
-    // the Traditional methodology definition.
-    const METHODOLOGY_MAP: Record<string, string> = {
-      traditional: "PRINCE2", prince2: "PRINCE2",
-      waterfall: "WATERFALL", scrum: "AGILE_SCRUM",
-      kanban: "AGILE_KANBAN", safe: "SAFE", hybrid: "HYBRID",
-      // Uppercase variants (deploy wizard sends .toUpperCase())
-      TRADITIONAL: "PRINCE2", PRINCE2: "PRINCE2",
-      WATERFALL: "WATERFALL", SCRUM: "AGILE_SCRUM",
-      KANBAN: "AGILE_KANBAN", SAFE: "SAFE", HYBRID: "HYBRID",
-      // Already-mapped enum values (idempotent)
-      AGILE_SCRUM: "AGILE_SCRUM", AGILE_KANBAN: "AGILE_KANBAN",
-    };
-    const methodology = (METHODOLOGY_MAP[body.methodology] || "WATERFALL") as any;
+    // Map methodology keys to Prisma enum values. Single source of truth
+    // lives in methodology-definitions.ts:toMethodologyEnum — see comment
+    // there for the full alias / casing handling.
+    const { toMethodologyEnum } = await import("@/lib/methodology-definitions");
+    const methodology = (toMethodologyEnum(body.methodology) || "WATERFALL") as any;
 
     // Auto-detect project tier
     let tier = body.tier || null;

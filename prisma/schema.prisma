@@ -1129,9 +1129,18 @@ enum Methodology {
   WATERFALL
   AGILE_SCRUM
   AGILE_KANBAN
+  // PRINCE2 is the legacy storage name for the Traditional methodology.
+  // Kept so existing rows continue to load; new projects store TRADITIONAL.
   PRINCE2
+  // TRADITIONAL — canonical name going forward (see api/projects/route.ts).
+  TRADITIONAL
   HYBRID
   SAFE
+  // TRAVEL — trip lifecycle methodology (Plan → Book → Travel → Wrap-up).
+  // Added so the Travel & Trip methodology can actually persist. Before this
+  // a user picking it would fall back to WATERFALL and lose the trip
+  // lifecycle entirely.
+  TRAVEL
 }
 
 enum AgentStatus {

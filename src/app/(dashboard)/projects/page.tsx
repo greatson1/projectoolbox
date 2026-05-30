@@ -17,7 +17,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
+// Local METHOD_LABEL replaced — see methodology-definitions.ts:getMethodologyLabel.
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 export default function ProjectsPage() {
   usePageTitle("Projects");
@@ -123,7 +124,7 @@ export default function ProjectsPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className="text-[15px] font-bold truncate">{p.name}</h3>
                         <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="outline" className="text-[9px]">{METHOD_LABEL[p.methodology] || p.methodology}</Badge>
+                          <Badge variant="outline" className="text-[9px]">{getMethodologyLabel(p.methodology)}</Badge>
                           <Badge variant={p.status === "ACTIVE" ? "default" : p.status === "ARCHIVED" ? "outline" : "secondary"}
                             className={`text-[9px] ${p.status === "ARCHIVED" ? "border-slate-500/40 text-slate-400" : ""}`}>{p.status}</Badge>
                         </div>

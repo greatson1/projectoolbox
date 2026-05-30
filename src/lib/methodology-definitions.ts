@@ -753,6 +753,74 @@ export function getMethodology(id: string): MethodologyDefinition {
 }
 
 /**
+ * Single-source-of-truth UI label for a methodology id.
+ *
+ * The DB stores raw enum values like "PRINCE2", "AGILE_SCRUM",
+ * "AGILE_KANBAN" (legacy Prisma enum names). When those leak to the UI
+ * the user sees confusing internal names — picking "Traditional" then
+ * seeing "PRINCE2" on the agents list was the original report that
+ * triggered this audit.
+ *
+ * Previously this lookup was duplicated as a `METHOD_LABEL` Record across
+ * 7+ pages (dashboard, portfolio, projects list, project detail, agents
+ * list, agent detail, chat). They drifted: none of them knew about the
+ * new "travel" id, so a Travel project would render as the raw "travel"
+ * lowercase. Use this helper everywhere instead — and DO NOT redefine
+ * a local METHOD_LABEL anywhere.
+ *
+ * Handles every alias the codebase produces:
+ *   - DB enum values: PRINCE2, AGILE_SCRUM, AGILE_KANBAN, WATERFALL, HYBRID, SAFE
+ *   - canonical ids: traditional, waterfall, scrum, kanban, hybrid, safe, travel
+ *   - any case variation (lowercase / uppercase / mixed)
+ *   - unknown / empty values → returns "Unknown" so callers don't paint blanks.
+ */
+export function getMethodologyLabel(id: string | null | undefined): string {
+  if (!id) return "Unknown";
+  const raw = String(id).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (raw === "prince2" || raw === "traditional") return "Traditional";
+  if (raw === "waterfall") return "Waterfall";
+  if (raw === "agilescrum" || raw === "scrum" || raw === "agile") return "Scrum";
+  if (raw === "agilekanban" || raw === "kanban") return "Kanban";
+  if (raw === "safe") return "SAFe";
+  if (raw === "hybrid") return "Hybrid";
+  if (raw === "travel") return "Travel & Trip";
+  return String(id); // fall back to raw so a brand-new id at least shows something
+}
+
+/**
+ * Map any user-supplied methodology string to a valid Prisma enum value.
+ *
+ * Single source of truth for the write path. Previously this map was
+ * duplicated in `api/projects/route.ts` (used "PRINCE2" for new
+ * Traditional rows) and `api/projects/[projectId]/reset-lifecycle/route.ts`
+ * (would happily write invalid "SCRUM" / "KANBAN" / "TRAVEL" values for
+ * methodologies whose enum names are AGILE_SCRUM / AGILE_KANBAN / TRAVEL —
+ * Travel especially broke because the enum had no TRAVEL value at all
+ * before this commit).
+ *
+ * Returns null when the input doesn't match anything — callers should
+ * decide what to do (default to WATERFALL, error, etc.).
+ *
+ * Aliases handled:
+ *   - canonical ids → enum names: traditional → TRADITIONAL, travel → TRAVEL, etc.
+ *   - legacy aliases: prince2 → TRADITIONAL, agile → AGILE_SCRUM
+ *   - Prisma enum names passed back through: TRADITIONAL → TRADITIONAL (idempotent)
+ *   - any casing.
+ */
+export function toMethodologyEnum(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const raw = String(input).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (raw === "traditional" || raw === "prince2") return "TRADITIONAL";
+  if (raw === "waterfall") return "WATERFALL";
+  if (raw === "scrum" || raw === "agile" || raw === "agilescrum") return "AGILE_SCRUM";
+  if (raw === "kanban" || raw === "agilekanban") return "AGILE_KANBAN";
+  if (raw === "safe") return "SAFE";
+  if (raw === "hybrid") return "HYBRID";
+  if (raw === "travel") return "TRAVEL";
+  return null;
+}
+
+/**
  * Get phase names for a methodology (for display and matching).
  */
 export function getPhaseNames(methodologyId: string): string[] {

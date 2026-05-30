@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { CreditService } from "@/lib/credits/service";
 import { resolveApiCaller } from "@/lib/api-auth";
 import { checkRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -1005,7 +1006,7 @@ ${nextActionHint}${clarificationCompleteHint}
 ${project ? `
 - **Name:** ${project.name}
 - **Category:** ${(project as any).category || "general"}
-- **Methodology:** ${project.methodology}
+- **Methodology:** ${getMethodologyLabel(project.methodology)}
 - **Status:** ${project.status}
 - **Budget:** £${((project.budget || 0)).toLocaleString()}
 - **Timeline:** ${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD"} → ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD"}

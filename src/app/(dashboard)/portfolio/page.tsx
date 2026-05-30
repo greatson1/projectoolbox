@@ -20,12 +20,11 @@ import { PageHeader } from "@/components/layout/page-header";
 
 // ── Helpers ──
 
-const METHOD_LABEL: Record<string, string> = {
-  PRINCE2: "Traditional", traditional: "Traditional", TRADITIONAL: "Traditional",
-  WATERFALL: "Waterfall", waterfall: "Waterfall", AGILE_SCRUM: "Scrum", scrum: "Scrum",
-  AGILE_KANBAN: "Kanban", kanban: "Kanban", HYBRID: "Hybrid", hybrid: "Hybrid",
-  SAFE: "SAFe", safe: "SAFe",
-};
+// Local METHOD_LABEL replaced with the single-source-of-truth helper —
+// see methodology-definitions.ts:getMethodologyLabel. Stops PRINCE2 /
+// AGILE_SCRUM enum values leaking to the UI and silently missing new
+// methodologies (e.g. travel).
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 function healthColor(h: string) {
   return h === "GREEN" ? "text-emerald-500" : h === "AMBER" ? "text-amber-500" : "text-red-500";
@@ -229,7 +228,7 @@ export default function PortfolioPage() {
                         <h3 className="text-sm font-semibold truncate">{p.name}</h3>
                       </div>
                       <div className="flex items-center gap-2 ml-4">
-                        <Badge variant="outline" className="text-[9px]">{METHOD_LABEL[p.methodology] || p.methodology}</Badge>
+                        <Badge variant="outline" className="text-[9px]">{getMethodologyLabel(p.methodology)}</Badge>
                         {p.tier && <Badge variant="secondary" className="text-[9px]">{p.tier}</Badge>}
                       </div>
                     </div>
@@ -431,7 +430,7 @@ export default function PortfolioPage() {
                     <strong className="text-foreground text-sm">{p.name}</strong>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {METHOD_LABEL[p.methodology] || p.methodology} · {p.taskCount} tasks · {p.riskCount} risks
+                    {getMethodologyLabel(p.methodology)} · {p.taskCount} tasks · {p.riskCount} risks
                     {p.budget > 0 ? ` · £${p.budget.toLocaleString()}` : ""}
                     {p.currentPhase ? ` · Phase: ${p.currentPhase}` : ""}
                   </p>

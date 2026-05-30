@@ -25,9 +25,14 @@ export async function POST(
 
   const { projectId } = await params;
   const body = await req.json().catch(() => ({}));
-  // Normalise methodology to Prisma enum format (e.g. "prince2" → "PRINCE2", "waterfall" → "WATERFALL")
+  // Normalise methodology to Prisma enum format via the single-source-of-truth
+  // helper. Previously this did `.toUpperCase().replace(...)` which would
+  // happily produce invalid enum values like "SCRUM" / "KANBAN" / "TRAVEL"
+  // (the actual enum names are AGILE_SCRUM / AGILE_KANBAN, and TRAVEL only
+  // exists after this commit).
+  const { toMethodologyEnum } = await import("@/lib/methodology-definitions");
   const rawMethodology = (body as any).methodology as string | undefined;
-  const methodology = rawMethodology ? rawMethodology.toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/^AGILE$/, "AGILE_SCRUM") as any : undefined;
+  const methodology = (toMethodologyEnum(rawMethodology) || undefined) as any;
 
   // Verify project exists
   const project = await db.project.findUnique({ where: { id: projectId } });

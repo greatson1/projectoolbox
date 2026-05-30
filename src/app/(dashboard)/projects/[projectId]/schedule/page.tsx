@@ -6,6 +6,7 @@ import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/s
 
 import { useParams } from "next/navigation";
 import { useProjectTasks, useProject, useUpdateTask } from "@/hooks/use-api";
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -715,7 +716,7 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[24px] font-bold" style={{ color: "var(--foreground)" }}>Project Schedule</h1>
-          {project && <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>{project.name}{project.methodology ? ` — ${project.methodology}` : ""}</p>}
+          {project && <p className="text-[13px] mt-1" style={{ color: "var(--muted-foreground)" }}>{project.name}{project.methodology ? ` — ${getMethodologyLabel(project.methodology)}` : ""}</p>}
         </div>
         <div className="flex items-center gap-2">
           {/* T-Minus toggle */}

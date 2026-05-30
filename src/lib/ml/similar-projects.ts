@@ -9,6 +9,7 @@
  */
 
 import { db } from "@/lib/db";
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_DIMS = 1536;
@@ -24,7 +25,7 @@ export function buildProjectText(project: {
   const parts: string[] = [];
   parts.push(`Project: ${project.name}`);
   if (project.category) parts.push(`Category: ${project.category}`);
-  if (project.methodology) parts.push(`Methodology: ${project.methodology}`);
+  if (project.methodology) parts.push(`Methodology: ${getMethodologyLabel(project.methodology)}`);
   if (project.budget) parts.push(`Budget: £${project.budget.toLocaleString()}`);
   if (project.description) parts.push(`Description: ${project.description}`);
   return parts.join("\n");

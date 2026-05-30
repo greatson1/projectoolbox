@@ -14,7 +14,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { getMethodology, METHODOLOGIES } from "./methodology-definitions";
+import {
+  getMethodology,
+  getMethodologyLabel,
+  toMethodologyEnum,
+  METHODOLOGIES,
+} from "./methodology-definitions";
 import {
   evaluatePrerequisite,
   summarisePrerequisites,
@@ -76,5 +81,99 @@ describe("Travel methodology", () => {
     expect(states).not.toContain("unmet");
     const sum = summarisePrerequisites(evals);
     expect(sum.canAdvance).toBe(true);
+  });
+});
+
+describe("getMethodologyLabel — UI display normalisation", () => {
+  // Original bug: a user picked "Traditional" and the agents-list badge
+  // showed "PRINCE2" because that page read project.methodology directly
+  // without going through METHOD_LABEL. The label map was duplicated in
+  // 7 pages and none knew about new methodologies (e.g. travel) — they
+  // drifted. These tests lock the single source of truth so any future
+  // page that calls getMethodologyLabel gets the right answer.
+
+  it("maps every legacy Prisma enum value to its UI label", () => {
+    expect(getMethodologyLabel("PRINCE2")).toBe("Traditional");
+    expect(getMethodologyLabel("WATERFALL")).toBe("Waterfall");
+    expect(getMethodologyLabel("AGILE_SCRUM")).toBe("Scrum");
+    expect(getMethodologyLabel("AGILE_KANBAN")).toBe("Kanban");
+    expect(getMethodologyLabel("HYBRID")).toBe("Hybrid");
+    expect(getMethodologyLabel("SAFE")).toBe("SAFe");
+  });
+
+  it("maps the new canonical enum values to UI labels", () => {
+    expect(getMethodologyLabel("TRADITIONAL")).toBe("Traditional");
+    expect(getMethodologyLabel("TRAVEL")).toBe("Travel & Trip");
+  });
+
+  it("maps canonical lowercase ids", () => {
+    expect(getMethodologyLabel("traditional")).toBe("Traditional");
+    expect(getMethodologyLabel("travel")).toBe("Travel & Trip");
+    expect(getMethodologyLabel("scrum")).toBe("Scrum");
+    expect(getMethodologyLabel("kanban")).toBe("Kanban");
+    expect(getMethodologyLabel("safe")).toBe("SAFe");
+  });
+
+  it("handles null / undefined / empty without crashing", () => {
+    expect(getMethodologyLabel(null)).toBe("Unknown");
+    expect(getMethodologyLabel(undefined)).toBe("Unknown");
+    expect(getMethodologyLabel("")).toBe("Unknown");
+  });
+
+  it("falls back to the raw input for genuinely unknown values", () => {
+    expect(getMethodologyLabel("CUSTOM_FRAMEWORK")).toBe("CUSTOM_FRAMEWORK");
+  });
+});
+
+describe("toMethodologyEnum — DB write normalisation", () => {
+  // Original bug: the deploy wizard sent "traditional" and the projects
+  // POST route mapped it to "PRINCE2" (the legacy enum value), which
+  // leaked into every read path that didn't translate back. The same
+  // function used to silently accept "scrum" / "kanban" — which the
+  // reset-lifecycle path also did via .toUpperCase() — and write
+  // invalid enum values that would crash at the DB layer. And it had
+  // no "travel" entry at all, so Travel methodology silently bucketed
+  // as WATERFALL. This test locks the new behaviour: every supported
+  // methodology has a canonical enum target, no PRINCE2 writes for
+  // new Traditional rows, and unknown inputs return null so the
+  // caller can decide the default.
+
+  it("traditional ids map to TRADITIONAL (not PRINCE2)", () => {
+    expect(toMethodologyEnum("traditional")).toBe("TRADITIONAL");
+    expect(toMethodologyEnum("Traditional")).toBe("TRADITIONAL");
+    expect(toMethodologyEnum("TRADITIONAL")).toBe("TRADITIONAL");
+    // Legacy PRINCE2 input still maps to TRADITIONAL (idempotent),
+    // so a legacy row passed through this helper round-trips correctly.
+    expect(toMethodologyEnum("prince2")).toBe("TRADITIONAL");
+    expect(toMethodologyEnum("PRINCE2")).toBe("TRADITIONAL");
+  });
+
+  it("travel ids map to TRAVEL (previously silently fell back to WATERFALL)", () => {
+    expect(toMethodologyEnum("travel")).toBe("TRAVEL");
+    expect(toMethodologyEnum("Travel")).toBe("TRAVEL");
+    expect(toMethodologyEnum("TRAVEL")).toBe("TRAVEL");
+  });
+
+  it("scrum / kanban shortforms map to AGILE_ enum values", () => {
+    // Previously reset-lifecycle did .toUpperCase() → "SCRUM" / "KANBAN"
+    // which the Prisma enum did NOT have, so writes silently failed.
+    expect(toMethodologyEnum("scrum")).toBe("AGILE_SCRUM");
+    expect(toMethodologyEnum("agile")).toBe("AGILE_SCRUM");
+    expect(toMethodologyEnum("SCRUM")).toBe("AGILE_SCRUM");
+    expect(toMethodologyEnum("kanban")).toBe("AGILE_KANBAN");
+    expect(toMethodologyEnum("KANBAN")).toBe("AGILE_KANBAN");
+  });
+
+  it("waterfall / hybrid / safe round-trip correctly", () => {
+    expect(toMethodologyEnum("waterfall")).toBe("WATERFALL");
+    expect(toMethodologyEnum("hybrid")).toBe("HYBRID");
+    expect(toMethodologyEnum("safe")).toBe("SAFE");
+  });
+
+  it("returns null for unknown values so caller can pick a default", () => {
+    expect(toMethodologyEnum("custom-framework")).toBeNull();
+    expect(toMethodologyEnum("")).toBeNull();
+    expect(toMethodologyEnum(null)).toBeNull();
+    expect(toMethodologyEnum(undefined)).toBeNull();
   });
 });

@@ -30,7 +30,12 @@ function timeAgo(date: string | Date) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
+// METHOD_LABEL was a local Record duplicated across 7 pages — none of
+// them knew about new methodologies (e.g. travel) and they drifted.
+// Use the single source of truth helper instead. Same applies to the
+// inline "if methodology === Traditional pick these phase names" logic
+// further down — replaced with getMethodology(...).phases.
+import { getMethodologyLabel, getMethodology } from "@/lib/methodology-definitions";
 const ACTIVITY_COLORS: Record<string, string> = { document: "bg-primary", meeting: "bg-chart-2", approval: "bg-chart-4", risk: "bg-destructive", deployment: "bg-chart-3", chat: "bg-chart-5" };
 
 export default function DashboardPage() {
@@ -386,7 +391,7 @@ export default function DashboardPage() {
                             <Link href={`/projects/${p.id}`} className="font-medium hover:text-primary">{p.name}</Link>
                           </td>
                           <td className="px-4 py-3">
-                            <Badge variant="outline" className="text-[10px]">{METHOD_LABEL[p.methodology] || p.methodology}</Badge>
+                            <Badge variant="outline" className="text-[10px]">{getMethodologyLabel(p.methodology)}</Badge>
                           </td>
                           <td className="px-4 py-3">
                             {p.agent ? (
@@ -626,11 +631,10 @@ export default function DashboardPage() {
                     const deployment = a.deployment || a;
                     const currentPhase = deployment.currentPhase || "Requirements";
                     const methodology = projects.find((p: any) => p.agent?.id === a.id)?.methodology || "WATERFALL";
-                    const phases = METHOD_LABEL[methodology] === "Traditional"
-                      ? ["Pre-Project", "Initiation", "Planning", "Execution", "Closing"]
-                      : methodology === "AGILE_SCRUM" || methodology === "scrum"
-                      ? ["Sprint Zero", "Sprint Cadence", "Release"]
-                      : ["Requirements", "Design", "Build", "Test", "Deploy"];
+                    // Phase names come from the methodology definition itself —
+                    // single source of truth, automatically covers new
+                    // methodologies (travel etc.) and any future renames.
+                    const phases = getMethodology(methodology).phases.map(ph => ph.name);
                     const currentIdx = phases.findIndex(p => p === currentPhase);
                     const phaseStatus = deployment.phaseStatus || "active";
 

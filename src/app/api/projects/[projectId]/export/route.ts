@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 export const dynamic = "force-dynamic";
 
@@ -158,7 +159,7 @@ export async function GET(
   const summaryData: [string, string | number | null][] = [
     ["Project Name", project.name],
     ["Status", project.status],
-    ["Methodology", project.methodology],
+    ["Methodology", getMethodologyLabel(project.methodology)],
     ["Budget (£)", project.budget ?? null],
     [
       "Start Date",

@@ -24,11 +24,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { stripContextMarkerLeaks } from "@/lib/agents/sanitise-chat-response";
 
-const METHOD_LABEL: Record<string, string> = {
-  PRINCE2: "Traditional", prince2: "Traditional", WATERFALL: "Waterfall", waterfall: "Waterfall",
-  AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban",
-  HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe",
-};
+// Local METHOD_LABEL replaced — see methodology-definitions.ts:getMethodologyLabel.
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 export default function ChatPageWrapper() {
   return <Suspense fallback={null}><AgentChatPage /></Suspense>;
@@ -1869,7 +1866,7 @@ function AgentChatPage() {
               <CardContent className="pt-4">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Project Context</p>
                 <p className="text-sm font-bold">{activeAgent.deployments[0].project.name}</p>
-                <Badge variant="outline" className="text-[9px] mt-1">{METHOD_LABEL[activeAgent.deployments[0].project.methodology] || activeAgent.deployments[0].project.methodology}</Badge>
+                <Badge variant="outline" className="text-[9px] mt-1">{getMethodologyLabel(activeAgent.deployments[0].project.methodology)}</Badge>
                 {activeAgent.deployments[0].project.budget && (
                   <p className="text-xs text-muted-foreground mt-2">Budget: {formatMoney(activeAgent.deployments[0].project.budget, currency)}</p>
                 )}

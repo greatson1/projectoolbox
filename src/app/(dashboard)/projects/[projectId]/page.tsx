@@ -20,7 +20,8 @@ import {
 import { toast } from "sonner";
 import { isSpreadsheetArtefact } from "@/lib/artefact-types";
 
-const METHOD_LABEL: Record<string, string> = { PRINCE2: "Traditional", prince2: "Traditional", AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban", WATERFALL: "Waterfall", waterfall: "Waterfall", HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe" };
+// Local METHOD_LABEL replaced — see methodology-definitions.ts:getMethodologyLabel.
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 const MODULES = [
   { label: "Schedule", href: "schedule", icon: Calendar, desc: "Gantt chart and task timeline" },
@@ -70,7 +71,7 @@ export default function ProjectOverviewPage() {
           <div>
             <h1 className="text-2xl font-bold">{project.name}</h1>
             <div className="flex items-center gap-2 mt-2">
-              <Badge variant="outline">{METHOD_LABEL[project.methodology] || project.methodology}</Badge>
+              <Badge variant="outline">{getMethodologyLabel(project.methodology)}</Badge>
               <Badge variant={project.status === "ACTIVE" ? "default" : project.status === "ARCHIVED" ? "outline" : "secondary"}
                 className={project.status === "ARCHIVED" ? "border-slate-500/40 text-slate-400" : ""}>
                 {project.status}

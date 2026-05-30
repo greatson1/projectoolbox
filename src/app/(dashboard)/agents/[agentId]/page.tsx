@@ -65,11 +65,8 @@ const NOTIFICATION_PREFS = [
   { label: "Meeting transcript processed", enabled: false },
 ];
 
-const METHOD_LABEL: Record<string, string> = {
-  PRINCE2: "Traditional", prince2: "Traditional", WATERFALL: "Waterfall", waterfall: "Waterfall",
-  AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban",
-  HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe",
-};
+// Local METHOD_LABEL replaced — see methodology-definitions.ts:getMethodologyLabel.
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 const INTEGRATIONS = [
   { name: "Jira", status: "disconnected", icon: "🔗" },
@@ -437,7 +434,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                 {AGENT_RESOLVED.methodology && (
                   <>
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                      {METHOD_LABEL[AGENT_RESOLVED.methodology] || AGENT_RESOLVED.methodology}
+                      {getMethodologyLabel(AGENT_RESOLVED.methodology)}
                     </span>
                   </>
                 )}

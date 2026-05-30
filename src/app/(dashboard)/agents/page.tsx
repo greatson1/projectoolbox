@@ -102,12 +102,8 @@ const METHODOLOGY_CN: Record<string, string> = {
   "Hybrid": "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
 };
 
-const METHOD_LABEL: Record<string, string> = {
-  PRINCE2: "Traditional", prince2: "Traditional", WATERFALL: "Waterfall", waterfall: "Waterfall",
-  AGILE_SCRUM: "Scrum", scrum: "Scrum", AGILE_KANBAN: "Kanban", kanban: "Kanban",
-  HYBRID: "Hybrid", hybrid: "Hybrid", SAFE: "SAFe", safe: "SAFe",
-  Traditional: "Traditional", Scrum: "Scrum", Waterfall: "Waterfall", Kanban: "Kanban", Hybrid: "Hybrid",
-};
+// Local METHOD_LABEL replaced — see methodology-definitions.ts:getMethodologyLabel.
+import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
 const EVENT_ICONS: Record<string, string> = {
   "Document": "📄", "Approval": "✅", "Meeting": "🎙️", "Risk": "⚠️", "Phase Gate": "🚩",
@@ -162,7 +158,7 @@ export default function AgentFleetPage() {
         id: a.id, name: a.name, initials: (a.name || "?")[0].toUpperCase(),
         gradient: a.gradient || fallbackGradients[i % 5], color,
         project: project?.name || "Unassigned",
-        methodology: (METHOD_LABEL[project?.methodology] || project?.methodology || "Hybrid") as Methodology,
+        methodology: (getMethodologyLabel(project?.methodology) || "Hybrid") as Methodology,
         status: (a.status?.toLowerCase() || "idle") as AgentStatus,
         currentTask: a.currentTask || "Awaiting instructions",
         autonomyLevel: a.autonomyLevel || 2, autonomyLabel: ["", "Advisor", "Co-pilot", "Autonomous"][a.autonomyLevel || 2],
@@ -483,7 +479,7 @@ export default function AgentFleetPage() {
                       <span className="font-medium">{agent.name}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-3"><Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology] || "border-slate-500/30 bg-slate-500/10 text-slate-600"}>{agent.methodology}</Badge></td>
+                  <td className="py-2.5 px-3"><Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology] || "border-slate-500/30 bg-slate-500/10 text-slate-600"}>{getMethodologyLabel(agent.methodology)}</Badge></td>
                   <td className="py-2.5 px-3" style={{ color: "var(--muted-foreground)" }}>{agent.phase}</td>
                   <td className="py-2.5 px-3">
                     <RAGDot rag={agent.health} />
@@ -615,7 +611,7 @@ function AgentCard({ agent }: { agent: Agent }) {
             <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>{agent.project}</span>
           </div>
         </div>
-        <Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology] || "border-slate-500/30 bg-slate-500/10 text-slate-600"}>{agent.methodology}</Badge>
+        <Badge variant="secondary" className={METHODOLOGY_CN[agent.methodology] || "border-slate-500/30 bg-slate-500/10 text-slate-600"}>{getMethodologyLabel(agent.methodology)}</Badge>
       </div>
 
       {/* Current task / phase */}
