@@ -21,22 +21,39 @@ export async function POST(req: NextRequest) {
     const updateData: Record<string, unknown> = { onboardingComplete: true };
     let orgId: string | undefined;
 
-    // Create organisation if workspace data provided
+    // Create organisation if workspace data provided. The founder must be
+    // recorded BOTH as a UserOrganisation member (so multi-org queries find
+    // them) AND have user.role lifted to OWNER (so the role gate on
+    // /api/invitations + other admin endpoints lets them act). Wrap in a
+    // transaction so a partial failure doesn't strand the user in an org
+    // they can't administer.
     if (workspace?.orgName) {
       const existingUser = await db.user.findUnique({ where: { id: session.user.id }, select: { orgId: true } });
 
       if (existingUser?.orgId) {
         orgId = existingUser.orgId;
       } else {
-        const org = await db.organisation.create({
-          data: {
-            name: workspace.orgName,
-            slug: slugify(workspace.orgName),
-            industry: workspace.industry || null,
-          },
+        const userId = session.user.id;
+        orgId = await db.$transaction(async (tx) => {
+          const org = await tx.organisation.create({
+            data: {
+              name: workspace.orgName,
+              slug: slugify(workspace.orgName),
+              industry: workspace.industry || null,
+            },
+          });
+          await tx.userOrganisation.create({
+            data: { userId, orgId: org.id, role: "OWNER" },
+          });
+          await tx.auditLog.create({
+            data: { orgId: org.id, userId, action: "Created organisation", target: org.name },
+          });
+          return org.id;
         });
-        orgId = org.id;
-        updateData.orgId = org.id;
+        updateData.orgId = orgId;
+        // Founder of a brand-new org owns it; User.role mirrors the
+        // active-org role (UserOrganisation.role is the per-org truth).
+        updateData.role = "OWNER";
       }
     }
 

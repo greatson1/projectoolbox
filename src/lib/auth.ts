@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
+import MicrosoftEntraIDProvider from "next-auth/providers/microsoft-entra-id";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
 
@@ -49,11 +50,32 @@ function constantTimeEqual(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
+// Microsoft Entra ID (formerly Azure AD) — only registered when both env vars
+// are set. The provider supports both the multi-tenant "common" endpoint
+// (lets any work / school account sign in) and a tenant-scoped endpoint.
+// Default to common; for single-tenant deployments, set MICROSOFT_TENANT_ID
+// to that tenant's GUID and the SDK will scope the issuer to it.
+const microsoftConfigured = !!(
+  (process.env.MICROSOFT_CLIENT_ID || process.env.AUTH_MICROSOFT_ENTRA_ID_ID) &&
+  (process.env.MICROSOFT_CLIENT_SECRET || process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET)
+);
+
 const baseProviders = [
   GoogleProvider({
     clientId: process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID || "",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET || "",
   }),
+  ...(microsoftConfigured
+    ? [
+        MicrosoftEntraIDProvider({
+          clientId: process.env.MICROSOFT_CLIENT_ID || process.env.AUTH_MICROSOFT_ENTRA_ID_ID || "",
+          clientSecret: process.env.MICROSOFT_CLIENT_SECRET || process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET || "",
+          issuer: process.env.MICROSOFT_TENANT_ID
+            ? `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/v2.0`
+            : "https://login.microsoftonline.com/common/v2.0",
+        }),
+      ]
+    : []),
   CredentialsProvider({
     name: "credentials",
     credentials: {
@@ -112,7 +134,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {
-        if (account?.provider === "google") {
+        // Both OAuth providers (Google + Microsoft Entra ID) follow the same
+        // shape: lookup-or-create the User row by email, then seed the JWT
+        // with org+role from the DB. Credentials-based logins (password +
+        // E2E bypass) skip this branch — the User row already exists.
+        const isOAuthSignup = account?.provider === "google" || account?.provider === "microsoft-entra-id";
+        if (isOAuthSignup) {
           let dbUser = await db.user.findUnique({ where: { email: user.email! } });
           if (!dbUser) {
             dbUser = await db.user.create({
