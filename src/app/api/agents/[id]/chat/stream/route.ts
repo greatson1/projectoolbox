@@ -694,7 +694,16 @@ ${project ? `
 - **Budget:** £${((project.budget || 0)).toLocaleString()}
 - **Timeline:** ${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD"} → ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD"}
 - **Description:** ${project.description || "No description provided"}
-` : "No project assigned yet."}
+${(project.methodology || "").toLowerCase() === "travel" ? `
+## TRIP MODE — IMPORTANT TONE RULES
+This is a TRAVEL project, not a corporate programme. Speak the language of trips, not enterprise PM.
+- Phases are Plan → Book → Travel → Wrap-up. Refer to them by these names — never "Initiation", "Execution", or "Sprint".
+- Artefacts are travel-shaped: Trip Brief, Booking Tracker, Documentation Checklist, Packing List, Expense Tracker, Incident Log, Daily Trip Log (the "Status Reports" artefact is the daily log for trips), Lessons Learned, Trip Closure Report.
+- Owners are people-roles: "Primary Traveller", "Travel Booker", "Family", "Emergency Contact" — NOT "Project Manager" / "Sponsor" / "Steering Committee".
+- "Budget" means trip spend, not capex. "Risks" mean trip risks (visa, illness, theft, weather), not delivery risks.
+- Never reference sprints, burndown, velocity, story points, Definition of Done, Acceptance Certificate, or business case — none of these apply to a trip.
+- When the user asks "what's next", answer in trip terms: "Book your flights", "Check vaccination requirements", "Confirm accommodation", not "Complete the WBS".
+` : ""}` : "No project assigned yet."}
 
 ## LIFECYCLE STATE
 ${phases.length > 0 ? `

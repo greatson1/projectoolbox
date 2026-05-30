@@ -1187,13 +1187,80 @@ ${percentageHints}
 Total Planned Cost across all rows MUST sum to approximately £${budgetStr}.
 Output 7-9 rows for travel/event projects, 5-7 for general projects.
 Quote any field containing commas. Use real numbers, not placeholders, in the Planned Cost column.`;
+    } else if (lname.includes("booking tracker")) {
+      // Booking Tracker (Travel methodology, Book phase). Tracks each
+      // bookable item: transport, accommodation, transfers, activities,
+      // insurance. Rows are PLAN entries — everything starts as "Not
+      // Booked"; the user updates Confirmed/Paid/Reference as they book.
+      const nigeriaSpecific = isNigeria ? `
+LAGOS-SPECIFIC ROWS TO INCLUDE:
+- Return flight LHR↔LOS (Transport) — research current carriers (BA, Virgin, Air Peace) and quote a midpoint range
+- Hotel in Victoria Island or Ikoyi for the full stay (Accommodation) — research a 4-star + 5-star option
+- Airport transfer MMIA → hotel (Transfer) — pre-arranged car recommended over hailing
+- Day tours / Lekki market visit (Activity) — leave Reference blank until user confirms
+- Travel insurance with Africa cover (Insurance) — name 2-3 UK providers
+- Yellow fever vaccination (Health) — note GP appt vs travel clinic` : "";
+      dataInstructions = `Generate 6-12 booking rows for ${project.name}.
+${nigeriaSpecific}
+Categories: Transport (flights, rail), Accommodation, Transfer (airport pickups, local transport), Activity (tours, restaurants), Insurance, Health (vaccinations, prescriptions), Other.
+Set ALL Confirmed = "No" and Paid = "No" — these are PLAN entries the user updates as they book.
+Reference / PNR = TBC until booked. Travel Date should reference the trip start/end window (${startDate} to ${endDate}).
+Cost (£): use research-anchored midpoints from KB if available, else TBC.
+Owner = "Primary Traveller" by default (or "Travel Booker" if a separate role exists).
+Status = "Not Booked" for everything.
+NEVER invent reference numbers, hotel names, or vendor names — use TBC.
+Quote fields with commas.`;
+    } else if (lname.includes("documentation checklist") || lname.includes("documents checklist")) {
+      // Documentation Checklist — every doc the traveller needs to secure
+      // before departure (passport, visa, insurance certificate, etc).
+      const nigeriaDocs = isNigeria ? `
+LAGOS-SPECIFIC DOCS:
+- Nigerian e-visa (Required For: Entry; allow 8+ weeks)
+- Yellow fever vaccination certificate (Required For: Entry; mandatory, no exceptions)
+- Malaria prophylaxis prescription (Required For: Health; GP appt 6+ weeks before)
+- FCDO TravelAware registration (Required For: Safety)
+- British High Commission Lagos contact details (Required For: Emergency)` : "";
+      dataInstructions = `Generate 8-15 documentation rows for ${project.name}.
+${nigeriaDocs}
+Standard rows EVERY trip should have: Passport (Expiry must be at least 6 months past return date), Travel insurance certificate, Booking confirmations (flights, hotel), Emergency contacts card, Currency / cards.
+Categories implicit in "Required For" column: Entry (visa/passport), Health (vaccinations, prescriptions), Safety (registration, emergency contacts), Booking (confirmations), Money (cards, currency).
+Set ALL Status = "TBC" unless the user has explicitly confirmed they hold the document.
+Held By = each traveller's name OR "Primary Traveller" if shared.
+NEVER invent passport numbers, visa references, or insurance policy numbers.
+Quote fields with commas.`;
+    } else if (lname.includes("packing list")) {
+      // Packing List — practical, can be quite long.
+      const seasonHint = isNigeria ? `Lagos is hot (28-32°C) and humid year-round; pack light cotton clothes, mosquito repellent, hat, sunscreen 50+.` : "";
+      dataInstructions = `Generate 25-50 packing items for ${project.name}.
+${seasonHint}
+Categories: Clothing, Toiletries, Health & Medical, Documents (duplicate from Documentation Checklist for at-a-glance), Tech & Cables, Money, Family essentials (if children), Other.
+Quantity: number of each item (e.g. socks = 8 pairs for a 7-day trip).
+For Whom: if family trip, split per-traveller where it matters (kid-sized items, adult sizes), else "All".
+Packed: "No" for everything — user ticks off as packing happens.
+Don't list trivial items the user obviously knows (e.g. "underwear" yes, "buttons" no).
+Quote fields with commas.`;
+    } else if (lname.includes("expense tracker")) {
+      // Expense Tracker — starts essentially empty. User fills during trip.
+      // Generating fake expense rows is wrong; the agent has zero ground
+      // truth about what's been spent until the trip happens.
+      dataInstructions = `Output the CSV header row and EXACTLY ONE example placeholder row showing the format. The user fills the real rows as they spend during the trip.
+The placeholder row must have Date = "${startDate}", Category = "Example", Description = "[Replace with first expense]", and all monetary fields = 0.
+DO NOT invent vendor names, amounts, or expense categories — the trip hasn't happened yet.
+Quote fields with commas.`;
+    } else if (lname.includes("incident log")) {
+      // Incident Log — same pattern as Expense Tracker. Empty until events
+      // actually happen during the trip.
+      dataInstructions = `Output the CSV header row and EXACTLY ONE example placeholder row showing the format. The user logs real incidents as they occur during the trip.
+The placeholder row should have Date = "${startDate}", Category = "Example", Description = "[Replace when an incident occurs]", Severity = "Low", Status = "Example".
+DO NOT invent incidents — the trip hasn't happened yet and inventing a "Lost passport on day 2" entry would mislead any reader.
+Quote fields with commas.`;
     } else {
       dataInstructions = `Generate 8-15 relevant data rows specific to this project (${project.name}).
 Use real dates between ${startDate} and ${endDate}.
 Assign each row to a ROLE TITLE (e.g. "Project Manager", "Finance Lead") — NEVER invent personal names.
 ⚠️ TBC RULE: For any cell where the specific value is not known from the project description, write: TBC — [plain description of what is needed]. Do NOT invent venue names, supplier names, contact details, prices, or specific action items.
 Set ALL Status fields to "Not Started" or "TBC" — never infer completion from dates.
-Quote fields containing commas.`;
+Quote fields with commas.`;
     }
 
     return `## ARTEFACT: ${name}
@@ -2104,6 +2171,43 @@ ${agentProtocol("Work Breakdown Structure")}`;
 
   // ── Status Reports ──
   if (n.includes("status report")) {
+    // Travel methodology uses "Status Reports" as a Daily Trip Log
+    // during the Travel phase. The corporate weekly-RAG shape below
+    // (Schedule / Budget / Quality / Risks / Stakeholders) makes no
+    // sense for someone reporting "we ate at X and went to Y today".
+    // Switch on isTravel so a Lagos family trip gets a daily-log
+    // template instead of an enterprise PM dashboard.
+    if (isTravel) {
+      return `Generate an initial **Daily Trip Log** template for ${project.name}.
+
+This is the template the traveller updates each day during the trip.
+Pre-populate just the first day (${startDate}) as an example and leave
+the remaining day rows blank for the user to fill as they go.
+
+## Daily Trip Log
+**Trip:** ${project.name} | **Period:** ${startDate} → ${endDate} | **Travellers:** [Primary Traveller + family]
+
+## Day-by-Day Entries
+| Date | Location | What we did | Highlights | Issues / Incidents | Spend (£) | Notes |
+|------|----------|-------------|------------|---------------------|-----------|-------|
+| ${startDate} | [Departure point → arrival point] | [Travel day — arrival, check-in] | [TBC — fill on the day] | [TBC] | [TBC] | First day, expect tiredness |
+| [next date] | | | | | | |
+| [...] | | | | | | |
+
+## Standing Reminders
+- Update Expense Tracker after every purchase (or end of each day)
+- Log any incidents (lost item, missed connection, illness) in the Incident Log artefact for insurance evidence
+- Photograph receipts you might want to claim back
+
+## Standing Risks to Watch
+[List the top 3-5 from the Initial Risk Register that are relevant during the trip itself — not pre-departure. e.g. malaria for Lagos, theft in tourist areas, power cuts.]
+
+## End-of-Trip Summary (fill at end)
+- Best day: [TBC]
+- Worst issue: [TBC]
+- Overall trip rating: [TBC /10]
+${agentProtocol("Daily Trip Log")}`;
+    }
     return `Generate an initial **Status Report** template for ${project.name}, pre-populated for the current state as at ${today}.
 
 ## Status Report #1 — ${today}
@@ -2227,6 +2331,53 @@ ${agentProtocol("Lessons Learned")}`;
 
   // ── Closure Report ──
   if (n.includes("closure report")) {
+    // Trip-shaped variant for travel projects — "Acceptance Certificate
+    // signed by Sponsor" and "Benefits Handover" make no sense for a
+    // family holiday. Switches on isTravel so non-travel projects keep
+    // the existing corporate closure shape.
+    if (isTravel) {
+      return `Generate a **Trip Closure Report** for ${project.name}.
+
+## Trip Closure Report
+**Trip:** ${project.name} | **Closure Date:** ${today} | **Status:** CLOSED
+
+## Trip Summary
+[2-3 sentences: where we went, who travelled, dates, headline outcome. Was the trip a success? Any major issues?]
+
+## Highlights
+[3-5 bullet points — best moments, what went well, things to remember.]
+
+## What Didn't Go to Plan
+[Honest list of issues that came up — delays, illness, overspend, things that went wrong. Source these from the Incident Log artefact if it exists.]
+
+## Trip Closure Checklist
+| Item | Status | Notes |
+|------|--------|-------|
+| All travellers safely returned | ✅/❌ | |
+| Expense Tracker complete | ✅/❌ | |
+| Insurance claims (if any) submitted | ✅/❌ / N/A | |
+| Travel documents stored / archived | ✅/❌ | |
+| Booking confirmations archived | ✅/❌ | |
+| Lessons Learned captured | ✅/❌ | |
+| Photos / memories archived | ✅/❌ | |
+
+## Financial Summary
+| Item | Planned (£) | Actual (£) | Variance (£) | Notes |
+|------|-------------|------------|--------------|-------|
+| Total | ${budget} | [from Expense Tracker — sum GBP equivalents] | [var] | |
+[Optional per-category breakdown: Transport, Accommodation, Food, Activities, Other]
+
+## Recommendations for Future Trips
+[Concrete advice — book hotel X again, avoid Y, allow more time for Z. Sourced from the Lessons Learned artefact.]
+
+## Formal Closure
+Trip ${project.name} is hereby formally closed. All travellers returned safely.
+
+| Role | Name | Sign-off Date |
+|------|------|----------------|
+| Primary Traveller | [Name] | ________ |
+${agentProtocol("Trip Closure Report")}`;
+    }
     return `Generate a **Closure Report** for ${project.name}.
 
 ## Project Closure Report
@@ -2366,6 +2517,92 @@ sessions.]
 - Skip the Sources & Assumptions appendix — backlogs cite the user
   stories themselves, not external research.
 ${agentProtocol(name)}`;
+  }
+
+  // ── Trip Brief (Travel methodology, Plan phase) ──
+  // The travel-equivalent of Project Brief. Concise scope-setting doc.
+  // Without this branch the generic fallback produced corporate-shaped
+  // "Purpose and Scope" / "Required Content" sections for a holiday.
+  if (n.includes("trip brief")) {
+    return `Generate a **Trip Brief** for ${project.name}.
+
+## Trip Summary
+| Field | Value |
+|-------|-------|
+| Trip | ${project.name} |
+| Destination | [Extract from description — be specific, e.g. "Lagos, Nigeria"] |
+| Dates | ${startDate} → ${endDate} |
+| Duration | [Calculated days] |
+| Budget | £${budget} |
+| Document version | 1.0 DRAFT — ${today} |
+
+## Purpose of the Trip
+[1-2 sentences. Why is this trip happening? Holiday, family visit, business, event? Be specific to ${project.name} — never write generic "to enable…" / "to support…" boilerplate.]
+
+## Travellers
+| Name / Role | Adult/Child | Notes (dietary, medical, mobility) |
+|-------------|-------------|------------------------------------|
+[One row per traveller. Use ROLE TITLES only (e.g. "Primary Traveller", "Partner", "Child 1") — NEVER invent names. TBC for any unconfirmed traveller.]
+
+## Itinerary at a Glance
+| Date | Location | Headline activity |
+|------|----------|-------------------|
+[3-7 high-level rows covering arrival, key activities, departure. Use the dates between ${startDate} and ${endDate}. The detailed day-by-day belongs in the Schedule artefact, not here.]
+
+## Key Constraints
+- Budget: £${budget} total
+- [Other constraints: time-off, school dates, visa lead-time, family considerations]
+
+## Out of Scope
+- [Things NOT covered by this trip — e.g. extending to other cities, separate business meetings, side trips]
+
+## Confirmed vs Open Decisions
+- ✅ Confirmed: [Things the user has confirmed in clarification]
+- ❓ Open: [Things still needing user input — list as [TBC — <topic>]]
+${agentProtocol("Trip Brief")}`;
+  }
+
+  // ── Research Notes (Travel methodology, Plan phase) ──
+  // Captures destination intel from the feasibility/phase research
+  // (vaccinations, visa, weather, currency, local norms). Plain prose
+  // with a few tables, NOT corporate-shaped.
+  if (n.includes("research notes")) {
+    return `Generate **Research Notes** for ${project.name}.
+
+This is a working document capturing destination intel for the travellers. Pull facts from the project KB (feasibility research, phase research, user-confirmed answers). NEVER invent facts that aren't in the KB — mark gaps as [TBC — <what's missing>].
+
+## Destination Overview
+[2-3 sentences on the destination — what's it like, what makes it suited to this trip.]
+
+## Entry Requirements
+| Requirement | Status / Detail | Source |
+|-------------|-----------------|--------|
+| Visa | [from KB; if missing: TBC — visa rules for ${project.name}] | |
+| Passport validity | [Months past return date] | |
+| Vaccinations | [from KB; mark each: Required / Recommended / N/A] | |
+| Other entry rules | [proof of return ticket? proof of funds?] | |
+
+## Health & Safety
+- **Travel advisory:** [from FCDO / KB]
+- **Vaccinations needed:** [list with timing — e.g. yellow fever 10 days before, malaria prophylaxis 6 weeks before]
+- **Common health risks:** [from KB]
+- **Emergency contact:** [British High Commission or equivalent — from KB if surfaced]
+
+## Money & Practicalities
+- **Currency:** [name + symbol]
+- **Approximate exchange rate (as researched):** [from KB if available, else TBC]
+- **Card acceptance:** [from KB]
+- **Tipping norms:** [from KB if surfaced]
+
+## Local Context (cultural, language, etiquette)
+[Anything notable from research — e.g. dress codes, common scams, language, local apps]
+
+## Recommended Areas to Stay
+[If the KB has accommodation areas, list them with notes; else TBC]
+
+## Sources & Assumptions
+[Standard appendix per the project-wide rule]
+${agentProtocol("Research Notes")}`;
   }
 
   // ── Default for any other artefact ──
