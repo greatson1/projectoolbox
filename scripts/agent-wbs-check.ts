@@ -97,9 +97,9 @@ async function main() {
 
   // ── 5. Report artefacts (check schedule/gantt type) ───────────────────────
   const reports = await prisma.report.findMany({
-    where: { type: { in: ["STATUS", "EVM", "SPRINT"] } },
-    select: { id: true, type: true, title: true, projectId: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
+    where: { type: { in: ["STATUS", "EVM", "SPRINT_REVIEW"] } },
+    select: { id: true, type: true, title: true, projectId: true, generatedAt: true },
+    orderBy: { generatedAt: "desc" },
     take: 10,
   });
   console.log(`\n=== RECENT REPORTS (${reports.length}) ===`);
