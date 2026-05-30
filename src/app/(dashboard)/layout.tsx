@@ -1,32 +1,44 @@
-"use client";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { DashboardLayoutClient } from "./DashboardLayoutClient";
 
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
-import { AgentStatusBar } from "@/components/layout/agent-status-bar";
-import { ProjectTabBar } from "@/components/layout/project-tab-bar";
-import { CommandPalette } from "@/components/layout/command-palette";
-import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { useAppStore } from "@/stores/app";
-import { cn } from "@/lib/utils";
+/**
+ * Server-side gate that wraps the dashboard. Runs ahead of the client layout
+ * so we never paint a flash of dashboard content for a user who shouldn't
+ * see it.
+ *
+ * Currently enforces one policy: org.requireMfa. If the user's active org
+ * has the policy on AND the user hasn't enrolled TOTP, redirect to
+ * /mfa-required. That page provides the same MfaCard widget in a locked
+ * mode — they cannot escape until they enrol.
+ *
+ * Future policies (sessionTimeoutMinutes, ipAllowlist, signedDevicePolicy)
+ * plug into the same flow.
+ */
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    // The middleware should already have caught this, but defence in depth:
+    // if for any reason the user is here without a session, send them to login.
+    redirect("/login");
+  }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { sidebarCollapsed } = useAppStore();
+  const userId = session.user.id;
+  const orgId = (session.user as any).orgId as string | undefined;
 
-  return (
-    <div className="min-h-screen">
-      <Sidebar />
-      <div className={cn("transition-all duration-200 ml-0", sidebarCollapsed ? "lg:ml-[60px]" : "lg:ml-[240px]")}>
-        <Header />
-        <ProjectTabBar />
-        {/* pb-14 so page content never hides behind the status bar */}
-        <main className="p-3 sm:p-6 lg:p-8 pb-16 animate-page-enter">{children}</main>
-      </div>
-      {/* Global agent co-pilot bar — visible on every page */}
-      <ErrorBoundary>
-        <AgentStatusBar />
-      </ErrorBoundary>
-      {/* Global command palette — Ctrl+K from anywhere */}
-      <CommandPalette />
-    </div>
-  );
+  if (orgId) {
+    // Two-column read so we get both the policy and the user's MFA status
+    // in one round-trip. Both are tiny SELECTs covered by primary-key
+    // indexes, so the latency cost is negligible.
+    const [org, user] = await Promise.all([
+      db.organisation.findUnique({ where: { id: orgId }, select: { requireMfa: true } }),
+      db.user.findUnique({ where: { id: userId }, select: { mfaEnabled: true } }),
+    ]);
+    if (org?.requireMfa && !user?.mfaEnabled) {
+      redirect("/mfa-required");
+    }
+  }
+
+  return <DashboardLayoutClient>{children}</DashboardLayoutClient>;
 }

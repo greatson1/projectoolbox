@@ -21,6 +21,7 @@ import { SUPPORTED_CURRENCIES, CURRENCY_NAME, CURRENCY_SYMBOL, CurrencyCode } fr
 import { toast } from "sonner";
 import { MfaCard } from "@/components/settings/MfaCard";
 import { ExportButton } from "@/components/settings/ExportButton";
+import { RequireMfaToggle } from "@/components/settings/RequireMfaToggle";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: User },
@@ -270,6 +271,7 @@ export default function SettingsPage() {
                 </div>
                 <CurrencyPicker />
                 <Button size="sm">Save Changes</Button>
+                <RequireMfaToggle canEdit={(user as any)?.role === "OWNER"} />
                 <div className="pt-2 border-t border-border">
                   <ExportButton
                     endpoint="/api/org/export"

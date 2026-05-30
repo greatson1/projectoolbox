@@ -162,6 +162,13 @@ model Organisation {
   projectEmbeddings ProjectEmbedding[]
   sentimentHistory SentimentHistory[]
   globalHitlPolicy Json?               // org-level HITL governance overrides
+  // ── Org-wide security policy ─────────────────────────────────────────────
+  // requireMfa: when true, EVERY member must have TOTP enrolled before they
+  // can use any org-scoped surface. Toggled by OWNER via /settings →
+  // Organisation. Enforced by /lib/auth-guards.ts at request time + by an
+  // interstitial on /mfa-required for the affected user. Audit-logged on
+  // change.
+  requireMfa       Boolean             @default(false)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 }
