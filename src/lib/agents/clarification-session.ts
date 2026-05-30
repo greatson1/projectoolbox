@@ -181,7 +181,7 @@ async function generateQuestions(
 ${artefactNames.map((n, i) => `${i + 1}. ${n}`).join("\n")}
 
 PROJECT DESCRIPTION: ${project.description || "No description provided"}
-BUDGET: £${(project.budget || 0).toLocaleString()}
+BUDGET: ${(project.budget || 0).toLocaleString()}
 DATES: ${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD"} → ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD"}
 CATEGORY: ${category}
 

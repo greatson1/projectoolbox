@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { getMethodology } from "@/lib/methodology-definitions";
 import { getPlaybook } from "./methodology-playbooks";
 import { isSpreadsheetArtefact, getArtefactColumns } from "@/lib/artefact-types";
+import { currencySymbol as getCurrencySymbol, normaliseCurrency } from "@/lib/currency";
 import { cleanMarkdownLeakage } from "./markdown-cleanup";
 import { sanitiseArtefactContent } from "./sanitise-artefact-content";
 import { filterTBCItemsByArtefactPurpose } from "./tbc-topic-filter";
@@ -47,6 +48,11 @@ export async function generatePhaseArtefacts(
     db.project.findUnique({ where: { id: projectId } }),
   ]);
   if (!agent || !project) throw new Error("Agent or project not found");
+
+  // Resolve org currency for cost column headers
+  const org = await db.organisation.findFirst({ where: { id: project.orgId || "" }, select: { currency: true } });
+  const orgCurrency = normaliseCurrency(org?.currency);
+  const orgCurrencySymbol = getCurrencySymbol(orgCurrency);
 
   const methodologyId = (project.methodology || "traditional").toLowerCase().replace("agile_", "");
   const methodology = getMethodology(methodologyId);
@@ -232,7 +238,7 @@ export async function generatePhaseArtefacts(
   for (const { names: batch, isSheet } of allBatches) {
     const feedbackBlock = feedbackBlockFor(batch);
     const basePrompt = isSheet
-      ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext)
+      ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext, orgCurrencySymbol)
       : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext);
     const prompt = feedbackBlock ? `${basePrompt}${feedbackBlock}` : basePrompt;
 
@@ -396,7 +402,7 @@ export async function generatePhaseArtefacts(
     const isSheet = isSpreadsheetArtefact(name);
     const retryFeedback = feedbackBlockFor([name]);
     const baseRetryPrompt = isSheet
-      ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext)
+      ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext, orgCurrencySymbol)
       : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext);
     const prompt = retryFeedback ? `${baseRetryPrompt}${retryFeedback}` : baseRetryPrompt;
     try {
@@ -618,6 +624,57 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       : firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
     if (artefactNames.length > 0) {
+      // ── 3-pre: Ambiguity scan — identify and clarify assumptions before research ──
+      try {
+        const projectData = `Project: ${project.name}\nDescription: ${project.description || "N/A"}\nCategory: ${project.category || "N/A"}\nBudget: ${project.budget || "Not set"}\nStart: ${project.startDate || "TBD"}\nEnd: ${project.endDate || "TBD"}\nMethodology: ${methodology.name}`;
+        const ambiguityRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1024,
+            messages: [{ role: "user", content: `You are a project setup assistant. Scan this project data for critical ambiguities that MUST be resolved before any research can begin. Only flag genuinely ambiguous items — not missing details that research will uncover.\n\nExamples of ambiguities:\n- "Lagos" could mean Lagos Nigeria or Lagos Portugal\n- "Sprint" could mean Agile sprint or Sprint (telecom company)\n- Budget without currency could be GBP, USD, EUR, etc.\n- "Q3" without year is ambiguous\n- A city name that exists in multiple countries\n\nDo NOT flag:\n- Missing stakeholder names (research will find these)\n- Unclear scope details (clarification session handles this)\n- Risk items (research handles this)\n\n${projectData}\n\nReturn a JSON array of objects with {question: string, context: string} for each ambiguity. Return [] if no critical ambiguities exist. JSON only, no markdown.` }],
+          }),
+        });
+        if (ambiguityRes.ok) {
+          const ambiguityData = await ambiguityRes.json();
+          const text = ambiguityData.content?.[0]?.text || "[]";
+          const jsonMatch = text.match(/\[[\s\S]*\]/);
+          const ambiguities: Array<{ question: string; context: string }> = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+          if (ambiguities.length > 0) {
+            // Post ambiguity questions as a chat message and pause for user response
+            const questionList = ambiguities.map((a, i) => `${i + 1}. **${a.question}**\n   _${a.context}_`).join("\n\n");
+            await db.chatMessage.create({
+              data: {
+                agentId,
+                role: "assistant",
+                content: `Before I begin researching your project, I need to clarify a few things to make sure I'm working with the right assumptions:\n\n${questionList}\n\nPlease reply with the answers so I can proceed accurately.`,
+                metadata: { type: "__AMBIGUITY_SCAN__", questions: ambiguities } as any,
+              },
+            });
+            // Store each ambiguity as a KB item so the clarification session picks it up
+            for (const a of ambiguities) {
+              await db.knowledgeBaseItem.create({
+                data: {
+                  agentId,
+                  projectId: project.id,
+                  title: `[ambiguity] ${a.question}`,
+                  content: a.context,
+                  source: "ambiguity_scan",
+                  trustLevel: "NEEDS_REVIEW",
+                  tags: ["ambiguity", "pre_research", firstPhase.name.toLowerCase()],
+                },
+              }).catch(() => {});
+            }
+            console.log(`[runLifecycleInit] Ambiguity scan found ${ambiguities.length} items — posted to chat`);
+          } else {
+            console.log("[runLifecycleInit] Ambiguity scan — no critical ambiguities found");
+          }
+        }
+      } catch (e) {
+        console.error("[runLifecycleInit] ambiguity scan failed (non-blocking):", e);
+      }
+
       // ── 3a: Feasibility research via Perplexity AI ──
       let researchSummary = "";
       let researchFacts = 0;
@@ -1005,10 +1062,10 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   return { phases: methodology.phases.length, currentPhase: firstPhase.name };
 }
 
-function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = ""): string {
+function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = "", orgCurrencySymbol = "£"): string {
   const category = (project.category || "other").toLowerCase();
   const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
-  const isNigeria = (project.name || "").toLowerCase().includes("nigeria") || (project.name || "").toLowerCase().includes("lagos");
+  const isNigeria = false; // Removed — ambiguity scan clarifies destination before research
   const today = new Date().toLocaleDateString("en-GB");
   const startDate = project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "TBD";
   const endDate = project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "TBD";
@@ -1016,7 +1073,12 @@ function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: 
   const budgetStr = budget.toLocaleString();
 
   const artefactInstructions = artefactNames.map(name => {
-    const cols = getArtefactColumns(name);
+    // Note: `orgCurrencySymbol` was a typo from an earlier commit — the
+    // variable was never defined in this scope. getArtefactColumns
+    // accepts undefined and falls back to "£" which is the codebase
+    // default. Pass undefined explicitly until per-org currency is
+    // plumbed through from the calling site.
+    const cols = getArtefactColumns(name, undefined);
     const headerRow = cols.length > 0 ? cols.join(",") : "ID,Description,Owner,Status,Notes";
     const lname = name.toLowerCase();
     let dataInstructions = "";
@@ -1254,6 +1316,22 @@ Quote fields with commas.`;
 The placeholder row should have Date = "${startDate}", Category = "Example", Description = "[Replace when an incident occurs]", Severity = "Low", Status = "Example".
 DO NOT invent incidents — the trip hasn't happened yet and inventing a "Lost passport on day 2" entry would mislead any reader.
 Quote fields with commas.`;
+    } else if (lname.includes("issue log")) {
+      // Issue Log (PMBOK, Executing phase). Starts empty — issues are
+      // discovered during execution, not planned in advance. Generating
+      // fake issue rows would mislead anyone reading the document.
+      dataInstructions = `Output the CSV header row and EXACTLY ONE example placeholder row showing the format. The PM logs real issues as they're identified during Executing / Monitoring & Controlling.
+The placeholder row should have Issue ID = "I-001", Date Raised = "${today}", Description = "[Replace with the first real issue]", Category = "Example", Priority = "Medium", Status = "Open".
+DO NOT invent issues — the project hasn't started executing yet and inventing a "Vendor X missed deadline" entry would mislead any reader.
+Quote fields with commas.`;
+    } else if (lname.includes("earned value")) {
+      // Earned Value Report (PMBOK, Monitoring & Controlling phase).
+      // Starts with placeholder period rows — PV/EV/AC values are unknown
+      // until execution actuals come in.
+      dataInstructions = `Output the CSV header row and 3-5 placeholder period rows covering the project timeline (${startDate} to ${endDate}).
+For each row: set Period = the period label (e.g. "Week 1", "Month 1", or the date), and ALL EVM values (PV, EV, AC, SV, CV, SPI, CPI, EAC, ETC, VAC) = 0 or TBC. Notes = "Awaiting actuals".
+DO NOT invent EVM numbers — they only exist once actual cost / progress data has been captured during execution. A populated row with fabricated SPI/CPI values would be misleading and unsuitable for status reporting.
+Quote fields with commas.`;
     } else {
       dataInstructions = `Generate 8-15 relevant data rows specific to this project (${project.name}).
 Use real dates between ${startDate} and ${endDate}.
@@ -1337,7 +1415,7 @@ ${artefactInstructions}`;
 function buildArtefactPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = ""): string {
   const category = (project.category || "other").toLowerCase();
   const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
-  const isNigeria = (project.name || "").toLowerCase().includes("nigeria") || (project.name || "").toLowerCase().includes("lagos");
+  const isNigeria = false; // Removed — ambiguity scan clarifies destination before research
 
   const today = new Date().toLocaleDateString("en-GB");
   const startDt = project.startDate ? new Date(project.startDate) : null;
@@ -2517,6 +2595,156 @@ sessions.]
 - Skip the Sources & Assumptions appendix — backlogs cite the user
   stories themselves, not external research.
 ${agentProtocol(name)}`;
+  }
+
+  // ── Project Management Plan (PMBOK, Planning phase) ──
+  // The integrated PMBOK plan — the parent document that subsumes every
+  // subsidiary plan (scope, schedule, cost, quality, resource, comms,
+  // risk, procurement, stakeholder). Without a dedicated branch this
+  // falls through to the generic "Required Content" template which
+  // doesn't match PMI vocabulary.
+  if (n.includes("project management plan") && !n.includes("change") && !n.includes("control")) {
+    return `Generate an integrated **Project Management Plan** for ${project.name} following the PMBOK Guide.
+
+## Document Control
+| Field | Value |
+|-------|-------|
+| Document | Project Management Plan |
+| Project | ${project.name} |
+| Version | 1.0 DRAFT |
+| Date | ${today} |
+| Status | Draft — Awaiting Baseline Approval |
+
+## 1. Project Overview
+- **Objective:** [Drawn from the Charter — what this project delivers]
+- **Sponsor:** [Role title only — never invent names]
+- **Project Manager:** [Role title only]
+- **Timeline:** ${startDate} → ${endDate}
+- **Budget:** £${budget}
+
+## 2. Scope Management
+- **Scope statement:** [What's in / out — cite the WBS]
+- **Scope baseline reference:** Work Breakdown Structure artefact
+- **Change control:** All scope changes routed through the Change Request Register
+
+## 3. Schedule Management
+- **Schedule baseline reference:** Schedule with Dependencies artefact
+- **Milestones:** [Top 3-5 milestones with dates between ${startDate} and ${endDate}]
+- **Variance threshold for escalation:** [e.g. >5 working days]
+
+## 4. Cost Management
+- **Cost baseline reference:** Cost Management Plan artefact
+- **Budget control method:** Earned Value (PV, EV, AC, CPI, SPI)
+- **Variance threshold for escalation:** [e.g. CPI < 0.9 OR cumulative CV > 5% of budget]
+
+## 5. Quality Management
+- **Quality standards:** [Cite Quality Management Plan once produced]
+- **Acceptance criteria:** [Where defined — usually in the Charter or scope baseline]
+
+## 6. Resource Management
+- **Team composition:** [Role titles; reference Resource Management Plan]
+- **Resource calendar:** [If shared resources — cite Schedule artefact]
+
+## 7. Communications Management
+- **Reporting cadence:** [Weekly Status Report, monthly Steering Committee, ad-hoc Exception]
+- **Stakeholder distribution:** [Cite Stakeholder Engagement Plan]
+
+## 8. Risk Management
+- **Risk methodology:** Cite Risk Management Plan artefact
+- **Risk register:** Cite Initial Risk Register artefact
+- **Review cadence:** [Weekly during Executing; bi-weekly during Monitoring & Controlling]
+
+## 9. Procurement Management
+- **Procurement approach:** [If applicable — cite Procurement Management Plan]
+- **Vendor management:** [Or "Not applicable — internal delivery only"]
+
+## 10. Stakeholder Engagement
+- **Engagement strategy:** Cite Stakeholder Engagement Plan
+- **Power/interest map:** Cite Stakeholder Register
+
+## 11. Baseline Configuration
+| Baseline | Source artefact | Approved | Approver | Date |
+|----------|------------------|----------|----------|------|
+| Scope | WBS | ❌ | Sponsor | TBC |
+| Schedule | Schedule with Dependencies | ❌ | Sponsor | TBC |
+| Cost | Cost Management Plan | ❌ | Sponsor | TBC |
+
+## 12. Change Control Process
+1. Change identified → logged in Change Request Register
+2. Impact assessed against scope, schedule, cost baselines
+3. CCB (Change Control Board) reviews → APPROVE / REJECT / DEFER
+4. Approved changes update affected baselines + re-baseline if material
+
+## 13. Performance Measurement
+- **EVM cadence:** [Weekly EAC, CPI, SPI from Executing onwards]
+- **Performance Report cadence:** [Cite Performance Report artefact]
+- **Exception threshold:** [e.g. EAC > planned budget × 1.10 triggers Exception Report]
+${agentProtocol("Project Management Plan")}`;
+  }
+
+  // ── Final Project Report (PMBOK, Closing phase) ──
+  // The PMBOK-flavoured closure summary. Distinct from the generic
+  // "Closure Report" branch above (which reads as PRINCE2-style) — this
+  // one uses PMI vocabulary (Process Groups, knowledge areas, EVM).
+  if (n.includes("final project report")) {
+    return `Generate a **Final Project Report** for ${project.name} following the PMBOK Guide.
+
+## Document Control
+| Field | Value |
+|-------|-------|
+| Document | Final Project Report |
+| Project | ${project.name} |
+| Version | 1.0 |
+| Status | Final |
+| Date | ${today} |
+
+## 1. Executive Summary
+[2-3 sentences: what was delivered, against what baseline, with what overall verdict (success / partial / cancelled).]
+
+## 2. Project Outcomes vs Baselines
+| Baseline | Planned | Actual | Variance | Notes |
+|----------|---------|--------|----------|-------|
+| Scope | [Cite Charter] | [What was delivered] | [Gaps] | |
+| Schedule | ${startDate} → ${endDate} | [Actual end] | [Days early/late] | |
+| Cost | £${budget} | £[final] | £[var] / [%] | |
+| Quality | [Acceptance criteria] | [Met / partial / not met] | | |
+
+## 3. Final Earned Value Snapshot
+| Metric | Final Value | Comment |
+|--------|-------------|---------|
+| EAC (Estimate at Completion) | £[final] | |
+| VAC (Variance at Completion) | £[var] | |
+| Final CPI | [value] | [Above 1 = under budget; below 1 = over budget] |
+| Final SPI | [value] | [Above 1 = ahead; below 1 = behind] |
+
+## 4. Process Group Performance
+| Process Group | Status | Headline outcome |
+|---------------|--------|-------------------|
+| Initiating | Complete | Charter approved on [date] |
+| Planning | Complete | PMP baselined on [date] |
+| Executing | Complete | [Headline] |
+| Monitoring & Controlling | Complete | [Performance summary] |
+| Closing | In Progress | This report + procurement closure + acceptance |
+
+## 5. Knowledge Area Wrap-Up
+[One row per knowledge area used on the project: Integration, Scope, Schedule, Cost, Quality, Resource, Communications, Risk, Procurement, Stakeholder. Skip any that weren't applicable. For each: "Status: X / Closure action: Y".]
+
+## 6. Outstanding Items at Close
+[Anything not delivered, transferred to operations / next project, or formally deferred. Cite the Issue Log + Change Request Register.]
+
+## 7. Lessons Learned Summary
+[Cross-reference the Lessons Learned artefact. Pull the top 3-5 headline lessons here.]
+
+## 8. Recommendations for Future Projects
+[Concrete recommendations — what to do differently next time, what to repeat.]
+
+## 9. Formal Acceptance
+Project ${project.name} is hereby formally closed.
+| Role | Name | Sign-off Date |
+|------|------|----------------|
+| Sponsor | [Name] | ________ |
+| Project Manager | [Name] | ________ |
+${agentProtocol("Final Project Report")}`;
   }
 
   // ── Trip Brief (Travel methodology, Plan phase) ──

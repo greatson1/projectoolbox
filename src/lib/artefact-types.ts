@@ -31,6 +31,12 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Packing List",
   "Expense Tracker",
   "Incident Log",
+  // PMBOK methodology artefacts that are intrinsically tabular.
+  // (Project Management Plan, Performance Report, Final Project Report,
+  // Stakeholder Engagement Plan, Assumption Log, Procurement Closure
+  // are prose with embedded tables — they stay in the prose path.)
+  "Issue Log",
+  "Earned Value Report",
 ]);
 
 /** Column definitions per artefact type — used in the generation prompt and xlsx formatting */
@@ -59,6 +65,9 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Packing List": ["Item", "Category", "Quantity", "For Whom", "Packed", "Notes"],
   "Expense Tracker": ["Date", "Category", "Description", "Vendor", "Amount", "Currency", "GBP Equivalent", "Paid By", "Receipt Held", "Reimbursable", "Notes"],
   "Incident Log": ["Date", "Category", "Description", "Travellers Affected", "Severity", "Action Taken", "Insurance Claimable", "Status", "Notes"],
+  // ── PMBOK methodology artefacts ──
+  "Issue Log": ["Issue ID", "Date Raised", "Description", "Category", "Priority", "Impact", "Owner", "Target Resolution", "Actual Resolution", "Status", "Notes"],
+  "Earned Value Report": ["Period", "Planned Value (PV)", "Earned Value (EV)", "Actual Cost (AC)", "Schedule Variance (SV)", "Cost Variance (CV)", "Schedule Performance Index (SPI)", "Cost Performance Index (CPI)", "Estimate at Completion (EAC)", "Estimate to Complete (ETC)", "Variance at Completion (VAC)", "Notes"],
 };
 
 /** Returns true if this artefact should be generated as CSV and shown in SpreadsheetViewer */
@@ -66,7 +75,10 @@ export function isSpreadsheetArtefact(name: string): boolean {
   return SPREADSHEET_ARTEFACTS.has(name);
 }
 
-/** Returns the expected CSV header columns for a given artefact, or empty array */
-export function getArtefactColumns(name: string): string[] {
-  return ARTEFACT_COLUMNS[name] || [];
+/** Returns the expected CSV header columns for a given artefact, or empty array.
+ *  Pass currencySymbol (e.g. "$", "€") to replace the default £ in cost columns. */
+export function getArtefactColumns(name: string, currencySymbol?: string): string[] {
+  const cols = ARTEFACT_COLUMNS[name] || [];
+  if (!currencySymbol || currencySymbol === "£") return cols;
+  return cols.map(col => col.replace(/£/g, currencySymbol).replace(/GBP/g, ""));
 }
