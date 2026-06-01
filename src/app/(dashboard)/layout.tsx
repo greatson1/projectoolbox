@@ -31,12 +31,33 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // Two-column read so we get both the policy and the user's MFA status
     // in one round-trip. Both are tiny SELECTs covered by primary-key
     // indexes, so the latency cost is negligible.
-    const [org, user] = await Promise.all([
-      db.organisation.findUnique({ where: { id: orgId }, select: { requireMfa: true } }),
-      db.user.findUnique({ where: { id: userId }, select: { mfaEnabled: true } }),
-    ]);
-    if (org?.requireMfa && !user?.mfaEnabled) {
-      redirect("/mfa-required");
+    //
+    // Defensive try/catch: if either column is missing from the DB
+    // (Prisma schema added it but the manual SQL migration hasn't been
+    // applied yet), the SELECT throws PostgresError 42703 and the
+    // unhandled throw kills the entire dashboard for every user. We
+    // fail OPEN here — no MFA enforcement until the columns exist —
+    // because the alternative is a full-dashboard outage. The migration
+    // SQL lives at prisma/manual-migrations/2026-05-30-add-mfa-and-
+    // org-policy-columns.sql; run it to re-enable enforcement.
+    try {
+      const [org, user] = await Promise.all([
+        db.organisation.findUnique({ where: { id: orgId }, select: { requireMfa: true } }),
+        db.user.findUnique({ where: { id: userId }, select: { mfaEnabled: true } }),
+      ]);
+      if (org?.requireMfa && !user?.mfaEnabled) {
+        redirect("/mfa-required");
+      }
+    } catch (err) {
+      // Don't crash the dashboard if MFA columns aren't migrated yet.
+      // The redirect() inside the try block throws a Next.js
+      // NEXT_REDIRECT sentinel that we MUST re-throw — otherwise the
+      // redirect would be swallowed and the user would land on the
+      // dashboard despite being subject to the policy.
+      const errCode = (err as { digest?: string } | null)?.digest;
+      if (typeof errCode === "string" && errCode.startsWith("NEXT_REDIRECT")) throw err;
+      // Anything else (missing column, DB unreachable) — log and pass through.
+      console.warn("[dashboard layout] MFA policy check skipped:", err instanceof Error ? err.message : err);
     }
   }
 
