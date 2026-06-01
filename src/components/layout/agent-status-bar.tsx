@@ -530,29 +530,40 @@ export function AgentStatusBar() {
   const commentary = buildCommentary(slot, activityIdx);
   const label      = badgeLabel(slot);
   const sidebarW   = sidebarCollapsed ? 60 : 240;
-  // Route the CTA based on what is actually blocking. PM tasks live on the
-  // PM Tracker page; delivery tasks live on the Agile Board. If both are
-  // blocking, prefer the bigger blocker (lower completion %). If neither
-  // count is set, fall back to the artefacts page.
+  // Route the CTA based on what is actually blocking. PM tasks, gate
+  // prereqs (sponsor identification, funding confirmation, etc.), artefact
+  // status and KB blockers all live on the PM Tracker page — so it's the
+  // right landing page for almost everything that holds advancement back.
+  // Only DELIVERY task blockers go to the Agile Board, and only when
+  // delivery is the SOLE remaining blocker (mixed cases still go to PM
+  // Tracker because that's where the user can also see the gate prereqs
+  // they need to tick).
+  //
+  // Earlier bug: when both pmRemaining and delRemaining were 0 (e.g. the
+  // blocker was "Sponsor identified and confirmed" — a gate prereq, not a
+  // task), the fallback dropped to /artefacts. That sent the user to a
+  // page that says "Phase complete — all 4 documents approved" with no
+  // way to action the actual blocker. Now PM Tracker is the default
+  // because it's where gate prereqs are managed.
   const blockedTarget = (() => {
     if (!slot.projectId) return "/agents";
-    const pmRemaining = Math.max(0, slot.pmTasksTotal - slot.pmTasksDone);
+    const pmRemaining  = Math.max(0, slot.pmTasksTotal  - slot.pmTasksDone);
     const delRemaining = Math.max(0, slot.deliveryTotal - slot.deliveryDone);
-    // ?focus=blocking is read by the destination pages (PM Tracker scrolls
-    // to the current phase's PM tasks and pulses the incomplete rows; the
-    // Agile board can do the same later). Without this the user lands on
-    // the page top and has to hunt for what's blocking.
-    if (pmRemaining > 0 && delRemaining === 0) return `/projects/${slot.projectId}/pm-tracker?focus=blocking`;
-    if (delRemaining > 0 && pmRemaining === 0) return `/projects/${slot.projectId}/agile?focus=blocking`;
-    if (pmRemaining > 0 && delRemaining > 0) {
-      // Both blocking — go to the bigger gap by % incomplete
-      const pmPct  = slot.pmTasksTotal  > 0 ? slot.pmTasksDone  / slot.pmTasksTotal  : 1;
-      const delPct = slot.deliveryTotal > 0 ? slot.deliveryDone / slot.deliveryTotal : 1;
-      return delPct < pmPct
-        ? `/projects/${slot.projectId}/agile?focus=blocking`
-        : `/projects/${slot.projectId}/pm-tracker?focus=blocking`;
+    // Heuristic: blockers list often contains a phrase indicating which
+    // surface owns the fix. "delivery task(s) incomplete" → Agile board;
+    // anything else (PM task, gate prereq, artefact, KB) → PM Tracker.
+    const blockerText = (slot.blockers || []).join(" ").toLowerCase();
+    const blockerMentionsDelivery = /\bdelivery\b/.test(blockerText);
+
+    // Delivery is the ONLY blocker (no PM tasks remaining AND blockers list
+    // only mentions delivery). Route to Agile.
+    if (delRemaining > 0 && pmRemaining === 0 && blockerMentionsDelivery && !blockerText.replace(/delivery/g, "").trim().match(/(task|prereq|gate|artefact|approval|sponsor|budget|funding|risk)/)) {
+      return `/projects/${slot.projectId}/agile?focus=blocking`;
     }
-    return `/projects/${slot.projectId}/artefacts`;
+    // ?focus=blocking is read by the destination pages (PM Tracker scrolls
+    // to the current phase + pulses the blocker rows). Without it the user
+    // lands on the page top and has to hunt.
+    return `/projects/${slot.projectId}/pm-tracker?focus=blocking`;
   })();
   const ctaHref    = slot.state === "questions_waiting"
     ? `/agents/chat?agent=${slot.agentId}`
