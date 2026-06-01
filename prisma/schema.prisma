@@ -62,6 +62,10 @@ model User {
   //   atomically (see /api/auth/mfa/disable).
   mfaSecret          String?
   mfaEnabled         Boolean              @default(false)
+  // ssoProvisionedAt: timestamp of first SAML JIT provision. Distinguishes
+  // accounts that were created via SSO callback (no password set, lifecycle
+  // is owned by the IdP) from accounts created via the password signup flow.
+  ssoProvisionedAt   DateTime?
   onboardingComplete Boolean              @default(false)
   notificationPrefs  Json?
   orgId              String?              // Active org (last selected)
@@ -169,8 +173,24 @@ model Organisation {
   // interstitial on /mfa-required for the affected user. Audit-logged on
   // change.
   requireMfa       Boolean             @default(false)
+  // ── Enterprise SAML SSO (WorkOS) ─────────────────────────────────────────
+  // workosOrgId: WorkOS Organization identifier — set once when the OWNER
+  //   provisions SSO. Drives `/api/auth/sso-discover` (email-domain →
+  //   org → SAML start URL) and is the redirect target in the
+  //   `/api/auth/workos/login` route.
+  // emailDomains: domains owned by this org for SSO discovery. A user typing
+  //   `john@acme.com` at the login screen → we lookup `acme.com` → find
+  //   this org → start SAML. Lower-cased on write.
+  // ssoRequired: when true, password + Google + Microsoft OAuth login are
+  //   blocked for users in this org. Owner-only switch flipped once the
+  //   IdP connection is verified working.
+  workosOrgId      String?             @unique
+  emailDomains     String[]            @default([])
+  ssoRequired      Boolean             @default(false)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
+
+  @@index([emailDomains], type: Gin)
 }
 
 // ─── Projects ───

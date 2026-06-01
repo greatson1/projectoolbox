@@ -5,6 +5,7 @@ import MicrosoftEntraIDProvider from "next-auth/providers/microsoft-entra-id";
 import { db } from "./db";
 import bcrypt from "bcryptjs";
 import { verifySync as verifyTotp } from "otplib";
+import { createHmac } from "crypto";
 
 // Same ±30s tolerance as the enrollment route — accounts for clock drift.
 const TOTP_EPOCH_TOLERANCE_SECONDS = 30;
@@ -133,6 +134,49 @@ const baseProviders = [
   }),
 ];
 
+// ── WorkOS SAML handoff provider ─────────────────────────────────────────
+// The WorkOS callback at /api/auth/workos/callback completes the SAML
+// round-trip, JIT-provisions the user, then redirects to /sso-complete with
+// a short-lived signed handoff token. That page calls `signIn("workos-
+// handoff", { token })` which posts here. We verify the HMAC signature +
+// expiry, load the User row, and return it — NextAuth then mints the
+// session like for any other Credentials provider.
+//
+// This pattern keeps NextAuth as the single source of truth for sessions
+// without WorkOS needing to know NextAuth internals.
+function verifyHandoffToken(raw: string): { userId: string } | null {
+  const secret = process.env.NEXTAUTH_SECRET || "";
+  const parts = raw.split(".");
+  if (parts.length !== 2) return null;
+  const [body, sig] = parts;
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  if (sig !== expected) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!payload?.userId || !payload?.exp || Date.now() > payload.exp) return null;
+    return { userId: payload.userId };
+  } catch {
+    return null;
+  }
+}
+
+const workosHandoffProvider = CredentialsProvider({
+  id: "workos-handoff",
+  name: "workos-handoff",
+  credentials: {
+    token: { label: "token", type: "text" },
+  },
+  async authorize(credentials) {
+    const token = credentials?.token as string | undefined;
+    if (!token) return null;
+    const verified = verifyHandoffToken(token);
+    if (!verified) return null;
+    const user = await db.user.findUnique({ where: { id: verified.userId } });
+    if (!user) return null;
+    return { id: user.id, email: user.email, name: user.name, image: user.image };
+  },
+});
+
 const e2eProvider = e2eBypassActive
   ? CredentialsProvider({
       id: "e2e-bypass",
@@ -160,7 +204,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     newUser: "/onboarding",
   },
-  providers: e2eProvider ? [...baseProviders, e2eProvider] : baseProviders,
+  providers: [
+    ...baseProviders,
+    workosHandoffProvider,
+    ...(e2eProvider ? [e2eProvider] : []),
+  ],
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {

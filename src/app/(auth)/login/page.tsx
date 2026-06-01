@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -23,10 +23,54 @@ export default function LoginPage() {
   // per signIn call and needs all three at the same time.
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  // SSO discovery state. When the user types an email whose domain is
+  // configured for SAML SSO, we replace the password field with a "Continue
+  // with SSO" CTA and start the WorkOS flow on click.
+  const [ssoOption, setSsoOption] = useState<{ workosOrgId: string; ssoRequired: boolean; orgName?: string } | null>(null);
+
+  // Debounced SSO discovery — once the user has typed something that looks
+  // like a complete email, hit /api/auth/sso-discover. Repeats the request
+  // when the email changes, but no faster than every 400ms.
+  useEffect(() => {
+    if (!email || !email.includes("@") || email.indexOf("@") === email.length - 1) {
+      setSsoOption(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      fetch("/api/auth/sso-discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j?.sso && j.workosOrgId) {
+            setSsoOption({ workosOrgId: j.workosOrgId, ssoRequired: !!j.ssoRequired, orgName: j.orgName });
+          } else {
+            setSsoOption(null);
+          }
+        })
+        .catch(() => setSsoOption(null));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [email]);
+
+  const startSso = () => {
+    if (!ssoOption) return;
+    window.location.href = `/api/auth/workos/login?workosOrgId=${encodeURIComponent(ssoOption.workosOrgId)}&returnTo=${encodeURIComponent("/dashboard")}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // If SSO is REQUIRED for this email's org, refuse the password attempt
+    // and route through WorkOS — the IdP is the sole authority.
+    if (ssoOption?.ssoRequired) {
+      startSso();
+      return;
+    }
+
     setLoading(true);
 
     const result = await signIn("credentials", {
@@ -102,20 +146,40 @@ export default function LoginPage() {
                     <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
                       placeholder="you@company.com" className="mt-1" required />
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <Label htmlFor="password" className="text-xs">Password</Label>
-                      <Link href="/forgot-password" className="text-xs text-primary hover:underline">Forgot password?</Link>
+
+                  {/* SSO discovery banner — appears once the domain is recognised */}
+                  {ssoOption && (
+                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-xs">
+                        <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                        <span>
+                          {ssoOption.orgName ? <strong>{ssoOption.orgName}</strong> : "Your organisation"} signs in with SSO
+                          {ssoOption.ssoRequired && <span className="text-muted-foreground"> · required</span>}
+                        </span>
+                      </div>
+                      <Button type="button" size="sm" className="w-full" onClick={startSso}>
+                        Continue with SSO
+                      </Button>
                     </div>
-                    <div className="relative">
-                      <Input id="password" type={showPwd ? "text" : "password"} value={password}
-                        onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="pr-10" required />
-                      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                        onClick={() => setShowPwd(!showPwd)}>
-                        {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                  )}
+
+                  {/* Password — hidden when SSO is REQUIRED for this email's org */}
+                  {!ssoOption?.ssoRequired && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label htmlFor="password" className="text-xs">Password</Label>
+                        <Link href="/forgot-password" className="text-xs text-primary hover:underline">Forgot password?</Link>
+                      </div>
+                      <div className="relative">
+                        <Input id="password" type={showPwd ? "text" : "password"} value={password}
+                          onChange={e => setPassword(e.target.value)} placeholder="••••••••" className="pr-10" required={!ssoOption?.ssoRequired} />
+                        <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                          onClick={() => setShowPwd(!showPwd)}>
+                          {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 
