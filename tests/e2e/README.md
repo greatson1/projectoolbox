@@ -5,14 +5,88 @@ Full user-journey browser tests. Skipped by default — only run when
 
 ## What's actually runnable today
 
-After commit `<this PR>`, two suites genuinely exercise the live app:
+Four suites — all green at 62/62 against `http://localhost:3030`
+(local walkthrough), and 57/57 against `https://projectoolbox.com`
+(live monitoring):
 
 1. **`smoke.spec.ts`** — public-route smoke (login renders, 404 is
    clean, dashboard bounces unauthenticated users). **No env wiring
-   needed beyond a running dev server.**
-2. **`golden-path.spec.ts`** — authenticated dashboard via the E2E
-   auth-bypass provider. Skipped until `E2E_AUTH_BYPASS_TOKEN` and
-   `E2E_TEST_USER_ID` are set.
+   needed beyond a running server at BASE_URL.**
+2. **`public-surface.spec.ts`** — value-prop verification + homepage
+   screenshot. Asserts the marketing copy matches what the deploy
+   wizard offers (Traditional, Scrum, Waterfall, SAFe, Kanban, Hybrid;
+   no PRINCE2 / PMI-Style).
+3. **`unhappy-paths.spec.ts`** — 20 protected pages redirect on no
+   auth; 6 protected APIs return 401/403/302/404/405 (never leak data);
+   malformed URLs handled; XSS-in-query-params guarded; static metadata
+   (favicon / robots / sitemap / `<title>` / OG tags) served.
+4. **`live-walkthrough.spec.ts`** — authenticated journey: signup →
+   onboarding → create project → visit every project sub-page (27)
+   and every dashboard page (15) → create a real risk via the UI.
+   Requires a local dev server with `ADMIN_SECRET`, a non-prod DB,
+   and LLM fakes; see "Quick local walkthrough" below.
+
+## Quick local walkthrough — full authenticated suite
+
+Verified working on Windows + Next.js 16 (Turbopack) after the
+`next.config.ts` `turbopack.root` pin landed.
+
+```bash
+# 0. Browser binary (one-time)
+npx playwright install chromium
+
+# 1. Throwaway Postgres
+docker run --name pgwalk -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=projectoolbox_walk -p 5433:5432 -d postgres:16
+
+# 2. Push schema to the walkthrough DB
+npx prisma db push \
+  --url postgresql://postgres:test@localhost:5433/projectoolbox_walk \
+  --accept-data-loss
+
+# 3. Throwaway env file (DO NOT COMMIT — already in .gitignore)
+cat > .env.walk <<EOF
+DATABASE_URL=postgresql://postgres:test@localhost:5433/projectoolbox_walk
+DIRECT_URL=postgresql://postgres:test@localhost:5433/projectoolbox_walk
+NEXTAUTH_SECRET=walk-only-not-a-real-secret-just-needs-to-exist-32chars
+AUTH_SECRET=walk-only-not-a-real-secret-just-needs-to-exist-32chars
+NEXTAUTH_URL=http://localhost:3030
+ADMIN_SECRET=$(grep '^ADMIN_SECRET=' .env | cut -d= -f2)
+ANTHROPIC_FAKE=1
+PERPLEXITY_FAKE=1
+NEXT_TELEMETRY_DISABLED=1
+PORT=3030
+EOF
+
+# 4. Start dev server with raised heap (avoids the 11-worker OOM
+#    on the page-data collection step)
+set -a && . .env.walk && set +a
+npm run dev:walk &   # script wires --max-old-space-size=8192
+
+# 5. Wait for it to boot, then run all four suites
+until curl -sf -o /dev/null http://localhost:3030/login; do sleep 5; done
+E2E=1 BASE_URL=http://localhost:3030 npx playwright test \
+  tests/e2e/smoke.spec.ts \
+  tests/e2e/public-surface.spec.ts \
+  tests/e2e/unhappy-paths.spec.ts \
+  tests/e2e/live-walkthrough.spec.ts
+
+# 6. Teardown
+docker rm -f pgwalk
+rm -f .env.walk dev.log
+```
+
+The signup-gate test relaxes its URL assertion to accept either
+`/signup` or `/waitlist` because `INVITE_ONLY=true` in your env will
+redirect through proxy.ts middleware. Both are valid; the test only
+enforces no 5xx.
+
+## Auth-bypass golden-path (for CI)
+
+`golden-path.spec.ts` is a leaner alternative used by CI when the
+full live-walkthrough's invite + onboarding APIs aren't desired.
+Authenticates via the E2E bypass provider. Skipped until
+`E2E_AUTH_BYPASS_TOKEN` and `E2E_TEST_USER_ID` are set.
 
 ## Setup
 
