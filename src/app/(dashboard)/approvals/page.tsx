@@ -762,11 +762,39 @@ function ApprovalsPageInner() {
 
       {/* Approval cards */}
       {filtered.length === 0 ? (
-        <div className="text-center py-16">
-          <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-3xl bg-emerald-500/10">✓</div>
-          <p className="text-lg font-semibold">All clear</p>
-          <p className="text-sm text-muted-foreground mt-1">No pending approvals — your agents are running smoothly</p>
-        </div>
+        // Differentiate two empty states:
+        //   1. items.length === 0 → genuinely no pending approvals
+        //   2. items.length > 0 but filtered.length === 0 → the active
+        //      tab / agent filter is hiding rows that DO exist. This was
+        //      the bug the user reported: dashboard said "4 approvals
+        //      waiting", they clicked through, landed on a non-"All" tab
+        //      that returned 0 matches, and saw "All clear" — making it
+        //      look like the dashboard count was wrong.
+        items.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-3xl bg-emerald-500/10">✓</div>
+            <p className="text-lg font-semibold">All clear</p>
+            <p className="text-sm text-muted-foreground mt-1">No pending approvals — your agents are running smoothly</p>
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center text-2xl bg-muted">🔎</div>
+            <p className="text-base font-semibold">
+              {items.length} pending approval{items.length === 1 ? "" : "s"} hidden by your current filter
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {agentFilter
+                ? `The "${filter}" tab + selected agent filter exclude all ${items.length} of them.`
+                : `The "${filter}" tab excludes all ${items.length} of them.`}
+            </p>
+            <button
+              onClick={() => { setFilter("All"); setAgentFilter(null); }}
+              className="mt-4 text-sm font-medium text-primary hover:underline"
+            >
+              Show all {items.length} approval{items.length === 1 ? "" : "s"}
+            </button>
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {filtered.map((item: any) => {

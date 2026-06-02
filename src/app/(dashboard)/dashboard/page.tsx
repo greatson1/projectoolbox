@@ -261,8 +261,12 @@ export default function DashboardPage() {
         }
 
         // 2. Pending approvals — agent is blocked
+        // href explicitly carries ?tab=All so the deep-link can never land
+        // the user on a stale filter that hides the queued rows. The page
+        // resolves ?tab → initial filter; "All" guarantees they see whatever
+        // the dashboard counted.
         if (pendingApprovals > 0) {
-          suggestions.push({ icon: "⏳", label: `${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""} waiting for you`, desc: "Your agent is paused at a governance gate — review and approve to let it continue", href: "/approvals", priority: "critical", color: "border-amber-600/40 bg-amber-500/10" });
+          suggestions.push({ icon: "⏳", label: `${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""} waiting for you`, desc: "Your agent is paused at a governance gate — review and approve to let it continue", href: "/approvals?tab=All", priority: "critical", color: "border-amber-600/40 bg-amber-500/10" });
         }
 
         // 3. High risks flagged

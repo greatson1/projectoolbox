@@ -65,7 +65,12 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Portfolio",     href: "/portfolio", icon: Briefcase },
       { label: "Projects",      href: "/projects",  icon: FolderKanban },
-      { label: "Approvals",     href: "/approvals", icon: CheckSquare },
+      // Pin tab=All so the badge count → page transition can't land on a
+      // stale tab where rows are hidden by filter. The approvals page's
+      // resolveInitialFilter falls back to "All" anyway, but making it
+      // explicit here means a user clicking the badge ALWAYS lands on the
+      // unfiltered list that mirrors the badge count.
+      { label: "Approvals",     href: "/approvals?tab=All", icon: CheckSquare },
       { label: "Meetings",      href: "/meetings",  icon: Video },
       { label: "Calendar",      href: "/calendar",  icon: Calendar },
       { label: "Knowledge Base",href: "/knowledge", icon: Brain },

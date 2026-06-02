@@ -73,3 +73,40 @@ describe("matchesApprovalTab — other tabs", () => {
       .forEach((row) => expect(matchesApprovalTab(row, "All")).toBe(true));
   });
 });
+
+describe("matchesApprovalTab — Griffin dashboard-vs-page count divergence", () => {
+  // Real scenario from the live DB: 4 PENDING CHANGE_REQUEST rows,
+  // every one with impact.subtype === "research_finding" and urgency === "LOW".
+  // Dashboard counted 4 (correct). Page showed 0 because the user had been
+  // on a non-"All" tab that excluded research findings.
+  // Each branch below proves where rows go so the count↔tab divergence
+  // can't happen again.
+  const griffinPending = [
+    researchFindingRow,
+    researchFindingRow,
+    researchFindingRow,
+    researchFindingRow,
+  ];
+
+  it("All tab surfaces all 4 (matches the dashboard count)", () => {
+    const visible = griffinPending.filter(r => matchesApprovalTab(r, "All"));
+    expect(visible).toHaveLength(4);
+  });
+
+  it("Research tab also surfaces all 4 (canonical home for research findings)", () => {
+    const visible = griffinPending.filter(r => matchesApprovalTab(r, "Research"));
+    expect(visible).toHaveLength(4);
+  });
+
+  it("Change Requests / Phase Gates / Scope & Risk / Communications hide all 4", () => {
+    for (const tab of ["Change Requests", "Phase Gates", "Scope & Risk", "Communications"] as const) {
+      const visible = griffinPending.filter(r => matchesApprovalTab(r, tab));
+      expect(visible, `tab="${tab}" should hide all 4 research findings`).toHaveLength(0);
+    }
+  });
+
+  it("High Priority hides all 4 because urgency is LOW", () => {
+    const visible = griffinPending.filter(r => matchesApprovalTab(r, "High Priority"));
+    expect(visible).toHaveLength(0);
+  });
+});
