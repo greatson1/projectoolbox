@@ -121,7 +121,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // stakeholder rows. The user can fill the real name later via the
     // People page or the next clarification cycle.
 
-    // Stakeholders — { name, role, org, power, interest } from the wizard
+    // Stakeholders — { name, role, org, power, interest } from the wizard.
+    //
+    // Every row goes into the Stakeholder table directly. In addition,
+    // any row whose role classifies as a KEY ROLE (Sponsor / PM /
+    // Client) is propagated via recordKeyRole so the same fact lands
+    // in the KB as user_confirmed too — that way the phase-prereq
+    // evaluator sees it regardless of which surface it looks at.
+    const { classifyKeyRole, recordKeyRole } = await import("@/lib/agents/key-role-recorder");
+    const keyRoleNames: Array<{ canonical: string; name: string }> = [];
+
     if (Array.isArray(cfg.stakeholders)) {
       // Read once, dedup in-memory.
       const allExisting = await db.stakeholder.findMany({
@@ -160,40 +169,70 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           // promotions see this row.
           byKey.set(stakeholderNameKey(name), { id: created.id, name });
         }
+        // If the role classifies as a key role, queue it for KB
+        // propagation after the loop. Doing this in a second pass means
+        // a single user can be added once as Stakeholder and once as
+        // key role without races on the upsert.
+        const canonical = classifyKeyRole(s?.role);
+        if (canonical) keyRoleNames.push({ canonical, name });
       }
     }
 
-    // Sponsor + project manager — captured separately on the wizard. Promote
-    // to Stakeholder rows with a clear role tag so the People page surfaces
-    // them and downstream prereq checks (e.g. "Sponsor identified and
-    // confirmed") evaluate as met.
-    const promoteSingle = async (raw: unknown, role: string) => {
-      const name = normaliseStakeholderName(typeof raw === "string" ? raw : "");
-      if (!name) return;
-      if (looksLikePlaceholderName(name)) return;
-      const allExisting = await db.stakeholder.findMany({
-        where: { projectId },
-        select: { id: true, name: true, role: true },
+    // Sponsor + project manager + client — captured EITHER via the
+    // stakeholders[] array (above) OR via dedicated single fields on the
+    // wizard (cfg.sponsor / cfg.projectManager / cfg.client). The single
+    // fields are currently dead in the form (no input renders them) but
+    // the API still accepts them so an external caller / future wizard
+    // field can populate them without code changes.
+    if (typeof cfg.sponsor === "string" && cfg.sponsor.trim()) {
+      keyRoleNames.push({ canonical: "Project Sponsor", name: cfg.sponsor.trim() });
+    }
+    const pmField = cfg.projectManager || cfg.pm;
+    if (typeof pmField === "string" && pmField.trim()) {
+      keyRoleNames.push({ canonical: "Project Manager", name: pmField.trim() });
+    }
+    if (typeof cfg.client === "string" && cfg.client.trim()) {
+      keyRoleNames.push({ canonical: "Client Organisation", name: cfg.client.trim() });
+    }
+
+    // Single propagation pass — pushes each key role into both the
+    // Stakeholder table (idempotent upsert) and the KB as a
+    // user_confirmed HIGH_TRUST fact tagged with the source. Without
+    // this, sponsor info captured at deploy time was invisible to the
+    // prereq evaluator's KB-confirmed-fact path (it only saw
+    // Stakeholder.role), and a sponsor named later via chat was
+    // invisible to the Stakeholder.role path. Both paths now reach
+    // both stores.
+    if (keyRoleNames.length > 0) {
+      // Re-fetch the orgId for this project — the earlier project
+      // findUnique only selected budget/dates/description.
+      const projectForOrg = await db.project.findUnique({
+        where: { id: projectId },
+        select: { orgId: true },
       });
-      const targetKey = stakeholderNameKey(name);
-      const existing = allExisting.find(s => stakeholderNameKey(s.name) === targetKey);
-      if (existing) {
-        const updates: { role?: string; name?: string } = {};
-        if (!existing.role) updates.role = role;
-        if (existing.name !== name) updates.name = name;
-        if (Object.keys(updates).length > 0) {
-          await db.stakeholder.update({ where: { id: existing.id }, data: updates });
+      if (projectForOrg?.orgId) {
+        for (const { canonical, name } of keyRoleNames) {
+          const normalised = normaliseStakeholderName(name);
+          if (!normalised) continue;
+          if (looksLikePlaceholderName(normalised)) continue;
+          try {
+            await recordKeyRole({
+              projectId,
+              orgId: projectForOrg.orgId,
+              role: canonical,
+              name: normalised,
+              source: "wizard-stakeholders",
+              agentId,
+            });
+          } catch (e) {
+            // Don't fail the whole deploy if key-role propagation fails —
+            // the Stakeholder row already exists, only the KB mirror is
+            // missing. Logged so we notice.
+            console.error(`[deploy] recordKeyRole failed for ${canonical}=${normalised}:`, e);
+          }
         }
-      } else {
-        await db.stakeholder.create({
-          data: { projectId, name, role, power: 80, interest: 80 },
-        });
       }
-    };
-    await promoteSingle(cfg.sponsor, "Project Sponsor");
-    await promoteSingle(cfg.projectManager || cfg.pm, "Project Manager");
-    // Client / commissioning organisation — wizard Step 1 "Client" field
-    await promoteSingle(cfg.client, "Client Organisation");
+    }
 
     // Team members — wizard's team array → ProjectMember rows. Each entry
     // typically has { userId | name, role, hourlyRate }. We only persist

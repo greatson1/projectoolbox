@@ -274,6 +274,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     fact.content,
                     ["chat_extracted_backstop", "user_answer"],
                   );
+                  // If the extracted fact is a key role (sponsor / PM /
+                  // client), ALSO push it through recordKeyRole so the
+                  // Stakeholder table gets a matching row. Without
+                  // this, a sponsor named via chat was visible to the
+                  // KB-confirmed-fact prereq path but invisible to the
+                  // Stakeholder-row path AND missing from the People
+                  // page entirely. recordKeyRole upserts into both
+                  // stores so every input surface ends in the same
+                  // place.
+                  try {
+                    const { classifyKeyRole, recordKeyRole } = await import("@/lib/agents/key-role-recorder");
+                    const canonical = classifyKeyRole(fact.title);
+                    if (canonical) {
+                      // Pull the value from the content sentence — the
+                      // Haiku format is "<title>: <value>." per
+                      // extract-answer-from-reply.ts:116. Strip the
+                      // title prefix to get just the name.
+                      const value = fact.content.replace(new RegExp(`^${fact.title}\\s*:\\s*`, "i"), "").replace(/\.$/, "").trim();
+                      if (value) {
+                        await recordKeyRole({
+                          projectId: deployment0.projectId!,
+                          orgId,
+                          role: canonical,
+                          name: value,
+                          source: "chat-backstop",
+                          agentId,
+                        });
+                      }
+                    }
+                  } catch (e) {
+                    console.error("[chat/stream] key-role propagation failed:", e);
+                  }
                 }
               })().catch((e) => console.error("[chat/stream] backstop extraction failed:", e));
             }

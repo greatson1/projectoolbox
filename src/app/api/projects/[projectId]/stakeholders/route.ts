@@ -66,6 +66,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     data: { ...body, ...(cleanName ? { name: cleanName } : {}), projectId },
   });
 
+  // Key-role propagation — if this new stakeholder is a Sponsor / PM /
+  // Client, mirror it into the KB as a user_confirmed fact so the
+  // phase-prereq evaluator sees it on the KB read-path too. Without
+  // this, a sponsor added on the People page only ever lived in the
+  // Stakeholder table — the prereq still ticked (because the evaluator
+  // also reads Stakeholder.role) but a sponsor named later via chat
+  // wouldn't show up here. recordKeyRole makes the two paths
+  // symmetric. Idempotent: the helper itself dedups by name.
+  try {
+    const { classifyKeyRole, recordKeyRole } = await import("@/lib/agents/key-role-recorder");
+    const canonical = classifyKeyRole(body.role);
+    if (canonical && cleanName) {
+      const project = await db.project.findUnique({
+        where: { id: projectId },
+        select: { orgId: true },
+      });
+      if (project?.orgId) {
+        await recordKeyRole({
+          projectId,
+          orgId: project.orgId,
+          role: canonical,
+          name: cleanName,
+          source: "people-page",
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[stakeholders POST] key-role propagation failed:", e);
+  }
+
   // Track new stakeholder in KB
   import("@/lib/agents/kb-event-tracker").then(({ trackStakeholderChange }) => {
     trackStakeholderChange(projectId, body.name || "Stakeholder", `added as ${body.role || "stakeholder"} with ${body.influence || "unknown"} influence`).catch(() => {});
