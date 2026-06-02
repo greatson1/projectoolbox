@@ -140,7 +140,24 @@ export function useMarkAllRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api("/api/notifications", { method: "POST", body: JSON.stringify({ action: "mark-all-read" }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: () => {
+      // Refresh the list AND the dashboard counts so the sidebar/header
+      // badges drop to zero immediately instead of waiting for the next
+      // SSE tick (~minutes) or the next dashboard load.
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useMarkRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api("/api/notifications", { method: "POST", body: JSON.stringify({ action: "mark-read", id }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }
 

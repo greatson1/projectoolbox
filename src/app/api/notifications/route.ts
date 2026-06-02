@@ -26,7 +26,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data: notifications });
 }
 
-// POST /api/notifications/mark-all-read
+// POST /api/notifications — mark read (single or all)
+//
+// Body:
+//   { action: "mark-all-read" }           → updateMany on userId + isRead:false
+//   { action: "mark-read", id: "cm..." }  → update by id, scoped to userId
+//
+// Returns { success: true, updated: <number> } so the client can sanity-check
+// the badge decrement.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,11 +41,21 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
 
   if (body.action === "mark-all-read") {
-    await db.notification.updateMany({
+    const result = await db.notification.updateMany({
       where: { userId: session.user.id, isRead: false },
       data: { isRead: true },
     });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, updated: result.count });
+  }
+
+  if (body.action === "mark-read" && typeof body.id === "string") {
+    // Scope by userId so a user can't mark someone else's row read by
+    // brute-forcing IDs.
+    const result = await db.notification.updateMany({
+      where: { id: body.id, userId: session.user.id },
+      data: { isRead: true },
+    });
+    return NextResponse.json({ success: true, updated: result.count });
   }
 
   return NextResponse.json({ error: "Invalid action" }, { status: 400 });

@@ -3,7 +3,8 @@
 
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useNotifications, useMarkAllRead } from "@/hooks/use-api";
+import { useNotifications, useMarkAllRead, useMarkRead } from "@/hooks/use-api";
+import { useAppStore } from "@/stores/app";
 import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -111,8 +112,31 @@ export default function NotificationsPage() {
 
   const selected = selectedId ? notifications.find(n => n.id === selectedId) : null;
 
-  const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  const markRead = (id: number) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  // Hit the API so the DB row actually changes — previously these only
+  // updated local React state, leaving isRead=false in Postgres. Result:
+  // the sidebar/header badges stayed inflated forever and a page reload
+  // brought every notification back as unread.
+  const markAllReadMutation = useMarkAllRead();
+  const markReadMutation = useMarkRead();
+  const setUnreadNotifications = useAppStore((s) => s.setUnreadNotifications);
+  const markAllRead = () => {
+    // Optimistic — drop the badge to zero immediately; the dashboard
+    // invalidation in useMarkAllRead will reconcile if anything raced.
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setUnreadNotifications(0);
+    markAllReadMutation.mutate(undefined, {
+      onError: () => toast.error("Couldn't save — try again."),
+    });
+  };
+  const markRead = (id: number) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    // Decrement badge by 1 (clamped at 0)
+    const current = useAppStore.getState().unreadNotifications ?? 0;
+    setUnreadNotifications(Math.max(0, current - 1));
+    markReadMutation.mutate(String(id), {
+      onError: () => toast.error("Couldn't save — try again."),
+    });
+  };
 
   const typeCounts: Record<NType, number> = { approval: 0, risk: 0, document: 0, meeting: 0, billing: 0, system: 0 };
   notifications.filter(n => !n.read).forEach(n => typeCounts[n.type]++);
