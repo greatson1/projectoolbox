@@ -1,9 +1,21 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
+  },
+  // Pin Turbopack's workspace root to THIS directory. Without this,
+  // Next.js infers the nearest ancestor that contains a package-lock —
+  // and on developer machines that may be a sibling project at
+  // C:\Users\info\package.json (a stray Vite app), which causes
+  // tailwindcss + every other dep to fail resolution from the wrong
+  // node_modules tree. Pinning fixes both `next dev` and `next build`
+  // when Turbopack would otherwise OOM trying to traverse the wrong
+  // tree.
+  turbopack: {
+    root: path.resolve(__dirname),
   },
   // Note: for audio uploads > 4.5 MB on Vercel free tier,
   // set BODY_SIZE_LIMIT=25mb in Vercel dashboard environment variables.

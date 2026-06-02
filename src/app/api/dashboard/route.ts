@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
+import { countVisiblePendingApprovals } from "@/lib/approvals/visible-pending";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,10 @@ export async function GET() {
       where: { orgId, status: { not: "DECOMMISSIONED" } },
       select: { id: true, name: true, status: true, gradient: true, autonomyLevel: true },
     }),
-    db.approval.count({ where: { project: { orgId }, status: "PENDING" } }),
+    // Mirrors the client-side filter on /approvals so the sidebar badge
+    // doesn't count premature PHASE_GATE rows the page hides. See
+    // lib/approvals/visible-pending.ts.
+    countVisiblePendingApprovals(orgId),
     db.notification.count({ where: { userId: session.user.id!, isRead: false } }),
     db.agentActivity.findMany({
       where: { agent: { orgId } },

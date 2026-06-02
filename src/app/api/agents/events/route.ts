@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { countVisiblePendingApprovals } from "@/lib/approvals/visible-pending";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,9 @@ export async function GET(req: NextRequest) {
             });
           }
 
-          // Check approval count
-          const approvalCount = await db.approval.count({ where: { project: { orgId }, status: "PENDING" } });
+          // Check approval count — same filter the /approvals page applies
+          // so the sidebar badge agrees with what the user can act on.
+          const approvalCount = await countVisiblePendingApprovals(orgId);
           if (approvalCount !== lastApprovalCount) {
             lastApprovalCount = approvalCount;
             send("approval_count", { count: approvalCount });

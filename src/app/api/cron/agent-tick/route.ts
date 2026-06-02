@@ -146,11 +146,22 @@ export async function GET(req: NextRequest) {
       console.error("Self-heal stuck deployment check failed:", e);
     }
 
-    // 0c2. Cancel premature phase gates — PHASE_GATE approvals that reference
-    //      0 artefacts. These were created prematurely by the agent; approving
-    //      them would advance the phase with no documentation. Mark as REJECTED
-    //      with an explanatory comment so the user sees the cleanup.
+    // 0c2. Cancel premature / stale phase gates. Two passes:
+    //
+    //   Pass A — REJECT obviously-bogus gates (0 artefacts in the project, or
+    //   description literally says "generated 0 artefact"). These should never
+    //   have been raised; mark them REJECTED so the user sees the cleanup
+    //   trail.
+    //
+    //   Pass B — DEFER gates that aren't obviously bogus but no longer pass
+    //   the canonical getPhaseCompletion check. These may have been raised
+    //   legitimately and then a downstream change (rejected artefact, deleted
+    //   task, etc.) made the phase un-advance-ready. Marking DEFERRED — not
+    //   REJECTED — leaves room for the agent to re-raise once the blocker
+    //   clears. This uses the same source-of-truth resolver the page consults,
+    //   so badge, page and gate guard can't disagree.
     try {
+      const { sweepStalePhaseGateApprovals } = await import("@/lib/agents/phase-gate-guard");
       const prematureGates = await db.approval.findMany({
         where: {
           status: "PENDING",
@@ -158,10 +169,10 @@ export async function GET(req: NextRequest) {
         },
         select: { id: true, projectId: true, description: true, reasoningChain: true, requestedById: true, title: true },
       });
+      // Pass A — hard-reject obviously-bogus gates.
+      const survivors: typeof prematureGates = [];
       for (const gate of prematureGates) {
-        // Count actual artefacts in the project (any status)
         const artCount = await db.agentArtefact.count({ where: { projectId: gate.projectId } });
-        // Also check description for the telltale "Generated 0 artefact" pattern
         const text = ((gate.description || "") + " " + (gate.reasoningChain || "")).toLowerCase();
         const textSaysZero = /generated\s+0\s+artefact/i.test(text) || /0\s+artefact\(s\)/i.test(text);
         if (artCount === 0 || textSaysZero) {
@@ -178,6 +189,33 @@ export async function GET(req: NextRequest) {
               data: { agentId: gate.requestedById, type: "system", summary: `Cleanup: cancelled premature phase gate "${gate.title}" — 0 artefacts existed.` },
             }).catch(() => {});
           }
+        } else {
+          survivors.push(gate);
+        }
+      }
+      // Pass B — defer non-bogus gates whose phase is no longer advance-ready.
+      // Group survivors by projectId so we only sweep each project once.
+      const byProject = new Map<string, typeof prematureGates>();
+      for (const g of survivors) {
+        const arr = byProject.get(g.projectId) ?? [];
+        arr.push(g);
+        byProject.set(g.projectId, arr);
+      }
+      for (const [projectId, gates] of byProject.entries()) {
+        // sweepStalePhaseGateApprovals needs an agentId for getPhaseCompletion.
+        // Use the gate's requestedById if it points at an Agent — otherwise
+        // fall back to any active deployment on the project.
+        let agentId: string | null = null;
+        const dep = await db.agentDeployment.findFirst({
+          where: { projectId, isActive: true },
+          select: { agentId: true },
+        });
+        if (dep) agentId = dep.agentId;
+        if (!agentId) continue;
+        try {
+          await sweepStalePhaseGateApprovals(projectId, agentId);
+        } catch (e) {
+          console.error(`[gate-sweep] project=${projectId} gates=${gates.length} failed:`, e);
         }
       }
     } catch (e) {

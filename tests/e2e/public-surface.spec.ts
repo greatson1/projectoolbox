@@ -60,7 +60,10 @@ test.describe("public surface — value-prop verification", () => {
   test("signup page renders without crashing", async ({ page }) => {
     const res = await page.goto("/signup");
     expect(res?.status()).toBeLessThan(500);
-    await expect(page).toHaveURL(/\/signup/);
+    // Lands on /signup when invite-only mode is OFF, or on /waitlist when it's
+    // ON (proxy.ts redirects /signup → /waitlist when INVITE_ONLY=true or
+    // NEXT_PUBLIC_INVITE_ONLY=true). Both are valid; we only check no 5xx.
+    await expect(page).toHaveURL(/\/(signup|waitlist)/);
   });
 
   test("homepage screenshot captured for visual reference", async ({ page }) => {

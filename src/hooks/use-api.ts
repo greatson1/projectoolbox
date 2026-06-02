@@ -106,10 +106,13 @@ export function useDeployAgent() {
 
 // ── Approvals ──
 
-export function useApprovals(status = "PENDING") {
+// Default fetches PENDING + DEFERRED so the approvals page can render both
+// (the page filter accepts both states — previously DEFERRED rows were never
+// fetched, so the filter clause was dead code).
+export function useApprovals(status = "PENDING,DEFERRED") {
   return useQuery({
     queryKey: ["approvals", status],
-    queryFn: () => api<any[]>(`/api/approvals?status=${status}`),
+    queryFn: () => api<any[]>(`/api/approvals?status=${encodeURIComponent(status)}`),
     refetchInterval: 120000, // 2 min — approval queue needs freshness
   });
 }

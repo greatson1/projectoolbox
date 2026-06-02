@@ -17,9 +17,17 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get("type");
   const priority = searchParams.get("priority");
 
+  // Allow comma-separated statuses (e.g. "PENDING,DEFERRED") so the page
+  // can render both queue states in one request. Single status still works.
+  const statusFilter = status === "all"
+    ? {}
+    : status.includes(",")
+      ? { status: { in: status.split(",").map((s) => s.trim()).filter(Boolean) as any } }
+      : { status };
+
   const where: any = {
     project: { orgId },
-    ...(status !== "all" && { status }),
+    ...statusFilter,
     ...(type && { type }),
   };
 
