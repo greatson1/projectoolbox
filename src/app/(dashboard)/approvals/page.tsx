@@ -2,9 +2,11 @@
 "use client";
 
 import { usePageTitle } from "@/hooks/use-page-title";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useApprovals } from "@/hooks/use-api";
+import { matchesApprovalTab, type ApprovalTab } from "@/lib/approvals/tab-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -559,11 +561,31 @@ function parseDescription(raw: string): { summary: string; reason: string; chang
   return { summary, reason, changes };
 }
 
+// Resolve `?tab=Research` (or any other tab name) from the URL so deep links
+// from the chat banner / dashboard CTAs land the user on the right tab
+// without an extra click. Falls back to "All" when the param is missing or
+// doesn't match a known tab — never throws, never leaves the user on a
+// blank tab.
+function resolveInitialFilter(raw: string | null): string {
+  if (!raw) return "All";
+  const match = FILTERS.find((f) => f.toLowerCase() === raw.toLowerCase());
+  return match || "All";
+}
+
 export default function ApprovalsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ApprovalsPageInner />
+    </Suspense>
+  );
+}
+
+function ApprovalsPageInner() {
+  const searchParams = useSearchParams();
   const { data: approvals, isLoading, refetch } = useApprovals();
   usePageTitle("Approvals");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [filter, setFilter] = useState("All");
+  const [filter, setFilter] = useState(() => resolveInitialFilter(searchParams.get("tab")));
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
@@ -619,15 +641,9 @@ export default function ApprovalsPage() {
     // Agent filter
     const ag = item.requestedByAgent || item.decision?.agent;
     if (agentFilter && ag?.id !== agentFilter) return false;
-    // Type filter
-    if (filter === "All") return true;
-    if (filter === "High Priority") return item.urgency === "HIGH" || item.urgency === "CRITICAL";
-    if (filter === "Scope & Risk") return item.type === "SCOPE_CHANGE" || item.type === "RISK_RESPONSE" || item.type === "RESOURCE";
-    if (filter === "Phase Gates") return item.type === "PHASE_GATE";
-    if (filter === "Research") return item.type === "CHANGE_REQUEST" && (item.impact as any)?.subtype === "research_finding";
-    if (filter === "Change Requests") return (item.type === "CHANGE_REQUEST" && (item.impact as any)?.subtype !== "research_finding") || item.type === "BUDGET";
-    if (filter === "Communications") return item.type === "COMMUNICATION";
-    return true;
+    // Type filter — delegated to the pure helper so the contract is
+    // testable (see lib/approvals/tab-filter.test.ts).
+    return matchesApprovalTab(item, filter as ApprovalTab);
   });
 
   const highCount = items.filter((i: any) => i.urgency === "HIGH" || i.urgency === "CRITICAL").length;

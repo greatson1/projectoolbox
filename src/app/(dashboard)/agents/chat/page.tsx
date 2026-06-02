@@ -1328,7 +1328,7 @@ function AgentChatPage() {
           {agentsLoading || agentData === undefined ? (
             <div className="p-6 text-center"><div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-muted-foreground/20 border-t-primary animate-spin" /><p className="text-xs text-muted-foreground">Loading agents…</p></div>
           ) : agents.length === 0 ? (
-            <div className="p-6 text-center"><Bot className="w-8 h-8 text-muted-foreground mx-auto mb-3" /><p className="text-sm font-medium mb-1">No agents deployed</p><p className="text-xs text-muted-foreground mb-3">Deploy your first agent to start chatting</p><a href="/agents/deploy" className="inline-flex items-center px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold">Deploy Agent →</a></div>
+            <div className="p-6 text-center"><Bot className="w-8 h-8 text-muted-foreground mx-auto mb-3" /><p className="text-sm font-medium mb-1">No agents deployed</p><p className="text-xs text-muted-foreground mb-3">Deploy your first agent to start chatting</p><Link href="/agents/deploy" className="inline-flex items-center px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold">Deploy Agent →</Link></div>
           ) : agents.map((agent: any) => {
             const agentMsgs = messagesByAgent[agent.id] || [];
             const lastMsg = agentMsgs[agentMsgs.length - 1];
@@ -1578,7 +1578,11 @@ function AgentChatPage() {
           // Compact contextual CTA — what should the user click NOW?
           const ctaForStep: Record<string, { label: string; onClick: () => void } | null> = {
             research:                  null, // agent is doing it
-            research_approval:         { label: "Review", onClick: () => { window.location.href = "/approvals"; } },
+            // Deep-link to the Research tab so the user lands on the rows
+            // the banner is talking about — the All tab default would force
+            // them to manually click "Research" to filter to research-finding
+            // approvals.
+            research_approval:         { label: "Review", onClick: () => { window.location.href = "/approvals?tab=Research"; } },
             clarification:             { label: "Show me", onClick: () => {
               const open = openQuestions[0];
               if (open) scrollToMessage(open.id);
