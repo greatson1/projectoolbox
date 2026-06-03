@@ -90,5 +90,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     trackCostEntry(projectId, body.entryType || "ACTUAL", body.amount, body.category || "OTHER", body.description).catch(() => {});
   }).catch(() => {});
 
+  // Reverse sync to Cost Management Plan artefact — keeps the
+  // approved CSV in sync with the live CostEntry table so the
+  // artefact viewer shows the same numbers as the Cost page.
+  // Previously the artefact stayed frozen at whatever the agent
+  // generated, even after the user edited line items.
+  // Fire-and-forget so the POST returns quickly; failure is logged
+  // and doesn't fail the cost insert.
+  import("@/lib/agents/artefact-sync").then(({ syncCostEntriesToArtefact }) =>
+    syncCostEntriesToArtefact(projectId).catch(() => {})
+  ).catch(() => {});
+
   return NextResponse.json({ data: entry }, { status: 201 });
 }

@@ -306,6 +306,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                   } catch (e) {
                     console.error("[chat/stream] key-role propagation failed:", e);
                   }
+                  // Promote any risk/issue KB items into the canonical
+                  // Risk + Issue tables. The Haiku extractor sometimes
+                  // produces a fact whose title is "Key Risk" or
+                  // "Outstanding Issue" — those would otherwise sit in
+                  // the KB sidebar forever without showing up on the
+                  // Risk Register / Issues pages. The promoters are
+                  // idempotent (tag-marked) so re-running on every
+                  // fact is safe; we just run them every time a fact
+                  // lands rather than trying to detect the specific
+                  // titles that would match. Same wrapping try/catch
+                  // pattern as the meeting webhook.
+                  try {
+                    const { promoteKBRisksToCanonical } = await import("@/lib/agents/risk-extractor");
+                    await promoteKBRisksToCanonical(deployment0.projectId!);
+                  } catch (e) {
+                    console.error("[chat/stream] risk promotion failed:", e);
+                  }
+                  try {
+                    const { promoteKBIssuesToCanonical } = await import("@/lib/agents/issue-extractor");
+                    await promoteKBIssuesToCanonical(deployment0.projectId!);
+                  } catch (e) {
+                    console.error("[chat/stream] issue promotion failed:", e);
+                  }
                 }
               })().catch((e) => console.error("[chat/stream] backstop extraction failed:", e));
             }

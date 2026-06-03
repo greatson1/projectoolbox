@@ -292,6 +292,30 @@ async function handlePayload(payload: any, source: "recall" | "custom" = "recall
         const { processMeetingTranscript } = await import("@/lib/agents/meeting-processor");
         await processMeetingTranscript(meeting.id);
 
+        // Promote any newly-extracted risk / issue KB items into the
+        // canonical Risk + Issue tables so they show up on the Risk
+        // Register and Issues pages, not just in the KB sidebar.
+        // Without this hook, a meeting in which the team identified a
+        // new vendor-delay risk produced a KB row tagged "risk" and
+        // stopped there — the Risk Register page stayed empty.
+        // Idempotent: the promoters tag-mark promoted KB items so
+        // re-runs skip them. The wrap try/catch keeps the meeting
+        // succeed-path intact even if a promoter errors on one item.
+        if (meeting.projectId) {
+          try {
+            const { promoteKBRisksToCanonical } = await import("@/lib/agents/risk-extractor");
+            await promoteKBRisksToCanonical(meeting.projectId);
+          } catch (e) {
+            console.error("[meeting webhook] risk promotion failed:", e);
+          }
+          try {
+            const { promoteKBIssuesToCanonical } = await import("@/lib/agents/issue-extractor");
+            await promoteKBIssuesToCanonical(meeting.projectId);
+          } catch (e) {
+            console.error("[meeting webhook] issue promotion failed:", e);
+          }
+        }
+
         const { CreditService } = await import("@/lib/credits/service");
         const providerLabel = source === "custom" ? "Custom bot" : "Recall.ai";
         await CreditService.deduct(
