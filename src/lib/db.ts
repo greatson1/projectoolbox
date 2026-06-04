@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import * as Sentry from "@sentry/nextjs";
 import { stripContextMarkerLeaks } from "@/lib/agents/sanitise-chat-response";
 
 const globalForPrisma = globalThis as unknown as { prisma: ReturnType<typeof createClient> };
@@ -26,7 +27,6 @@ function logSanitiserCorrection(opts: {
   // sanitiser corrections show up in the trail so we can correlate a leak with
   // a downstream failure. No event sent on its own; trail-only.
   try {
-    const Sentry = require("@sentry/nextjs");
     Sentry.addBreadcrumb({
       category: "chat-sanitiser",
       message: `${opts.op} dropped ${droppedChars} chars`,
