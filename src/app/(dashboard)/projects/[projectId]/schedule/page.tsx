@@ -5,6 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/source-prefix";
 
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useProjectTasks, useProject, useUpdateTask } from "@/hooks/use-api";
 import { getMethodologyLabel } from "@/lib/methodology-definitions";
 import { toast } from "sonner";
@@ -826,12 +827,20 @@ function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string;
             <h3 className="text-[13px] font-bold tracking-tight" style={{ color: "var(--foreground)" }}>Phase Gates</h3>
           </div>
           {phases.length > 0 && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
-              style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)" }}>
-              {approved}/{phases.length}
+            <span
+              className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted-foreground)" }}
+              title={`${approved} of ${phases.length} phase gate${phases.length !== 1 ? "s" : ""} approved`}
+            >
+              {approved}/{phases.length} gates
             </span>
           )}
         </div>
+        {phases.length > 0 && (
+          <p className="text-[10px] mb-2.5 -mt-1" style={{ color: "var(--muted-foreground)" }}>
+            Per-phase task completion. The percentage is task progress in the phase — it does NOT mean the gate itself is approved (see the badge on each row for gate status).
+          </p>
+        )}
 
         {phases.length === 0 ? (
           <div className="rounded-[10px] py-6 px-3 text-center"
@@ -885,26 +894,27 @@ function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string;
             style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed var(--border)" }}>
             <ListChecks className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
             <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No tasks yet</p>
-            <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
-              Add tasks to this project to see schedule insights.
+            <p className="text-[10px] leading-relaxed mb-3" style={{ color: "var(--muted-foreground)" }}>
+              Add tasks manually, or sync from an approved Schedule / WBS artefact.
             </p>
+            <SyncFromArtefactsButton projectId={projectId} />
           </div>
         ) : (
           <div className="space-y-2.5">
-            {/* Overall progress hero */}
+            {/* Overall progress hero — task-weighted across every phase */}
             <div className="rounded-[10px] p-3"
               style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.10), rgba(16,185,129,0.04))", border: "1px solid rgba(16,185,129,0.25)" }}>
               <div className="flex items-baseline justify-between mb-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Overall progress</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#10B981" }}>Project progress</span>
                 <span className="text-[18px] font-extrabold leading-none" style={{ color: "#10B981" }}>{overall}%</span>
               </div>
               <Progress value={overall} className="h-1.5" />
               <p className="text-[10px] mt-1.5" style={{ color: "var(--muted-foreground)" }}>
-                {totalDone}/{totalTasks} tasks done · {phases.length} phase{phases.length !== 1 ? "s" : ""}
+                {totalDone}/{totalTasks} tasks done across {phases.length} phase{phases.length !== 1 ? "s" : ""} (task-weighted average)
               </p>
             </div>
 
-            {/* Active phase callout */}
+            {/* Active phase callout — same metric, scoped to ONE phase */}
             {activePhase && (
               <div className="rounded-[10px] p-3"
                 style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)" }}>
@@ -914,8 +924,13 @@ function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string;
                 </div>
                 <p className="text-[12px] font-semibold" style={{ color: "var(--foreground)" }}>{activePhase.name}</p>
                 <p className="text-[10px] mt-0.5" style={{ color: "var(--muted-foreground)" }}>
-                  {activePhase.complete}/{activePhase.tasks} done — {activePhase.progress ?? 0}%
+                  {activePhase.complete}/{activePhase.tasks} done — {activePhase.progress ?? 0}% of this phase
                 </p>
+                {phases.length === 1 && (
+                  <p className="text-[9.5px] mt-1 italic" style={{ color: "var(--muted-foreground)" }}>
+                    Only phase on the project — matches the project progress above.
+                  </p>
+                )}
               </div>
             )}
 
@@ -938,3 +953,43 @@ function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string;
     </div>
   );
 }
+
+// ── Sync from artefacts button (empty-state CTA) ───────────────────────
+// Idempotent backfill trigger for projects whose approved Schedule/WBS
+// artefacts never seeded Task rows (e.g. seed scripts, internal auto-approve,
+// agent-created-immediately-approved). Lazy on-read backfill on the Tasks
+// GET handles this automatically on first load — this button is the manual
+// re-run for cases where the artefact was edited but tasks weren't refreshed.
+function SyncFromArtefactsButton({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+
+  async function runSync() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/sync-tasks-from-artefacts`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Sync failed");
+      const r = json.data || {};
+      if (r.tasksCreated > 0 || r.tasksReplaced > 0) {
+        toast.success(`Synced ${r.tasksCreated + r.tasksReplaced} task(s) from ${r.artefactsParsed} artefact(s)`);
+        await qc.invalidateQueries({ queryKey: ["tasks", projectId] });
+      } else if (r.artefactsScanned > 0) {
+        toast.message("Artefacts found but produced 0 tasks. Check the artefact content.");
+      } else {
+        toast.message("No approved Schedule or WBS artefact to sync from.");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Sync failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button size="sm" variant="outline" onClick={runSync} disabled={busy} className="h-7 px-3 text-[10px]">
+      {busy ? "Syncing…" : "Sync from artefacts"}
+    </Button>
+  );
+}
+
