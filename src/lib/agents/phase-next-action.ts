@@ -45,6 +45,37 @@ export interface NextActionResult {
   awaitingUser: boolean;
 }
 
+/**
+ * Position-based progress ceiling for a phase, derived from the resolver's
+ * 8-step pipeline. The displayed phase readiness must never exceed where the
+ * phase actually IS in this ladder — otherwise the headline % contradicts the
+ * stepper (e.g. "100%" while parked at "approve research", step 2 of 8).
+ *
+ * The displayed readiness is `min(weightedCompletion, stepProgressCeiling)`:
+ * the meaningful weighted number shows through when it's lower, but the number
+ * can never claim more progress than the pipeline position allows. Only
+ * "advance"/"complete" allow a true 100%.
+ *
+ * Ceilings leave headroom inside each band so finer-grained layer progress
+ * (e.g. 2/4 artefacts approved during review_artefacts) can still move the
+ * bar within the step.
+ */
+export function stepProgressCeiling(step: RequiredStep): number {
+  switch (step) {
+    case "research":                  return 15;
+    case "research_approval":         return 25;
+    case "clarification":             return 40;
+    case "clarification_in_progress": return 40;
+    case "generation":                return 55;
+    case "review_artefacts":          return 75;
+    case "delivery_tasks":            return 90;
+    case "gate_approval":             return 99;
+    case "advance":                   return 100;
+    case "complete":                  return 100;
+    default:                          return 100;
+  }
+}
+
 interface ResolverInput {
   agentId: string;
   projectId: string;

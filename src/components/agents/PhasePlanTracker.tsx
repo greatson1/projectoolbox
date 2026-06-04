@@ -121,6 +121,37 @@ function taskDestination(
   return null;
 }
 
+// Maps the resolver's next-step verdict to a deep link the user can click to
+// resolve the gate. Returns null `href` for steps where the agent is working
+// (research / generation) — those render as plain "Agent working" text.
+function nextStepDestination(
+  step: string | null | undefined,
+  projectId: string,
+): { href: string | null; agentWorking: boolean } {
+  switch (step) {
+    case "research_approval":
+      return { href: `/approvals`, agentWorking: false };
+    case "clarification":
+    case "clarification_in_progress":
+    case "questions":
+      // The chat deep link needs an agentId we don't have in props — fall
+      // back to /approvals so the user still has somewhere actionable to go.
+      return { href: `/approvals`, agentWorking: false };
+    case "review_artefacts":
+      return { href: `/projects/${projectId}/artefacts`, agentWorking: false };
+    case "delivery_tasks":
+      return { href: `/projects/${projectId}/agile?focus=blocking`, agentWorking: false };
+    case "gate_approval":
+      return { href: `/projects/${projectId}/pm-tracker?focus=blocking`, agentWorking: false };
+    case "generation":
+    case "research":
+      // Agent is actively working — no user action, show plain label.
+      return { href: null, agentWorking: true };
+    default:
+      return { href: null, agentWorking: false };
+  }
+}
+
 function formatRelative(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
@@ -167,6 +198,13 @@ interface PhaseBlock {
     overall: number;
     canAdvance: boolean;
     blockers: string[];
+    /** Capped readiness — overall, but capped below 100 when a gate still
+     * blocks even though all task/artefact layers are done. */
+    overallReadiness?: number | null;
+    /** Authoritative next step from the resolver (current phase only). */
+    nextStep?: string | null;
+    nextLabel?: string | null;
+    nextReason?: string | null;
   } | null;
 }
 
@@ -318,8 +356,22 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
 
       {phases.map((phase, idx) => {
         const badge = PHASE_BADGE[phase.status] || PHASE_BADGE.PENDING;
-        const overall = phase.completion?.overall ?? 0;
+        // Prefer the CAPPED readiness — `overall` can hit 100 while a gate
+        // (research approval / clarification / phase gate) still blocks. The
+        // cap keeps the header honest. Falls back to overall on older payloads.
+        const overall = phase.completion?.overallReadiness ?? phase.completion?.overall ?? 0;
         const accent = phase.color || "#6366F1";
+
+        // Authoritative next step (current phase only). Hidden once the phase
+        // is truly advanceable/complete.
+        const nextStep = phase.completion?.nextStep;
+        const nextLabel = phase.completion?.nextLabel;
+        const showNext =
+          phase.isCurrent &&
+          !!nextStep &&
+          nextStep !== "complete" &&
+          nextStep !== "advance";
+        const nextDest = showNext ? nextStepDestination(nextStep, projectId) : null;
 
         return (
           <div
@@ -343,6 +395,29 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                   )}
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{phase.description}</p>
+                {/* Authoritative "Next:" action — the single thing the user
+                    must do to unblock the phase. Deep-links to the right page;
+                    when the agent is working it's plain (non-link) text. */}
+                {showNext && nextLabel && (
+                  nextDest?.href ? (
+                    <a
+                      href={nextDest.href}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                      <span>Next: {nextLabel}</span>
+                    </a>
+                  ) : (
+                    <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                      <span>
+                        {nextDest?.agentWorking
+                          ? `Agent working: ${nextLabel}`
+                          : `Next: ${nextLabel}`}
+                      </span>
+                    </p>
+                  )
+                )}
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-xs font-bold text-foreground tabular-nums">{overall}%</p>
@@ -524,6 +599,11 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                 {phase.gate.prerequisites.map((rawP, i) => {
                   const p = effectiveState(phase.name, rawP);
                   const canToggle = p.state === "manual" || p.manuallyConfirmed;
+                  // Auto-satisfied: derived from project data (state === "met")
+                  // and NOT a manual confirmation. These are filled in by the
+                  // system — make them visibly non-interactive with an "Auto"
+                  // pill so it's obvious the user doesn't tick them.
+                  const isAuto = p.state === "met" && !p.manuallyConfirmed;
                   const Wrapper: any = canToggle ? "button" : "div";
                   return (
                     <Wrapper
@@ -537,6 +617,14 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                         <span className={`text-[11px] ${p.state === "met" ? "text-foreground/80 line-through" : "text-foreground"}`}>
                           {p.description}
                           {p.isMandatory && <span className="ml-1 text-red-500/70" title="Mandatory">*</span>}
+                          {isAuto && (
+                            <span
+                              className="ml-1 text-[8px] uppercase tracking-wider text-muted-foreground font-bold px-1 py-0.5 rounded bg-muted"
+                              title="Automatically satisfied from project data"
+                            >
+                              Auto
+                            </span>
+                          )}
                           {p.manuallyConfirmed && (
                             <span className="ml-1 text-[8px] uppercase tracking-wider text-emerald-500 font-bold">manual</span>
                           )}

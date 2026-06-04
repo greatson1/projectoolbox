@@ -97,6 +97,29 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 
   const completionByPhase = new Map(completion.map(c => [c.phaseName, c]));
 
+  // ── Authoritative next-step verdict for the CURRENT phase ─────────────
+  // The weighted `overall` % ignores gates (research approval, clarification,
+  // phase gate), so it can read 100% while the phase still can't advance.
+  // Resolve the true next step ONCE (only for the current phase) and use it
+  // to cap the readiness % + surface a "Next:" action in the UI. Guarded so a
+  // resolver failure can never break the tracker payload.
+  let currentNextAction:
+    | { step: string; bannerLabel: string; reason: string; ceiling: number }
+    | null = null;
+  if (deployment?.currentPhase && deployment?.agentId) {
+    try {
+      const { getNextRequiredStep, stepProgressCeiling } = await import("@/lib/agents/phase-next-action");
+      const na = await getNextRequiredStep({
+        agentId: deployment.agentId,
+        projectId,
+        phaseName: deployment.currentPhase,
+      });
+      currentNextAction = { step: na.step, bannerLabel: na.bannerLabel, reason: na.reason, ceiling: stepProgressCeiling(na.step) };
+    } catch (e) {
+      console.error("[phase-tracker] next-step resolver failed:", e);
+    }
+  }
+
   // ── Build per-phase payload ──────────────────────────────────────────
   const phases = methodology.phases.map((phaseDef, idx) => {
     const phaseRow = phaseRows.find(p => p.name === phaseDef.name);
@@ -175,6 +198,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     const prereqSummary = summarisePrerequisites(evaluatedPrereqs);
 
     const comp = completionByPhase.get(phaseDef.name);
+    const isCurrent = deployment?.currentPhase === phaseDef.name;
+
+    // Position-based readiness + next step. For the current phase, cap the
+    // readiness to the pipeline step's ceiling so the headline % can never
+    // claim more progress than the stepper position allows (e.g. it can't show
+    // 100% while parked at "approve research"). Non-current phases just mirror
+    // `overall` and carry no next step.
+    let overallReadiness: number | null = comp ? comp.overall : null;
+    let nextStep: string | null = null;
+    let nextLabel: string | null = null;
+    let nextReason: string | null = null;
+    if (comp && isCurrent && currentNextAction) {
+      overallReadiness = Math.min(comp.overall, currentNextAction.ceiling);
+      nextStep = currentNextAction.step;
+      nextLabel = currentNextAction.bannerLabel;
+      nextReason = currentNextAction.reason;
+    }
 
     return {
       order: idx,
@@ -182,7 +222,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       description: phaseDef.description,
       color: phaseDef.color,
       status,
-      isCurrent: deployment?.currentPhase === phaseDef.name,
+      isCurrent,
       artefacts: phaseArtefacts,
       taskGroups: grouped,
       gate: {
@@ -211,6 +251,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
             overall: comp.overall,
             canAdvance: comp.canAdvance,
             blockers: comp.blockers,
+            // Capped readiness + authoritative next step (current phase only).
+            overallReadiness,
+            nextStep,
+            nextLabel,
+            nextReason,
           }
         : null,
     };

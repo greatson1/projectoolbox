@@ -71,6 +71,11 @@ interface AgentSlot {
   pmTasksTotal:  number;
   deliveryDone:  number;
   deliveryTotal: number;
+  // authoritative next-step verdict (from metrics currentCompletion) — used
+  // to fix the "0 tasks left but still blocked" case where the real blocker
+  // is research approval / clarification / the phase gate, not tasks.
+  nextStep:      string | null;
+  nextLabel:     string | null;
   // activity
   activities:    RawActivity[];
 }
@@ -207,6 +212,35 @@ function statePriority(s: AgentState): number {
 
 function gradientColour(gradient: string | null | undefined): string {
   return gradient?.match(/#[0-9A-Fa-f]{6}/)?.[0] ?? "#6366F1";
+}
+
+// Maps the resolver's next-step verdict to a CTA destination + button label.
+// Used only for the "no tasks remain but the phase is still blocked" case so
+// the bar points at the real gate (research approval / artefacts / phase gate)
+// instead of a useless "Finish Tasks" → /agile dead end. Same mapping as the
+// PM Tracker UI.
+function nextStepCta(
+  step: string | null,
+  projectId: string,
+  agentId: string,
+): { href: string; label: string } | null {
+  if (!projectId) return null;
+  switch (step) {
+    case "research_approval":
+      return { href: "/approvals", label: "Review Research" };
+    case "clarification":
+    case "clarification_in_progress":
+    case "questions":
+      return { href: `/agents/chat?agent=${agentId}`, label: "Answer Questions" };
+    case "review_artefacts":
+      return { href: `/projects/${projectId}/artefacts`, label: "Review Documents" };
+    case "delivery_tasks":
+      return { href: `/projects/${projectId}/agile?focus=blocking`, label: "Open Agile Board" };
+    case "gate_approval":
+      return { href: `/projects/${projectId}/pm-tracker?focus=blocking`, label: "Approve Gate" };
+    default:
+      return null;
+  }
 }
 
 /** Build the main commentary line from actual data */
@@ -424,6 +458,8 @@ export function AgentStatusBar() {
         const pmTasksTotal  = completion?.pmTasks?.total  ?? 0;
         const deliveryDone  = completion?.deliveryTasks?.done  ?? 0;
         const deliveryTotal = completion?.deliveryTasks?.total ?? 0;
+        const nextStep: string | null  = completion?.nextStep  ?? null;
+        const nextLabel: string | null = completion?.nextLabel ?? null;
 
         const state = deriveState(
           true,
@@ -456,6 +492,8 @@ export function AgentStatusBar() {
           pmTasksTotal,
           deliveryDone,
           deliveryTotal,
+          nextStep,
+          nextLabel,
           activities,
         };
       });
@@ -565,7 +603,28 @@ export function AgentStatusBar() {
     // lands on the page top and has to hunt.
     return `/projects/${slot.projectId}/pm-tracker?focus=blocking`;
   })();
-  const ctaHref    = slot.state === "questions_waiting"
+
+  // ── "No tasks left but still blocked" override ────────────────────────
+  // When the bar says blocked_by_tasks but NO tasks actually remain
+  // (pmRemaining === 0 && delRemaining === 0), the real blocker is a gate
+  // (research approval / clarification / phase gate). The resolver's
+  // nextStep/nextLabel tell us exactly what — prefer them over the
+  // misleading "Finish Tasks · X/Y PM tasks" copy. Purely additive: only
+  // fires for that specific case and only when the resolver shipped a verdict.
+  const gateOverride = (() => {
+    if (slot.state !== "blocked_by_tasks") return null;
+    const pmRemaining  = Math.max(0, slot.pmTasksTotal  - slot.pmTasksDone);
+    const delRemaining = Math.max(0, slot.deliveryTotal - slot.deliveryDone);
+    if (pmRemaining !== 0 || delRemaining !== 0) return null;
+    if (!slot.nextLabel || !slot.nextStep) return null;
+    const cta = nextStepCta(slot.nextStep, slot.projectId, slot.agentId);
+    if (!cta) return null;
+    // Prefer the resolver's specific bannerLabel over the generic CTA label.
+    return { href: cta.href, label: slot.nextLabel };
+  })();
+
+  const ctaHref    = gateOverride ? gateOverride.href
+    : slot.state === "questions_waiting"
     ? `/agents/chat?agent=${slot.agentId}`
     : slot.state === "research_approval_waiting"
     ? "/approvals"
@@ -705,7 +764,9 @@ export function AgentStatusBar() {
                   : slot.state === "review"
                   ? `${slot.pendingCount} document${slot.pendingCount === 1 ? "" : "s"} need your approval before ${slot.agentName} can continue`
                   : slot.state === "blocked_by_tasks"
-                  ? `${slot.currentPhase} cannot advance — ${slot.blockers.slice(0, 2).join(" · ") || `${slot.pmTasksDone}/${slot.pmTasksTotal} PM · ${slot.deliveryDone}/${slot.deliveryTotal} delivery tasks`}`
+                  ? (gateOverride
+                    ? `${slot.currentPhase} cannot advance — next: ${gateOverride.label}`
+                    : `${slot.currentPhase} cannot advance — ${slot.blockers.slice(0, 2).join(" · ") || `${slot.pmTasksDone}/${slot.pmTasksTotal} PM · ${slot.deliveryDone}/${slot.deliveryTotal} delivery tasks`}`)
                   : `${slot.currentPhase} complete — ${slot.agentName} is ready to write ${slot.nextPhase ?? "next"} phase documents`}
               </p>
               <Link href={ctaHref} onClick={() => setExpanded(false)}
@@ -718,7 +779,8 @@ export function AgentStatusBar() {
                   : slot.state === "review"
                   ? "Review Documents"
                   : slot.state === "blocked_by_tasks"
-                  ? (blockedTarget.includes("/pm-tracker") ? "Open PM Tracker"
+                  ? (gateOverride ? gateOverride.label
+                    : blockedTarget.includes("/pm-tracker") ? "Open PM Tracker"
                     : blockedTarget.includes("/agile")     ? "Open Agile Board"
                     : "Open Task Boards")
                   : `Generate ${slot.nextPhase ?? "Next Phase"}`}
@@ -830,8 +892,9 @@ export function AgentStatusBar() {
                 : slot.state === "phase_complete"
                 ? `Generate ${slot.nextPhase ?? "Next"}`
                 : slot.state === "blocked_by_tasks"
-                ? (blockedTarget.endsWith("/pm-tracker") ? "Open PM Tracker"
-                  : blockedTarget.endsWith("/agile")     ? "Open Agile Board"
+                ? (gateOverride ? gateOverride.label
+                  : blockedTarget.includes("/pm-tracker") ? "Open PM Tracker"
+                  : blockedTarget.includes("/agile")     ? "Open Agile Board"
                   : "Finish Tasks")
                 : "View Artefacts"}
             </Link>

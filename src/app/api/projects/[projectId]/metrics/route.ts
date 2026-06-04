@@ -217,6 +217,30 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         canAdvance: c.canAdvance,
         blockers: c.blockers,
       };
+
+      // Surface the authoritative next-step verdict + a position-based
+      // readiness %. The weighted `overall` ignores gates (research approval,
+      // clarification, phase gate), so it can read 100% while the phase is
+      // actually parked early in the pipeline. Cap readiness to the step's
+      // pipeline ceiling so the headline % agrees with the stepper instead of
+      // contradicting it. Wrapped in its own try/catch — a resolver failure
+      // must never break the metrics payload.
+      try {
+        const { getNextRequiredStep, stepProgressCeiling } = await import("@/lib/agents/phase-next-action");
+        const na = await getNextRequiredStep({
+          agentId: deployment.agentId,
+          projectId,
+          phaseName: deployment.currentPhase,
+        });
+        const readiness = Math.min(c.overall, stepProgressCeiling(na.step));
+        currentPhaseCompletion.overallReadiness = readiness;
+        currentPhaseCompletion.nextStep = na.step;
+        currentPhaseCompletion.nextLabel = na.bannerLabel;
+        currentPhaseCompletion.nextReason = na.reason;
+        currentPhaseCompletion.awaitingUser = na.awaitingUser;
+      } catch (e) {
+        console.error("[metrics] next-step resolver failed:", e);
+      }
     }
   } catch (e) {
     console.error("[metrics] currentPhaseCompletion failed:", e);
