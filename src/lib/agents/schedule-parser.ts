@@ -71,6 +71,18 @@ export async function parseScheduleArtefactIntoTasks(
     : [];
   const phaseMap = Object.fromEntries(phaseRows.map(p => [p.name.toLowerCase(), p.id]));
 
+  // Fallback when the AI emits a phase name that doesn't match any project
+  // Phase row (or no phase at all). Without this, every unmatched task gets
+  // `phaseId: null` → silently bucketed under "Unassigned" on the Schedule
+  // page, which looks like a bug. Default to the active deployment's
+  // currentPhase so tasks land somewhere sensible; the user can still move
+  // them via the Schedule page if needed.
+  const activeDeployment = await db.agentDeployment.findFirst({
+    where: { projectId: artefact.projectId, isActive: true },
+    select: { currentPhase: true },
+  });
+  const fallbackPhaseId = activeDeployment?.currentPhase ?? null;
+
   // ── Replace agent-generated tasks with the real WBS/Schedule data ──
   // When a WBS or Schedule artefact is approved, it becomes the source of truth.
   // Delete both previously seeded tasks AND scaffolded placeholder tasks — the
@@ -94,7 +106,8 @@ export async function parseScheduleArtefactIntoTasks(
   let created = 0;
 
   for (const t of tasks) {
-    const phaseId = t.phase ? (phaseMap[t.phase.toLowerCase()] ?? null) : null;
+    const matched = t.phase ? phaseMap[t.phase.toLowerCase()] : undefined;
+    const phaseId = matched ?? fallbackPhaseId;
     try {
       const record = await db.task.create({
         data: {

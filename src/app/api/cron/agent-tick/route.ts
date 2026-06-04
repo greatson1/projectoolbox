@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     //      its project's active deployment currentPhase name, recovering
     //      within ~1 minute of the leak.
     try {
-      const healed = await db.$executeRawUnsafe<number>(`
+      const healed: number = await db.$executeRawUnsafe(`
         UPDATE "AgentArtefact" a
         SET "phaseId" = d."currentPhase", "updatedAt" = NOW()
         FROM "AgentDeployment" d
@@ -68,6 +68,32 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {
       console.error("[agent-tick] orphan artefact self-heal failed:", e);
+    }
+
+    // 0b1b. Self-heal orphan tasks (phaseId IS NULL).
+    //       Same pattern as artefacts. The Gantt/Schedule page groups
+    //       tasks by phase — NULL tasks all bunch up under an "Unassigned"
+    //       header which looks like a bug to users (they assume it means
+    //       "no assignee" not "no phase"). The user-facing tasks API
+    //       (POST /api/projects/:id/tasks) doesn't require phaseId, and
+    //       schedule-parser can leak NULL when the AI emits a phase name
+    //       that doesn't match any project Phase row. Relink to the
+    //       deployment's currentPhase so the Gantt groups them sensibly.
+    try {
+      const healed: number = await db.$executeRawUnsafe(`
+        UPDATE "Task" t
+        SET "phaseId" = d."currentPhase", "updatedAt" = NOW()
+        FROM "AgentDeployment" d
+        WHERE t."phaseId" IS NULL
+          AND d."projectId" = t."projectId"
+          AND d."isActive" = true
+          AND d."currentPhase" IS NOT NULL
+      `);
+      if (typeof healed === "number" && healed > 0) {
+        console.log(`[agent-tick] Self-healed ${healed} orphan task(s) by relinking phaseId.`);
+      }
+    } catch (e) {
+      console.error("[agent-tick] orphan task self-heal failed:", e);
     }
 
     // 0b2. Fire any due report schedules (fire-and-forget, runs hourly effective)
