@@ -792,6 +792,43 @@ function AgentStatusBanner({
       return 0;
     }
   })();
+  // Missing artefacts BY NAME. Used by the "Generate the missing ones"
+  // banner so the user can see exactly which optional docs the agent
+  // hasn't produced yet (e.g. "Communication Plan, RACI Matrix, Quality
+  // Plan"). Two-pass:
+  //   1. Build a normalised Set of every currentPhaseItem's name.
+  //   2. Walk the methodology's aiGeneratable artefacts for this phase
+  //      and any whose name isn't in the Set are missing. Split into
+  //      required vs optional so each gets its own banner styling
+  //      (required = amber, optional = blue, less alarming).
+  const { missingRequiredNames, missingOptionalNames } = (() => {
+    const meth = (project as any)?.methodology;
+    if (!meth || !activePhaseForFilter?.name) return { missingRequiredNames: [] as string[], missingOptionalNames: [] as string[] };
+    try {
+      const def = getMethodology(meth);
+      const phaseDef = def.phases.find(p => p.name === activePhaseForFilter.name);
+      if (!phaseDef) return { missingRequiredNames: [], missingOptionalNames: [] };
+      const haveNames = new Set(
+        currentPhaseItems.map((a: any) => (a.name || "").toLowerCase().trim())
+      );
+      const missingReq: string[] = [];
+      const missingOpt: string[] = [];
+      for (const art of phaseDef.artefacts) {
+        if (!art.aiGeneratable) continue;
+        const c = art.name.toLowerCase().trim();
+        // Fuzzy match — same logic as the absorbItems pass above. Catches
+        // "Project Brief - Family Trip" as fulfilling "Project Brief".
+        const have = haveNames.has(c) || Array.from(haveNames).some(h => h.includes(c) || c.includes(h));
+        if (!have) {
+          if (art.required) missingReq.push(art.name);
+          else missingOpt.push(art.name);
+        }
+      }
+      return { missingRequiredNames: missingReq, missingOptionalNames: missingOpt };
+    } catch {
+      return { missingRequiredNames: [], missingOptionalNames: [] };
+    }
+  })();
   const total = Math.max(expectedCount, generated);
   const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
   // Are any methodology-defined artefacts missing? Used to keep the banner
@@ -923,6 +960,41 @@ function AgentStatusBanner({
             onClick={() => onGenerate(missingPhase)} disabled={generating}>
             <Sparkles className="w-3.5 h-3.5 mr-1.5" />
             Generate {missingPhase} Docs
+          </Button>
+        </CardContent>
+      </Card>
+    )}
+
+    {/* Missing-optionals banner — softer than the missing-required path
+        because the user CAN advance without these, but they're typically
+        forgotten ("did I generate the Communication Plan?") and silently
+        leave the project incomplete. Skipped entirely when there's
+        nothing missing OR when the current phase has nothing generated
+        yet (the empty / "Generate Artefacts" state covers that case). */}
+    {missingOptionalNames.length > 0 && generated > 0 && !generating && (
+      <Card className="border border-blue-500/30 bg-blue-500/5">
+        <CardContent className="p-3 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 min-w-0">
+            <FileText className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm text-blue-700 dark:text-blue-400">
+                <span className="font-semibold">
+                  {missingOptionalNames.length} optional document{missingOptionalNames.length === 1 ? "" : "s"} not yet generated for {phaseName}
+                </span>
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                {missingOptionalNames.slice(0, 4).join(" · ")}
+                {missingOptionalNames.length > 4 && ` · +${missingOptionalNames.length - 4} more`}
+              </p>
+              <p className="text-[10px] text-muted-foreground/80 mt-1">
+                You can advance the phase without these, but they&apos;re part of the methodology&apos;s recommended set.
+              </p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" className="border-blue-500/40 text-blue-600 hover:bg-blue-500/10 flex-shrink-0"
+            onClick={() => onGenerate(phaseName)} disabled={generating}>
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+            Generate missing
           </Button>
         </CardContent>
       </Card>
