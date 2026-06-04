@@ -263,3 +263,53 @@ describe("toMethodologyEnum — DB write normalisation", () => {
     expect(toMethodologyEnum(undefined)).toBeNull();
   });
 });
+
+// ─── Gate ↔ Required-artefact consistency regression ───────────────────────
+// Audit finding (2026-06): every gate.preRequisites entry that demands an
+// artefact ("Project Charter approved", "Outline Business Case reviewed",
+// "WIP limits configured", etc.) was hitting an artefact marked
+// `required: false`. A user who deselected the artefact in the wizard could
+// never satisfy the gate.
+//
+// This block pins each fix as a regression — if anyone flips one of these
+// back to `required: false` to "make the wizard cleaner", the test fails
+// and the broken-gate condition is caught before users hit it.
+function findArtefact(methodologyId: string, phaseName: string, artefactName: string) {
+  const method = getMethodology(methodologyId);
+  const phase = method.phases.find(p => p.name === phaseName);
+  if (!phase) throw new Error(`phase "${phaseName}" not found in ${methodologyId}`);
+  const art = phase.artefacts.find(a => a.name === artefactName);
+  if (!art) throw new Error(`artefact "${artefactName}" not found in ${methodologyId}/${phaseName}`);
+  return art;
+}
+
+describe("gate prereqs must reference required artefacts (audit regression)", () => {
+  it.each([
+    ["traditional", "Pre-Project", "Outline Business Case"],
+    ["traditional", "Initiation", "Project Charter"],
+    ["traditional", "Initiation", "Business Case"],
+    ["traditional", "Execution", "Quality Review Records"],
+    ["traditional", "Closing", "Acceptance Certificate"],
+    ["traditional", "Closing", "Lessons Learned"],
+    ["waterfall", "Design", "Project Charter"],
+    ["waterfall", "Design", "Business Case"],
+    ["waterfall", "Design", "Schedule with Dependencies"],
+    ["waterfall", "Design", "Stakeholder Register"],
+    ["waterfall", "Test", "Test Plan"],
+    ["waterfall", "Test", "Test Results"],
+    ["waterfall", "Deploy", "Handover Documentation"],
+    ["scrum", "Sprint Zero", "Definition of Done"],
+    ["kanban", "Setup", "WIP Policies"],
+    ["hybrid", "Foundation", "Project Charter"],
+    ["hybrid", "Foundation", "Delivery Approach"],
+    ["pmbok", "Closing", "Acceptance Certificate"],
+  ])("%s / %s — %s is required", (methodologyId, phaseName, artefactName) => {
+    const art = findArtefact(methodologyId, phaseName, artefactName);
+    expect(art.required, `${methodologyId}/${phaseName}/${artefactName} must be required:true so the gate it backs can be satisfied`).toBe(true);
+  });
+
+  it("waterfall Test Results stays aiGeneratable:false (real-world testing, user-uploaded)", () => {
+    const tr = findArtefact("waterfall", "Test", "Test Results");
+    expect(tr.aiGeneratable).toBe(false);
+  });
+});

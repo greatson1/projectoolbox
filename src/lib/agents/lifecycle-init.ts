@@ -618,9 +618,17 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
     // Build the AI-generatable set from the methodology definition (capability filter)
     const aiGeneratableSet = new Set(firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name.toLowerCase()));
 
+    // Use the same artefact selection as subsequent regeneration cycles
+    // (see generatePhaseArtefacts at line 100-107): every aiGeneratable
+    // artefact unless the wizard explicitly deselected one. Previously this
+    // path filtered to `a.required && aiGeneratable`, so first-deploy only
+    // produced the required subset (e.g. just WBS + Cost Plan in Planning)
+    // while later cycles produced the full set. Asymmetric behaviour. Now
+    // both paths start from the same wizard intent → user gets a complete
+    // first batch instead of a sparse one that requires manual prompting.
     const firstPhaseConfig = configPhases.find(p => p.name === firstPhase.name);
     const artefactNames = firstPhaseConfig
-      ? firstPhaseConfig.artefacts.filter(a => a.required && aiGeneratableSet.has(a.name.toLowerCase())).map(a => a.name)
+      ? firstPhaseConfig.artefacts.filter(a => aiGeneratableSet.has(a.name.toLowerCase())).map(a => a.name)
       : firstPhase.artefacts.filter(a => a.aiGeneratable).map(a => a.name);
 
     if (artefactNames.length > 0) {

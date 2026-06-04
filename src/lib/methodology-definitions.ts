@@ -84,7 +84,9 @@ const TRADITIONAL: MethodologyDefinition = {
       artefacts: [
         { name: "Problem Statement", required: false, aiGeneratable: true },
         { name: "Options Analysis", required: false, aiGeneratable: true },
-        { name: "Outline Business Case", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Outline Business Case reviewed" is mandatory; the
+        // artefact backing that prereq must therefore be required, not optional.
+        { name: "Outline Business Case", required: true, aiGeneratable: true },
         { name: "Project Brief", required: false, aiGeneratable: true },
       ],
       gate: {
@@ -102,8 +104,10 @@ const TRADITIONAL: MethodologyDefinition = {
       description: "Detailed planning: charter, business case, governance, stakeholders, risk register, schedule, budget",
       color: "#8B5CF6",
       artefacts: [
-        { name: "Project Charter", required: false, aiGeneratable: true },
-        { name: "Business Case", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Project Charter approved" is a mandatory sign-off.
+        { name: "Project Charter", required: true, aiGeneratable: true },
+        // required:true — gate prereq "Business Case approved" is a mandatory sign-off.
+        { name: "Business Case", required: true, aiGeneratable: true },
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
@@ -153,7 +157,8 @@ const TRADITIONAL: MethodologyDefinition = {
         { name: "Risk Reviews", required: false, aiGeneratable: true },
         { name: "Change Request Register", required: false, aiGeneratable: true },
         { name: "Exception Reports", required: false, aiGeneratable: true },
-        { name: "Quality Review Records", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Quality reviews passed" is a mandatory review.
+        { name: "Quality Review Records", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Stage/Execution Review",
@@ -171,8 +176,10 @@ const TRADITIONAL: MethodologyDefinition = {
       description: "Formal acceptance, handover, lessons learned, archive",
       color: "#F59E0B",
       artefacts: [
-        { name: "Acceptance Certificate", required: false, aiGeneratable: true },
-        { name: "Lessons Learned", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Sponsor acceptance sign-off" requires the certificate.
+        { name: "Acceptance Certificate", required: true, aiGeneratable: true },
+        // required:true — gate prereq "Lessons learned documented" is a mandatory document.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
         { name: "Handover Documentation", required: false, aiGeneratable: true },
       ],
@@ -225,13 +232,17 @@ const WATERFALL: MethodologyDefinition = {
       artefacts: [
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
         { name: "Cost Management Plan", required: true, aiGeneratable: true },
-        { name: "Stakeholder Register", required: false, aiGeneratable: true },
-        { name: "Schedule with Dependencies", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Stakeholder register populated and validated" mandates this.
+        { name: "Stakeholder Register", required: true, aiGeneratable: true },
+        // required:true — gate prereq "WBS and Schedule reviewed and baselined" mandates this.
+        { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
         { name: "Risk Management Plan", required: false, aiGeneratable: true },
         { name: "Resource Management Plan", required: false, aiGeneratable: true },
         { name: "RACI Matrix", required: false, aiGeneratable: true },
-        { name: "Project Charter", required: false, aiGeneratable: true },
-        { name: "Business Case", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Project Charter signed by sponsor" is a mandatory sign-off.
+        { name: "Project Charter", required: true, aiGeneratable: true },
+        // required:true — gate prereq "Business Case approved" is a mandatory sign-off.
+        { name: "Business Case", required: true, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
         { name: "Design Document", required: false, aiGeneratable: true },
         { name: "Quality Management Plan", required: false, aiGeneratable: true },
@@ -273,8 +284,13 @@ const WATERFALL: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Status Reports", required: true, aiGeneratable: true },
-        { name: "Test Plan", required: false, aiGeneratable: true },
-        { name: "Test Results", required: false, aiGeneratable: false },
+        // required:true — gate prereq "UAT sign-off" depends on a Test Plan being agreed.
+        { name: "Test Plan", required: true, aiGeneratable: true },
+        // required:true + aiGeneratable:false — Test Results must exist (the gate's
+        // "UAT sign-off" prereq is meaningless without them) but they're real-world
+        // test execution output, so the user uploads them rather than the agent
+        // generating them. The pipeline correctly skips non-aiGeneratable entries.
+        { name: "Test Results", required: true, aiGeneratable: false },
       ],
       gate: {
         name: "Testing Approval",
@@ -292,7 +308,8 @@ const WATERFALL: MethodologyDefinition = {
       artefacts: [
         { name: "Closure Report", required: true, aiGeneratable: true },
         { name: "Release Plan", required: false, aiGeneratable: true },
-        { name: "Handover Documentation", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Operations handover accepted" is a mandatory sign-off.
+        { name: "Handover Documentation", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Go-Live Approval",
@@ -322,7 +339,8 @@ const SCRUM: MethodologyDefinition = {
         { name: "Initial Product Backlog", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Product Vision", required: false, aiGeneratable: true },
-        { name: "Definition of Done", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Definition of Done agreed" is a mandatory approval.
+        { name: "Definition of Done", required: true, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
@@ -395,7 +413,8 @@ const KANBAN: MethodologyDefinition = {
         { name: "Initial Product Backlog", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Board Configuration", required: false, aiGeneratable: true },
-        { name: "WIP Policies", required: false, aiGeneratable: true },
+        // required:true — gate prereq "WIP limits configured" mandates this.
+        { name: "WIP Policies", required: true, aiGeneratable: true },
         { name: "Service Level Agreement", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
@@ -534,8 +553,10 @@ const HYBRID: MethodologyDefinition = {
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Cost Management Plan", required: true, aiGeneratable: true },
         { name: "Initial Stakeholder Register", required: false, aiGeneratable: true },
-        { name: "Project Charter", required: false, aiGeneratable: true },
-        { name: "Delivery Approach", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Project Charter approved" is a mandatory sign-off.
+        { name: "Project Charter", required: true, aiGeneratable: true },
+        // required:true — gate prereq "Hybrid plan defined" needs the Delivery Approach artefact.
+        { name: "Delivery Approach", required: true, aiGeneratable: true },
         { name: "Roadmap", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
@@ -846,7 +867,8 @@ const PMBOK: MethodologyDefinition = {
       artefacts: [
         { name: "Final Project Report", required: true, aiGeneratable: true },
         { name: "Lessons Learned", required: true, aiGeneratable: true },
-        { name: "Acceptance Certificate", required: false, aiGeneratable: true },
+        // required:true — gate prereq "Sponsor acceptance sign-off" requires this certificate.
+        { name: "Acceptance Certificate", required: true, aiGeneratable: true },
         { name: "Procurement Closure", required: false, aiGeneratable: true },
         { name: "Closure Report", required: false, aiGeneratable: true },
       ],
