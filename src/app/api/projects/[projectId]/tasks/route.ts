@@ -14,6 +14,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
   const { searchParams } = new URL(req.url);
   const includeAll = searchParams.get("include") === "all";
 
+  // ── Lazy backfill: bridge approved-artefact → Task table ──────────────
+  // The Schedule / WBS parser hook runs on artefact PATCH. Projects whose
+  // artefacts landed APPROVED through a different path (seed scripts,
+  // bulk imports, internal-generate auto-approve, agent-created with
+  // immediate approval) bypass that hook — leaving the Schedule, Agile
+  // Board, Gantt, EVM, and PM Tracker delivery layer EMPTY even though
+  // the WBS artefact says "10 tasks, Discovery 2026-04-01 → 04-10". This
+  // backfill detects that exact gap on first read and self-heals: 0
+  // schedule-sourced tasks + ≥1 approved WBS/Schedule artefact → run the
+  // parser. shouldBackfillTasks() makes this O(2 small queries) when
+  // there's nothing to do, so the common path stays fast.
+  try {
+    const { shouldBackfillTasks, syncProjectTasksFromArtefacts } =
+      await import("@/lib/agents/sync-project-tasks-from-artefacts");
+    if (await shouldBackfillTasks(projectId)) {
+      const result = await syncProjectTasksFromArtefacts(projectId);
+      if (result.tasksCreated > 0) {
+        console.log(`[tasks GET] lazy backfill created ${result.tasksCreated} task(s) for ${projectId}`);
+      }
+    }
+  } catch (e) {
+    console.error("[tasks GET] lazy backfill failed (returning whatever exists):", e);
+  }
+
   let tasks = await db.task.findMany({
     where: {
       projectId,
@@ -48,8 +72,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const blocked = await ensureProjectMutable(projectId);
   if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
 
+  // Normalise date strings (e.g. "2026-06-15") to Date so Prisma accepts them
+  for (const key of ["startDate", "endDate"]) {
+    if (typeof body[key] === "string" && body[key]) body[key] = new Date(body[key]);
+  }
+  // Strip server-managed fields a client must not set
+  for (const k of ["id", "projectId", "createdBy", "lastEditedBy", "createdAt", "updatedAt"]) delete body[k];
+
   const task = await db.task.create({
-    data: { ...body, projectId },
+    data: { ...body, projectId, createdBy: session.user.id },
   });
 
   return NextResponse.json({ data: task }, { status: 201 });

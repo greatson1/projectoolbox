@@ -391,7 +391,7 @@ export default function SchedulePage() {
           </div>
         </Card>
 
-        <PhaseGatesSidebar phases={phasesSummary} />
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} />
       </div>
     );
   }
@@ -561,7 +561,7 @@ export default function SchedulePage() {
         </Card>
 
         {/* ── Phase Gates Sidebar ── */}
-        <PhaseGatesSidebar phases={phasesSummary} />
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} />
       </div>
 
       {/* ── Task Detail Panel ── */}
@@ -800,7 +800,7 @@ function StatPill({ label, value, color,  }: { label: string; value: string; col
 }
 
 // ── Phase Gates Sidebar ──
-function PhaseGatesSidebar({ phases }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[] }) {
+function PhaseGatesSidebar({ phases, projectId }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[]; projectId: string }) {
   const gateStyle = (s: string) => {
     if (s === "Approved")    return { color: "#10B981", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)", Icon: CheckCircle2 };
     if (s === "Pending")     return { color: "#F59E0B", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)", Icon: Clock };
