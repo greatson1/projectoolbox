@@ -25,6 +25,13 @@ interface AppState {
   pinnedPages: string[]; // href values e.g. "/risk", "/schedule"
   togglePin: (href: string) => void;
 
+  // Recently visited projects — most-recent first. Bounded to MAX 12.
+  // Persisted so the project switcher's "Recents" stays consistent
+  // across tabs and refreshes. Touched by the project tab bar when
+  // activeProjectId changes.
+  recentProjectIds: string[];
+  touchRecentProject: (id: string) => void;
+
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -69,6 +76,15 @@ export const useAppStore = create<AppState>()(
             : [...s.pinnedPages, href],
         })),
 
+      recentProjectIds: [],
+      touchRecentProject: (id) =>
+        set((s) => {
+          if (!id) return s;
+          // Move to front; cap list at 12. Cheap O(n) where n ≤ 12.
+          const next = [id, ...s.recentProjectIds.filter((x) => x !== id)].slice(0, 12);
+          return { recentProjectIds: next };
+        }),
+
       commandPaletteOpen: false,
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
 
@@ -87,6 +103,7 @@ export const useAppStore = create<AppState>()(
         accentTheme: state.accentTheme,
         collapsedGroups: state.collapsedGroups,
         pinnedPages: state.pinnedPages,
+        recentProjectIds: state.recentProjectIds,
       }),
     }
   )

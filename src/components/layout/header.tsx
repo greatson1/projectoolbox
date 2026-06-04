@@ -6,6 +6,7 @@ import { useAppStore } from "@/stores/app";
 import { Bell, Moon, Sun, Search, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { ProjectSwitcher } from "./project-switcher";
 
 export function Header() {
   const { setTheme, resolvedTheme } = useTheme();
@@ -26,6 +27,12 @@ export function Header() {
         </Button>
         <img src="/pt-logo.png" alt="Projectoolbox" className="w-6 h-6 object-contain" />
       </div>
+
+      {/* Project switcher — always visible, opens with ⌘P / Ctrl+P.
+          Shows current project name + section breadcrumb when in scope,
+          a "Switch project" CTA otherwise. Click reveals a dropdown of
+          recents + all projects + new-project action. */}
+      <ProjectSwitcher />
 
       {/* Search — full on desktop, icon on mobile */}
       <div className="flex items-center gap-2 flex-1 max-w-lg">

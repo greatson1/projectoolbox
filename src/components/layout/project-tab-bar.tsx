@@ -188,7 +188,7 @@ function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projec
 
 export function ProjectTabBar() {
   const pathname = usePathname();
-  const { activeProjectId, activeProjectName } = useAppStore();
+  const { activeProjectId, activeProjectName, pinnedPages, togglePin, touchRecentProject } = useAppStore();
   // Pull the project's methodology so we can filter the sidebar to
   // tabs that actually make sense (e.g. hide Sprint Planning on
   // Traditional). useProject is short-cache TTL React-Query so the
@@ -197,6 +197,13 @@ export function ProjectTabBar() {
   const methodologyForTabs = (project as any)?.methodology ?? null;
   const tabs = useMemo(() => tabsForMethodology(methodologyForTabs), [methodologyForTabs]);
 
+  // Touch the recent-projects MRU whenever the active project changes.
+  // This is the only place we do so; every other consumer reads from
+  // useAppStore.recentProjectIds. Cheap (O(n≤12) splice) and idempotent.
+  useEffect(() => {
+    if (activeProjectId) touchRecentProject(activeProjectId);
+  }, [activeProjectId, touchRecentProject]);
+
   if (!activeProjectId) return null;
   if (!pathname.startsWith(`/projects/${activeProjectId}`)) return null;
 
@@ -204,6 +211,26 @@ export function ProjectTabBar() {
 
   // Is user on the project overview page (not a sub-page)?
   const isOverview = pathname === projectBase || pathname === `${projectBase}/`;
+
+  // Pinned pages strip — render the user's pinned hrefs as a quick-
+  // access row. Look up the icon + label from the tab definitions so
+  // labels stay in sync with methodology gating (e.g. /agile renders
+  // as "Task Board" or "Agile Board" depending on methodology).
+  const allItemsFlat = tabs.flatMap((g) => g.items.map((it) => ({ ...it, color: g.color })));
+  const itemByHref = new Map(allItemsFlat.map((it) => [it.href, it] as const));
+  const pinnedItems = pinnedPages
+    .map((href) => itemByHref.get(href))
+    .filter((it): it is (typeof allItemsFlat)[number] => Boolean(it));
+
+  // Find the current page's href (e.g. "/risk") so the pin/unpin
+  // button on the strip knows what to toggle.
+  const currentSubPath = isOverview
+    ? null
+    : pathname.slice(projectBase.length).split("/")[0]
+      ? `/${pathname.slice(projectBase.length).split("/").filter(Boolean)[0]}`
+      : null;
+  const isCurrentPinned = currentSubPath ? pinnedPages.includes(currentSubPath) : false;
+  const canPinCurrent = !!currentSubPath && itemByHref.has(currentSubPath);
 
   // Find the group whose item is currently active. Used to render a second
   // row of sibling-page pills so navigating within a group is one click
@@ -238,6 +265,67 @@ export function ProjectTabBar() {
         {tabs.map((group) => (
           <DropdownTab key={group.label} group={group} projectBase={projectBase} pathname={pathname} />
         ))}
+
+        {/* Pinned pages strip — quick access to the user's favourite
+            sub-pages. Capped at 8 so the bar doesn't grow unbounded.
+            Click navigates; ✕ on hover unpins. A separate ☆ button
+            on the right pins/unpins the CURRENT page so users can
+            grow the list without opening any menu. */}
+        {(pinnedItems.length > 0 || canPinCurrent) && (
+          <>
+            <div className="w-px h-6 bg-border flex-shrink-0 hidden lg:block" />
+            <div className="flex items-center gap-1 flex-wrap">
+              {pinnedItems.slice(0, 8).map((it) => {
+                const Icon = it.icon;
+                const fullHref = `${projectBase}${it.href}`;
+                const isActive = pathname.startsWith(fullHref);
+                return (
+                  <div key={it.href} className="relative group">
+                    <Link
+                      href={fullHref}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] transition-all border",
+                        isActive
+                          ? "border-primary/30 bg-primary/8 text-primary font-semibold"
+                          : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      )}
+                      title={it.label}
+                    >
+                      <Icon className="w-3 h-3" />
+                      <span className="hidden lg:inline">{it.label}</span>
+                    </Link>
+                    {/* Unpin button — visible on hover. Stops propagation
+                        so clicking it doesn't navigate. */}
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(it.href); }}
+                      className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-muted text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
+                      title={`Unpin ${it.label}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+              {/* Pin / Unpin current page. Visible whenever the user is
+                  on a recognised sub-page, regardless of whether it's
+                  already in the strip. Clicking it toggles. */}
+              {canPinCurrent && (
+                <button
+                  onClick={() => togglePin(currentSubPath!)}
+                  className={cn(
+                    "flex items-center justify-center w-7 h-7 rounded-md transition-colors text-[11px]",
+                    isCurrentPinned
+                      ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
+                      : "border border-dashed border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                  title={isCurrentPinned ? "Unpin this page" : "Pin this page"}
+                >
+                  {isCurrentPinned ? "★" : "☆"}
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Second row: sibling pages of the active group (one-click siblings) ── */}
