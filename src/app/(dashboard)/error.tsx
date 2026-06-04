@@ -4,6 +4,14 @@ import { useEffect } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+const CHUNK_RELOAD_KEY = "pt:chunk-reload-attempt";
+function isChunkLoadError(err: Error): boolean {
+  const msg = err?.message || "";
+  return err?.name === "ChunkLoadError"
+    || /Loading chunk [\w-]+ failed/i.test(msg)
+    || /Failed to load chunk/i.test(msg);
+}
+
 export default function DashboardError({
   error,
   reset,
@@ -13,6 +21,15 @@ export default function DashboardError({
 }) {
   useEffect(() => {
     console.error("[Dashboard error]", error);
+    if (isChunkLoadError(error) && typeof window !== "undefined") {
+      const already = sessionStorage.getItem(CHUNK_RELOAD_KEY);
+      if (!already) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+        window.location.reload();
+      }
+    } else if (typeof window !== "undefined") {
+      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+    }
   }, [error]);
 
   return (

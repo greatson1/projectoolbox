@@ -32,6 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const blocked = await ensureProjectMutable(projectId);
   if (blocked) return NextResponse.json({ error: blocked.error, reason: blocked.reason }, { status: blocked.status });
 
+  // Strip server-managed fields a client must not set
+  for (const k of ["id", "projectId", "score", "createdAt", "updatedAt"]) delete body[k];
+
   const risk = await db.risk.create({
     data: { ...body, score: (body.probability || 3) * (body.impact || 3), projectId },
   });

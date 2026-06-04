@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 
+import Link from "next/link";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -209,9 +210,9 @@ export default function KnowledgeBasePage() {
               <div className="flex gap-2"><span className="text-primary font-bold">4.</span> <span><strong>Run research on demand</strong> — PESTLE scans, stakeholder intel, vendor assessments, market pricing</span></div>
             </div>
           </div>
-          <a href="/agents/deploy">
+          <Link href="/agents/deploy">
             <Button size="sm" className="text-xs">Deploy Your First Agent</Button>
-          </a>
+          </Link>
         </div>
       </div>
     </div>

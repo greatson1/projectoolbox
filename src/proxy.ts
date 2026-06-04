@@ -58,6 +58,15 @@ export function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
+  // Invite-only mode: /signup without ?invite= → bounce to /waitlist
+  if (
+    pathname === "/signup" &&
+    !req.nextUrl.searchParams.get("invite") &&
+    (process.env.INVITE_ONLY === "true" || process.env.NEXT_PUBLIC_INVITE_ONLY === "true")
+  ) {
+    return NextResponse.redirect(new URL("/waitlist", req.url));
+  }
+
   return NextResponse.next();
 }
 

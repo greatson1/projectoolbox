@@ -4,6 +4,20 @@ import { useEffect } from "react";
 import { AlertTriangle, RefreshCw, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+// Chunks are content-hashed (e.g. /_next/static/chunks/11eang…). After a
+// redeploy the old hashes 404, so a tab loaded against the previous build
+// throws ChunkLoadError the moment it tries to lazy-load anything. A hard
+// reload refetches the build manifest and the new hashes resolve. Gate it
+// with sessionStorage so a chunk that's genuinely broken can't pin us in a
+// reload loop.
+const CHUNK_RELOAD_KEY = "pt:chunk-reload-attempt";
+function isChunkLoadError(err: Error): boolean {
+  const msg = err?.message || "";
+  return err?.name === "ChunkLoadError"
+    || /Loading chunk [\w-]+ failed/i.test(msg)
+    || /Failed to load chunk/i.test(msg);
+}
+
 export default function ProjectError({
   error,
   reset,
@@ -13,6 +27,15 @@ export default function ProjectError({
 }) {
   useEffect(() => {
     console.error("[Project page error]", error);
+    if (isChunkLoadError(error) && typeof window !== "undefined") {
+      const already = sessionStorage.getItem(CHUNK_RELOAD_KEY);
+      if (!already) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+        window.location.reload();
+      }
+    } else if (typeof window !== "undefined") {
+      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+    }
   }, [error]);
 
   return (

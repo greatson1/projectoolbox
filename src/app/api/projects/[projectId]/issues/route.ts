@@ -19,6 +19,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 
   const { projectId } = await params;
   const body = await req.json();
+
+  // Normalise date strings (e.g. "2026-06-15") to Date so Prisma accepts them
+  if (typeof body.dueDate === "string" && body.dueDate) body.dueDate = new Date(body.dueDate);
+  // Strip server-managed fields a client must not set
+  for (const k of ["id", "projectId", "createdAt", "updatedAt"]) delete body[k];
+
   const issue = await db.issue.create({ data: { ...body, projectId } });
 
   // Track new issue in KB

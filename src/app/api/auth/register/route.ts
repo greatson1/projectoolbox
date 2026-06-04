@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   // ── Invite gate (server-side) ─────────────────────────────────────────────
   // If INVITE_ONLY=true, a valid unused non-expired token is required.
   // This is checked server-side so it cannot be bypassed by calling the API directly.
-  const inviteOnly = process.env.INVITE_ONLY === "true";
+  const inviteOnly = process.env.INVITE_ONLY === "true" || process.env.NEXT_PUBLIC_INVITE_ONLY === "true";
 
   if (inviteOnly) {
     if (!inviteToken) {

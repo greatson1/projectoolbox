@@ -1,6 +1,7 @@
 "use client";
 // @ts-nocheck
 
+import Link from "next/link";
 import { useState, useMemo, useCallback, useRef } from "react";
 import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/source-prefix";
 import {
@@ -711,9 +712,9 @@ export default function AgileBoardPage() {
               className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
               + Create Issue
             </button>
-            <a href="/agents/chat" className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <Link href="/agents/chat" className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
               Chat with Agent
-            </a>
+            </Link>
           </div>
           <div className="mt-5 rounded-lg bg-muted/30 p-3 text-left max-w-sm mx-auto">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">How tasks get populated:</p>

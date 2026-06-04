@@ -3,7 +3,7 @@
  * agent runtime. Includes retry, timeout, and circuit breaker.
  */
 
-const VPS_URL = process.env.AGENT_BACKEND_URL || "http://187.77.182.159:3001";
+const VPS_URL = process.env.AGENT_BACKEND_URL || "";
 const JOB_API_KEY = process.env.JOB_API_KEY || "";
 const TIMEOUT_MS = 10_000;
 
@@ -34,6 +34,8 @@ function recordFailure() {
 
 /** Nudge the VPS to process pending jobs. Fire-and-forget with short timeout. */
 export async function nudgeJobProcessor(): Promise<{ ok: boolean; error?: string }> {
+  if (!VPS_URL) { return { ok: false, error: "AGENT_BACKEND_URL not configured" }; }
+
   if (isCircuitOpen()) {
     return { ok: false, error: "Circuit breaker open — VPS unreachable" };
   }
@@ -72,6 +74,8 @@ export async function checkBackendHealth(): Promise<{
   circuitOpen: boolean;
   consecutiveFailures: number;
 }> {
+  if (!VPS_URL) { return { healthy: false, circuitOpen: false, consecutiveFailures }; }
+
   if (isCircuitOpen()) {
     return { healthy: false, circuitOpen: true, consecutiveFailures };
   }
@@ -100,6 +104,8 @@ export async function checkBackendHealth(): Promise<{
 
 /** Send a specific job to the VPS for immediate processing */
 export async function dispatchJob(jobId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!VPS_URL) { return { ok: false, error: "AGENT_BACKEND_URL not configured" }; }
+
   if (isCircuitOpen()) {
     return { ok: false, error: "Circuit breaker open" };
   }
@@ -130,3 +136,4 @@ export async function dispatchJob(jobId: string): Promise<{ ok: boolean; error?:
     return { ok: false, error: err.message || "Network error" };
   }
 }
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // Wrap in Suspense for useSearchParams SSR compat
@@ -55,12 +55,7 @@ function SignupPageInner() {
   const inviteOnly = process.env.NEXT_PUBLIC_INVITE_ONLY === "true";
   const inviteToken = searchParams.get("invite");
   const prefilledEmail = searchParams.get("email") || "";
-
-  if (inviteOnly && !inviteToken) {
-    // Redirect to waitlist — don't render the form at all
-    router.replace("/waitlist");
-    return null;
-  }
+  const missingInvite = inviteOnly && !inviteToken;
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -140,6 +135,10 @@ function SignupPageInner() {
   };
 
   const g = GRADIENTS[agentGradient];
+
+  // The /signup → /waitlist redirect when invite-only is enforced by
+  // middleware (src/proxy.ts). This client-side null is a safety net only.
+  if (missingInvite) return null;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
@@ -290,3 +289,5 @@ function SignupPageInner() {
     </div>
   );
 }
+
+

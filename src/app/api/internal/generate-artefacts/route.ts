@@ -12,8 +12,8 @@ export const maxDuration = 300;
 export async function POST(req: NextRequest) {
   // Authenticate via shared secret (VPS sends x-internal-key header)
   const secret = (req.headers.get("x-internal-key") || req.headers.get("x-internal-secret") || "").trim();
-  const expectedKey = (process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "ptx-internal-2026").trim();
-  if (!secret || secret !== expectedKey) {
+  const expectedKey = (process.env.INTERNAL_API_KEY || process.env.INTERNAL_SECRET || "").trim();
+  if (!expectedKey || !secret || secret !== expectedKey) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -76,3 +76,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
+
