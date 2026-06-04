@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
 import { cn } from "@/lib/utils";
+import { useProject } from "@/hooks/use-api";
+import { methodologyFeatures, boardPageLabel } from "@/lib/methodology-definitions";
 import {
   CheckSquare, Target, Calendar, Columns3, Timer, ClipboardList,
   ShieldAlert, AlertTriangle, GitPullRequest, TestTube2, ShieldCheck,
@@ -23,6 +25,36 @@ interface TabGroup {
   label: string;
   color: string;
   items: TabItem[];
+}
+
+/**
+ * Filter the default tab groups to what makes sense for the project's
+ * methodology. Hides Sprint Planning + Sprint Tracker on methodologies
+ * that don't have sprints, relabels the board, and prunes EVM /
+ * Procurement on agile-only / trip methodologies. The PROJECT_TABS
+ * constant below is the full superset; this function carves it.
+ *
+ * Keeping the routes themselves accessible by direct URL — only the
+ * sidebar is filtered — means a Traditional team that genuinely wants
+ * to run a sprint can still navigate to /sprint-planning if they
+ * paste the URL, without us blanket-blocking the page.
+ */
+function tabsForMethodology(methodology: string | null | undefined): TabGroup[] {
+  const f = methodologyFeatures(methodology);
+  const boardLabel = boardPageLabel(methodology);
+  return PROJECT_TABS.map(group => ({
+    ...group,
+    items: group.items
+      // Drop sprint links when sprints aren't a concept on this methodology.
+      .filter(item => f.sprints || !item.href.startsWith("/sprint"))
+      // Drop EVM when methodology doesn't lean on earned value.
+      .filter(item => f.evm || item.href !== "/evm")
+      // Drop Procurement when not applicable (Travel, Scrum, etc.).
+      .filter(item => f.procurement || item.href !== "/procurement")
+      // Relabel the board page so a Traditional PM doesn't see
+      // "Agile Board" in their sidebar. Page itself is unchanged.
+      .map(item => item.href === "/agile" ? { ...item, label: boardLabel } : item),
+  })).filter(group => group.items.length > 0);
 }
 
 const PROJECT_TABS: TabGroup[] = [
@@ -157,6 +189,13 @@ function DropdownTab({ group, projectBase, pathname }: { group: TabGroup; projec
 export function ProjectTabBar() {
   const pathname = usePathname();
   const { activeProjectId, activeProjectName } = useAppStore();
+  // Pull the project's methodology so we can filter the sidebar to
+  // tabs that actually make sense (e.g. hide Sprint Planning on
+  // Traditional). useProject is short-cache TTL React-Query so the
+  // sidebar re-renders if methodology changes mid-session.
+  const { data: project } = useProject(activeProjectId);
+  const methodologyForTabs = (project as any)?.methodology ?? null;
+  const tabs = useMemo(() => tabsForMethodology(methodologyForTabs), [methodologyForTabs]);
 
   if (!activeProjectId) return null;
   if (!pathname.startsWith(`/projects/${activeProjectId}`)) return null;
@@ -171,7 +210,7 @@ export function ProjectTabBar() {
   // instead of two (open dropdown + click item). Pick the deepest match so
   // /sprint-planning beats /sprint when both share a prefix.
   const activeGroup = !isOverview
-    ? PROJECT_TABS.find((g) =>
+    ? tabs.find((g) =>
         g.items.some((it) => pathname.startsWith(`${projectBase}${it.href}`)),
       )
     : null;
@@ -195,8 +234,8 @@ export function ProjectTabBar() {
 
         <div className="w-px h-6 bg-border flex-shrink-0" />
 
-        {/* Tab groups */}
-        {PROJECT_TABS.map((group) => (
+        {/* Tab groups — filtered by methodology */}
+        {tabs.map((group) => (
           <DropdownTab key={group.label} group={group} projectBase={projectBase} pathname={pathname} />
         ))}
       </div>

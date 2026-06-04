@@ -922,6 +922,72 @@ export function isMethodologyActive(id: string): boolean {
   return !DISABLED_METHODOLOGY_IDS.has(raw as MethodologyId);
 }
 
+// ─── Per-methodology feature flags ──────────────────────────────────────
+/**
+ * Capability map per methodology. Controls which project sub-pages and
+ * agent behaviours are surfaced.
+ *
+ *   sprints       — Sprint Planning + Sprint Tracker pages are useful
+ *                   (and the agent's prompts about sprints make sense)
+ *   agileBoard    — the Agile Board page is shown labelled as such (vs
+ *                   `Task Board` when sprints aren't a concept here)
+ *   evm           — Earned Value pages / EVM Dashboard are surfaced
+ *                   (PMBOK has its own EVM cadence; Traditional / Hybrid
+ *                   commonly do EVM; Travel / Scrum don't)
+ *   procurement   — Procurement page is surfaced
+ *   wbs           — WBS / structured schedule pages are useful (vs a
+ *                   simpler trip itinerary view for Travel)
+ *
+ * Each consumer pulls just the keys it cares about. A new flag should
+ * always default to `true` for backwards compat unless the caller
+ * specifies otherwise.
+ */
+export interface MethodologyFeatures {
+  sprints: boolean;
+  agileBoard: boolean;
+  evm: boolean;
+  procurement: boolean;
+  wbs: boolean;
+}
+
+const FEATURE_MAP: Record<MethodologyId, MethodologyFeatures> = {
+  traditional: { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true  },
+  waterfall:   { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true  },
+  scrum:       { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false },
+  kanban:      { sprints: false, agileBoard: true,  evm: false, procurement: false, wbs: false }, // legacy
+  safe:        { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false }, // legacy
+  hybrid:      { sprints: true,  agileBoard: true,  evm: true,  procurement: true,  wbs: true  },
+  travel:      { sprints: false, agileBoard: false, evm: false, procurement: false, wbs: false }, // itinerary, not WBS
+  pmbok:       { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true  },
+};
+
+/**
+ * Returns the feature flags for a methodology id, resolving legacy
+ * aliases (prince2 → traditional, agile_scrum → scrum, etc.) the same
+ * way getMethodology() does. Falls back to Traditional's flags for any
+ * id that doesn't resolve — keeps unknown methodologies in a safe,
+ * feature-full default.
+ */
+export function methodologyFeatures(id: string | null | undefined): MethodologyFeatures {
+  if (!id) return FEATURE_MAP.traditional;
+  const def = getMethodology(id);
+  return FEATURE_MAP[def.id] ?? FEATURE_MAP.traditional;
+}
+
+/**
+ * UI label for the board page. Each methodology calls it something
+ * different — "Agile Board" / "Kanban Board" for agile-flavoured work;
+ * "Task Board" elsewhere (the page itself works regardless; only the
+ * label changes so a Traditional PM doesn't see "Agile Board" in
+ * their sidebar).
+ */
+export function boardPageLabel(id: string | null | undefined): string {
+  const def = id ? getMethodology(id) : getMethodology("traditional");
+  if (def.id === "kanban") return "Kanban Board";
+  if (FEATURE_MAP[def.id]?.agileBoard) return "Agile Board";
+  return "Task Board";
+}
+
 // Active methodologies only — what the deploy wizard shows. SAFe and
 // Kanban are hidden via DISABLED_METHODOLOGY_IDS (see above) without
 // removing their definitions, so legacy projects still load correctly.

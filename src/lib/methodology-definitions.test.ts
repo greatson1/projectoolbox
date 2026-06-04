@@ -163,6 +163,94 @@ describe("SAFe + Kanban are currently disabled but legacy projects still load", 
   });
 });
 
+describe("methodologyFeatures — per-methodology capability flags", () => {
+  // These flags drive what the project tab bar + command palette show.
+  // Lock in the contract so a future renamed flag (sprints → iterations)
+  // or a misconfigured methodology doesn't silently expose Sprint Planning
+  // on a Traditional project.
+  it("traditional has WBS/EVM/procurement but no sprints / agile board", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    const f = methodologyFeatures("traditional");
+    expect(f.sprints).toBe(false);
+    expect(f.agileBoard).toBe(false);
+    expect(f.evm).toBe(true);
+    expect(f.procurement).toBe(true);
+    expect(f.wbs).toBe(true);
+  });
+
+  it("scrum has sprints + agile board, no EVM/procurement/WBS", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    const f = methodologyFeatures("scrum");
+    expect(f.sprints).toBe(true);
+    expect(f.agileBoard).toBe(true);
+    expect(f.evm).toBe(false);
+    expect(f.procurement).toBe(false);
+  });
+
+  it("travel has nothing sprint/EVM/procurement-related — it's a trip", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    const f = methodologyFeatures("travel");
+    expect(f.sprints).toBe(false);
+    expect(f.agileBoard).toBe(false);
+    expect(f.evm).toBe(false);
+    expect(f.procurement).toBe(false);
+    expect(f.wbs).toBe(false);
+  });
+
+  it("pmbok has WBS/EVM/procurement but no sprints", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    const f = methodologyFeatures("pmbok");
+    expect(f.sprints).toBe(false);
+    expect(f.evm).toBe(true);
+    expect(f.procurement).toBe(true);
+    expect(f.wbs).toBe(true);
+  });
+
+  it("hybrid has BOTH sprints AND EVM (the whole point of the methodology)", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    const f = methodologyFeatures("hybrid");
+    expect(f.sprints).toBe(true);
+    expect(f.evm).toBe(true);
+    expect(f.agileBoard).toBe(true);
+  });
+
+  it("legacy ids resolve correctly (prince2 → traditional flags)", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    expect(methodologyFeatures("prince2").sprints).toBe(false);
+    expect(methodologyFeatures("PRINCE2").sprints).toBe(false);
+    expect(methodologyFeatures("AGILE_SCRUM").sprints).toBe(true);
+  });
+
+  it("returns safe defaults when methodology is missing / unknown", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    // Unknown id falls back to Traditional flags (feature-full).
+    const f = methodologyFeatures(null);
+    expect(f).toBeDefined();
+    expect(f.sprints).toBe(false);
+  });
+});
+
+describe("boardPageLabel — methodology-specific board label", () => {
+  it("calls the page 'Agile Board' for sprint-flavoured methodologies", async () => {
+    const { boardPageLabel } = await import("./methodology-definitions");
+    expect(boardPageLabel("scrum")).toBe("Agile Board");
+    expect(boardPageLabel("hybrid")).toBe("Agile Board");
+  });
+
+  it("calls it 'Task Board' for non-agile methodologies", async () => {
+    const { boardPageLabel } = await import("./methodology-definitions");
+    expect(boardPageLabel("traditional")).toBe("Task Board");
+    expect(boardPageLabel("waterfall")).toBe("Task Board");
+    expect(boardPageLabel("pmbok")).toBe("Task Board");
+    expect(boardPageLabel("travel")).toBe("Task Board");
+  });
+
+  it("calls it 'Kanban Board' for the Kanban methodology (when reactivated)", async () => {
+    const { boardPageLabel } = await import("./methodology-definitions");
+    expect(boardPageLabel("kanban")).toBe("Kanban Board");
+  });
+});
+
 describe("getMethodologyLabel — UI display normalisation", () => {
   // Original bug: a user picked "Traditional" and the agents-list badge
   // showed "PRINCE2" because that page read project.methodology directly

@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAppStore } from "@/stores/app";
+import { useProject } from "@/hooks/use-api";
+import { methodologyFeatures, boardPageLabel } from "@/lib/methodology-definitions";
 import {
   LayoutDashboard, Bot, CheckSquare, FolderKanban, Calendar,
   Columns3, Timer, Target, DollarSign, Users, UserCog, ShieldAlert,
@@ -98,6 +100,11 @@ export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
   const { commandPaletteOpen, setCommandPaletteOpen, activeProjectId, pinnedPages, togglePin } = useAppStore();
+  // Project methodology drives which sprint / agile / EVM links are
+  // surfaced in the command palette. Same source of truth as the
+  // project tab-bar so the two stay in sync.
+  const { data: project } = useProject(activeProjectId);
+  const methodology = (project as any)?.methodology ?? null;
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -130,9 +137,21 @@ export function CommandPalette() {
   // Filter and sort results
   const results = useMemo(() => {
     const q = query.toLowerCase().trim();
+    // Compute the methodology feature flags once per render so the
+    // per-page filters below stay cheap. When no project is active we
+    // skip the methodology gates (everything passes) since the
+    // projectScoped gate handles that case.
+    const features = methodologyFeatures(methodology);
+    const board = boardPageLabel(methodology);
     let pages = ALL_PAGES.filter((p) => {
       // Hide project-scoped pages if no project active
       if (p.projectScoped && !activeProjectId) return false;
+      // Methodology gates — skip when no project context.
+      if (activeProjectId) {
+        if (p.href.startsWith("/sprint") && !features.sprints) return false;
+        if (p.href === "/evm" && !features.evm) return false;
+        if (p.href === "/procurement" && !features.procurement) return false;
+      }
       if (!q) return true;
       return (
         p.label.toLowerCase().includes(q) ||
@@ -140,6 +159,12 @@ export function CommandPalette() {
         (p.keywords || "").toLowerCase().includes(q)
       );
     });
+    // Relabel /agile to match the methodology's board name so a
+    // Traditional PM searching the palette sees "Task Board" not
+    // "Agile Board".
+    if (activeProjectId) {
+      pages = pages.map(p => p.href === "/agile" ? { ...p, label: board } : p);
+    }
     // Pinned pages first, then sort by label
     pages.sort((a, b) => {
       const aPin = pinnedPages.includes(a.href) ? 0 : 1;
@@ -148,7 +173,7 @@ export function CommandPalette() {
       return a.label.localeCompare(b.label);
     });
     return pages;
-  }, [query, activeProjectId, pinnedPages]);
+  }, [query, activeProjectId, pinnedPages, methodology]);
 
   // Keyboard navigation
   const navigate = useCallback(
