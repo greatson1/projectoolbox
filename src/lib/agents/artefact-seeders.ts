@@ -115,6 +115,23 @@ export async function seedArtefactData(
     return;
   }
 
+  if (
+    lname.includes("issue log") ||
+    lname.includes("issue register")
+  ) {
+    await seedIssues(artefact, agentId);
+    return;
+  }
+
+  if (
+    lname.includes("resource plan") ||
+    lname.includes("resource management plan") ||
+    lname.includes("resource allocation")
+  ) {
+    await seedResourceAllocations(artefact, agentId);
+    return;
+  }
+
   // Schedule Baseline / WBS are handled by schedule-parser.ts — no duplicate seeding here
 }
 
@@ -917,5 +934,109 @@ async function seedCharterToProject(artefact: ArtefactInput): Promise<void> {
     }
   } catch (e) {
     console.error(`[seedCharterToProject] failed:`, e);
+  }
+}
+
+// ─── Issue Log seeder ────────────────────────────────────────────────────────
+// Artefact columns:
+//   Issue ID | Date Raised | Description | Category | Priority | Impact | Owner |
+//   Target Resolution | Actual Resolution | Status | Notes
+
+async function seedIssues(artefact: ArtefactInput, agentId: string): Promise<void> {
+  try {
+    const rows = parseCSV(artefact.content || "");
+    if (rows.length === 0) return;
+
+    // Delete previously seeded issues from this agent
+    await db.issue.deleteMany({
+      where: { projectId: artefact.projectId, assigneeId: `agent:${agentId}` },
+    });
+
+    for (const row of rows) {
+      const title = row["Description"] || row["Title"] || row["Issue"] || "";
+      if (!title.trim()) continue;
+
+      const priorityRaw = (row["Priority"] || "MEDIUM").toUpperCase();
+      const priority = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(priorityRaw) ? priorityRaw : "MEDIUM";
+
+      const statusRaw = (row["Status"] || "OPEN").toUpperCase();
+      const status = statusRaw.includes("CLOSE") || statusRaw.includes("RESOLVED") ? "CLOSED"
+        : statusRaw.includes("PROGRESS") ? "IN_PROGRESS" : "OPEN";
+
+      const dueDate = row["Target Resolution"] ? new Date(row["Target Resolution"]) : null;
+
+      await db.issue.create({
+        data: {
+          projectId: artefact.projectId,
+          title: title.trim(),
+          description: [row["Category"], row["Impact"], row["Notes"]].filter(Boolean).join(" · ") || null,
+          priority,
+          status,
+          assigneeId: `agent:${agentId}`,
+          dueDate: dueDate && !isNaN(dueDate.getTime()) ? dueDate : null,
+        },
+      });
+    }
+    console.log(`[seedIssues] Seeded ${rows.length} issues from "${artefact.name}"`);
+  } catch (e) {
+    console.error("[seedIssues] failed:", e);
+  }
+}
+
+// ─── Resource Plan seeder ────────────────────────────────────────────────────
+// Seeds resource allocations as Task records with role/assignment metadata.
+// Artefact columns:
+//   Role | Name | Phase | Task | Hours/Days | Start | End | Cost (£) | % Allocated | Status | Notes
+
+async function seedResourceAllocations(artefact: ArtefactInput, agentId: string): Promise<void> {
+  try {
+    const rows = parseCSV(artefact.content || "");
+    if (rows.length === 0) return;
+
+    // Store as knowledge base items so they're surfaced in People/Resources tab
+    for (const row of rows) {
+      const role = row["Role"] || row["Resource"] || "";
+      const name = row["Name"] || row["Name/TBD"] || "";
+      if (!role.trim() && !name.trim()) continue;
+
+      const allocation = row["% Allocated"] || row["Allocation (%)"] || "";
+      const phase = row["Phase"] || "";
+      const hours = row["Hours/Days"] || row["Hours"] || "";
+      const cost = row["Cost"] || row["Cost (£)"] || row["Cost ($)"] || row["Cost (€)"] || "";
+
+      const content = [
+        role && `Role: ${role}`,
+        name && `Name: ${name}`,
+        phase && `Phase: ${phase}`,
+        allocation && `Allocation: ${allocation}%`,
+        hours && `Hours: ${hours}`,
+        cost && `Cost: ${cost}`,
+        row["Status"] && `Status: ${row["Status"]}`,
+        row["RACI"] && `RACI: ${row["RACI"]}`,
+      ].filter(Boolean).join("\n");
+
+      await db.knowledgeBaseItem.upsert({
+        where: {
+          agentId_projectId_title: {
+            agentId,
+            projectId: artefact.projectId,
+            title: `[resource] ${role} — ${name || "TBD"}`,
+          },
+        },
+        create: {
+          agentId,
+          projectId: artefact.projectId,
+          title: `[resource] ${role} — ${name || "TBD"}`,
+          content,
+          source: "artefact_seed",
+          trustLevel: "STANDARD",
+          tags: ["resource", "resource_plan", phase.toLowerCase()].filter(Boolean),
+        },
+        update: { content, tags: ["resource", "resource_plan", phase.toLowerCase()].filter(Boolean) },
+      });
+    }
+    console.log(`[seedResourceAllocations] Seeded ${rows.length} resource entries from "${artefact.name}"`);
+  } catch (e) {
+    console.error("[seedResourceAllocations] failed:", e);
   }
 }

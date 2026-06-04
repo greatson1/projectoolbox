@@ -1148,6 +1148,19 @@ ${await (async () => {
     lines.push("Gate criteria for this phase: " + phaseDef.gate.criteria);
     lines.push("");
     lines.push("⚠️ When the user asks 'how many artefacts' or 'are all artefacts done', answer using the numbers above (e.g. 'X of Y drafted'). Do NOT invent a smaller 'required' subset to make the count look better.");
+    lines.push("");
+    lines.push("ARTEFACT → PAGE WIRING (when approved, each artefact auto-populates these live project pages):");
+    lines.push("- WBS / Work Breakdown Structure → Scope & WBS page (task hierarchy)");
+    lines.push("- Schedule with Dependencies → Schedule/Gantt page (dates, predecessors, critical path)");
+    lines.push("- Cost Management Plan / Budget Breakdown → Cost dashboard (budget entries)");
+    lines.push("- Risk Register / Initial Risk Register / Risk Management Plan → Risk Register page");
+    lines.push("- Stakeholder Register / Initial Stakeholder Register → People/Stakeholders page");
+    lines.push("- Sprint Plans / Iteration Plans / Product Backlog → Sprint Planning + Agile Board");
+    lines.push("- Issue Log → Issues page");
+    lines.push("- Resource Plan / Resource Management Plan → People/Resources (KB entries)");
+    lines.push("- Change Request Register → Change Control page");
+    lines.push("- Business Case / Project Charter / Project Brief → Project overview (budget, dates, scope)");
+    lines.push("You MUST generate ALL artefacts the methodology defines for this phase. Each one feeds a live page that the user relies on. Missing artefacts = blank pages.");
     return lines.join("\n");
   } catch { return "Phase requirements unavailable."; }
 })()}
