@@ -235,12 +235,20 @@ export async function generatePhaseArtefacts(
     return `\n\n⚠️ PRIOR REJECTION FEEDBACK — the previous version of the following document(s) was rejected by the human reviewer. Address these issues directly in the new version:\n${lines.join("\n")}\n\nDo not silently regenerate the same content — make concrete changes that respond to the feedback above.`;
   };
 
+  // Lazy import — same module as getProjectKnowledgeContext, already
+  // pulled in above; this just picks up the standalone helper that
+  // builds a target-specific "decompose from these upstream artefacts"
+  // block per batch (cheap — only loads approved artefacts, not the KB).
+  const { buildRequiredUpstreamBlock } = await import("@/lib/agents/artefact-learning");
+
   for (const { names: batch, isSheet } of allBatches) {
     const feedbackBlock = feedbackBlockFor(batch);
+    const upstreamBlock = await buildRequiredUpstreamBlock(projectId, batch);
     const basePrompt = isSheet
       ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext, orgCurrencySymbol)
       : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext);
-    const prompt = feedbackBlock ? `${basePrompt}${feedbackBlock}` : basePrompt;
+    const promptWithUpstream = upstreamBlock ? `${upstreamBlock}\n${basePrompt}` : basePrompt;
+    const prompt = feedbackBlock ? `${promptWithUpstream}${feedbackBlock}` : promptWithUpstream;
 
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -406,9 +414,11 @@ export async function generatePhaseArtefacts(
   for (const name of missingAfterBatches) {
     const isSheet = isSpreadsheetArtefact(name);
     const retryFeedback = feedbackBlockFor([name]);
-    const baseRetryPrompt = isSheet
+    const retryUpstreamBlock = await buildRequiredUpstreamBlock(projectId, [name]);
+    const baseRetryPromptCore = isSheet
       ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext, orgCurrencySymbol)
       : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext);
+    const baseRetryPrompt = retryUpstreamBlock ? `${retryUpstreamBlock}\n${baseRetryPromptCore}` : baseRetryPromptCore;
     const prompt = retryFeedback ? `${baseRetryPrompt}${retryFeedback}` : baseRetryPrompt;
     // Track the reason this retry didn't produce a usable doc. We record it
     // in REJECTED.feedback so the user sees something actionable.
@@ -564,6 +574,18 @@ export async function generatePhaseArtefacts(
     await db.agentActivity.create({
       data: { agentId, type: "document", summary: `${targetPhaseName}: artefact generation failed for ${toGenerate.length} document(s) (${stillMissing.join(", ")}) — please retry from the Artefacts tab` },
     }).catch(() => {});
+  }
+
+  // Cross-artefact consistency check (fire-and-forget — don't block return)
+  if (totalGenerated > 0) {
+    (async () => {
+      try {
+        const { validateCrossArtefactConsistency } = await import("./cross-artefact-validator");
+        await validateCrossArtefactConsistency(projectId, agentId, targetPhaseName);
+      } catch (e) {
+        console.error("[generatePhaseArtefacts] cross-artefact validation failed:", e);
+      }
+    })();
   }
 
   return { generated: totalGenerated, skipped, phase: targetPhaseName, missing: stillMissing };
