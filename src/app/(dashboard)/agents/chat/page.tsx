@@ -25,7 +25,7 @@ import remarkGfm from "remark-gfm";
 import { stripContextMarkerLeaks } from "@/lib/agents/sanitise-chat-response";
 
 // Local METHOD_LABEL replaced — see methodology-definitions.ts:getMethodologyLabel.
-import { getMethodologyLabel } from "@/lib/methodology-definitions";
+import { getMethodologyLabel, getPhaseNames } from "@/lib/methodology-definitions";
 
 export default function ChatPageWrapper() {
   return <Suspense fallback={null}><AgentChatPage /></Suspense>;
@@ -1561,16 +1561,35 @@ function AgentChatPage() {
           // The full pipeline for any phase. The resolver collapses some of
           // these (e.g. clarification_in_progress is the "active" subtype of
           // clarification) so we map both back onto the same dot.
+          //
+          // canRevisit: this step is a human-judgement gate. Approving here
+          // moves forward, but REJECTING here rebounds to the previous step
+          // (research, generation, or the body of the phase) so it can re-
+          // run. The UI surfaces a ↶ glyph on these so users know the step
+          // is not a one-way ratchet.
           const PIPELINE = [
             { id: "research",                label: "Research" },
-            { id: "research_approval",       label: "Approve research" },
+            { id: "research_approval",       label: "Approve research",  canRevisit: true },
             { id: "clarification",           label: "Clarification" },
             { id: "generation",              label: "Generate artefacts" },
-            { id: "review_artefacts",        label: "Review artefacts" },
+            { id: "review_artefacts",        label: "Review artefacts",  canRevisit: true },
             { id: "delivery_tasks",          label: "Delivery tasks" },
-            { id: "gate_approval",           label: "Approve gate" },
+            { id: "gate_approval",           label: "Approve gate",      canRevisit: true },
             { id: "advance",                 label: "Advance phase" },
           ] as const;
+
+          // Outer phase loop indicator — the within-phase stepper IS linear,
+          // but the whole pipeline repeats per methodology phase (Sprint Zero
+          // → Sprint Cadence → Release for Scrum, Initiation → Planning →
+          // Execution → Closing for Waterfall). Sourced from the methodology
+          // definition so the counter never drifts from the actual phase
+          // list — no hardcoded "of N".
+          const methodologyId = (activeAgent as any)?.deployments?.[0]?.project?.methodology;
+          const phaseNames = methodologyId ? getPhaseNames(methodologyId) : [];
+          const phaseIdx = nextAction?.currentPhase ? phaseNames.indexOf(nextAction.currentPhase) : -1;
+          const phaseCounter = phaseNames.length > 0 && phaseIdx >= 0
+            ? `${phaseIdx + 1}/${phaseNames.length}`
+            : null;
 
           const activeId = na.step === "clarification_in_progress" ? "clarification" : na.step;
           const activeIdx = PIPELINE.findIndex(p => p.id === activeId);
@@ -1635,6 +1654,7 @@ function AgentChatPage() {
                 </div>
                 <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:inline">
                   {nextAction?.currentPhase}
+                  {phaseCounter && <span className="ml-1 opacity-60">· {phaseCounter}</span>}
                 </span>
                 {cta && (
                   <Button size="sm" variant="outline" className="h-7 text-[11px] flex-shrink-0" onClick={cta.onClick}>
@@ -1650,6 +1670,7 @@ function AgentChatPage() {
                 {PIPELINE.map((p, i) => {
                   const isDone = activeIdx >= 0 && i < activeIdx;
                   const isActive = i === activeIdx;
+                  const canRevisit = "canRevisit" in p && p.canRevisit;
                   return (
                     <div key={p.id} className="flex items-center gap-1 flex-shrink-0">
                       <span
@@ -1660,6 +1681,15 @@ function AgentChatPage() {
                       <span className={`text-[9px] font-medium ${isActive ? palette.text + " font-bold" : isDone ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground/60"}`}>
                         {p.label}
                       </span>
+                      {canRevisit && (
+                        <span
+                          className="text-[9px] text-muted-foreground/50 leading-none"
+                          title="Rejecting here sends the previous step back to be re-run"
+                          aria-label="May loop back to the previous step on rejection"
+                        >
+                          ↶
+                        </span>
+                      )}
                       {i < PIPELINE.length - 1 && <span className="text-muted-foreground/20 text-[8px] mx-0.5">→</span>}
                     </div>
                   );
