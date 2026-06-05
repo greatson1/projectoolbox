@@ -156,7 +156,21 @@ export const REQUIRED_UPSTREAM: Record<string, { upstream: string; instruction: 
     { upstream: "Stakeholder Register", instruction: "Communication Plan must cover every stakeholder in the Stakeholder Register and reference their stated communication preferences." },
   ],
   "Sprint Plans": [
-    { upstream: "Initial Product Backlog", instruction: "Sprint commitments must be drawn from the Product Backlog by Story ID. Do not create new stories in the Sprint Plan — refine the backlog first." },
+    { upstream: "Initial Product Backlog", instruction: "Sprint commitments must be drawn from the Product Backlog. The Sprint Plan is the PLANNING ceremony output — Sprint Goal, capacity (hours), committed points, team size, dates. One row per sprint. Do not create new stories in the Sprint Plan; refine the backlog first." },
+  ],
+  "Sprint Backlog": [
+    { upstream: "Sprint Plans", instruction: "The Sprint Backlog is the LIVE working list during the sprint — one row per work item. Each row's Sprint MUST match a sprint defined in the Sprint Plan; capacity / committed-points totals must agree with the Sprint Plan headline. The Sprint Plan is the frozen commitment; this is the daily-updated execution view." },
+    { upstream: "Initial Product Backlog", instruction: "Every Sprint Backlog Story ID MUST exist in the Product Backlog. Sprint Backlog items are pulled FROM the Product Backlog — do not invent stories that aren't in the backlog." },
+  ],
+  "Iteration Plans": [
+    { upstream: "Initial Product Backlog", instruction: "Iteration commitments must be drawn from the Product Backlog. The Iteration Plan is the PLANNING output — iteration goal, capacity, committed points, dates. One row per iteration." },
+  ],
+  "Iteration Backlog": [
+    { upstream: "Iteration Plans", instruction: "Live working list for the iteration — one row per work item. Each row's Iteration MUST match an iteration in the Iteration Plan; capacity / committed-points totals must agree." },
+    { upstream: "Initial Product Backlog", instruction: "Every Iteration Backlog Story ID MUST exist in the Product Backlog. Pulled FROM the backlog — do not invent stories." },
+  ],
+  "Burndown Chart": [
+    { upstream: "Sprint Backlog", instruction: "Burndown values must derive from the Sprint Backlog — daily remaining points equal sum of Sprint Backlog items not yet Done. Do not invent burndown data; if the Sprint Backlog has no daily Status updates, output [TBC] and request the data." },
   ],
 };
 

@@ -381,7 +381,14 @@ const SCRUM: MethodologyDefinition = {
       description: "Recurring sprints: plan, execute, review, retrospect. Backlog grooming between sprints.",
       color: "#10B981",
       artefacts: [
+        // Scrum Guide split: Sprint Plans is the PLANNING ceremony output
+        // (the team's commitment — Sprint Goal, capacity, selected items;
+        // frozen at sprint start). Sprint Backlog is the LIVE working list
+        // (items currently in-flight, status evolves daily). Both are
+        // required: planning without a live list loses execution truth,
+        // a live list without a planning record loses commitment context.
         { name: "Sprint Plans", required: true, aiGeneratable: true },
+        { name: "Sprint Backlog", required: true, aiGeneratable: true },
         // Scrum canonical — Sprint Goal is the WHY of every sprint, distinct
         // from the Sprint Plan (which is the WHAT). The Scrum Guide elevates
         // it as a first-class artefact. Marked required so every sprint has
@@ -532,7 +539,12 @@ const SAFE: MethodologyDefinition = {
       description: "Execute iterations within the PI, produce system demos",
       color: "#10B981",
       artefacts: [
+        // Iteration Plans = planning commitment for the iteration (capacity,
+        // selected items, iteration goal). Iteration Backlog = live working
+        // list during execution. Same conceptual split as Scrum Sprint Plans
+        // / Sprint Backlog.
         { name: "Iteration Plans", required: true, aiGeneratable: true },
+        { name: "Iteration Backlog", required: true, aiGeneratable: true },
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "System Demos", required: false, aiGeneratable: false },
         { name: "Risk Reviews", required: false, aiGeneratable: true },
@@ -629,7 +641,10 @@ const HYBRID: MethodologyDefinition = {
       description: "Sprint cycles within governance phases, dual reporting: sprint metrics + milestone RAG",
       color: "#10B981",
       artefacts: [
+        // Same Scrum-Guide split as standalone Scrum: Sprint Plans = planning
+        // commitment, Sprint Backlog = live working list.
         { name: "Sprint Plans", required: true, aiGeneratable: true },
+        { name: "Sprint Backlog", required: true, aiGeneratable: true },
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Phase Progress Reports", required: false, aiGeneratable: true },
         { name: "Retrospectives", required: false, aiGeneratable: true },

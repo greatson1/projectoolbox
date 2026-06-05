@@ -30,6 +30,7 @@ export function isBacklogOrSprintPlan(name: string): boolean {
     n.includes("sprint plan") ||
     n.includes("iteration plan") ||
     n.includes("sprint backlog") ||
+    n.includes("iteration backlog") ||
     n.includes("product backlog") ||
     n.includes("initial backlog") ||
     n === "backlog"

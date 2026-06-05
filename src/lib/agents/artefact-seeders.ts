@@ -75,6 +75,7 @@ export async function seedArtefactData(
     lname.includes("sprint plan") ||
     lname.includes("iteration plan") ||
     lname.includes("sprint backlog") ||
+    lname.includes("iteration backlog") ||         // SAFe iteration backlog (live working list)
     lname.includes("product backlog") ||           // Initial Product Backlog (Scrum, Kanban, SAFe)
     lname.includes("initial backlog") ||           // legacy alias
     (lname === "backlog")
@@ -571,14 +572,30 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
   const rows = parseCSV(artefact.content);
   if (rows.length === 0) return;
 
-  // Remove only agent-generated sprint tasks (not scaffolded PM tasks or WBS tasks)
-  await db.task.deleteMany({
-    where: {
-      projectId: artefact.projectId,
-      createdBy: `agent:${agentId}`,
-      description: { contains: "[source:sprint]" },
-    },
-  });
+  // Sprint Plans / Iteration Plans are now PLANNING SUMMARIES (one row per
+  // sprint with Goal + Capacity + Committed Points). They seed db.sprint
+  // metadata but DON'T have per-item rows. Sprint Backlog / Iteration
+  // Backlog are the per-item LIVE working lists that seed db.task.
+  //
+  // Without this distinction, re-approving a Sprint Plan (no User Story
+  // column) would run deleteMany on [source:sprint] tasks and then
+  // recreate zero — silently wiping the entire Sprint Backlog. The
+  // backlog-named artefact is the canonical owner of task rows, so only
+  // those names trigger the task seed-cycle.
+  const lname = artefact.name.toLowerCase();
+  const seedsTasks = lname.includes("backlog");
+
+  // Remove only agent-generated sprint tasks (not scaffolded PM tasks or WBS
+  // tasks). Skip for planning summaries — they don't own task rows.
+  if (seedsTasks) {
+    await db.task.deleteMany({
+      where: {
+        projectId: artefact.projectId,
+        createdBy: `agent:${agentId}`,
+        description: { contains: "[source:sprint]" },
+      },
+    });
+  }
 
   // ── Step 1: Extract unique sprints from CSV and create Sprint records ──
   const sprintMap = new Map<string, { name: string; startDate: Date | null; endDate: Date | null; tasks: any[] }>();
@@ -670,6 +687,14 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
   console.log(`[artefact-seeders] Created ${sprintMap.size} sprint(s) with calendar events`);
 
   // ── Step 2: Create tasks and assign to sprints ──
+  // Skipped entirely for planning summaries (Sprint Plans / Iteration Plans),
+  // which seed db.sprint metadata only. The Sprint Backlog / Iteration
+  // Backlog companion artefact owns the per-item task rows.
+  if (!seedsTasks) {
+    console.log(`[artefact-seeders] "${artefact.name}" is a planning summary — seeded ${sprintMap.size} sprint(s), skipping task seed`);
+    return;
+  }
+
   let created = 0;
   for (const row of rows) {
     const title = col(row, ["User Story", "Work Item", "Task", "Story", "Feature", "Item", "Title"]);

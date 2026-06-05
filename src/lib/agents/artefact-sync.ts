@@ -73,6 +73,14 @@ const DEPENDENCY_MAP: Record<string, string[]> = {
     "Risk Management Plan",
     "Communication Plan",
   ],
+  // Sprint / Iteration cascade: Product Backlog is the source. Plans are the
+  // frozen commitments per sprint. Backlogs are the live working lists. Burn-
+  // downs read from the backlog. Editing the backlog stales the burndown;
+  // editing the plan stales both the backlog and burndown.
+  "Initial Product Backlog": ["Sprint Plans", "Sprint Backlog", "Iteration Plans", "Iteration Backlog"],
+  "Sprint Plans": ["Sprint Backlog", "Burndown Chart"],
+  "Sprint Backlog": ["Burndown Chart"],
+  "Iteration Plans": ["Iteration Backlog"],
 };
 
 // ─── 0. Reverse sync: cost entries → Cost Estimate artefact ──────────────────

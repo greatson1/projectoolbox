@@ -22,6 +22,13 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Schedule Baseline",
   "Sprint Plans",
   "Iteration Plans",
+  // Live working-list counterparts to the planning artefacts above. Same
+  // tabular shape but distinct purpose: planning artefacts capture the
+  // commitment at sprint start (frozen), backlog artefacts track the
+  // live state during execution (evolves daily). See methodology
+  // definitions Scrum Sprint Cadence / SAFe Iteration Cadence / Hybrid
+  // Iterative Delivery.
+  "Iteration Backlog",
   "Flow Metrics Reports",
   "Change Request Register",
   // Backlogs — every variant the methodology definitions emit. The seeder
@@ -62,8 +69,8 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Risk Management Plan": ["Risk ID", "Category", "Title", "Likelihood (1-5)", "Impact (1-5)", "Risk Score", "Risk Rating", "Response Strategy", "Owner", "Mitigation Deadline", "Contingency", "Residual Score", "Status", "Last Reviewed"],
   "Resource Plan": ["Role", "Name", "Phase", "Task", "Hours/Days", "Start", "End", "Cost (£)", "% Allocated", "Status", "Notes"],
   "Schedule Baseline": ["Task ID", "Activity", "Category", "Owner", "Baseline Start", "Baseline End", "Duration (days)", "Dependencies", "Actual Start", "Actual End", "% Complete", "Status", "RAG", "Milestone?"],
-  "Sprint Plans": ["Sprint", "Story ID", "User Story", "Points", "Owner", "Status", "Start", "End", "Actual Completion", "Notes"],
-  "Iteration Plans": ["Iteration", "Item ID", "Work Item", "Owner", "Planned Points", "Completed Points", "Status", "Start", "End", "Notes"],
+  "Sprint Plans": ["Sprint", "Sprint Goal", "Capacity (h)", "Committed Points", "Team Size", "Velocity Target", "Start", "End", "Risks", "Notes"],
+  "Iteration Plans": ["Iteration", "Iteration Goal", "Capacity (h)", "Committed Points", "Team Size", "Velocity Target", "Start", "End", "Risks", "Notes"],
   "Flow Metrics Reports": ["Week", "Items Started", "Items Completed", "WIP Count", "Avg Cycle Time (days)", "Throughput", "Lead Time (days)", "Blockers", "RAG"],
   "Change Request Register": ["CR ID", "Title", "Description", "Requested By", "Date Raised", "Category", "Priority", "Impact on Schedule", "Impact on Cost (£)", "Impact on Scope", "Status", "Decision", "Decision Date", "Implemented By", "Notes"],
   "Risk Register": ["Risk ID", "Category", "Title", "Description", "Likelihood (1-5)", "Impact (1-5)", "Score", "Risk Rating", "Owner", "Mitigation Actions", "Contingency Plan", "Residual Score", "Status", "Last Reviewed"],
@@ -74,7 +81,8 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Initial Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
   "Product Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
   "Initial Product Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
-  "Sprint Backlog": ["Sprint", "Item ID", "Title", "Type", "Story Points", "Owner", "Status", "Acceptance Criteria", "Notes"],
+  "Sprint Backlog": ["Sprint", "Story ID", "User Story", "Type", "Points", "Owner", "Status", "Started", "Completed", "Blockers", "Notes"],
+  "Iteration Backlog": ["Iteration", "Story ID", "User Story", "Type", "Points", "Owner", "Status", "Started", "Completed", "Blockers", "Notes"],
   // ── Travel methodology artefacts ──
   "Booking Tracker": ["Booking ID", "Type", "Provider / Vendor", "Description", "Reference / PNR", "Travel Date", "Confirmed", "Cost (£)", "Paid", "Cancellation Policy", "Owner", "Status", "Notes"],
   "Documentation Checklist": ["Document", "Required For", "Status", "Expiry / Valid Until", "Held By", "Notes"],

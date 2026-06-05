@@ -46,11 +46,12 @@ describe("isBacklogOrSprintPlan — Scrum / Kanban / SAFe / Hybrid task-producin
   it.each([
     "Initial Product Backlog",   // Scrum, Kanban, SAFe Sprint Zero / Setup
     "Product Backlog",
-    "Sprint Plans",              // Scrum Sprint Cadence
+    "Sprint Plans",              // Scrum Sprint Cadence — planning summary
     "Sprint Plan",
-    "Sprint Backlog",
-    "Iteration Plans",           // SAFe Iteration Execution
+    "Sprint Backlog",            // Scrum Sprint Cadence — live working list
+    "Iteration Plans",           // SAFe Iteration Cadence — planning summary
     "Iteration Plan",
+    "Iteration Backlog",         // SAFe Iteration Cadence — live working list
     "Initial Backlog",           // legacy alias
     "Backlog",                   // exact match (lower-case in predicate)
     "backlog",
