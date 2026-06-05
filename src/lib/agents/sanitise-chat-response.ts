@@ -43,12 +43,24 @@ export interface PhaseCompletionSnapshot {
   requiredArtefactCount: number;
   /** Count of artefacts the methodology marks `aiGeneratable: true` for THIS phase. */
   aiGeneratableArtefactCount: number;
+  /** Lowercased names of artefacts that actually exist in the DB with status
+   *  DRAFT or PENDING_REVIEW for the active phase. The fabrication-claim
+   *  sanitiser uses this to reject any "X needs review" / "X is awaiting
+   *  approval" prose for artefact names that aren't in this set. Optional
+   *  for backwards compatibility with existing callers that don't supply
+   *  it (the sanitiser skips that pass when undefined). */
+  reviewableArtefactNamesLC?: string[];
+  /** Lowercased names of methodology-defined artefacts that DON'T exist yet
+   *  for the active phase — the hallucination target. Used to detect when
+   *  the agent says "review the Cost Management Plan" for an artefact that
+   *  was only ever a methodology requirement, never a real row. */
+  notYetDraftedNamesLC?: string[];
 }
 
 export interface ChatSanitiseResult {
   content: string;
   corrections: Array<{
-    kind: "stripped_verified_tag" | "replaced_fabricated_value" | "rewrote_phase_complete_claim" | "rewrote_required_count_claim" | "stripped_context_marker_leak";
+    kind: "stripped_verified_tag" | "replaced_fabricated_value" | "rewrote_phase_complete_claim" | "rewrote_required_count_claim" | "stripped_context_marker_leak" | "rewrote_fabricated_draft_claim";
     field?: string;
     before: string;
     after: string;
@@ -285,6 +297,87 @@ export function sanitiseChatResponse(
           before: before.trim(),
           after: blockerLine,
         });
+      }
+    }
+  }
+
+  // ── 5b. Fabricated "X needs review" / "X awaiting approval" claims ──
+  //
+  // The agent reads two distinct sections of the system prompt:
+  //   1. PHASE REQUIREMENTS — lists methodology-defined artefacts and which
+  //      ones haven't been drafted yet ("Not yet drafted: A, B, C").
+  //   2. GENERATED ARTEFACTS — lists actual rows in the DB with status.
+  //
+  // The hallucination class we're catching: the LLM confuses (1) with (2),
+  // pulls "A, B, C" out of the not-yet-drafted list, and asserts the user
+  // needs to "review" or "approve" them. The user opens the artefacts
+  // page and sees nothing — because nothing was ever drafted.
+  //
+  // This pass scans the response for prose that ascribes a "needs your
+  // review / awaiting your approval / draft / needs your sign-off" status
+  // to a specific artefact name, then cross-references against the live
+  // list of artefact names that ACTUALLY exist with status DRAFT or
+  // PENDING_REVIEW. If the name is in the "not yet drafted" set instead,
+  // rewrite the claim to use "not yet generated" wording.
+  //
+  // Only runs when both snapshot fields are present — older callers that
+  // don't supply them just skip this pass.
+  if (phase?.reviewableArtefactNamesLC && phase?.notYetDraftedNamesLC) {
+    const reviewable = new Set(phase.reviewableArtefactNamesLC);
+    const notYet = new Set(phase.notYetDraftedNamesLC);
+    if (notYet.size > 0) {
+      // Build a regex that matches any not-yet-drafted artefact name
+      // followed (within ~80 chars) by a review/approval verb. Permissive
+      // about ordering ("review the X" or "X needs review"). Bullet-line
+      // anchored so we don't strip prose discussing the artefact in a
+      // descriptive way (e.g. "the Cost Management Plan will track…").
+      const FABRICATED_REVIEW_PATTERNS: RegExp[] = [];
+      for (const lcName of notYet) {
+        if (reviewable.has(lcName)) continue; // skip names that ALSO exist as drafts (ambiguous; leave alone)
+        const esc = escapeRegex(lcName);
+        // Pattern A1: "{Name} — needs review" / ": needs review" (with
+        // explicit separator like em-dash or colon, typical bullet form).
+        FABRICATED_REVIEW_PATTERNS.push(new RegExp(
+          `(${esc})\\s*(?:—|–|-|:)\\s*(?:needs\\s+(?:your\\s+)?review|needs\\s+(?:your\\s+)?approval|awaiting\\s+(?:your\\s+)?(?:review|approval|sign[- ]off)|is\\s+(?:a\\s+)?draft|is\\s+waiting\\s+for\\s+(?:your\\s+)?approval)`,
+          "gi",
+        ));
+        // Pattern A2: "{Name} is awaiting your approval" / "is a draft"
+        // (no separator, declarative-sentence form). Tighter verb list to
+        // avoid catching legitimate prose like "the WBS is comprehensive".
+        FABRICATED_REVIEW_PATTERNS.push(new RegExp(
+          `(${esc})\\s+(?:is\\s+(?:a\\s+)?draft|is\\s+awaiting\\s+(?:your\\s+)?(?:review|approval|sign[- ]off)|is\\s+waiting\\s+for\\s+(?:your\\s+)?approval|needs\\s+(?:your\\s+)?(?:review|approval|sign[- ]off))\\b`,
+          "gi",
+        ));
+        // Pattern B: "review/approve the {Name}" (sentence-level CTA prose)
+        FABRICATED_REVIEW_PATTERNS.push(new RegExp(
+          `(review|approve|sign[\\s-]off\\s+on)\\s+(?:the\\s+)?(${esc})\\b`,
+          "gi",
+        ));
+        // Pattern C: bullet "• {Name}" inside a list that the agent claims
+        // is "awaiting your approval" / "needs review" / "drafts" — catch
+        // the bullet form so the count-line above the list also gets fixed.
+        FABRICATED_REVIEW_PATTERNS.push(new RegExp(
+          `^([\\s•\\-\\*]+)(${esc})\\b`,
+          "gim",
+        ));
+      }
+      const replacement = (full: string, name: string) => `${name} (not yet generated — agent needs to create this first)`;
+      for (const re of FABRICATED_REVIEW_PATTERNS) {
+        const matches = Array.from(out.matchAll(re));
+        for (const m of matches) {
+          const before = m[0];
+          // Pull the captured artefact name (varies per pattern).
+          const nameCapture = m[2] || m[1];
+          if (!nameCapture) continue;
+          const after = replacement(before, nameCapture);
+          out = out.replace(before, after);
+          corrections.push({
+            kind: "rewrote_fabricated_draft_claim",
+            field: "artefact_not_drafted",
+            before: before.trim(),
+            after: after,
+          });
+        }
       }
     }
   }

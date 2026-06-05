@@ -286,3 +286,102 @@ describe("stripContextMarkerLeaks — read-path defence in depth", () => {
     expect(stripContextMarkerLeaks(clean)).toBe(clean);
   });
 });
+
+// ─── Fabricated-draft-claim sanitiser (2026-06 audit) ─────────────────────
+// Regression for the Nova/Digital Transformation Initiative bug. Agent
+// claimed "Cost Management Plan needs review · Initial Product Backlog
+// needs review · Definition of Done needs review" while the artefacts
+// page showed nothing — root cause: agent was reading the methodology
+// REQUIRED LIST and asserting the missing ones were drafts.
+const sprintZeroSnapshot: PhaseCompletionSnapshot = {
+  phaseName: "Sprint Zero",
+  canAdvance: false,
+  artefacts: { done: 1, total: 4 },
+  pmTasks: { done: 0, total: 8 },
+  deliveryTasks: { done: 0, total: 0 },
+  requiredArtefactCount: 4,
+  aiGeneratableArtefactCount: 9,
+  // Only Initial Risk Register actually exists as a real artefact (APPROVED).
+  // The other 3 the agent named are methodology-required but never drafted.
+  reviewableArtefactNamesLC: [],
+  notYetDraftedNamesLC: [
+    "cost management plan",
+    "initial product backlog",
+    "definition of done",
+    "initial stakeholder register",
+    "product vision",
+    "definition of ready",
+    "team charter",
+    "communication plan",
+  ],
+};
+
+describe("sanitiseChatResponse — fabricated draft/review claims", () => {
+  it("rewrites bullet 'Cost Management Plan — needs review' when no draft exists", () => {
+    const out = sanitiseChatResponse(
+      "You need to review 3 draft artefacts:\n• Cost Management Plan — needs review\n• Initial Product Backlog — needs review\n• Definition of Done — needs review",
+      emptyFacts,
+      sprintZeroSnapshot,
+    );
+    expect(out.content).not.toMatch(/cost management plan — needs review/i);
+    expect(out.content).toContain("not yet generated");
+    expect(out.corrections.some(c => c.kind === "rewrote_fabricated_draft_claim")).toBe(true);
+  });
+
+  it("rewrites 'review the Cost Management Plan' CTA when it doesn't exist", () => {
+    const out = sanitiseChatResponse(
+      "Your next step is to review the Cost Management Plan and approve it.",
+      emptyFacts,
+      sprintZeroSnapshot,
+    );
+    expect(out.content).not.toMatch(/review the cost management plan/i);
+  });
+
+  it("rewrites 'X is awaiting your approval' for non-existent artefacts", () => {
+    const out = sanitiseChatResponse(
+      "The Definition of Done is awaiting your approval.",
+      emptyFacts,
+      sprintZeroSnapshot,
+    );
+    expect(out.content).not.toMatch(/definition of done is awaiting/i);
+  });
+
+  it("leaves real drafts ALONE — only fabricated names get rewritten", () => {
+    const withRealDraft: PhaseCompletionSnapshot = {
+      ...sprintZeroSnapshot,
+      reviewableArtefactNamesLC: ["cost management plan"], // this one IS a real draft
+      // remove from notYet so it doesn't get flagged as fabricated
+      notYetDraftedNamesLC: sprintZeroSnapshot.notYetDraftedNamesLC!.filter(n => n !== "cost management plan"),
+    };
+    const out = sanitiseChatResponse(
+      "The Cost Management Plan is awaiting your approval.",
+      emptyFacts,
+      withRealDraft,
+    );
+    // Should NOT be rewritten — it's a real DRAFT row.
+    expect(out.content).toContain("Cost Management Plan is awaiting your approval");
+    expect(out.corrections.filter(c => c.kind === "rewrote_fabricated_draft_claim")).toHaveLength(0);
+  });
+
+  it("skips this pass when snapshot doesn't carry the artefact name arrays", () => {
+    // Backwards compatibility: older callers pass a snapshot WITHOUT the
+    // new fields. The pass must skip silently rather than throw.
+    const minimalSnapshot: PhaseCompletionSnapshot = {
+      phaseName: "Sprint Zero",
+      canAdvance: false,
+      artefacts: { done: 1, total: 4 },
+      pmTasks: { done: 0, total: 8 },
+      deliveryTasks: { done: 0, total: 0 },
+      requiredArtefactCount: 4,
+      aiGeneratableArtefactCount: 9,
+    };
+    const out = sanitiseChatResponse(
+      "The Cost Management Plan needs review.",
+      emptyFacts,
+      minimalSnapshot,
+    );
+    // Untouched — pass didn't run.
+    expect(out.content).toContain("Cost Management Plan needs review");
+    expect(out.corrections.filter(c => c.kind === "rewrote_fabricated_draft_claim")).toHaveLength(0);
+  });
+});

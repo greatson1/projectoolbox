@@ -1136,6 +1136,15 @@ ${await (async () => {
     lines.push(`Generated so far: ${generatedCount} of ${expected.length}.`);
     if (missing.length > 0) {
       lines.push(`⚠️ Not yet drafted: ${missing.map(a => a.name).join(", ")} — generate these before claiming the phase is complete.`);
+      lines.push("");
+      lines.push("🚫 CRITICAL — DO NOT DESCRIBE THESE AS 'NEEDS REVIEW' OR 'AWAITING APPROVAL':");
+      lines.push(`The artefacts listed in "Not yet drafted" above DO NOT EXIST in the database. They have NEVER been generated. The user cannot review what doesn't exist. You MUST describe them as "not yet generated" or "still to be created", NEVER as:`);
+      lines.push(`  - "X needs review"`);
+      lines.push(`  - "X is awaiting your approval"`);
+      lines.push(`  - "X is a draft"`);
+      lines.push(`  - "X is waiting for you to approve it"`);
+      lines.push(`  - "review the X" / "approve the X"`);
+      lines.push(`Reserve every "review / approve / draft / awaiting" phrasing EXCLUSIVELY for artefacts that appear in the GENERATED ARTEFACTS section below with status DRAFT or PENDING_REVIEW. If an artefact name isn't in that section, the only honest verb for it is "generate" or "create".`);
     } else {
       lines.push(`✅ Every methodology-defined artefact for this phase has been drafted.`);
     }
@@ -2784,6 +2793,33 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                 const requiredArtefactCount = phaseDef?.artefacts.filter(a => a.required).length ?? 0;
                 const aiGeneratableArtefactCount = phaseDef?.artefacts.filter(a => a.aiGeneratable).length ?? 0;
                 const comp = await getPhaseCompletion(deployment.projectId, currentPhase.name, agentId);
+                // Live artefact names — for the fabricated-draft-claim
+                // sanitiser pass. `reviewable` is what actually exists
+                // with status DRAFT or PENDING_REVIEW; `notYetDrafted` is
+                // the methodology-required-but-missing set the LLM
+                // hallucinates as "drafts needing review".
+                const phaseRow = await db.phase.findFirst({
+                  where: { projectId: deployment.projectId, name: currentPhase.name },
+                  select: { id: true },
+                }).catch(() => null);
+                const liveArtefacts = await db.agentArtefact.findMany({
+                  where: {
+                    projectId: deployment.projectId,
+                    OR: phaseRow
+                      ? [{ phaseId: phaseRow.id }, { phaseId: currentPhase.name }]
+                      : [{ phaseId: currentPhase.name }],
+                  },
+                  select: { name: true, status: true },
+                }).catch(() => [] as { name: string; status: string }[]);
+                const liveNameByStatus = new Map<string, string>();
+                for (const a of liveArtefacts) liveNameByStatus.set(a.name.toLowerCase(), a.status);
+                const reviewableArtefactNamesLC = liveArtefacts
+                  .filter(a => a.status === "DRAFT" || a.status === "PENDING_REVIEW")
+                  .map(a => a.name.toLowerCase());
+                const notYetDraftedNamesLC = (phaseDef?.artefacts || [])
+                  .filter(a => a.aiGeneratable && !liveNameByStatus.has(a.name.toLowerCase()))
+                  .map(a => a.name.toLowerCase());
+
                 phaseSnapshot = {
                   phaseName: comp.phaseName,
                   canAdvance: comp.canAdvance,
@@ -2792,6 +2828,8 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                   deliveryTasks: { done: comp.deliveryTasks.done, total: comp.deliveryTasks.total },
                   requiredArtefactCount,
                   aiGeneratableArtefactCount,
+                  reviewableArtefactNamesLC,
+                  notYetDraftedNamesLC,
                 };
               } catch (e) {
                 console.error("[chat/stream] phase snapshot for sanitiser failed:", e);
