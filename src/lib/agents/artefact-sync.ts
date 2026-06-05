@@ -796,3 +796,104 @@ export async function syncBenefitsToArtefact(projectId: string): Promise<void> {
     console.error("[artefact-sync] syncBenefitsToArtefact failed:", e);
   }
 }
+
+/**
+ * Rebuilds the Issue Log artefact CSV from current Issue records.
+ */
+export async function syncIssuesToArtefact(projectId: string): Promise<void> {
+  try {
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: "csv",
+        OR: [
+          { name: { contains: "Issue Log", mode: "insensitive" as any } },
+          { name: { contains: "Issue Register", mode: "insensitive" as any } },
+          { name: { contains: "Incident Log", mode: "insensitive" as any } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact || !artefact.content) return;
+
+    const issues = await db.issue.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+    if (issues.length === 0) return;
+
+    const header = ["Issue ID", "Date Raised", "Description", "Category", "Priority", "Impact", "Owner", "Target Resolution", "Actual Resolution", "Status", "Notes"];
+    const rows = issues.map((i: any, idx: number) => [
+      `IS${String(idx + 1).padStart(3, "0")}`,
+      i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : "",
+      i.title || "",
+      "",
+      i.priority || "MEDIUM",
+      "",
+      i.assigneeId || "",
+      i.dueDate ? new Date(i.dueDate).toISOString().slice(0, 10) : "",
+      "",
+      i.status || "OPEN",
+      i.description || "",
+    ]);
+
+    const newCsv = [header, ...rows].map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncIssuesToArtefact failed:", e);
+  }
+}
+
+/**
+ * Rebuilds the Change Request Register artefact CSV from current ChangeRequest records.
+ */
+export async function syncChangeRequestsToArtefact(projectId: string): Promise<void> {
+  try {
+    const artefact = await db.agentArtefact.findFirst({
+      where: {
+        projectId,
+        format: "csv",
+        OR: [
+          { name: { contains: "Change Request", mode: "insensitive" as any } },
+          { name: { contains: "Change Log", mode: "insensitive" as any } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact || !artefact.content) return;
+
+    const crs = await db.changeRequest.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+    if (crs.length === 0) return;
+
+    const header = ["CR ID", "Title", "Description", "Requested By", "Date Raised", "Category", "Priority", "Impact on Schedule", "Impact on Cost", "Impact on Scope", "Status", "Decision", "Decision Date", "Implemented By", "Notes"];
+    const rows = crs.map((cr: any, idx: number) => [
+      `CR${String(idx + 1).padStart(3, "0")}`,
+      cr.title || "",
+      cr.description || "",
+      cr.requestedBy || "",
+      cr.createdAt ? new Date(cr.createdAt).toISOString().slice(0, 10) : "",
+      cr.category || "",
+      cr.priority || "MEDIUM",
+      cr.scheduleImpact || "",
+      cr.costImpact || "",
+      cr.scopeImpact || "",
+      cr.status || "PENDING",
+      cr.decision || "",
+      cr.decisionDate ? new Date(cr.decisionDate).toISOString().slice(0, 10) : "",
+      cr.implementedBy || "",
+      cr.notes || "",
+    ]);
+
+    const newCsv = [header, ...rows].map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+  } catch (e) {
+    console.error("[artefact-sync] syncChangeRequestsToArtefact failed:", e);
+  }
+}
