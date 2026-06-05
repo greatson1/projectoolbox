@@ -245,6 +245,14 @@ const ARTEFACT_BADGE: Record<string, { label: string; cls: string }> = {
   MISSING:         { label: "Missing",   cls: "bg-muted text-muted-foreground" },
 };
 
+// Missing artefacts come in two flavours. Required-missing genuinely blocks
+// the gate; optional-missing is a recommendation. They previously rendered
+// with the same grey "Missing" badge so users assumed every Missing row was
+// blocking the gate (it isn't). Split the visual treatment: amber for
+// blocking, dim grey "Optional" for recommended.
+const MISSING_REQUIRED_BADGE = { label: "Missing", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" };
+const OPTIONAL_BADGE         = { label: "Optional", cls: "bg-muted/60 text-muted-foreground/70" };
+
 function PrereqIcon({ state }: { state: EvaluatedPrereq["state"] }) {
   switch (state) {
     case "met":
@@ -454,7 +462,15 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                   {phase.artefacts.map(a => {
-                    const ab = ARTEFACT_BADGE[a.status] || ARTEFACT_BADGE.MISSING;
+                    // Badge resolution: optional-missing artefacts render as
+                    // "Optional" (dim grey) so the eye doesn't read them as
+                    // blocking work. Required-missing renders amber so it
+                    // pops as a real to-do. All other statuses use the
+                    // standard ARTEFACT_BADGE map.
+                    const ab = a.status === "MISSING"
+                      ? (a.required ? MISSING_REQUIRED_BADGE : OPTIONAL_BADGE)
+                      : (ARTEFACT_BADGE[a.status] || ARTEFACT_BADGE.MISSING);
+                    const isOptionalMissing = a.status === "MISSING" && !a.required;
                     return (
                       <Link
                         key={a.name}
@@ -463,9 +479,9 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                         className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors text-[11px] cursor-pointer"
                       >
                         <ChevronRight className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" />
-                        <span className={`flex-1 truncate ${a.status === "APPROVED" ? "text-foreground" : "text-foreground/80"}`}>
+                        <span className={`flex-1 truncate ${a.status === "APPROVED" ? "text-foreground" : isOptionalMissing ? "text-muted-foreground/70" : "text-foreground/80"}`}>
                           {a.name}
-                          {a.required && <span className="ml-1 text-red-500/70">*</span>}
+                          {a.required && <span className="ml-1 text-red-500/70" title="Required for gate">*</span>}
                         </span>
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${ab.cls}`}>{ab.label}</span>
                       </Link>

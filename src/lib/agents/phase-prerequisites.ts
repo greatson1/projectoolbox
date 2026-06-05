@@ -81,6 +81,17 @@ const ARTEFACT_KEYWORDS = [
   "Closure Report",
   // Travel methodology artefacts
   "Trip Brief",
+  // Scrum / Hybrid / SAFe Sprint Zero gate prereqs. Without these the
+  // "Product backlog created and prioritised" / "Definition of Done
+  // agreed" prereqs fell through to manual confirmation even after the
+  // matching artefact was approved. "Initial Product Backlog" lets the
+  // substring matcher catch both the Scrum "Initial Product Backlog"
+  // and the Hybrid "Product Backlog" artefact names.
+  "Product Backlog",
+  "Initial Product Backlog",
+  "Definition of Done",
+  "Definition of Ready",
+  "Product Vision",
 ];
 
 function normalize(s: string): string {
