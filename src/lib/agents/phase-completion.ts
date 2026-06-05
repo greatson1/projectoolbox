@@ -349,7 +349,10 @@ export async function getPhaseCompletion(
   // If methodology lookup somehow fails (requiredArtefactCount=0), fall back
   // to the live count so we don't suddenly tank everyone's numbers.
   const artefactsTotal = Math.max(requiredArtefactCount, liveArtefacts.length);
-  const artefactsPct = artefactsTotal > 0 ? Math.round((artefactsDone / artefactsTotal) * 100) : 100;
+  // CRITICAL: If the methodology requires artefacts for this phase but none
+  // exist yet (artefactsTotal=0 after generation hasn't run), this MUST NOT
+  // return 100%. That was the bug allowing phases to skip — 0/0 = "complete".
+  const artefactsPct = artefactsTotal > 0 ? Math.round((artefactsDone / artefactsTotal) * 100) : (requiredArtefactCount > 0 ? 0 : 100);
 
   // ── 2. PM Tasks (scaffolded overhead) ─────────────────────────────────
   // pmTasksRaw was fetched above in the parallel block.
@@ -381,6 +384,8 @@ export async function getPhaseCompletion(
 
   const pmTasksDone = pmTasks.filter((t) => t.status === "DONE" || t.status === "COMPLETE" || (t.progress || 0) >= 100).length;
   const pmTasksTotal = pmTasks.length;
+  // 0 PM tasks = 100% only if the phase genuinely has no scaffolded tasks.
+  // This is valid for some lightweight phases but safe as a default.
   const pmTasksPct = pmTasksTotal > 0 ? Math.round((pmTasksDone / pmTasksTotal) * 100) : 100;
 
   // ── 3. Delivery Tasks (WBS/schedule + scaffolded delivery) ────────────
@@ -426,10 +431,12 @@ export async function getPhaseCompletion(
 
   const blockers: string[] = [];
 
-  // Artefact check
+  // Artefact check — also blocks when methodology requires artefacts but none exist yet
   if (artefactsTotal > 0 && artefactsDone / artefactsTotal < cfg.artefactThreshold) {
     const remaining = artefactsTotal - artefactsDone;
     blockers.push(`${remaining} artefact${remaining !== 1 ? "s" : ""} not yet approved`);
+  } else if (artefactsTotal === 0 && requiredArtefactCount > 0) {
+    blockers.push(`No artefacts generated yet — ${requiredArtefactCount} required for this phase`);
   }
 
   // Required-artefact gap — methodology says these MUST exist for this
