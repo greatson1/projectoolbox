@@ -411,7 +411,7 @@ export default function SchedulePage() {
         showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
         tMinusMode={tMinusMode} setTMinusMode={setTMinusMode} daysToTarget={daysToTarget} tMinusTarget={tMinusTarget}
         stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }}
-        onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} />
+        onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} setShowAddTask={setShowAddTask} />
 
       <div className="flex gap-4">
         {/* Main Gantt */}
