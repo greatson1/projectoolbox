@@ -100,6 +100,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
           ? phaseTableNext
           : (playbookNext || phaseTableNext);
 
+      // ── Backfill branch ─────────────────────────────────────────────────
+      // If the requested phase is BEHIND the deployment's current phase AND
+      // has zero artefacts, this is a recovery flow ("Initiation docs are
+      // missing — they were skipped when the phase advanced"). Generate
+      // them in place without touching deployment.currentPhase. We only
+      // allow this when the phase truly has nothing — otherwise we'd risk
+      // duplicating or overwriting approved work from a phase the user
+      // has already moved past.
+      const phaseRows = await db.phase.findMany({
+        where: { projectId },
+        select: { id: true, name: true, order: true },
+        orderBy: { order: "asc" },
+      });
+      const currentRow = phaseRows.find(p => p.name === deployment.currentPhase);
+      const requestedRow = phaseRows.find(p => p.name === requestedPhase);
+      const isBackfillRequest = !!currentRow && !!requestedRow && requestedRow.order < currentRow.order;
+      if (isBackfillRequest) {
+        const existingCount = await db.agentArtefact.count({
+          where: {
+            projectId,
+            agentId: deployment.agentId,
+            phaseId: requestedRow.id,
+          },
+        });
+        if (existingCount === 0) {
+          const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
+          const result = await generatePhaseArtefacts(deployment.agentId, projectId, requestedPhase);
+          await db.agentActivity.create({
+            data: {
+              agentId: deployment.agentId,
+              type: "document",
+              summary: `Backfilled ${result.generated} artefact(s) for skipped "${requestedPhase}" phase (deployment remains on "${deployment.currentPhase}").`,
+            },
+          }).catch(() => {});
+          return NextResponse.json({ data: { ...result, backfill: true } });
+        }
+        return NextResponse.json({
+          error: `Cannot backfill "${requestedPhase}": ${existingCount} artefact(s) already exist for that phase. Use Regenerate (Fresh) from inside the phase instead.`,
+        }, { status: 409 });
+      }
+
       // Only honour requests for the IMMEDIATE next phase. Skipping further
       // ahead is still a 409 — surface the real workflow.
       if (expectedNext && requestedPhase === expectedNext && deployment.currentPhase) {
