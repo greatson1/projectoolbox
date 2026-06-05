@@ -215,6 +215,52 @@ export async function syncTaskToArtefact(
 }
 
 /**
+ * Removes a deleted task's row from the WBS or Schedule artefact CSV.
+ * Called when a user deletes a task from Scope, Schedule, or other pages.
+ */
+export async function removeTaskFromArtefact(
+  projectId: string,
+  taskTitle: string,
+): Promise<void> {
+  try {
+    let artefact = await db.agentArtefact.findFirst({
+      where: { projectId, name: { contains: "Work Breakdown" }, format: "csv" },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact) {
+      artefact = await db.agentArtefact.findFirst({
+        where: { projectId, name: { contains: "Schedule" }, format: "csv" },
+        orderBy: { updatedAt: "desc" },
+      });
+    }
+    if (!artefact || !artefact.content) return;
+
+    const rows = parseCSV(artefact.content);
+    if (rows.length < 2) return;
+
+    const header = rows[0];
+    const titleIdx = findColIndex(header, ["Activity", "Work Package", "Deliverable", "Task", "User Story", "Title"]);
+    if (titleIdx < 0) return;
+
+    const before = rows.length;
+    const filtered = [header, ...rows.slice(1).filter(row => normalise(row[titleIdx]) !== normalise(taskTitle))];
+
+    if (filtered.length === before) return; // no row matched
+
+    const newCsv = filtered.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+    console.log(`[artefact-sync] Removed task "${taskTitle}" from artefact "${artefact.name}"`);
+  } catch (e) {
+    console.error("[artefact-sync] removeTaskFromArtefact failed:", e);
+  }
+}
+
+/**
  * Appends a newly created task as a row in the WBS or Schedule artefact CSV.
  * Called when users manually add tasks from the Scope, Schedule, or other pages.
  */

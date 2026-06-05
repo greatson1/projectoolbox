@@ -174,5 +174,14 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.task.delete({ where: { id: taskId } });
+
+  // Remove the corresponding row from the WBS/Schedule artefact CSV
+  try {
+    const { removeTaskFromArtefact } = await import("@/lib/agents/artefact-sync");
+    await removeTaskFromArtefact(projectId, task.title);
+  } catch (e) {
+    console.error("[DELETE /tasks] artefact row removal failed (non-blocking):", e);
+  }
+
   return NextResponse.json({ ok: true });
 }
