@@ -83,5 +83,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     data: { ...body, projectId, createdBy: session.user.id },
   });
 
+  // Append newly created task to the WBS/Schedule artefact CSV so artefact stays in sync
+  try {
+    const { appendTaskToArtefact } = await import("@/lib/agents/artefact-sync");
+    await appendTaskToArtefact(projectId, task);
+  } catch (e) {
+    console.error("[POST /tasks] artefact append failed (non-blocking):", e);
+  }
+
   return NextResponse.json({ data: task }, { status: 201 });
 }

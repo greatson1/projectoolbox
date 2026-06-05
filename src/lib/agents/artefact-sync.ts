@@ -214,6 +214,74 @@ export async function syncTaskToArtefact(
   }
 }
 
+/**
+ * Appends a newly created task as a row in the WBS or Schedule artefact CSV.
+ * Called when users manually add tasks from the Scope, Schedule, or other pages.
+ */
+export async function appendTaskToArtefact(
+  projectId: string,
+  task: { id: string; title: string; status?: string; progress?: number | null; estimatedHours?: number | null; startDate?: Date | string | null; endDate?: Date | string | null; priority?: string | null; parentId?: string | null },
+): Promise<void> {
+  try {
+    // Find the WBS artefact first, fall back to Schedule
+    let artefact = await db.agentArtefact.findFirst({
+      where: { projectId, name: { contains: "Work Breakdown" }, format: "csv" },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!artefact) {
+      artefact = await db.agentArtefact.findFirst({
+        where: { projectId, name: { contains: "Schedule" }, format: "csv" },
+        orderBy: { updatedAt: "desc" },
+      });
+    }
+    if (!artefact || !artefact.content) return;
+
+    const rows = parseCSV(artefact.content);
+    if (rows.length === 0) return;
+    const header = rows[0];
+
+    // Check for duplicate title
+    const titleIdx = findColIndex(header, ["Activity", "Work Package", "Deliverable", "Task", "User Story", "Title"]);
+    if (titleIdx >= 0) {
+      const exists = rows.slice(1).some(r => normalise(r[titleIdx]) === normalise(task.title));
+      if (exists) return; // already in the artefact
+    }
+
+    // Build a new row matching the header columns
+    const newRow = header.map(col => {
+      const lc = col.toLowerCase();
+      if (lc.includes("activity") || lc.includes("work package") || lc.includes("deliverable") || lc.includes("task") || lc.includes("title") || lc.includes("user story")) return task.title;
+      if (lc.includes("status")) return task.status || "TODO";
+      if (lc.includes("% complete") || lc.includes("progress")) return String(task.progress ?? 0);
+      if (lc.includes("duration") || lc.includes("hours")) return task.estimatedHours ? String(task.estimatedHours) : "";
+      if (lc.includes("priority")) return task.priority || "MEDIUM";
+      if (lc.includes("planned start") || lc.includes("start")) {
+        if (task.startDate) { const d = new Date(task.startDate); return !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : ""; }
+        return "";
+      }
+      if (lc.includes("planned end") || lc.includes("end")) {
+        if (task.endDate) { const d = new Date(task.endDate); return !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : ""; }
+        return "";
+      }
+      if (lc.includes("owner") || lc.includes("assignee")) return "User-added";
+      if (lc.includes("notes")) return "Manually added";
+      return "";
+    });
+
+    rows.push(newRow);
+    const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newCsv, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, artefact.name);
+    console.log(`[artefact-sync] Appended task "${task.title}" to artefact "${artefact.name}"`);
+  } catch (e) {
+    console.error("[artefact-sync] appendTaskToArtefact failed:", e);
+  }
+}
+
 // ─── 2. Agent row updater ────────────────────────────────────────────────────
 
 /**

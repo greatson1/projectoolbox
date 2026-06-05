@@ -6,14 +6,16 @@ import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/s
 
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useProjectTasks, useProject, useUpdateTask } from "@/hooks/use-api";
+import { useProjectTasks, useProject, useUpdateTask, useCreateTask } from "@/hooks/use-api";
 import { getMethodologyLabel } from "@/lib/methodology-definitions";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Download, Flag, Sparkles, CheckCircle2, Clock, Circle, ListChecks } from "lucide-react";
+import { Download, Flag, Sparkles, CheckCircle2, Clock, Circle, ListChecks, Plus, X, Save, CalendarDays } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { downloadCSV } from "@/lib/export-csv";
 
 /**
@@ -158,6 +160,12 @@ export default function SchedulePage() {
   const [editProgress, setEditProgress] = useState<number | null>(null);
   const [editStatus, setEditStatus] = useState<TaskStatus | null>(null);
   const updateTask = useUpdateTask(projectId);
+  const createTask = useCreateTask(projectId);
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskStart, setNewTaskStart] = useState("");
+  const [newTaskEnd, setNewTaskEnd] = useState("");
+  const [newTaskHours, setNewTaskHours] = useState(0);
   const timelineRef = useRef<HTMLDivElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
 
@@ -676,6 +684,66 @@ export default function SchedulePage() {
           )}
         </div>
       )}
+
+      {/* Add Task slide-out */}
+      {showAddTask && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setShowAddTask(false)} />
+          <div className="fixed inset-y-0 right-0 w-96 bg-background border-l border-border shadow-2xl z-50 flex flex-col animate-in slide-in-from-right-5 duration-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <h3 className="text-sm font-bold">Add Task to Schedule</h3>
+              <button onClick={() => setShowAddTask(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Title *</Label>
+                <Input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="e.g. Data migration testing" className="text-sm" autoFocus />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1"><CalendarDays className="w-3 h-3" />Start</Label>
+                  <Input type="date" value={newTaskStart} onChange={e => setNewTaskStart(e.target.value)} className="text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1"><CalendarDays className="w-3 h-3" />End</Label>
+                  <Input type="date" value={newTaskEnd} onChange={e => setNewTaskEnd(e.target.value)} className="text-sm" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Est. Hours</Label>
+                <Input type="number" value={newTaskHours} onChange={e => setNewTaskHours(Number(e.target.value))} className="text-sm" />
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowAddTask(false)}>Cancel</Button>
+              <Button size="sm" disabled={!newTaskTitle.trim() || createTask.isPending} onClick={async () => {
+                try {
+                  await createTask.mutateAsync({
+                    title: newTaskTitle.trim(),
+                    startDate: newTaskStart || null,
+                    endDate: newTaskEnd || null,
+                    estimatedHours: newTaskHours || null,
+                    status: "TODO",
+                    progress: 0,
+                  });
+                  toast.success(`Task "${newTaskTitle}" added`);
+                  setShowAddTask(false);
+                  setNewTaskTitle("");
+                  setNewTaskStart("");
+                  setNewTaskEnd("");
+                  setNewTaskHours(0);
+                } catch (e: any) {
+                  toast.error(e.message || "Failed to add task");
+                }
+              }}>
+                <Plus className="w-3.5 h-3.5 mr-1.5" />{createTask.isPending ? "Adding…" : "Add Task"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -733,6 +801,10 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
               T-Minus
             </button>
           </div>
+          <Button variant="outline" size="sm" onClick={() => setShowAddTask(true)}>
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Add Task
+          </Button>
           {onDownloadCSV && (
             <Button variant="outline" size="sm" onClick={onDownloadCSV}>
               <Download className="w-3.5 h-3.5 mr-1" />
