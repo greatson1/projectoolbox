@@ -394,7 +394,10 @@ async function executeReversion(
 export async function executePhaseReversion(approvalId: string): Promise<void> {
   const approval = await db.approval.findUnique({
     where: { id: approvalId },
-    include: { project: true },
+    // omit definitionOfDone / definitionOfReady — schema-declared but the
+    // production DB doesn't have them yet (db push blocked). Phase reversion
+    // doesn't read these fields.
+    include: { project: { omit: { definitionOfDone: true, definitionOfReady: true } } },
   });
   if (!approval) return;
 

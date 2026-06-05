@@ -463,7 +463,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       deployments: {
         where: { isActive: true },
-        include: { project: true },
+        include: {
+          // Explicitly omit columns that the schema declares but the
+          // production DB may not yet have. `prisma db push` is currently
+          // blocked by pre-existing unique-constraint duplicates on
+          // KnowledgeBaseItem + Organisation, so any new column added to
+          // Project (definitionOfDone, definitionOfReady) doesn't exist in
+          // prod yet. The chat path doesn't read those fields, so omitting
+          // them keeps the chat working until the schema can be pushed.
+          project: { omit: { definitionOfDone: true, definitionOfReady: true } },
+        },
       },
     },
   });
