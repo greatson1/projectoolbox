@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useAgents, useResumeAgent, usePauseAgent } from "@/hooks/use-api";
+import { useAppStore } from "@/stores/app";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
 import { useQueryClient } from "@tanstack/react-query";
@@ -599,6 +600,22 @@ function AgentChatPage() {
 
   const activeAgent = agents.find((a: any) => a.id === activeAgentId);
   const isPaused = activeAgent?.status === "PAUSED";
+
+  // Sync the header's project switcher to the active agent's deployed
+  // project. Without this, the switcher kept showing whatever project
+  // the user last opened directly via /projects/[id]/* and ignored the
+  // fact that the user was now chatting with an agent on a different
+  // project — the header read "Switch project" or some stale name while
+  // the agent stats panel correctly said "Digital Transformation
+  // Initiative". The /projects/[id] layout has the same sync; this is
+  // the equivalent for the Chat with Agent surface.
+  const setActiveProject = useAppStore((s) => s.setActiveProject);
+  useEffect(() => {
+    const dep = (activeAgent as any)?.deployments?.[0];
+    const projId = dep?.project?.id ?? dep?.projectId ?? null;
+    const projName = dep?.project?.name ?? null;
+    if (projId) setActiveProject(projId, projName);
+  }, [activeAgent, setActiveProject]);
   // In-flight summary fetched when the active agent is paused — surfaces
   // "what's about to re-run when you click Resume" in the banner so the
   // operator isn't guessing what work was lost. null = not loaded yet,

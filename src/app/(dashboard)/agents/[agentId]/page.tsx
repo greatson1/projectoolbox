@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest, useAgentMetrics } from "@/hooks/use-api";
+import { useAppStore } from "@/stores/app";
 import { classifyPhase } from "@/lib/agents/phase-class";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
@@ -149,6 +150,18 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
 
   const projectId = apiAgent?.deployments?.[0]?.projectId || null;
   const { data: pmTasks } = usePMTasks(projectId);
+
+  // Sync the header's project switcher to this agent's deployed project.
+  // Same fix as the Chat with Agent page — without it, the switcher kept
+  // showing whatever project the user last opened directly while the agent
+  // detail page clearly referred to a different one.
+  const setActiveProject = useAppStore((s) => s.setActiveProject);
+  useEffect(() => {
+    const dep = (apiAgent as any)?.deployments?.[0];
+    const projId = dep?.project?.id ?? dep?.projectId ?? null;
+    const projName = dep?.project?.name ?? null;
+    if (projId) setActiveProject(projId, projName);
+  }, [apiAgent, setActiveProject]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   // Initialise from real agent data once loaded (not hardcoded defaults)
