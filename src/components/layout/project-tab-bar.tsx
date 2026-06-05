@@ -12,7 +12,7 @@ import {
   ShieldAlert, AlertTriangle, GitPullRequest, TestTube2, ShieldCheck,
   Package, DollarSign, Calculator, TrendingUp, Award, BarChart3,
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
-  ChevronDown, LayoutDashboard,
+  ChevronDown, LayoutDashboard, ListChecks, Route,
 } from "lucide-react";
 
 interface TabItem {
@@ -45,8 +45,10 @@ function tabsForMethodology(methodology: string | null | undefined): TabGroup[] 
   return PROJECT_TABS.map(group => ({
     ...group,
     items: group.items
-      // Drop sprint links when sprints aren't a concept on this methodology.
-      .filter(item => f.sprints || !item.href.startsWith("/sprint"))
+      // Drop sprint-adjacent links when sprints aren't a concept on this
+      // methodology. /backlog and /delivery-plan are MoSCoW + sprint
+      // surfaces, so they belong in the same gating bucket as /sprint*.
+      .filter(item => f.sprints || (!item.href.startsWith("/sprint") && item.href !== "/backlog" && item.href !== "/delivery-plan"))
       // Drop EVM when methodology doesn't lean on earned value.
       .filter(item => f.evm || item.href !== "/evm")
       // Drop Procurement when not applicable (Travel, Scrum, etc.).
@@ -72,8 +74,13 @@ const PROJECT_TABS: TabGroup[] = [
     color: "#10B981",
     items: [
       { label: "Agile Board", href: "/agile", icon: Columns3 },
+      // Product Backlog + Delivery Plan sit alongside the existing sprint
+      // tabs. Filter at line 49 already drops anything starting with /sprint
+      // for non-sprint methodologies — extend that filter for these two.
+      { label: "Product Backlog", href: "/backlog", icon: ListChecks },
       { label: "Sprint Planning", href: "/sprint-planning", icon: Target },
       { label: "Sprint Tracker", href: "/sprint", icon: Timer },
+      { label: "Delivery Plan", href: "/delivery-plan", icon: Route },
       { label: "Actions", href: "/actions", icon: ClipboardList },
     ],
   },

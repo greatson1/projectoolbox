@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
+import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -273,6 +274,19 @@ export default function SprintTrackerPage() {
     return { text: "Complete all sprint tasks on schedule", alignedItems: aligned, doneItems: done, prediction: pct };
   }, [SPRINT_ITEMS_DATA]);
 
+  // MoSCoW breakdown for the selected sprint — per-priority done vs total.
+  // Drives the "Must: 4/5 done · Should: 2/4 · Could: 0/3" panel under the
+  // Sprint Health grid so the user can see at a glance whether the must-
+  // haves are tracking. Reads from filteredApiTasks (already scoped to the
+  // selected sprint) and the canonical helper in @/lib/moscow.
+  const moscowBreakdown = useMemo(() => {
+    const items = (filteredApiTasks || []).map((t: any) => ({
+      moscow: t.moscow ?? null,
+      status: t.status,
+    }));
+    return summariseByMoscow(items);
+  }, [filteredApiTasks]);
+
   // Derive blockers from tasks
   const derivedBlockers = useMemo(() => {
     if (SPRINT_ITEMS_DATA.length === 0) return BLOCKERS;
@@ -406,6 +420,39 @@ export default function SprintTrackerPage() {
           </p>
         </Card>
       </div>
+
+      {/* ═══ 2b. MoSCoW BREAKDOWN ═══
+          Per-priority done/total for the selected sprint. Shows the user
+          whether the Must-haves are on track without having to filter the
+          backlog manually. Hidden when no items have a MoSCoW assigned
+          yet (so it doesn't shout "no Must-haves" at a fresh project). */}
+      {(["MUST", "SHOULD", "COULD", "WONT"] as Moscow[]).some((m) => moscowBreakdown[m].total > 0) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {(["MUST", "SHOULD", "COULD", "WONT"] as Moscow[]).map((m) => {
+            const { total, done } = moscowBreakdown[m];
+            if (total === 0) {
+              return (
+                <Card key={m}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{MOSCOW_LABELS[m]}</p>
+                  <p className="text-[20px] font-bold" style={{ color: "var(--muted-foreground)" }}>0</p>
+                  <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>No items in this sprint</p>
+                </Card>
+              );
+            }
+            const pct = Math.round((done / total) * 100);
+            return (
+              <Card key={m}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: MOSCOW_HEX[m] }}>{MOSCOW_LABELS[m]}</p>
+                <p className="text-[22px] font-bold" style={{ color: MOSCOW_HEX[m] }}>{done}/{total}</p>
+                <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: `${MOSCOW_HEX[m]}22` }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: MOSCOW_HEX[m] }} />
+                </div>
+                <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>{pct}% complete</p>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* ═══ 3 & 4. BURNDOWN + BURNUP CHARTS ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

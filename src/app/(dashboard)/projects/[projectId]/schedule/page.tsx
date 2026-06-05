@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProjectTasks, useProject, useProjectSprints, useUpdateTask, useCreateTask } from "@/hooks/use-api";
 import { getMethodologyLabel, methodologyFeatures } from "@/lib/methodology-definitions";
+import { MOSCOW_HEX, type Moscow } from "@/lib/moscow";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,9 @@ interface ScheduleTask {
    *  source-prefix the agent embedded ("Research-anchored: …") so we
    *  can render the SourceBadge + RowReasoning in the detail panel. */
   description?: string;
+  /** MoSCoW prioritisation. Drives a coloured stripe on the left edge of
+   *  the Gantt bar so the user can read priority at a glance. */
+  moscow?: string | null;
 }
 
 // No mock data — everything is derived from API tasks
@@ -156,6 +160,7 @@ export default function SchedulePage() {
         isMilestone: false, // no isMilestone field in Task schema
         isCriticalPath: t.isCriticalPath || false,
         description: t.description || "",
+        moscow: t.moscow ?? null,
       };
     });
   }, [apiTasks, phaseLookup]);
@@ -600,6 +605,9 @@ export default function SchedulePage() {
                     );
                   }
 
+                  const moscowColour = t.moscow && (["MUST", "SHOULD", "COULD", "WONT"] as const).includes(t.moscow as Moscow)
+                    ? MOSCOW_HEX[t.moscow as Moscow]
+                    : null;
                   return (
                     <div key={t.id} className="absolute flex items-center group" style={{ top: rowIdx * ROW_HEIGHT, height: ROW_HEIGHT, left }}
                       onClick={() => handleSelectTask(selectedTask?.id === t.id ? null : t)}>
@@ -610,6 +618,12 @@ export default function SchedulePage() {
                           background: `${barColor}${true ? "33" : "22"}`,
                           border: isCritical ? `1.5px solid #EF4444` : `1px solid ${barColor}44`,
                         }}>
+                        {/* MoSCoW stripe — 3px coloured edge on the left of
+                            the bar, sits above the progress fill so it's
+                            always visible. Skipped for null moscow. */}
+                        {moscowColour && (
+                          <div className="absolute left-0 top-0 bottom-0 z-20" style={{ width: 3, background: moscowColour }} />
+                        )}
                         {/* Progress fill */}
                         <div className="absolute inset-0 rounded-[3px]" style={{ width: `${t.progress}%`, background: barColor, opacity: 0.7 }} />
                         {/* Label (only if bar wide enough) */}

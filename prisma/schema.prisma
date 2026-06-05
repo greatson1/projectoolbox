@@ -468,6 +468,16 @@ model Task {
   status       String    @default("TODO")
   priority     String?
   type         String    @default("task")  // task | story | bug | spike
+  // MoSCoW prioritisation (agile methodologies). One of:
+  //   MUST   — must have for the release / sprint
+  //   SHOULD — important but the release can ship without it
+  //   COULD  — nice-to-have; included only if capacity allows
+  //   WONT   — explicitly out of scope for this iteration
+  // null = uncategorised (default). Used by Product Backlog filter, Sprint
+  // Tracker breakdown card, Schedule Gantt stripe and the Delivery Plan
+  // swimlanes. Independent of `priority` (HIGH/MEDIUM/LOW) so projects can
+  // mix both lenses.
+  moscow       String?
   epic         String?
   labels       Json?                        // string[]
   blocked      Boolean   @default(false)

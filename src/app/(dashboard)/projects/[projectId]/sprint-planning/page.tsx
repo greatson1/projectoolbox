@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useProjectTasks, useProjectSprints, useProject, useCreateSprint, useUpdateTask, useUpdateSprint, useDeleteSprint } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
+import { MOSCOW_VALUES, MOSCOW_SHORT, MOSCOW_CHIP, type Moscow, compareByMoscow } from "@/lib/moscow";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +73,7 @@ export default function SprintPlanningPage() {
     title: t.title,
     status: t.status,
     priority: t.priority,
+    moscow: t.moscow ?? null,
     storyPoints: t.storyPoints || 0,
     estimatedHours: t.estimatedHours || 0,
     assigneeName: t.assigneeName || t.assigneeId || "Unassigned",
@@ -81,7 +83,22 @@ export default function SprintPlanningPage() {
     description: t.description || "",
   })), [tasks]);
 
-  const backlogTasks = useMemo(() => allTasks.filter(t => !t.sprintId), [allTasks]);
+  // MoSCoW filter on the backlog column. "ALL" = no filter; "UNSET" = items
+  // not yet prioritised (the most common housekeeping target).
+  const [moscowFilter, setMoscowFilter] = useState<"ALL" | "UNSET" | Moscow>("ALL");
+  const backlogTasksUnsorted = useMemo(() => allTasks.filter(t => !t.sprintId), [allTasks]);
+  const backlogTasks = useMemo(() => {
+    let filtered = backlogTasksUnsorted;
+    if (moscowFilter === "UNSET") {
+      filtered = backlogTasksUnsorted.filter(t => !t.moscow);
+    } else if (moscowFilter !== "ALL") {
+      filtered = backlogTasksUnsorted.filter(t => t.moscow === moscowFilter);
+    }
+    // Always sort by MoSCoW priority — MUST first, then SHOULD/COULD/WONT,
+    // then uncategorised. Same ordering used by the Product Backlog page so
+    // the two surfaces don't disagree about "what's most important".
+    return [...filtered].sort(compareByMoscow);
+  }, [backlogTasksUnsorted, moscowFilter]);
   const sortedSprints = useMemo(() => [...(sprints || [])].sort((a: any, b: any) =>
     new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
   ), [sprints]);
@@ -358,9 +375,28 @@ export default function SprintPlanningPage() {
                         {sprintTasks.length === 0 ? (
                           <p className="text-xs text-muted-foreground text-center py-4">No tasks assigned. Drag from backlog or click + to add.</p>
                         ) : (
-                          sprintTasks.map(task => (
+                          [...sprintTasks].sort(compareByMoscow).map(task => {
+                            const moscowKey = task.moscow as Moscow | null;
+                            const moscowChip = moscowKey ? MOSCOW_CHIP[moscowKey] : null;
+                            return (
                             <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/30 transition-colors group">
                               <GripVertical className="w-3 h-3 text-muted-foreground/30" />
+                              {/* MoSCoW chip — click to cycle. Same component
+                                  as the Backlog column so the priority is
+                                  consistent across the planning surface. */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const order: (Moscow | null)[] = ["MUST", "SHOULD", "COULD", "WONT", null];
+                                  const idx = order.indexOf((task.moscow ?? null) as Moscow | null);
+                                  const next = order[(idx + 1) % order.length];
+                                  updateTask.mutate({ taskId: task.id, moscow: next });
+                                }}
+                                className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded border flex-shrink-0 ${moscowChip ? `${moscowChip.bg} ${moscowChip.text} ${moscowChip.border}` : "bg-muted text-muted-foreground border-border opacity-50"}`}
+                                title={moscowKey ? `MoSCoW: ${moscowKey} (click to cycle)` : "Click to prioritise"}
+                              >
+                                {moscowKey ? MOSCOW_SHORT[moscowKey] : "—"}
+                              </button>
                               <Badge variant="outline" className={`text-[8px] w-12 justify-center ${
                                 task.type === "bug" ? "border-red-500/30 text-red-500" :
                                 task.type === "story" ? "border-blue-500/30 text-blue-500" :
@@ -383,7 +419,8 @@ export default function SprintPlanningPage() {
                                 Remove
                               </button>
                             </div>
-                          ))
+                          );
+                          })
                         )}
 
                         {/* Sprint actions */}
@@ -420,31 +457,77 @@ export default function SprintPlanningPage() {
                 <CardTitle className="text-sm">Backlog</CardTitle>
                 <Badge variant="secondary" className="text-[10px]">{backlogTasks.length} items · {backlogPoints} pts</Badge>
               </div>
+              {/* MoSCoW filter row — lets the user focus on Must-have items
+                  during sprint planning, or surface uncategorised tasks
+                  needing prioritisation. Same options as the Product
+                  Backlog page so muscle memory transfers between
+                  surfaces. */}
+              <div className="flex flex-wrap gap-1 mt-2">
+                {(["ALL", ...MOSCOW_VALUES, "UNSET"] as const).map((m) => {
+                  const isActive = moscowFilter === m;
+                  const chipClass = m === "ALL" || m === "UNSET"
+                    ? "bg-muted text-foreground"
+                    : `${MOSCOW_CHIP[m as Moscow].bg} ${MOSCOW_CHIP[m as Moscow].text}`;
+                  return (
+                    <button key={m}
+                      type="button"
+                      onClick={() => setMoscowFilter(m)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border transition-opacity ${chipClass} ${isActive ? "ring-1 ring-primary" : "opacity-60 hover:opacity-100 border-transparent"}`}
+                    >
+                      {m === "ALL" ? "All" : m === "UNSET" ? "Uncategorised" : MOSCOW_SHORT[m as Moscow]}
+                    </button>
+                  );
+                })}
+              </div>
             </CardHeader>
             <CardContent>
               {backlogTasks.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-8">Backlog is empty. All tasks are assigned to sprints.</p>
+                <p className="text-xs text-muted-foreground text-center py-8">
+                  {moscowFilter === "ALL"
+                    ? "Backlog is empty. All tasks are assigned to sprints."
+                    : "No items match this MoSCoW filter."}
+                </p>
               ) : (
                 <div className="space-y-1 max-h-[60vh] overflow-y-auto">
-                  {backlogTasks.map(task => (
-                    <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/30 transition-colors group">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{task.title}</p>
-                        <p className="text-[10px] text-muted-foreground">{task.storyPoints || 0} pts · {task.estimatedHours || 0}h · {task.assigneeName}</p>
+                  {backlogTasks.map(task => {
+                    const moscowKey = task.moscow as Moscow | null;
+                    const moscowChip = moscowKey ? MOSCOW_CHIP[moscowKey] : null;
+                    return (
+                      <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/30 transition-colors group">
+                        {/* MoSCoW chip — click to cycle through values + null.
+                            Compact + always-visible so the priority is
+                            scannable during planning. */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const order: (Moscow | null)[] = ["MUST", "SHOULD", "COULD", "WONT", null];
+                            const idx = order.indexOf((task.moscow ?? null) as Moscow | null);
+                            const next = order[(idx + 1) % order.length];
+                            updateTask.mutate({ taskId: task.id, moscow: next });
+                          }}
+                          className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded border transition-colors flex-shrink-0 ${moscowChip ? `${moscowChip.bg} ${moscowChip.text} ${moscowChip.border}` : "bg-muted text-muted-foreground border-border opacity-50"}`}
+                          title={moscowKey ? `MoSCoW: ${moscowKey} (click to cycle)` : "Click to prioritise"}
+                        >
+                          {moscowKey ? MOSCOW_SHORT[moscowKey] : "—"}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{task.title}</p>
+                          <p className="text-[10px] text-muted-foreground">{task.storyPoints || 0} pts · {task.estimatedHours || 0}h · {task.assigneeName}</p>
+                        </div>
+                        {/* Assign to sprint dropdown */}
+                        {sortedSprints.length > 0 && (
+                          <select className="text-[10px] bg-transparent border border-border/30 rounded px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            defaultValue=""
+                            onChange={e => { if (e.target.value) handleAssignToSprint(task.id, e.target.value); }}>
+                            <option value="" disabled>Assign →</option>
+                            {sortedSprints.filter((s: any) => s.status !== "COMPLETED" && s.status !== "CANCELLED").map((s: any) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        )}
                       </div>
-                      {/* Assign to sprint dropdown */}
-                      {sortedSprints.length > 0 && (
-                        <select className="text-[10px] bg-transparent border border-border/30 rounded px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          defaultValue=""
-                          onChange={e => { if (e.target.value) handleAssignToSprint(task.id, e.target.value); }}>
-                          <option value="" disabled>Assign →</option>
-                          {sortedSprints.filter((s: any) => s.status !== "COMPLETED" && s.status !== "CANCELLED").map((s: any) => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
