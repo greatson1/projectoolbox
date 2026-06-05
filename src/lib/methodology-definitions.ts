@@ -104,6 +104,11 @@ const TRADITIONAL: MethodologyDefinition = {
       description: "Detailed planning: charter, business case, governance, stakeholders, risk register, schedule, budget",
       color: "#8B5CF6",
       artefacts: [
+        // PRINCE2 canonical — Project Initiation Document is the framework's
+        // anchor artefact. Without it the Traditional methodology cannot
+        // claim PRINCE2 alignment (the `prince2` alias points here). Added
+        // 2026-06 per audit.
+        { name: "Project Initiation Document (PID)", required: true, aiGeneratable: true },
         // required:true — gate prereq "Project Charter approved" is a mandatory sign-off.
         { name: "Project Charter", required: true, aiGeneratable: true },
         // required:true — gate prereq "Business Case approved" is a mandatory sign-off.
@@ -111,6 +116,13 @@ const TRADITIONAL: MethodologyDefinition = {
         { name: "Initial Risk Register", required: true, aiGeneratable: true },
         { name: "Stakeholder Register", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
+        // PRINCE2 management strategies — required by the framework, optional
+        // in our spec because they're frequently merged into the PID for
+        // smaller projects. Surfaced so PRINCE2 audits don't flag them as
+        // absent.
+        { name: "Quality Management Strategy", required: false, aiGeneratable: true },
+        { name: "Configuration Management Strategy", required: false, aiGeneratable: true },
+        { name: "Risk Management Strategy", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Initiation Approval",
@@ -159,6 +171,11 @@ const TRADITIONAL: MethodologyDefinition = {
         { name: "Exception Reports", required: false, aiGeneratable: true },
         // required:true — gate prereq "Quality reviews passed" is a mandatory review.
         { name: "Quality Review Records", required: true, aiGeneratable: true },
+        // PRINCE2 canonical — End Stage Reports record what happened in the
+        // stage that's closing and recommend whether the next stage should
+        // begin. Without one, a stage gate is decided with no documented
+        // basis. Added 2026-06 per audit.
+        { name: "End Stage Report", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Stage/Execution Review",
@@ -341,6 +358,11 @@ const SCRUM: MethodologyDefinition = {
         { name: "Product Vision", required: false, aiGeneratable: true },
         // required:true — gate prereq "Definition of Done agreed" is a mandatory approval.
         { name: "Definition of Done", required: true, aiGeneratable: true },
+        // Scrum canonical — Definition of Ready is the entry criterion for
+        // pulling a backlog item into a sprint (clear story, estimated, no
+        // blockers). Universally expected; its absence reads as "the team
+        // didn't agree what 'ready to start' means". Added 2026-06 per audit.
+        { name: "Definition of Ready", required: false, aiGeneratable: true },
         { name: "Team Charter", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
@@ -360,6 +382,12 @@ const SCRUM: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Sprint Plans", required: true, aiGeneratable: true },
+        // Scrum canonical — Sprint Goal is the WHY of every sprint, distinct
+        // from the Sprint Plan (which is the WHAT). The Scrum Guide elevates
+        // it as a first-class artefact. Marked required so every sprint has
+        // an articulated objective the team can rally around. Added 2026-06
+        // per audit.
+        { name: "Sprint Goal", required: true, aiGeneratable: true },
         { name: "Sprint Reviews", required: false, aiGeneratable: true },
         { name: "Retrospectives", required: false, aiGeneratable: true },
         { name: "Burndown Chart", required: false, aiGeneratable: true },
@@ -793,7 +821,16 @@ const PMBOK: MethodologyDefinition = {
       color: "#8B5CF6",
       artefacts: [
         { name: "Project Management Plan", required: true, aiGeneratable: true },
+        // PMI canonical — Scope Statement is the PMBOK input to WBS / Activity
+        // List and the basis for change-control. PMBOK Guide explicitly
+        // separates it from the WBS itself; without it the PMBOK methodology
+        // is just Traditional with renamed phases. Added 2026-06 per audit.
+        { name: "Scope Statement", required: true, aiGeneratable: true },
         { name: "Work Breakdown Structure", required: true, aiGeneratable: true },
+        // PMI canonical — Activity List + Attributes is the Schedule's input
+        // (Define Activities process). Without it the Schedule baseline has
+        // no PMI-traceable decomposition.
+        { name: "Activity List", required: true, aiGeneratable: true },
         { name: "Schedule with Dependencies", required: true, aiGeneratable: true },
         { name: "Cost Management Plan", required: true, aiGeneratable: true },
         { name: "Risk Management Plan", required: true, aiGeneratable: true },

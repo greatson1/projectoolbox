@@ -401,3 +401,51 @@ describe("gate prereqs must reference required artefacts (audit regression)", ()
     expect(tr.aiGeneratable).toBe(false);
   });
 });
+
+// ─── Missing-deliverables additions (2026-06 audit) ─────────────────────────
+// The audit flagged that several methodologies were missing artefacts that
+// industry-standard practitioners expect. These tests pin each addition so
+// they don't silently vanish in a refactor.
+describe("standard deliverables added by 2026-06 audit", () => {
+  it("PMBOK Planning includes Scope Statement (PMI canonical input to WBS)", () => {
+    const art = findArtefact("pmbok", "Planning", "Scope Statement");
+    expect(art.required).toBe(true);
+    expect(art.aiGeneratable).toBe(true);
+  });
+
+  it("PMBOK Planning includes Activity List (PMI Define Activities output)", () => {
+    const art = findArtefact("pmbok", "Planning", "Activity List");
+    expect(art.required).toBe(true);
+    expect(art.aiGeneratable).toBe(true);
+  });
+
+  it("Traditional Initiation includes PID (PRINCE2 anchor artefact)", () => {
+    const art = findArtefact("traditional", "Initiation", "Project Initiation Document (PID)");
+    expect(art.required).toBe(true);
+    expect(art.aiGeneratable).toBe(true);
+  });
+
+  it("Traditional Initiation includes PRINCE2 management strategies", () => {
+    const phase = getMethodology("traditional").phases.find(p => p.name === "Initiation")!;
+    const names = phase.artefacts.map(a => a.name);
+    expect(names).toContain("Quality Management Strategy");
+    expect(names).toContain("Configuration Management Strategy");
+    expect(names).toContain("Risk Management Strategy");
+  });
+
+  it("Traditional Execution includes End Stage Report (PRINCE2 stage boundary doc)", () => {
+    const art = findArtefact("traditional", "Execution", "End Stage Report");
+    expect(art.aiGeneratable).toBe(true);
+  });
+
+  it("Scrum Sprint Zero includes Definition of Ready (companion to DoD)", () => {
+    const art = findArtefact("scrum", "Sprint Zero", "Definition of Ready");
+    expect(art.aiGeneratable).toBe(true);
+  });
+
+  it("Scrum Sprint Cadence includes Sprint Goal as required per-sprint artefact", () => {
+    const art = findArtefact("scrum", "Sprint Cadence", "Sprint Goal");
+    expect(art.required).toBe(true);
+    expect(art.aiGeneratable).toBe(true);
+  });
+});
