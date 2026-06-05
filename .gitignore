@@ -46,3 +46,13 @@ next-env.d.ts
 
 .vercel
 cloudflare-email-worker/node_modules/
+
+# test + e2e artifacts
+/playwright-report/
+/test-results/
+dev.log
+
+# local secrets / scratch (never commit)
+.invite-token-e2e
+_*.txt
+_*.json
