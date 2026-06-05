@@ -116,6 +116,33 @@ describe("evaluatePrerequisite — stakeholders, risks, gates, manual", () => {
     expect(out.state).toBe("unmet");
   });
 
+  it("met when a developer is on the register — 'Team capacity established'", () => {
+    // Scrum Sprint Zero gate. Without broadening the verb list this fell
+    // through to manual even when the Stakeholder Register clearly had a
+    // delivery team on it.
+    const out = evaluatePrerequisite(
+      prereq({ description: "Team capacity established" }),
+      { ...baseCtx, stakeholderRoles: ["Developer", "QA Engineer"] },
+    );
+    expect(out.state).toBe("met");
+  });
+
+  it("met when a Scrum Master is on the register — 'Team identified'", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Team identified" }),
+      { ...baseCtx, stakeholderRoles: ["Scrum Master", "Product Owner"] },
+    );
+    expect(out.state).toBe("met");
+  });
+
+  it("unmet when description says 'Team capacity' but register has only PM + sponsor", () => {
+    const out = evaluatePrerequisite(
+      prereq({ description: "Team capacity established" }),
+      { ...baseCtx, stakeholderRoles: ["Project Manager", "Sponsor"] },
+    );
+    expect(out.state).toBe("unmet");
+  });
+
   it("manual when nothing matches — falls back so the user can tick it", () => {
     const out = evaluatePrerequisite(
       prereq({ description: "Office space allocated for the project" }),

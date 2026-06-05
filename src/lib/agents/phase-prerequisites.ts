@@ -122,7 +122,15 @@ function findArtefactInList(name: string, list: string[]): string | null {
 const STAKEHOLDER_ROLE_HINTS: Record<string, string[]> = {
   sponsor: ["sponsor", "executive"],
   pm: ["project manager", "pm"],
-  team: ["team", "delivery team", "developer", "engineer"],
+  // Team-role list intentionally broad — covers the typical roles a
+  // Stakeholder Register carries on Scrum/SAFe/Hybrid projects so the
+  // "Team capacity established" / "Team identified" prereqs can resolve
+  // against the register instead of always asking the user to tick.
+  team: [
+    "team", "delivery team", "developer", "engineer", "scrum master",
+    "tech lead", "qa", "tester", "designer", "analyst", "architect",
+    "product owner",
+  ],
   board: ["project board", "steering"],
   customer: ["customer", "client"],
   // Travel methodology — "Travellers confirmed" prereq on the Plan gate.
@@ -205,9 +213,22 @@ export function evaluatePrerequisite(
     // Fall through to manual — no Cost Plan exists yet.
   }
 
-  // 3. Stakeholder presence
+  // 3. Stakeholder presence — verb list intentionally broad so the rule
+  // catches "Team capacity established", "Sponsor in place", "Customer
+  // ready" etc. as well as the original identif/appoint/confirm verbs.
+  // "capacity" / "available" / "ready" are signals the prereq is about
+  // someone being lined up, not just named.
   const stakeholderHint = findStakeholderHint(desc);
-  if (stakeholderHint && (descN.includes("identif") || descN.includes("appoint") || descN.includes("confirm"))) {
+  const verbMatchesPresence =
+    descN.includes("identif") ||
+    descN.includes("appoint") ||
+    descN.includes("confirm") ||
+    descN.includes("establish") ||
+    descN.includes("capacity") ||
+    descN.includes("in place") ||
+    descN.includes("available") ||
+    descN.includes("ready");
+  if (stakeholderHint && verbMatchesPresence) {
     // 3a. Stakeholder Register row with a matching role
     if (rolesMatchHint(ctx.stakeholderRoles, stakeholderHint)) {
       return { ...prereq, state: "met", evidence: `${stakeholderHint} stakeholder identified` };
