@@ -104,6 +104,71 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
           } as any,
         },
       }).catch(() => {});
+
+      // Persist execution/closing scan facts as HIGH_TRUST KB items so the
+      // existing getProjectKnowledgeContext pulls them into the artefact
+      // generation prompt. Without this, the Status Report Sonnet drafts
+      // during Execution wouldn't know "23 tasks behind, 2 high-score risks
+      // materialised" — the user would have to type those into clarification
+      // every time. Front phases' Perplexity research is already persisted
+      // by feasibility-research.ts so we only do this for execution/closing.
+      if (phaseClass === "execution" || phaseClass === "closing") {
+        try {
+          const scanTag = `${phaseClass}_scan`;
+          const phaseTag = ctx.toPhase.toLowerCase();
+          // Clear any prior snapshot for this phase so the next generation
+          // doesn't read stale data on top of fresh data.
+          await db.knowledgeBaseItem.deleteMany({
+            where: {
+              projectId: ctx.projectId,
+              agentId: ctx.agentId,
+              tags: { hasEvery: ["phase_scan", scanTag] },
+            },
+          }).catch(() => {});
+
+          // One KB item per section + one per fact — the prompt builder
+          // truncates each at ~400 chars so we don't want to dump
+          // everything in one giant item.
+          const items: { title: string; content: string }[] = [];
+          for (const s of research.sections) {
+            items.push({
+              title: `[live ${phaseClass} scan — ${s.label}]`,
+              content: s.content,
+            });
+          }
+          for (const f of research.facts) {
+            items.push({
+              title: `[live ${phaseClass} scan — ${f.title}]`,
+              content: f.content,
+            });
+          }
+
+          if (items.length > 0) {
+            const now = new Date();
+            await db.knowledgeBaseItem.createMany({
+              data: items.map((it) => ({
+                agentId: ctx.agentId,
+                projectId: ctx.projectId,
+                orgId: ctx.orgId,
+                layer: "PROJECT" as const,
+                type: "fact",
+                title: it.title,
+                content: it.content,
+                trustLevel: "HIGH_TRUST",
+                tags: ["phase_scan", scanTag, phaseTag, "live_snapshot"],
+                source: "phase_scan",
+                createdAt: now,
+                updatedAt: now,
+              })),
+              skipDuplicates: true,
+            }).catch((e: unknown) => {
+              console.error(`[phase-advance:${ctx.toPhase}] persist scan KB failed:`, e);
+            });
+          }
+        } catch (e) {
+          console.error(`[phase-advance:${ctx.toPhase}] scan persistence failed:`, e);
+        }
+      }
     }
   } catch (e) {
     console.error(`[phase-advance:${ctx.toPhase}] phase scan failed:`, e);

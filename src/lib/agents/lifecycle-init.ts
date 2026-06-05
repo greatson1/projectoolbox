@@ -335,6 +335,37 @@ export async function generatePhaseArtefacts(
             console.error(`[generatePhaseArtefacts] name-validator for "${artName}" failed:`, e);
           }
 
+          // Depth assessment — catch the "12-row Planning WBS" / "3-risk
+          // Risk Register" case where Sonnet ignored the depth instruction
+          // in the prompt. Doesn't block creation; stamps metadata so the
+          // reviewer sees the warning and can request a regenerate.
+          let depthWarning: { metric: string; observed: number; target: number; severity: string; message: string } | null = null;
+          try {
+            const { assessSingleArtefactDepth } = await import("@/lib/agents/depth-validator");
+            const check = assessSingleArtefactDepth(artName, resolvedContent, targetPhaseName);
+            if (check) {
+              depthWarning = {
+                metric: check.metric,
+                observed: check.observed,
+                target: check.target,
+                severity: check.severity,
+                message: check.message,
+              };
+            }
+          } catch (e) {
+            console.error(`[generatePhaseArtefacts] depth-validator for "${artName}" failed:`, e);
+          }
+
+          const mergedMetadata: Record<string, unknown> = {};
+          if (fabricatedNameViolations.length > 0) {
+            mergedMetadata.fabricatedNames = fabricatedNameViolations;
+            mergedMetadata.fabricatedNamesCheckedAt = new Date().toISOString();
+          }
+          if (depthWarning) {
+            mergedMetadata.depthWarning = depthWarning;
+            mergedMetadata.depthCheckedAt = new Date().toISOString();
+          }
+
           const created = await db.agentArtefact.create({
             data: {
               agentId,
@@ -345,14 +376,19 @@ export async function generatePhaseArtefacts(
               status: "DRAFT",
               version: 1,
               ...(phaseId ? { phaseId } : {}),
-              ...(fabricatedNameViolations.length > 0 ? {
-                metadata: {
-                  fabricatedNames: fabricatedNameViolations,
-                  fabricatedNamesCheckedAt: new Date().toISOString(),
-                } as any,
-              } : {}),
+              ...(Object.keys(mergedMetadata).length > 0 ? { metadata: mergedMetadata as any } : {}),
             },
           });
+
+          if (depthWarning?.severity === "shortfall") {
+            await db.agentActivity.create({
+              data: {
+                agentId,
+                type: "document",
+                summary: `⚠️ "${artName}" draft is shallower than ${targetPhaseName} expects — ${depthWarning.metric}: ${depthWarning.observed} (target ${depthWarning.target}). Reviewer should request a regenerate.`,
+              },
+            }).catch(() => {});
+          }
 
           if (fabricatedNameViolations.length > 0) {
             await db.agentActivity.create({
