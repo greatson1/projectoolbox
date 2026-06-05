@@ -15,9 +15,24 @@ import { db } from "@/lib/db";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface LayerStatus {
+  /** Denominator. For artefacts this is `Math.max(methodologyRequiredCount,
+   *  liveCount)` — that way a phase that needs 4 artefacts but only ever
+   *  generates 1 doesn't report 100% complete. For tasks it's the live row
+   *  count. */
   total: number;
+  /** Numerator — number of items in a "done" terminal state (APPROVED for
+   *  artefacts, DONE for tasks). */
   done: number;
+  /** Done as a percentage of total. */
   pct: number;
+  /** Live row count — number of items that actually exist in the database,
+   *  regardless of methodology requirements. Distinct from `total` because
+   *  `total` can be inflated by the methodology's required-count for layers
+   *  where the agent hasn't generated anything yet (live = 0, methodology
+   *  requires 2 → total = 2, live = 0). The resolver uses this to
+   *  distinguish "review the drafts you have" from "you have no drafts —
+   *  generate them first". */
+  liveCount?: number;
   items?: Array<{ id: string; title: string; status: string; progress?: number }>;
 }
 
@@ -574,7 +589,7 @@ export async function getPhaseCompletion(
     phaseName,
     phaseId,
     phaseStatus,
-    artefacts: { total: artefactsTotal, done: artefactsDone, pct: artefactsPct },
+    artefacts: { total: artefactsTotal, done: artefactsDone, pct: artefactsPct, liveCount: liveArtefacts.length },
     pmTasks: { total: pmTasksTotal, done: pmTasksDone, pct: pmTasksPct },
     deliveryTasks: { total: deliveryTotal, done: deliveryDone, pct: deliveryPct },
     overall,

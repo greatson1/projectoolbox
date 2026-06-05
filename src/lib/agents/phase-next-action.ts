@@ -158,22 +158,47 @@ export async function getNextRequiredStep({
   // generation prompts. We block clarification here because clarification
   // questions should only be asked AFTER the user has decided which
   // research to trust.
-  const pendingResearchApprovals = await db.approval.count({
-    where: {
-      projectId,
-      status: "PENDING",
-      type: "CHANGE_REQUEST",
-      impact: { path: ["subtype"], equals: "research_finding" },
-    },
-  }).catch(() => 0);
-  if (pendingResearchApprovals > 0) {
-    return {
-      step: "research_approval",
-      reason: `${pendingResearchApprovals} research-finding approval${pendingResearchApprovals === 1 ? "" : "s"} awaiting your review.`,
-      blockedBy: ["research_approval"],
-      bannerLabel: `Approve ${pendingResearchApprovals} research finding${pendingResearchApprovals === 1 ? "" : "s"}`,
-      awaitingUser: true,
-    };
+  //
+  // BUT only when the phase is genuinely still at the research stage.
+  // Approval rows carry no phase column, so a project-wide PENDING count
+  // can include stale/orphaned research-finding approvals left over from
+  // earlier in the lifecycle (e.g. the user advanced past research without
+  // explicitly resolving every finding). Without a guard, those orphans
+  // rewind the stepper to "Approve research" even though clarification,
+  // generation and the gate have all already happened — which is exactly
+  // the bug where the chat body shows "Phase Gate awaiting approval" while
+  // the stepper highlights "Approve research".
+  //
+  // Mirror the self-heal pattern used for research/clarification: if the
+  // phase has demonstrably progressed past research approval — clarification
+  // is complete/skipped, OR the gate has already been approved — treat the
+  // pending research approvals as stale and DON'T block on them here. The
+  // approvals still live in the Approvals queue for the user to clear; they
+  // just no longer dictate the phase's current step.
+  const clarificationDoneOrSkipped =
+    !!phase.clarificationCompletedAt ||
+    phase.clarificationSkippedReason === "no_questions_needed" ||
+    phase.clarificationSkippedReason === "user_skipped_explicit";
+  const phaseProgressedPastResearch = clarificationDoneOrSkipped || !!phase.gateApprovedAt;
+
+  if (!phaseProgressedPastResearch) {
+    const pendingResearchApprovals = await db.approval.count({
+      where: {
+        projectId,
+        status: "PENDING",
+        type: "CHANGE_REQUEST",
+        impact: { path: ["subtype"], equals: "research_finding" },
+      },
+    }).catch(() => 0);
+    if (pendingResearchApprovals > 0) {
+      return {
+        step: "research_approval",
+        reason: `${pendingResearchApprovals} research-finding approval${pendingResearchApprovals === 1 ? "" : "s"} awaiting your review.`,
+        blockedBy: ["research_approval"],
+        bannerLabel: `Approve ${pendingResearchApprovals} research finding${pendingResearchApprovals === 1 ? "" : "s"}`,
+        awaitingUser: true,
+      };
+    }
   }
 
   // Step 2 — clarification must be either completed OR explicitly skipped
@@ -238,23 +263,40 @@ export async function getNextRequiredStep({
     };
   }
 
-  if (completion.artefacts.total === 0) {
+  // `total` is the methodology required count or live count, whichever is
+  // larger — it can be inflated by methodology requirements when no actual
+  // artefacts exist yet (e.g. Planning phase requires WBS + Cost Plan →
+  // total=2 even when DB has 0 artefacts). `liveCount` is what actually
+  // sits in the DB regardless of methodology, so it's the right signal for
+  // "should the user review drafts" vs "the agent needs to generate".
+  // Previously: total === 0 was the only generation gate, which caused the
+  // chat banner to say "Review 2 draft artefacts" while the agent text
+  // said "Missing required: WBS, Cost Management Plan" — the resolver fell
+  // through to review_artefacts even though zero drafts existed.
+  const liveArtefactCount = completion.artefacts.liveCount ?? completion.artefacts.total;
+
+  if (liveArtefactCount === 0) {
     return {
       step: "generation",
-      reason: `No artefacts have been generated for ${phaseName}.`,
+      reason: completion.artefacts.total > 0
+        ? `${completion.artefacts.total} required ${phaseName} artefact${completion.artefacts.total === 1 ? "" : "s"} not yet generated.`
+        : `No artefacts have been generated for ${phaseName}.`,
       blockedBy: ["generation"],
-      bannerLabel: `Generating ${phaseName} artefacts…`,
-      awaitingUser: false,
+      bannerLabel: `Generate ${phaseName} artefacts`,
+      awaitingUser: true,
     };
   }
 
-  // Step 4 — artefacts must be approved (review).
+  // Step 4 — artefacts must be approved (review). The "X draft" count uses
+  // LIVE artefacts (what's actually in the DB) minus approved, so the
+  // bannerLabel never claims drafts exist that don't.
   if (completion.artefacts.pct < 100) {
+    const draftCount = Math.max(0, liveArtefactCount - completion.artefacts.done);
     return {
       step: "review_artefacts",
       reason: `${completion.artefacts.done}/${completion.artefacts.total} artefacts approved.`,
       blockedBy: ["artefact_review"],
-      bannerLabel: `Review ${completion.artefacts.total - completion.artefacts.done} draft artefact${completion.artefacts.total - completion.artefacts.done === 1 ? "" : "s"}`,
+      bannerLabel: `Review ${draftCount} draft artefact${draftCount === 1 ? "" : "s"}`,
       awaitingUser: true,
     };
   }
