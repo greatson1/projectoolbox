@@ -401,6 +401,20 @@ export async function GET(
     const rejectedCount = researchApprovals.filter((a: any) => a.status === "REJECTED").length;
     const totalCount = researchApprovals.length;
 
+    // Has the phase demonstrably progressed past the research-approval gate?
+    // Approvals carry no phase column, so pending research-finding bundles can
+    // be stale orphans from earlier in the lifecycle. If clarification is
+    // done/skipped or the gate is already approved, this step is behind us —
+    // don't render it as "running" (which makes the pipeline look stuck at
+    // research approval while the phase is actually at its gate). Mirrors the
+    // same guard in phase-next-action.getNextRequiredStep().
+    const clarificationDoneOrSkipped =
+      !!currentPhaseObj?.clarificationCompletedAt ||
+      currentPhaseObj?.clarificationSkippedReason === "no_questions_needed" ||
+      currentPhaseObj?.clarificationSkippedReason === "user_skipped_explicit";
+    const phaseProgressedPastResearchApproval =
+      clarificationDoneOrSkipped || !!currentPhaseObj?.gateApprovedAt;
+
     let status: PipelineStep["status"] = "waiting";
     let details: string | undefined;
     if (totalCount === 0) {
@@ -414,9 +428,15 @@ export async function GET(
       } else {
         status = "waiting";
       }
-    } else if (pendingCount > 0) {
+    } else if (pendingCount > 0 && !phaseProgressedPastResearchApproval) {
       status = "running";
       details = `${pendingCount} bundle${pendingCount === 1 ? "" : "s"} awaiting your review · ${approvedCount} approved · ${rejectedCount} rejected`;
+    } else if (pendingCount > 0 && phaseProgressedPastResearchApproval) {
+      // Stale orphan bundles — phase has moved on. Show as done so the
+      // pipeline reflects the real position; the bundles remain in the
+      // Approvals queue for the user to clear at their leisure.
+      status = "done";
+      details = `${approvedCount} approved${rejectedCount > 0 ? ` · ${rejectedCount} rejected` : ""} · ${pendingCount} unresolved (phase advanced)`;
     } else {
       status = "done";
       details = approvedCount > 0
