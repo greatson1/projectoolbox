@@ -49,6 +49,13 @@ interface StatusPhase {
 }
 
 export interface ProjectStatusCardProps {
+  /**
+   * The project's id — used to build deep links for the urgent-action CTAs.
+   * When absent the CTAs fall back to in-page anchor stubs (`#tasks`,
+   * `#artefacts`) that scroll nowhere — keep this populated whenever the
+   * card is rendered for a real project.
+   */
+  projectId?: string;
   projectName: string;
   phase: string | null;
   phases: StatusPhase[];
@@ -253,7 +260,7 @@ export function AgentQuestionCard({ question, onAnswered, isSubmitting = false, 
 // ─── ProjectStatusCard ────────────────────────────────────────────────────────
 
 export function ProjectStatusCard({
-  projectName, phase, phases, nextPhase,
+  projectId, projectName, phase, phases, nextPhase,
   pendingApprovals, pendingArtefacts, pendingQuestions, risks,
   incompleteTasks = 0,
 }: ProjectStatusCardProps) {
@@ -264,12 +271,20 @@ export function ProjectStatusCard({
   // server-side phase-next-action resolver would refuse, but the click would
   // still feel like a broken promise.
   const phaseHasOpenWork = pendingQuestions > 0 || pendingApprovals > 0 || pendingArtefacts > 0 || incompleteTasks > 0;
+  // Project-scoped destinations — fall back to global pages if projectId
+  // is missing so we don't link to /projects/undefined/...
+  const tasksHref     = projectId ? `/projects/${projectId}/pm-tracker` : "/projects";
+  const artefactsHref = projectId ? `/projects/${projectId}/artefacts` : "/projects";
+  // Approvals is a cross-project page; no project-scoped variant exists.
+  // Always link to the global list with the All tab pinned so the badge
+  // count matches what the user lands on.
+  const approvalsHref = "/approvals?tab=All";
   const urgentAction =
     pendingQuestions > 0 ? { label: `Answer ${pendingQuestions} question${pendingQuestions === 1 ? "" : "s"}`, href: "#", color: "#F97316", icon: <MessageSquare size={11} /> } :
-    pendingApprovals > 0 ? { label: `Review ${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""}`, href: "/approvals", color: "#F59E0B", icon: <AlertCircle size={11} /> } :
-    pendingArtefacts > 0 ? { label: `Review ${pendingArtefacts} document${pendingArtefacts > 1 ? "s" : ""}`, href: "#artefacts", color: "#6366F1", icon: <FileText size={11} /> } :
-    incompleteTasks > 0 ? { label: `Finish ${incompleteTasks} task${incompleteTasks === 1 ? "" : "s"} in ${phase || "current phase"}`, href: "#tasks", color: "#F59E0B", icon: <CheckCircle2 size={11} /> } :
-    nextPhase && !phaseHasOpenWork ? { label: `Generate ${nextPhase}`, href: "#artefacts", color: "#10B981", icon: <Sparkles size={11} /> } :
+    pendingApprovals > 0 ? { label: `Review ${pendingApprovals} approval${pendingApprovals > 1 ? "s" : ""}`, href: approvalsHref, color: "#F59E0B", icon: <AlertCircle size={11} /> } :
+    pendingArtefacts > 0 ? { label: `Review ${pendingArtefacts} document${pendingArtefacts > 1 ? "s" : ""}`, href: artefactsHref, color: "#6366F1", icon: <FileText size={11} /> } :
+    incompleteTasks > 0 ? { label: `Finish ${incompleteTasks} task${incompleteTasks === 1 ? "" : "s"} in ${phase || "current phase"}`, href: tasksHref, color: "#F59E0B", icon: <CheckCircle2 size={11} /> } :
+    nextPhase && !phaseHasOpenWork ? { label: `Generate ${nextPhase}`, href: artefactsHref, color: "#10B981", icon: <Sparkles size={11} /> } :
     null;
 
   const stats = [

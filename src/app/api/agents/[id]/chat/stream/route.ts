@@ -2460,11 +2460,30 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                 const artContent = toolBlock.input.content || "";
                 const artFormat = toolBlock.input.format || "markdown";
 
+                // Refuse to write an orphan artefact. Without a real projectId
+                // the row is INVISIBLE to /projects/:id/artefacts (which filters
+                // by exact projectId match) — the user reported drafts that
+                // existed in the DB but couldn't be found on the page; root
+                // cause was that previously this code path wrote
+                // `projectId: ""` when the deployment lookup failed. Now we
+                // surface the failure to the model as an error tool result so
+                // it can either retry once state stabilises or report the
+                // blockage honestly, instead of silently producing rows that
+                // nothing on the user's side can see.
+                if (!depForArt?.projectId) {
+                  toolResults.push({
+                    type: "tool_result",
+                    tool_use_id: toolBlock.id,
+                    content: JSON.stringify({
+                      error: "No active deployment found for this agent — cannot create an artefact without a projectId. The artefact would be invisible to every project page. Wait for the deployment to settle or ask the user to redeploy.",
+                    }),
+                  });
+                  continue;
+                }
+
                 // Dedupe check — prevent creating duplicate artefacts
                 const { artefactExists } = await import("@/lib/agents/artefact-dedupe");
-                const dupCheck = depForArt?.projectId
-                  ? await artefactExists(depForArt.projectId, agentId, artName, depForArt.currentPhase)
-                  : { exists: false };
+                const dupCheck = await artefactExists(depForArt.projectId, agentId, artName, depForArt.currentPhase);
 
                 if (dupCheck.exists) {
                   toolResults.push({
@@ -2483,8 +2502,8 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                 // visible completion % because the phase-tracker joins on phaseId.
                 // Prefer the live Phase row id; fall back to the deployment's
                 // currentPhase NAME (phase-tracker matches either form).
-                let resolvedPhaseId: string = depForArt?.currentPhase || "Unknown";
-                if (depForArt?.projectId && depForArt?.currentPhase) {
+                let resolvedPhaseId: string = depForArt.currentPhase || "Unknown";
+                if (depForArt.currentPhase) {
                   const phaseRow = await db.phase.findFirst({
                     where: { projectId: depForArt.projectId, name: depForArt.currentPhase },
                     select: { id: true },
@@ -2494,7 +2513,7 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                 const artefact = await db.agentArtefact.create({
                   data: {
                     agentId,
-                    projectId: depForArt?.projectId || "",
+                    projectId: depForArt.projectId,
                     name: artName,
                     content: artContent,
                     format: artFormat,
@@ -2922,6 +2941,11 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                 content: "__PROJECT_STATUS__",
                 metadata: {
                   type: "project_status",
+                  // projectId is what the card needs to build real deep
+                  // links — without it the "Finish N tasks" / "Review N
+                  // documents" CTAs fell back to "#tasks" / "#artefacts"
+                  // anchor stubs that scrolled nowhere.
+                  projectId: deployment.projectId,
                   projectName: project?.name ?? "Project",
                   phase: currentPhase?.name ?? null,
                   phases: phases.map(p => ({ name: p.name, status: p.status })),

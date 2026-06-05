@@ -414,6 +414,7 @@ function RichMessage({ msg, agentGradient, agentName }: { msg: Message; agentGra
         {avatar}
         <div className="flex-1 max-w-[90%]">
           <ProjectStatusCard
+            projectId={msg.data.projectId}
             projectName={msg.data.projectName || "Project"}
             phase={msg.data.phase}
             phases={msg.data.phases || []}
