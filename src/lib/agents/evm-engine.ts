@@ -55,21 +55,27 @@ export interface EvmMetrics {
   bac: number;    // Budget At Completion (total approved budget)
   pv: number;     // Planned Value (budget planned to be spent by now)
   ev: number;     // Earned Value (budget worth of work completed)
-  ac: number;     // Actual Cost (actual spend to date)
+  // Cost-side fields are NULL when no real Actual Cost has been logged.
+  // We never fabricate AC (the old `EV × 1.05` model invented cost variance
+  // and made CPI hover at ~0.95, masking genuine overruns and risking false
+  // BUDGET_CHANGE alerts). Real AC = sum of CostEntry rows with
+  // entryType="ACTUAL" — the same source the metrics route uses.
+  ac: number | null;     // Actual Cost (actual spend to date) — null if none logged
+  hasRealCosts: boolean; // true when at least one ACTUAL CostEntry exists
   // Variances
-  sv: number;     // Schedule Variance (EV - PV)
-  cv: number;     // Cost Variance (EV - AC)
+  sv: number;            // Schedule Variance (EV - PV)
+  cv: number | null;     // Cost Variance (EV - AC) — null without real AC
   // Indices
-  spi: number;    // Schedule Performance Index (EV / PV)
-  cpi: number;    // Cost Performance Index (EV / AC)
+  spi: number;           // Schedule Performance Index (EV / PV)
+  cpi: number | null;    // Cost Performance Index (EV / AC) — null without real AC
   // Forecasts (weekly)
-  eac: number;    // Estimate At Completion (BAC / CPI)
-  etc: number;    // Estimate To Complete (EAC - AC)
-  tcpi: number;   // To-Complete Performance Index ((BAC - EV) / (BAC - AC))
-  vac: number;    // Variance At Completion (BAC - EAC)
+  eac: number | null;    // Estimate At Completion (BAC / CPI) — null without CPI
+  etc: number | null;    // Estimate To Complete (EAC - AC) — null without AC
+  tcpi: number | null;   // To-Complete Performance Index — null without AC
+  vac: number | null;    // Variance At Completion (BAC - EAC) — null without EAC
   // Health
   scheduleHealth: "GREEN" | "AMBER" | "RED";
-  costHealth: "GREEN" | "AMBER" | "RED";
+  costHealth: "GREEN" | "AMBER" | "RED" | "UNKNOWN"; // UNKNOWN when no real AC
 }
 
 /**
@@ -83,10 +89,19 @@ export async function calculateEvm(projectId: string): Promise<EvmMetrics | null
 
   if (!project?.budget || !project.startDate || !project.endDate) return null;
 
-  const tasks = await db.task.findMany({
-    where: { projectId },
-    select: { status: true, progress: true, estimatedHours: true, storyPoints: true },
-  });
+  const [tasks, actualCosts] = await Promise.all([
+    db.task.findMany({
+      where: { projectId },
+      select: { status: true, progress: true, estimatedHours: true, storyPoints: true },
+    }),
+    // Real Actual Cost — sum of logged ACTUAL cost entries. Same source the
+    // metrics route uses; never fabricated.
+    db.costEntry.aggregate({
+      where: { projectId, entryType: "ACTUAL" },
+      _sum: { amount: true },
+      _count: true,
+    }),
+  ]);
 
   const bac = project.budget;
   const now = new Date();
@@ -105,29 +120,40 @@ export async function calculateEvm(projectId: string): Promise<EvmMetrics | null
   const actualProgress = computeCompletionFraction(tasks);
   const ev = Math.round(bac * actualProgress);
 
-  // AC = estimated from progress (in real system, this comes from finance integration)
-  // Using a simple model: AC ≈ EV * (1 + variance_factor)
-  const ac = Math.round(ev * 1.05); // Assume 5% cost variance by default
+  // AC — real logged actuals only. Null when none exist; we never invent it.
+  const realAC = actualCosts._sum.amount || 0;
+  const hasRealCosts = actualCosts._count > 0 && realAC > 0;
+  const ac: number | null = hasRealCosts ? Math.round(realAC) : null;
 
-  // Variances
+  // Schedule variance/index only need EV + PV → always computable.
   const sv = ev - pv;
-  const cv = ev - ac;
-
-  // Indices (protect against division by zero)
   const spi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : 1;
-  const cpi = ac > 0 ? Math.round((ev / ac) * 100) / 100 : 1;
 
-  // Forecasts
-  const eac = cpi > 0 ? Math.round(bac / cpi) : bac;
-  const etc = Math.max(0, eac - ac);
-  const tcpi = (bac - ac) > 0 ? Math.round(((bac - ev) / (bac - ac)) * 100) / 100 : 1;
-  const vac = bac - eac;
+  // Cost-side metrics require real AC. Without it they are null (not a
+  // fabricated 0.95) so callers can show N/A and alerts don't false-fire.
+  let cv: number | null = null;
+  let cpi: number | null = null;
+  let eac: number | null = null;
+  let etc: number | null = null;
+  let tcpi: number | null = null;
+  let vac: number | null = null;
+  let costHealth: "GREEN" | "AMBER" | "RED" | "UNKNOWN" = "UNKNOWN";
+  if (ac !== null) {
+    cv = ev - ac;
+    cpi = ac > 0 ? Math.round((ev / ac) * 100) / 100 : null;
+    if (cpi !== null && cpi > 0) {
+      eac = Math.round(bac / cpi);
+      etc = Math.max(0, eac - ac);
+      vac = bac - eac;
+    }
+    tcpi = (bac - ac) > 0 ? Math.round(((bac - ev) / (bac - ac)) * 100) / 100 : null;
+    costHealth = cpi === null ? "UNKNOWN" : cpi >= 0.95 ? "GREEN" : cpi >= 0.9 ? "AMBER" : "RED";
+  }
 
   // Health RAG
   const scheduleHealth = spi >= 0.95 ? "GREEN" : spi >= 0.9 ? "AMBER" : "RED";
-  const costHealth = cpi >= 0.95 ? "GREEN" : cpi >= 0.9 ? "AMBER" : "RED";
 
-  return { bac, pv, ev, ac, sv, cv, spi, cpi, eac, etc, tcpi, vac, scheduleHealth, costHealth };
+  return { bac, pv, ev, ac, hasRealCosts, sv, cv, spi, cpi, eac, etc, tcpi, vac, scheduleHealth, costHealth };
 }
 
 /**
@@ -154,12 +180,18 @@ export async function checkEvmThresholds(projectId: string, agentId: string): Pr
     });
   }
 
-  // CPI < 0.9 → over budget
-  if (evm.cpi < 0.9) {
+  // CPI < 0.9 → over budget. Only fires on REAL cost data — when no actuals
+  // have been logged, CPI is null and we must not raise a fabricated budget
+  // alert (the old `EV × 1.05` model made CPI ~0.95 forever, so this branch
+  // never reflected reality).
+  if (evm.cpi !== null && evm.cpi < 0.9) {
+    const cv = evm.cv ?? 0;
+    const eac = evm.eac ?? evm.bac;
+    const vac = evm.vac ?? 0;
     proposals.push({
       type: "BUDGET_CHANGE",
       description: `Cost Performance Index is ${evm.cpi} (below 0.9 threshold). Project is ${Math.round((1 - evm.cpi) * 100)}% over budget.`,
-      reasoning: `EVM analysis: CV = £${evm.cv.toLocaleString()}, CPI = ${evm.cpi}. Estimate At Completion (EAC) is £${evm.eac.toLocaleString()} vs Budget At Completion (BAC) of £${evm.bac.toLocaleString()}. Variance At Completion: £${evm.vac.toLocaleString()}.`,
+      reasoning: `EVM analysis: CV = £${cv.toLocaleString()}, CPI = ${evm.cpi}. Estimate At Completion (EAC) is £${eac.toLocaleString()} vs Budget At Completion (BAC) of £${evm.bac.toLocaleString()}. Variance At Completion: £${vac.toLocaleString()}.`,
       confidence: 0.9,
       scheduleImpact: 1,
       costImpact: evm.cpi < 0.8 ? 4 : 3,
