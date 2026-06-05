@@ -6,8 +6,8 @@ import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/s
 
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useProjectTasks, useProject, useUpdateTask, useCreateTask } from "@/hooks/use-api";
-import { getMethodologyLabel } from "@/lib/methodology-definitions";
+import { useProjectTasks, useProject, useProjectSprints, useUpdateTask, useCreateTask } from "@/hooks/use-api";
+import { getMethodologyLabel, methodologyFeatures } from "@/lib/methodology-definitions";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -95,6 +95,16 @@ export default function SchedulePage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: project } = useProject(projectId);
   const { data: apiTasks } = useProjectTasks(projectId);
+  const { data: apiSprints } = useProjectSprints(projectId);
+
+  // Gate sprint overlays on the Gantt by methodology — only render sprint
+  // bands when the project's methodology has sprints (Scrum, Hybrid, SAFe).
+  // Traditional / Waterfall / PMBOK / Travel skip the overlay entirely.
+  const showSprintOverlay = useMemo(() => {
+    if (!project?.methodology) return false;
+    try { return methodologyFeatures(project.methodology).sprints; }
+    catch { return false; }
+  }, [project?.methodology]);
 
   // Build a tolerant phase lookup from the project's Phase rows.
   // Task.phaseId is inconsistent across the codebase: sometimes it's the
@@ -222,6 +232,42 @@ export default function SchedulePage() {
   }, [zoom, TASKS_DATA]);
 
   const months = useMemo(() => getMonths(timelineStart, timelineEnd), [timelineStart, timelineEnd]);
+
+  // Sprint bands — pixel offsets + widths for every sprint that overlaps the
+  // current timeline window. Skips sprints with missing dates and clips
+  // sprints whose bounds fall outside the visible window so partial sprints
+  // still render at the edges. Gated by showSprintOverlay so non-sprint
+  // methodologies don't get the visual noise.
+  const sprintBands = useMemo(() => {
+    if (!showSprintOverlay || !apiSprints || apiSprints.length === 0) return [];
+    return apiSprints
+      .filter((s: any) => s.startDate && s.endDate)
+      .map((s: any) => {
+        const start = new Date(s.startDate);
+        const end = new Date(s.endDate);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+        // Clip to the visible window.
+        const visibleStart = start < timelineStart ? timelineStart : start;
+        const visibleEnd = end > timelineEnd ? timelineEnd : end;
+        if (visibleEnd < timelineStart || visibleStart > timelineEnd) return null;
+        const offsetDays = diffDays(timelineStart, visibleStart);
+        const widthDays = Math.max(1, diffDays(visibleStart, visibleEnd) + 1);
+        const statusColour =
+          s.status === "ACTIVE" ? "#10B981" :
+          s.status === "COMPLETED" ? "#64748B" :
+          s.status === "CANCELLED" ? "#EF4444" :
+          "#6366F1"; // PLANNING
+        return {
+          id: s.id,
+          name: s.name || "Sprint",
+          status: s.status || "PLANNING",
+          left: offsetDays * dayWidth,
+          width: widthDays * dayWidth,
+          colour: statusColour,
+        };
+      })
+      .filter(Boolean) as { id: string; name: string; status: string; left: number; width: number; colour: string }[];
+  }, [showSprintOverlay, apiSprints, timelineStart, timelineEnd, dayWidth]);
 
   // Today marker
   const today = new Date();
@@ -472,6 +518,28 @@ export default function SchedulePage() {
 
               {/* Task bars area */}
               <div className="relative" style={{ width: totalDays * dayWidth, minHeight: visibleTasks.length * ROW_HEIGHT }}>
+                {/* Sprint boundaries — vertical lines at sprint start/end
+                    plus a translucent fill between. Lines sit behind task
+                    bars (z-0), so the Gantt visually answers "which sprint
+                    does this task fall in?" without crowding the surface.
+                    Hover the line to see the sprint name + status. Only
+                    rendered when methodology has sprints (showSprintOverlay).
+                  */}
+                {sprintBands.map((b) => (
+                  <div key={`sprint-${b.id}`} className="absolute z-0 pointer-events-none"
+                    style={{
+                      left: b.left,
+                      width: b.width,
+                      top: 0,
+                      bottom: 0,
+                      background: `${b.colour}0a`,
+                      borderLeft: `1px dashed ${b.colour}80`,
+                      borderRight: `1px dashed ${b.colour}80`,
+                    }}
+                    title={`${b.name} · ${b.status}`}
+                  />
+                ))}
+
                 {/* Today marker */}
                 {todayOffset >= 0 && todayOffset <= totalDays && (
                   <>
