@@ -24,7 +24,16 @@ export const SPREADSHEET_ARTEFACTS = new Set([
   "Iteration Plans",
   "Flow Metrics Reports",
   "Change Request Register",
+  // Backlogs — every variant the methodology definitions emit. The seeder
+  // side already substring-matches these names; the GENERATOR side uses
+  // an exact set so each name MUST appear here. Missing any of these
+  // entries causes the agent to emit a prose "Word" doc with an Executive
+  // Summary instead of a tabular backlog that seeds tasks on approval.
   "Backlog",
+  "Initial Backlog",
+  "Product Backlog",
+  "Initial Product Backlog",
+  "Sprint Backlog",
   // Travel methodology artefacts — all inherently tabular.
   "Booking Tracker",
   "Documentation Checklist",
@@ -59,6 +68,13 @@ export const ARTEFACT_COLUMNS: Record<string, string[]> = {
   "Change Request Register": ["CR ID", "Title", "Description", "Requested By", "Date Raised", "Category", "Priority", "Impact on Schedule", "Impact on Cost (£)", "Impact on Scope", "Status", "Decision", "Decision Date", "Implemented By", "Notes"],
   "Risk Register": ["Risk ID", "Category", "Title", "Description", "Likelihood (1-5)", "Impact (1-5)", "Score", "Risk Rating", "Owner", "Mitigation Actions", "Contingency Plan", "Residual Score", "Status", "Last Reviewed"],
   "Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
+  // Same column shape as Backlog — alias entries so getArtefactColumns
+  // resolves correctly regardless of which methodology phase produced the
+  // artefact. Sprint Backlog uses a sprint-scoped column order.
+  "Initial Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
+  "Product Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
+  "Initial Product Backlog": ["Item ID", "Title", "Type", "Description", "Priority", "Story Points", "Owner", "Sprint", "Status", "Acceptance Criteria", "Notes"],
+  "Sprint Backlog": ["Sprint", "Item ID", "Title", "Type", "Story Points", "Owner", "Status", "Acceptance Criteria", "Notes"],
   // ── Travel methodology artefacts ──
   "Booking Tracker": ["Booking ID", "Type", "Provider / Vendor", "Description", "Reference / PNR", "Travel Date", "Confirmed", "Cost (£)", "Paid", "Cancellation Policy", "Owner", "Status", "Notes"],
   "Documentation Checklist": ["Document", "Required For", "Status", "Expiry / Valid Until", "Held By", "Notes"],
