@@ -531,6 +531,15 @@ export async function generatePhaseArtefacts(
             status: "REJECTED",
             version: 1,
             feedback: failureReason,
+            // metadata.systemFailure marks this REJECTED row as a technical
+            // failure (API error, empty response, etc.) rather than a
+            // user-rejection. The regenerate route checks this so it doesn't
+            // inject the technical error message into the next prompt as
+            // if it were reviewer feedback the model should address.
+            metadata: {
+              systemFailure: true,
+              failedAt: new Date().toISOString(),
+            } as any,
             ...(phaseId ? { phaseId } : {}),
           },
         });

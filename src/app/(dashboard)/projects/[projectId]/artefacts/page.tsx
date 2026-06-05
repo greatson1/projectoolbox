@@ -296,8 +296,13 @@ export default function ArtefactsPage() {
     try {
       // Capture rejection feedback BEFORE deletion so the regeneration prompt
       // can address it explicitly. The DELETE below removes the row.
+      // Skip if the row was REJECTED because of a generation failure — that
+      // feedback is a technical error ("Anthropic API error 500"), not a
+      // critique the next attempt should address. metadata.systemFailure
+      // flags those rows; see lifecycle-init.ts retry-with-REJECTED path.
       const priorFeedback: Record<string, string> = {};
-      if (art.feedback && typeof art.feedback === "string" && art.feedback.trim().length > 0) {
+      const isSystemFailure = (art?.metadata as any)?.systemFailure === true;
+      if (!isSystemFailure && art.feedback && typeof art.feedback === "string" && art.feedback.trim().length > 0) {
         priorFeedback[art.name] = art.feedback;
       }
 

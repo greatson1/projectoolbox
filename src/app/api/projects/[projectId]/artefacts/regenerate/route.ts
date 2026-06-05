@@ -82,10 +82,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   if (phaseRow?.id) rejectedWhere.phaseId = phaseRow.id;
   const rejectedRows = await db.agentArtefact.findMany({
     where: rejectedWhere,
-    select: { name: true, feedback: true, version: true },
+    select: { name: true, feedback: true, version: true, metadata: true },
   });
   const priorFeedback: Record<string, string> = {};
   for (const r of rejectedRows) {
+    // System-failure rows carry technical error messages ("Anthropic API
+    // error 500") in feedback, not reviewer critique. Injecting that into
+    // the next prompt as "address this feedback" would confuse the model.
+    // Skip the feedback but still let the row get deleted below so a
+    // fresh generation attempt happens.
+    const isSystemFailure = (r.metadata as any)?.systemFailure === true;
+    if (isSystemFailure) continue;
     if (r.feedback && r.feedback.trim().length > 0) {
       priorFeedback[r.name] = r.feedback;
     }

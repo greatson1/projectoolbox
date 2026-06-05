@@ -342,7 +342,7 @@ export default function SchedulePage() {
           showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
           tMinusMode={tMinusMode} setTMinusMode={setTMinusMode} daysToTarget={daysToTarget} tMinusTarget={tMinusTarget}
           stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} project={project}
-          onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} />
+          onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} setShowAddTask={setShowAddTask} />
 
         <Card>
           <div className="overflow-x-auto">
@@ -749,7 +749,7 @@ export default function SchedulePage() {
 }
 
 // ── Header with stats + controls ──
-function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, tMinusMode, setTMinusMode, daysToTarget, tMinusTarget, stats, project, onDownloadCSV }: any) {
+function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCriticalPath, tMinusMode, setTMinusMode, daysToTarget, tMinusTarget, stats, project, onDownloadCSV, setShowAddTask }: any) {
   return (
     <div className="space-y-4">
       {/* T-Minus countdown banner */}
