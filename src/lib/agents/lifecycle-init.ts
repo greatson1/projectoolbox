@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { getMethodology } from "@/lib/methodology-definitions";
 import { getPlaybook } from "./methodology-playbooks";
 import { isSpreadsheetArtefact, getArtefactColumns } from "@/lib/artefact-types";
+import { getPhaseDepth } from "@/lib/agents/phase-depth";
 import { currencySymbol as getCurrencySymbol, normaliseCurrency } from "@/lib/currency";
 import { cleanMarkdownLeakage } from "./markdown-cleanup";
 import { sanitiseArtefactContent } from "./sanitise-artefact-content";
@@ -241,12 +242,14 @@ export async function generatePhaseArtefacts(
   // block per batch (cheap — only loads approved artefacts, not the KB).
   const { buildRequiredUpstreamBlock } = await import("@/lib/agents/artefact-learning");
 
+  const phaseDepth = getPhaseDepth(targetPhaseName);
+
   for (const { names: batch, isSheet } of allBatches) {
     const feedbackBlock = feedbackBlockFor(batch);
     const upstreamBlock = await buildRequiredUpstreamBlock(projectId, batch);
     const basePrompt = isSheet
-      ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext, orgCurrencySymbol)
-      : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext);
+      ? buildSpreadsheetPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext, orgCurrencySymbol, phaseDepth.artefactGuidance)
+      : buildArtefactPrompt(project, targetPhaseName, batch, methodology.name, knowledgeContext, phaseDepth.artefactGuidance);
     const promptWithUpstream = upstreamBlock ? `${upstreamBlock}\n${basePrompt}` : basePrompt;
     const prompt = feedbackBlock ? `${promptWithUpstream}${feedbackBlock}` : promptWithUpstream;
 
@@ -260,7 +263,7 @@ export async function generatePhaseArtefacts(
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 8192,
+          max_tokens: phaseDepth.maxTokens,
           messages: [{ role: "user", content: prompt }],
         }),
       });
@@ -416,8 +419,8 @@ export async function generatePhaseArtefacts(
     const retryFeedback = feedbackBlockFor([name]);
     const retryUpstreamBlock = await buildRequiredUpstreamBlock(projectId, [name]);
     const baseRetryPromptCore = isSheet
-      ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext, orgCurrencySymbol)
-      : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext);
+      ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext, orgCurrencySymbol, phaseDepth.artefactGuidance)
+      : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext, phaseDepth.artefactGuidance);
     const baseRetryPrompt = retryUpstreamBlock ? `${retryUpstreamBlock}\n${baseRetryPromptCore}` : baseRetryPromptCore;
     const prompt = retryFeedback ? `${baseRetryPrompt}${retryFeedback}` : baseRetryPrompt;
     // Track the reason this retry didn't produce a usable doc. We record it
@@ -433,7 +436,7 @@ export async function generatePhaseArtefacts(
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 8192,
+          max_tokens: phaseDepth.maxTokens,
           messages: [{ role: "user", content: prompt }],
         }),
       });
@@ -1145,7 +1148,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   return { phases: methodology.phases.length, currentPhase: firstPhase.name };
 }
 
-function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = "", orgCurrencySymbol = "£"): string {
+function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = "", orgCurrencySymbol = "£", phaseDepthGuidance = ""): string {
   const category = (project.category || "other").toLowerCase();
   const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
   const isNigeria = false; // Removed — ambiguity scan clarifies destination before research
@@ -1536,7 +1539,7 @@ Start each with "## ARTEFACT: <name>" on its own line, then output the CSV immed
 ${artefactInstructions}`;
 }
 
-function buildArtefactPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = ""): string {
+function buildArtefactPrompt(project: any, phaseName: string, artefactNames: string[], methodologyName: string, knowledgeContext = "", phaseDepthGuidance = ""): string {
   const category = (project.category || "other").toLowerCase();
   const isTravel = category === "travel" || (project.name || "").toLowerCase().includes("trip") || (project.name || "").toLowerCase().includes("holiday");
   const isNigeria = false; // Removed — ambiguity scan clarifies destination before research
