@@ -6,6 +6,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useApprovals } from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
 import { matchesApprovalTab, type ApprovalTab } from "@/lib/approvals/tab-filter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,6 +68,16 @@ function ResearchFindingsPreview({
   projectId?: string;
   onResolved?: () => void;
 }) {
+  // Cross-page cache invalidation. The /apply-per-fact endpoint is hit via
+  // raw fetch (not via useApprovalAction's mutation), so without this every
+  // OTHER consumer of approvals data shows stale results until its own
+  // poll-interval ticks: the agent overview's "Needs Your Decision" panel,
+  // the sidebar Approvals badge (from /api/dashboard), the bottom status
+  // bar's nextStep verdict. We invalidate any query keyed on `["approvals"]`
+  // (prefix match catches both useApprovals("PENDING") on the agent page
+  // and useApprovals("PENDING,DEFERRED") here) AND `["dashboard"]` so the
+  // sidebar count drops immediately.
+  const qc = useQueryClient();
   const [rows, setRows] = useState<ResearchFindingRow[]>([]);
   const [projectName, setProjectName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -119,6 +130,15 @@ function ResearchFindingsPreview({
         body: JSON.stringify({ approveIds, rejectIds }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || `${res.status}`);
+      // Invalidate every consumer of approvals data so the agent overview,
+      // sidebar badge, status bar, and pipeline page all refresh on the
+      // next render — see qc comment at the top of this component.
+      qc.invalidateQueries({ queryKey: ["approvals"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      if (projectId) {
+        qc.invalidateQueries({ queryKey: ["projectMetrics", projectId] });
+        qc.invalidateQueries({ queryKey: ["phaseTracker", projectId] });
+      }
       onResolved?.();
     } catch (e: any) {
       alert(e?.message || "Could not save");
