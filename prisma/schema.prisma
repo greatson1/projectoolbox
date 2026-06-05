@@ -569,6 +569,7 @@ model Stakeholder {
   sentimentScore Float?       // -1 to 1, refreshed automatically from activity
   sentimentUpdatedAt DateTime?
   email        String?
+  notes        String?      // source-prefix-bearing notes rendered on the Resources page
 }
 
 // ─── Billing ───
@@ -1104,12 +1105,14 @@ model KnowledgeBaseItem {
   mimeType     String?
   trustLevel   String   @default("STANDARD") // HIGH_TRUST | STANDARD | REFERENCE_ONLY
   confidential Boolean  @default(false)
+  source       String?            // provenance tag, e.g. "artefact_seed" | "ambiguity_scan"
   tags         String[] @default([])
   metadata     Json?    // { sender, extractedFacts, sentiment, etc. }
   cachedUntil  DateTime?          // for research caching (7 days)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  @@unique([agentId, projectId, title], name: "agentId_projectId_title")
   @@index([orgId, layer])
   @@index([agentId, type])
   @@index([projectId])

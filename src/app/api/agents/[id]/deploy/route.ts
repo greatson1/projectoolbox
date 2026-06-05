@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { CreditService } from "@/lib/credits/service";
 import { EmailService } from "@/lib/email";
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       select: { budget: true, startDate: true, endDate: true, description: true },
     });
     if (project) {
-      const projectUpdate: Record<string, unknown> = {};
+      const projectUpdate: Prisma.ProjectUpdateInput = {};
       const formBudget = typeof cfg.budget === "number" ? cfg.budget : parseFloat(cfg.budget || "");
       if (!project.budget && Number.isFinite(formBudget) && formBudget > 0) {
         projectUpdate.budget = formBudget;

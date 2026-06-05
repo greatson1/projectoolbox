@@ -993,6 +993,11 @@ async function seedResourceAllocations(artefact: ArtefactInput, agentId: string)
     const rows = parseCSV(artefact.content || "");
     if (rows.length === 0) return;
 
+    // KnowledgeBaseItem.orgId is required — resolve it once from the project
+    // (same pattern as the other seeders in this file). Bail if unavailable.
+    const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true } });
+    if (!project?.orgId) return;
+
     // Store as knowledge base items so they're surfaced in People/Resources tab
     for (const row of rows) {
       const role = row["Role"] || row["Resource"] || "";
@@ -1026,6 +1031,7 @@ async function seedResourceAllocations(artefact: ArtefactInput, agentId: string)
         create: {
           agentId,
           projectId: artefact.projectId,
+          orgId: project.orgId,
           title: `[resource] ${role} — ${name || "TBD"}`,
           content,
           source: "artefact_seed",

@@ -397,6 +397,11 @@ export async function generatePhaseArtefacts(
 
   // Retry pass — any requested artefact missing from the DB gets one more attempt
   // in its own API call (full 8192 token budget, no batch-mate competition).
+  // If the retry ALSO fails, we drop a REJECTED row with a feedback message
+  // explaining the failure reason. That way the user sees the artefact in the
+  // list with a clear "Regenerate" action, instead of the doc silently
+  // missing — that was the old behaviour and it caused users to think the
+  // phase was complete when it wasn't.
   const missingAfterBatches = toGenerate.filter(n => !generatedNormNames.has(normalizeName(n)));
   for (const name of missingAfterBatches) {
     const isSheet = isSpreadsheetArtefact(name);
@@ -405,6 +410,9 @@ export async function generatePhaseArtefacts(
       ? buildSpreadsheetPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext, orgCurrencySymbol)
       : buildArtefactPrompt(project, targetPhaseName, [name], methodology.name, knowledgeContext);
     const prompt = retryFeedback ? `${baseRetryPrompt}${retryFeedback}` : baseRetryPrompt;
+    // Track the reason this retry didn't produce a usable doc. We record it
+    // in REJECTED.feedback so the user sees something actionable.
+    let failureReason: string | null = null;
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -420,71 +428,106 @@ export async function generatePhaseArtefacts(
         }),
       });
       if (!response.ok) {
+        failureReason = `Anthropic API error ${response.status} on retry. Click Regenerate to try again.`;
         console.error(`[generatePhaseArtefacts] Retry API error for "${name}": ${response.status}`);
-        continue;
+      } else {
+        const data = await response.json();
+        const text = (data.content?.[0]?.text || "").trim();
+        if (!text) {
+          failureReason = "Model returned an empty response on retry. Click Regenerate to try again.";
+        } else {
+          const stripped = text.replace(/^##\s*ARTEFACT:\s*[^\n]*\n/im, "").trim();
+          if (stripped.length < 20) {
+            failureReason = `Model returned only ${stripped.length} characters — too short to be a valid document. Click Regenerate to try again.`;
+          } else if (existingNames.has(name.toLowerCase())) {
+            // Race: another path created it while we were waiting. Don't
+            // double-write and don't mark it as a failure.
+            failureReason = null;
+          } else {
+            let detectedFmt = "markdown";
+            let cleanedRetry = stripped;
+            if (isSheet) detectedFmt = "csv";
+            else if (stripped.startsWith("<")) {
+              detectedFmt = "html";
+              cleanedRetry = cleanMarkdownLeakage(stripped);
+            }
+            const sanitisedRetry = sanitiseArtefactContent(cleanedRetry, detectedFmt);
+            if (sanitisedRetry.replaced > 0) {
+              console.log(`[generatePhaseArtefacts retry] sanitised ${sanitisedRetry.replaced} fabricated owner cell(s) in "${name}"`);
+            }
+            const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, sanitisedRetry.content);
+            // Fabricated-name validation on retry path too.
+            let fabricatedNameViolationsRetry: Array<{ name: string; context: string; occurrences: number }> = [];
+            try {
+              const { getAllowedNamesRegistry } = await import("@/lib/agents/allowed-names");
+              const { validateArtefactNames } = await import("@/lib/agents/fabricated-names-validator");
+              const registry = await getAllowedNamesRegistry(projectId);
+              fabricatedNameViolationsRetry = validateArtefactNames({ content: resolvedRetry, registry });
+            } catch {}
+            const createdRetry = await db.agentArtefact.create({
+              data: {
+                agentId,
+                projectId,
+                name,
+                format: detectedFmt,
+                content: resolvedRetry,
+                status: "DRAFT",
+                version: 1,
+                ...(phaseId ? { phaseId } : {}),
+                ...(fabricatedNameViolationsRetry.length > 0 ? {
+                  metadata: {
+                    fabricatedNames: fabricatedNameViolationsRetry,
+                    fabricatedNamesCheckedAt: new Date().toISOString(),
+                  } as any,
+                } : {}),
+              },
+            });
+            existingNames.add(name.toLowerCase());
+            generatedNormNames.add(normalizeName(name));
+            totalGenerated++;
+            try {
+              const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
+              await onArtefactGenerated(agentId, projectId, name);
+            } catch {}
+            // Same contradiction pass as the main loop (see comment above).
+            (async () => {
+              try {
+                const { detectContradictions, persistContradictions } = await import("@/lib/agents/contradiction-detector");
+                const { contradictions, cacheKey } = await detectContradictions({ projectId, artefactName: name, draftContent: resolvedRetry, artefactId: createdRetry.id });
+                await persistContradictions(createdRetry.id, contradictions, cacheKey || undefined);
+              } catch {}
+            })();
+          }
+        }
       }
-      const data = await response.json();
-      const text = (data.content?.[0]?.text || "").trim();
-      if (!text) continue;
-      // Strip ARTEFACT header if present; otherwise treat whole response as the doc
-      const stripped = text.replace(/^##\s*ARTEFACT:\s*[^\n]*\n/im, "").trim();
-      if (stripped.length < 20) continue;
-      let detectedFmt = "markdown";
-      let cleanedRetry = stripped;
-      if (isSheet) detectedFmt = "csv";
-      else if (stripped.startsWith("<")) {
-        detectedFmt = "html";
-        cleanedRetry = cleanMarkdownLeakage(stripped);
-      }
-      if (existingNames.has(name.toLowerCase())) continue;
-      const sanitisedRetry = sanitiseArtefactContent(cleanedRetry, detectedFmt);
-      if (sanitisedRetry.replaced > 0) {
-        console.log(`[generatePhaseArtefacts retry] sanitised ${sanitisedRetry.replaced} fabricated owner cell(s) in "${name}"`);
-      }
-      const { content: resolvedRetry } = await autoResolveTBCsInContent(agentId, projectId, sanitisedRetry.content);
-      // Fabricated-name validation on retry path too.
-      let fabricatedNameViolationsRetry: Array<{ name: string; context: string; occurrences: number }> = [];
-      try {
-        const { getAllowedNamesRegistry } = await import("@/lib/agents/allowed-names");
-        const { validateArtefactNames } = await import("@/lib/agents/fabricated-names-validator");
-        const registry = await getAllowedNamesRegistry(projectId);
-        fabricatedNameViolationsRetry = validateArtefactNames({ content: resolvedRetry, registry });
-      } catch {}
-      const createdRetry = await db.agentArtefact.create({
-        data: {
-          agentId,
-          projectId,
-          name,
-          format: detectedFmt,
-          content: resolvedRetry,
-          status: "DRAFT",
-          version: 1,
-          ...(phaseId ? { phaseId } : {}),
-          ...(fabricatedNameViolationsRetry.length > 0 ? {
-            metadata: {
-              fabricatedNames: fabricatedNameViolationsRetry,
-              fabricatedNamesCheckedAt: new Date().toISOString(),
-            } as any,
-          } : {}),
-        },
-      });
-      existingNames.add(name.toLowerCase());
-      generatedNormNames.add(normalizeName(name));
-      totalGenerated++;
-      try {
-        const { onArtefactGenerated } = await import("@/lib/agents/task-scaffolding");
-        await onArtefactGenerated(agentId, projectId, name);
-      } catch {}
-      // Same contradiction pass as the main loop (see comment above).
-      (async () => {
-        try {
-          const { detectContradictions, persistContradictions } = await import("@/lib/agents/contradiction-detector");
-          const { contradictions, cacheKey } = await detectContradictions({ projectId, artefactName: name, draftContent: resolvedRetry, artefactId: createdRetry.id });
-          await persistContradictions(createdRetry.id, contradictions, cacheKey || undefined);
-        } catch {}
-      })();
-    } catch (e) {
+    } catch (e: any) {
+      failureReason = `Network/runtime error on retry: ${e?.message || "unknown"}. Click Regenerate to try again.`;
       console.error(`[generatePhaseArtefacts] Retry failed for "${name}":`, e);
+    }
+
+    // If both the batch and retry pass failed, drop a REJECTED row so the
+    // user actually sees the missing artefact in the UI and can take action.
+    // Skip if (a) generation eventually succeeded above or (b) something
+    // with this name already exists in the DB (avoid duplicates).
+    if (failureReason && !generatedNormNames.has(normalizeName(name)) && !existingNames.has(name.toLowerCase())) {
+      try {
+        await db.agentArtefact.create({
+          data: {
+            agentId,
+            projectId,
+            name,
+            format: isSheet ? "csv" : "markdown",
+            content: `# ${name}\n\nGeneration failed during ${targetPhaseName}. ${failureReason}`,
+            status: "REJECTED",
+            version: 1,
+            feedback: failureReason,
+            ...(phaseId ? { phaseId } : {}),
+          },
+        });
+        existingNames.add(name.toLowerCase());
+      } catch (e) {
+        console.error(`[generatePhaseArtefacts] Failed to create REJECTED placeholder for "${name}":`, e);
+      }
     }
   }
 
@@ -666,6 +709,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
                 data: {
                   agentId,
                   projectId: project.id,
+                  orgId: agent.orgId,
                   title: `[ambiguity] ${a.question}`,
                   content: a.context,
                   source: "ambiguity_scan",

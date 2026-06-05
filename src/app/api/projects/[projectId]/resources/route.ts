@@ -119,6 +119,8 @@ export async function GET(
         tasks: workload.tasks,
         hours: workload.hours,
         allocation,
+        // Freeform assignees have no stakeholder row, so no notes.
+        notes: null,
       });
     }
   }
