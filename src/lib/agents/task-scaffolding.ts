@@ -27,6 +27,11 @@ interface TaskTemplate {
   /** If set, this task auto-completes when this event fires */
   linkedEvent?: string;
   estimatedHours?: number;
+  /** When false, the task is for an OPTIONAL artefact — still scaffolded so
+   *  users can track it, but excluded from phase-gate blocker counts so a
+   *  phase isn't held up by a Communication Plan or Team Charter that the
+   *  methodology explicitly marks as nice-to-have. */
+  required?: boolean;
 }
 
 /** Universal tasks that appear in every phase */
@@ -318,6 +323,10 @@ export async function scaffoldProjectTasks(
         category: "artefact" as const,
         linkedArtefact: a.name,
         estimatedHours: a.required ? 1 : 0.5,
+        // Carries through to the description tag → phase-completion filter
+        // excludes optional ones from blocker counts. Honours the methodology
+        // definition's own required flag — single source of truth.
+        required: a.required === true,
       }));
 
     // Add governance and monitoring tasks from the hardcoded templates (if they exist)
@@ -364,7 +373,7 @@ export async function scaffoldProjectTasks(
           data: {
             projectId,
             title: template.title,
-            description: `[${template.category === "delivery_activity" ? "scaffolded:delivery" : "scaffolded"}]${template.linkedArtefact ? ` [artefact:${template.linkedArtefact}]` : ""}${template.linkedEvent ? ` [event:${template.linkedEvent}]` : ""}`,
+            description: `[${template.category === "delivery_activity" ? "scaffolded:delivery" : "scaffolded"}]${template.linkedArtefact ? ` [artefact:${template.linkedArtefact}]` : ""}${template.linkedEvent ? ` [event:${template.linkedEvent}]` : ""}${template.category === "artefact" && template.required === false ? " [optional]" : ""}`,
             status: phase.order === 0 ? "TODO" : "TODO",
             priority: template.category === "artefact" ? "HIGH" : "MEDIUM",
             phaseId: phase.name,

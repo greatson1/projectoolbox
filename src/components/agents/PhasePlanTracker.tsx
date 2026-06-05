@@ -19,6 +19,7 @@
  */
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -407,13 +408,14 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                     when the agent is working it's plain (non-link) text. */}
                 {showNext && nextLabel && (
                   nextDest?.href ? (
-                    <a
+                    <Link
                       href={nextDest.href}
-                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                      prefetch={false}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline cursor-pointer"
                     >
                       <ChevronRight className="w-3 h-3 flex-shrink-0" />
                       <span>Next: {nextLabel}</span>
-                    </a>
+                    </Link>
                   ) : (
                     <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
                       <ChevronRight className="w-3 h-3 flex-shrink-0" />
@@ -454,10 +456,11 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                   {phase.artefacts.map(a => {
                     const ab = ARTEFACT_BADGE[a.status] || ARTEFACT_BADGE.MISSING;
                     return (
-                      <a
+                      <Link
                         key={a.name}
-                        href={a.artefactId ? `/projects/${projectId}/artefacts` : `/projects/${projectId}/artefacts`}
-                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors text-[11px]"
+                        href={`/projects/${projectId}/artefacts`}
+                        prefetch={false}
+                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors text-[11px] cursor-pointer"
                       >
                         <ChevronRight className="w-3 h-3 text-muted-foreground/40 flex-shrink-0" />
                         <span className={`flex-1 truncate ${a.status === "APPROVED" ? "text-foreground" : "text-foreground/80"}`}>
@@ -465,7 +468,7 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                           {a.required && <span className="ml-1 text-red-500/70">*</span>}
                         </span>
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${ab.cls}`}>{ab.label}</span>
-                      </a>
+                      </Link>
                     );
                   })}
                 </div>
@@ -560,12 +563,19 @@ export function PhasePlanTracker({ data, projectId }: PhasePlanTrackerProps) {
                                         <span className="text-[9.5px] text-muted-foreground/70 italic">{hint}</span>
                                       )}
                                       {dest && (
-                                        <a
+                                        // Next.js Link with prefetch — the
+                                        // previous plain <a> sometimes
+                                        // didn't fire when the click landed
+                                        // on the small chevron. Larger hit
+                                        // area + py-0.5 px-1 padding so the
+                                        // whole pill is clickable.
+                                        <Link
                                           href={dest.href}
-                                          className="text-[9.5px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5"
+                                          prefetch={false}
+                                          className="text-[9.5px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5 py-0.5 px-1 -mx-1 rounded hover:bg-primary/5 cursor-pointer"
                                         >
                                           {dest.label} <ChevronRight className="w-2.5 h-2.5" />
-                                        </a>
+                                        </Link>
                                       )}
                                       {canToggle && !effectiveDone && !hint && (
                                         <span className="text-[9.5px] text-muted-foreground/70 italic">click the circle to mark done</span>

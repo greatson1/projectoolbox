@@ -381,11 +381,40 @@ export async function getPhaseCompletion(
   // completion, so requiring the gate-submission task to be done before the
   // phase reaches 100% is circular. Submit Phase Gate approval is the
   // most common case and seeds with [event:gate_request].
+  // Build a set of methodology-OPTIONAL artefact names for this phase so we
+  // can retroactively exclude PM tasks scaffolded for them — even when the
+  // task description was written before the [optional] tag was wired in. This
+  // covers both new tasks (tagged [optional] by the scaffolder) AND legacy
+  // tasks (untagged but linked to an artefact the methodology marks
+  // required:false). Without this dual check, projects deployed before the
+  // tag was added stay blocked by their optional-artefact PM tasks forever.
+  let optionalArtefactNamesLC = new Set<string>();
+  try {
+    const { getMethodology } = await import("@/lib/methodology-definitions");
+    const methodologyId = (projectForMethodology?.methodology || "traditional").toLowerCase().replace("agile_", "");
+    const methodology = getMethodology(methodologyId);
+    const phaseDef = methodology.phases.find(p => p.name === phaseName);
+    if (phaseDef) {
+      optionalArtefactNamesLC = new Set(
+        phaseDef.artefacts.filter(a => a.required !== true).map(a => a.name.toLowerCase()),
+      );
+    }
+  } catch (e) {
+    console.error("[phase-completion] optional-artefact lookup failed:", e);
+  }
+
   const pmTasks = pmTasksRaw.filter((t) => {
     const title = (t.title || "").trim().toLowerCase();
     if (RECURRING_UNIVERSAL_TITLES.has(title)) return false;
     const desc = (t.description || "").toLowerCase();
     if (desc.includes("[event:phase_advanced]") || desc.includes("[event:gate_request]")) return false;
+    // Tagged path (new scaffolds): explicit [optional] flag.
+    if (desc.includes("[optional]")) return false;
+    // Inferred path (legacy scaffolds): extract the [artefact:Name] linkage
+    // and check the methodology definition. Optional artefacts can be
+    // tracked but never block.
+    const artMatch = desc.match(/\[artefact:([^\]]+)\]/);
+    if (artMatch && optionalArtefactNamesLC.has(artMatch[1].toLowerCase())) return false;
     return true;
   });
 
