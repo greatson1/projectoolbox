@@ -48,7 +48,15 @@ const eslintConfig = defineConfig([
       // gate stays green while they're worked through incrementally.
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/preserve-manual-memoization": "warn",
-      "react-hooks/rules-of-hooks": "warn",
+      // Rules-of-hooks promoted to error 2026-06 after a hook called
+      // AFTER an early-return on the /artefacts page shipped to prod
+      // and crashed the page with React error #310 ("Rendered fewer
+      // hooks than expected"). The codebase now passes this rule with
+      // zero violations; keep it as `error` so the next violation
+      // breaks CI instead of shipping. See artefacts/page.tsx around
+      // the AgentStatusBanner component for the canonical fix shape
+      // (hoist hooks above the guard, then guard, then derived state).
+      "react-hooks/rules-of-hooks": "error",
       "react-hooks/purity": "warn",
       "react-hooks/static-components": "warn",
     },

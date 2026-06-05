@@ -309,6 +309,58 @@ export default function EVMDashboardPage() {
       .finally(() => setLoading(false));
   }, [projectId]);
 
+  // ── Derived values (hoisted above early returns so hook order stays stable) ──
+  // Previously these lived BELOW the `if (loading)` / `if (error || !data)`
+  // early returns and the enrichedSCurve useMemo at the bottom would only
+  // be called on successful renders — React threw rules-of-hooks ("Rendered
+  // fewer hooks than expected", error #310) and crashed the page with
+  // "Something went wrong". Compute defensively against a null `data` so
+  // these are safe to run on the loading + error renders too.
+  const bac  = data?.budget  ?? null;
+  const pv   = data?.pv      ?? null;
+  const ev   = data?.ev      ?? null;
+  const ac   = data?.ac      ?? null;
+  const spi  = data?.spi     ?? null;
+  const cpi  = data?.cpi     ?? null;
+  const eac  = data?.eac     ?? null;
+  const etc  = data?.etc     ?? null;
+  const vac  = data?.vac     ?? null;
+  const tcpi = data?.tcpi    ?? null;
+
+  const sv = ev !== null && pv !== null ? ev - pv : null;
+  const cv = ev !== null && ac !== null ? ev - ac : null;
+
+  // Forecast scenarios
+  const optimisticEac  = eac !== null ? Math.round(eac * 0.95)  : null;
+  const pessimisticEac = eac !== null ? Math.round(eac * 1.08) : null;
+
+  const cpiNum  = cpi  ?? 1;
+  const tcpiNum = tcpi ?? 1;
+
+  const percentComplete = bac && ev ? Math.round((ev / bac) * 100) : null;
+  const taskPct = data?.tasksTotal && data.tasksTotal > 0
+    ? Math.round(((data.tasksComplete ?? 0) / data.tasksTotal) * 100)
+    : null;
+
+  // ── S-Curve data ─────────────────────────────────────────────────────────────
+  const sCurveData = data?.sCurve ?? [];
+
+  // Confidence band: extrapolate from last known AC to optimistic/pessimistic EAC.
+  // MUST stay above the early returns — see the rules-of-hooks comment above.
+  const enrichedSCurve = useMemo(() => {
+    if (!sCurveData.length || eac === null || optimisticEac === null || pessimisticEac === null) return sCurveData;
+    const lastAcIdx = sCurveData.reduce((best: number, d: any, i: number) => ((d.ac ?? 0) > 0 ? i : best), -1);
+    if (lastAcIdx < 0 || lastAcIdx >= sCurveData.length - 1) return sCurveData;
+    const lastAc: number = sCurveData[lastAcIdx].ac ?? 0;
+    const remaining = sCurveData.length - 1 - lastAcIdx;
+    return sCurveData.map((d: any, i: number) => {
+      if (i <= lastAcIdx) return d;
+      const t = (i - lastAcIdx) / Math.max(remaining, 1);
+      return { ...d, eacLow: Math.round(lastAc + (optimisticEac - lastAc) * t), eacHigh: Math.round(lastAc + (pessimisticEac - lastAc) * t) };
+    });
+  }, [sCurveData, eac, optimisticEac, pessimisticEac]);
+
+  // ─── Early returns (placed AFTER all hooks per rules-of-hooks) ────────────
   if (loading) return <LoadingSkeleton />;
 
   if (error || !data) {
@@ -344,50 +396,6 @@ export default function EVMDashboardPage() {
       </div>
     );
   }
-
-  // ── Derived values ──────────────────────────────────────────────────────────
-  const bac  = data.budget  ?? null;
-  const pv   = data.pv      ?? null;
-  const ev   = data.ev      ?? null;
-  const ac   = data.ac      ?? null;
-  const spi  = data.spi     ?? null;
-  const cpi  = data.cpi     ?? null;
-  const eac  = data.eac     ?? null;
-  const etc  = data.etc     ?? null;
-  const vac  = data.vac     ?? null;
-  const tcpi = data.tcpi    ?? null;
-
-  const sv = ev !== null && pv !== null ? ev - pv : null;
-  const cv = ev !== null && ac !== null ? ev - ac : null;
-
-  // Forecast scenarios
-  const optimisticEac  = eac !== null ? Math.round(eac * 0.95)  : null;
-  const pessimisticEac = eac !== null ? Math.round(eac * 1.08) : null;
-
-  const cpiNum  = cpi  ?? 1;
-  const tcpiNum = tcpi ?? 1;
-
-  const percentComplete = bac && ev ? Math.round((ev / bac) * 100) : null;
-  const taskPct = data.tasksTotal && data.tasksTotal > 0
-    ? Math.round(((data.tasksComplete ?? 0) / data.tasksTotal) * 100)
-    : null;
-
-  // ── S-Curve data ─────────────────────────────────────────────────────────────
-  const sCurveData = data.sCurve ?? [];
-
-  // Confidence band: extrapolate from last known AC to optimistic/pessimistic EAC
-  const enrichedSCurve = useMemo(() => {
-    if (!sCurveData.length || eac === null || optimisticEac === null || pessimisticEac === null) return sCurveData;
-    const lastAcIdx = sCurveData.reduce((best: number, d: any, i: number) => ((d.ac ?? 0) > 0 ? i : best), -1);
-    if (lastAcIdx < 0 || lastAcIdx >= sCurveData.length - 1) return sCurveData;
-    const lastAc: number = sCurveData[lastAcIdx].ac ?? 0;
-    const remaining = sCurveData.length - 1 - lastAcIdx;
-    return sCurveData.map((d: any, i: number) => {
-      if (i <= lastAcIdx) return d;
-      const t = (i - lastAcIdx) / Math.max(remaining, 1);
-      return { ...d, eacLow: Math.round(lastAc + (optimisticEac - lastAc) * t), eacHigh: Math.round(lastAc + (pessimisticEac - lastAc) * t) };
-    });
-  }, [sCurveData, eac, optimisticEac, pessimisticEac]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (

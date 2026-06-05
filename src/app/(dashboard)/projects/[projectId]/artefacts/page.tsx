@@ -715,6 +715,17 @@ function AgentStatusBanner({
   const [revertReason, setRevertReason] = useState("");
   const [reverting, setReverting] = useState(false);
 
+  // ⚠️ HOOKS-RULE FIX (2026-06): these store reads MUST sit alongside the
+  // useState declarations above so the hook call count stays constant across
+  // renders. They used to live below the `if (!project) return null` guard
+  // — first render (project undefined) called 4 hooks, second render
+  // (project loaded) called 7. React threw error #310 ("Rendered fewer
+  // hooks than expected") and the whole `/artefacts` page died with
+  // "Something went wrong". Do NOT move these back below the guard.
+  const dismissedArtefacts = useAppStore((s) => s.dismissedArtefacts);
+  const dismissArtefact = useAppStore((s) => s.dismissArtefact);
+  const restoreAllArtefacts = useAppStore((s) => s.restoreAllArtefacts);
+
   if (!project) return null;
 
   // Filter to current phase artefacts for banner state (avoid mixing phases).
@@ -807,11 +818,9 @@ function AgentStatusBanner({
   //      and any whose name isn't in the Set are missing. Split into
   //      required vs optional so each gets its own banner styling
   //      (required = amber, optional = blue, less alarming).
-  // Read per-phase dismissals from the Zustand store so the optional
-  // banner stops nagging once the user explicitly chose to skip a doc.
-  const dismissedArtefacts = useAppStore((s) => s.dismissedArtefacts);
-  const dismissArtefact = useAppStore((s) => s.dismissArtefact);
-  const restoreAllArtefacts = useAppStore((s) => s.restoreAllArtefacts);
+  // Per-phase dismissal keys derive from the store reads hoisted above the
+  // `if (!project) return null` guard at line ~718 — see the hook-rule fix
+  // there. Don't redeclare the store reads here.
   const dismissalKey = activePhaseForFilter?.name
     ? `${projectId}::${activePhaseForFilter.name}`
     : "";
