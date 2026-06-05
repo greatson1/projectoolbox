@@ -76,6 +76,12 @@ export function stepProgressCeiling(step: RequiredStep): number {
   }
 }
 
+// Pure banner-composition lives in its own module so the test file can
+// import it without dragging in db/Prisma. Re-export for callers that
+// already imported from phase-next-action.
+export { composeReviewBanner } from "./phase-next-action-banner";
+import { composeReviewBanner as _composeReviewBanner } from "./phase-next-action-banner";
+
 interface ResolverInput {
   agentId: string;
   projectId: string;
@@ -292,11 +298,13 @@ export async function getNextRequiredStep({
   // bannerLabel never claims drafts exist that don't.
   if (completion.artefacts.pct < 100) {
     const draftCount = Math.max(0, liveArtefactCount - completion.artefacts.done);
+    const missingRequired = completion.artefacts.missingRequiredCount ?? 0;
+    const composed = _composeReviewBanner({ draftCount, missingRequired, phaseName });
     return {
       step: "review_artefacts",
-      reason: `${completion.artefacts.done}/${completion.artefacts.total} artefacts approved.`,
+      reason: `${completion.artefacts.done}/${completion.artefacts.total} artefacts approved${composed.reasonExtras}.`,
       blockedBy: ["artefact_review"],
-      bannerLabel: `Review ${draftCount} draft artefact${draftCount === 1 ? "" : "s"}`,
+      bannerLabel: composed.bannerLabel,
       awaitingUser: true,
     };
   }

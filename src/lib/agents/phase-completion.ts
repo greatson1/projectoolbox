@@ -33,6 +33,13 @@ export interface LayerStatus {
    *  distinguish "review the drafts you have" from "you have no drafts —
    *  generate them first". */
   liveCount?: number;
+  /** Number of methodology-required artefacts that don't yet exist in the
+   *  DB. Drives the "Review 1 draft · 1 required still to generate"
+   *  composite banner — when some drafts exist (liveCount > 0) but other
+   *  required artefacts haven't been generated, the resolver surfaces
+   *  both pieces of work in one banner rather than making the user clear
+   *  the review queue first and only THEN discover the gap. */
+  missingRequiredCount?: number;
   items?: Array<{ id: string; title: string; status: string; progress?: number }>;
 }
 
@@ -596,7 +603,7 @@ export async function getPhaseCompletion(
     phaseName,
     phaseId,
     phaseStatus,
-    artefacts: { total: artefactsTotal, done: artefactsDone, pct: artefactsPct, liveCount: liveArtefacts.length },
+    artefacts: { total: artefactsTotal, done: artefactsDone, pct: artefactsPct, liveCount: liveArtefacts.length, missingRequiredCount: missingRequired.length },
     pmTasks: { total: pmTasksTotal, done: pmTasksDone, pct: pmTasksPct },
     deliveryTasks: { total: deliveryTotal, done: deliveryDone, pct: deliveryPct },
     overall,
