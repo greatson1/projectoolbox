@@ -220,6 +220,20 @@ export function usePMTasks(projectId: string | null) {
   });
 }
 
+/** Project's Definition of Done + Definition of Ready criteria.
+ *  Used by the Task detail checklist and the Sprint Tracker DoD card.
+ *  Empty arrays when criteria haven't been approved yet. */
+export function useProjectCriteria(projectId: string | null) {
+  return useQuery<{
+    definitionOfDone: { criteria: string[]; sourceArtefactId: string | null; approvedAt: string | null };
+    definitionOfReady: { criteria: string[]; sourceArtefactId: string | null; approvedAt: string | null };
+  }>({
+    queryKey: ["criteria", projectId],
+    queryFn: () => api(`/api/projects/${projectId}/criteria`),
+    enabled: !!projectId,
+  });
+}
+
 export function useProjectRisks(projectId: string | null) {
   return useQuery({
     queryKey: ["risks", projectId],

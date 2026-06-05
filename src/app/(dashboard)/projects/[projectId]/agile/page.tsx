@@ -20,7 +20,9 @@ import { useParams } from "next/navigation";
 import {
   useProjectTasks, useUpdateTask, useCreateTask,
   useProjectSprints, useCreateSprint, useUpdateSprint, useDeleteSprint,
+  useProjectCriteria,
 } from "@/hooks/use-api";
+import { CriteriaChecklist } from "@/components/agile/criteria-checklist";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1301,6 +1303,18 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, sprints, curre
   const [activeTab, setActiveTab] = useState<"details" | "activity">("details");
   const [editingField, setEditingField] = useState<string | null>(null);
   const [fieldValue, setFieldValue] = useState("");
+  const { data: criteria } = useProjectCriteria(projectId);
+
+  // Promise wrapper around the mutation so the checklist can await the PATCH
+  // and the optimistic toggle can revert on a 422 (DoD/DoR gate fail).
+  async function patchTask(payload: Record<string, unknown>): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      updateTask.mutate(
+        { taskId: issue.id, ...payload },
+        { onSuccess: () => resolve(), onError: (e) => reject(e) }
+      );
+    });
+  }
 
   function handleMoveToColumn(colId: ColumnId) {
     const status = COLUMN_STATUS_MAP[colId];
@@ -1501,6 +1515,30 @@ function TaskDetailModal({ issue, onClose, sprintName, projectId, sprints, curre
           <div className="p-3 rounded-lg text-sm leading-relaxed bg-muted/30">
             {issue.description || <span className="text-muted-foreground italic">No description provided.</span>}
           </div>
+        </div>
+
+        {/* DoD / DoR checklists — only render the DoR card on backlog items,
+            since DoR governs the backlog→sprint pull. DoD always renders so
+            the team sees what "done" means while the task is in flight. */}
+        <div className="px-6 pb-4 space-y-3">
+          <CriteriaChecklist
+            kind="dod"
+            criteria={criteria?.definitionOfDone?.criteria || []}
+            checks={(issue as any).dodChecks}
+            taskId={issue.id}
+            projectId={projectId}
+            onPatch={patchTask}
+          />
+          {!issue.sprintId && (
+            <CriteriaChecklist
+              kind="dor"
+              criteria={criteria?.definitionOfReady?.criteria || []}
+              checks={(issue as any).dorChecks}
+              taskId={issue.id}
+              projectId={projectId}
+              onPatch={patchTask}
+            />
+          )}
         </div>
 
         {/* Tabs */}

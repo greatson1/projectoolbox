@@ -349,6 +349,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           .catch(e => console.error("[artefact PATCH] artefact seeding failed:", e))
       );
 
+      // Definition of Done / Definition of Ready / Initial Product Backlog →
+      // structured project data. Parses bulleted criteria into
+      // Project.definitionOfDone.criteria (or .definitionOfReady) so the
+      // Sprint Tracker / backlog UI can render a checklist and the Task
+      // status gate can enforce them. Initial Product Backlog seeds Task
+      // rows with type=story and sprintId=null so the Product Backlog
+      // page isn't empty.
+      waitUntil((async () => {
+        try {
+          const { ingestCriteriaArtefact } = await import("@/lib/agents/criteria-ingest");
+          await ingestCriteriaArtefact(artefactForSeed, seedAgentId);
+        } catch (e) {
+          console.error("[artefact PATCH] DoD/DoR/Backlog ingest failed:", e);
+        }
+      })());
+
       // Stakeholder prose extraction — runs for EVERY approved artefact, not
       // just Stakeholder Register. Charters, Project Briefs, and Business
       // Cases routinely name a Sponsor / PM / Approver in prose; without

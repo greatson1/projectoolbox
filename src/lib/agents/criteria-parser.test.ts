@@ -1,0 +1,136 @@
+import { describe, it, expect } from "vitest";
+import { parseCriteria, dodComplete, criteriaDelta } from "./criteria-parser";
+
+describe("parseCriteria", () => {
+  it("extracts dash bullets", () => {
+    const md = "## Definition of Done\n- Code reviewed\n- Tests passing\n- Documentation updated";
+    expect(parseCriteria(md).criteria).toEqual([
+      "Code reviewed",
+      "Tests passing",
+      "Documentation updated",
+    ]);
+  });
+
+  it("extracts star + bullet-point bullets", () => {
+    const md = "* Acceptance criteria met\n• User-facing copy reviewed\n* Demoed to PO";
+    expect(parseCriteria(md).criteria).toEqual([
+      "Acceptance criteria met",
+      "User-facing copy reviewed",
+      "Demoed to PO",
+    ]);
+  });
+
+  it("extracts numbered lists", () => {
+    const md = "1. Story sliced thin enough\n2. Estimated\n3. Acceptance criteria written\n4) Linked to a sprint goal";
+    expect(parseCriteria(md).criteria).toEqual([
+      "Story sliced thin enough",
+      "Estimated",
+      "Acceptance criteria written",
+      "Linked to a sprint goal",
+    ]);
+  });
+
+  it("strips checkbox tokens — the criterion is what we want, not its state", () => {
+    const md = "- [ ] Code reviewed\n- [x] Tests passing\n- [X] Documentation updated";
+    expect(parseCriteria(md).criteria).toEqual([
+      "Code reviewed",
+      "Tests passing",
+      "Documentation updated",
+    ]);
+  });
+
+  it("strips bold / italic / code markers", () => {
+    const md = "- **Code reviewed** by another engineer\n- *Tests* `passing`\n- _UAT signed off_";
+    expect(parseCriteria(md).criteria).toEqual([
+      "Code reviewed by another engineer",
+      "Tests passing",
+      "UAT signed off",
+    ]);
+  });
+
+  it("strips trailing colons (criteria headings often introduce sub-details)", () => {
+    const md = "- Code reviewed:\n- Tests passing:";
+    expect(parseCriteria(md).criteria).toEqual(["Code reviewed", "Tests passing"]);
+  });
+
+  it("deduplicates case-insensitively (keeps first-seen casing)", () => {
+    const md = "- Code reviewed\n- code reviewed\n- CODE REVIEWED\n- Tests passing";
+    expect(parseCriteria(md).criteria).toEqual(["Code reviewed", "Tests passing"]);
+  });
+
+  it("drops <3-char debris (sloppy parse from a bad bullet)", () => {
+    const md = "- Code reviewed\n- ok\n- Yes\n- Tests passing";
+    // "ok" (2 chars) dropped; "Yes" (3 chars) kept.
+    expect(parseCriteria(md).criteria).toEqual(["Code reviewed", "Yes", "Tests passing"]);
+  });
+
+  it("truncates >240 char criteria with an ellipsis", () => {
+    const long = "x".repeat(300);
+    const md = `- ${long}`;
+    const parsed = parseCriteria(md);
+    expect(parsed.criteria).toHaveLength(1);
+    expect(parsed.criteria[0]).toHaveLength(238); // 237 chars + "…"
+    expect(parsed.criteria[0].endsWith("…")).toBe(true);
+  });
+
+  it("ignores plain paragraphs — DoD must be a list to be enforceable", () => {
+    const md = "Code must be reviewed.\n\nTests must pass.\n\nDocumentation updated.";
+    expect(parseCriteria(md).criteria).toEqual([]);
+  });
+
+  it("flags emptyListsDetected when headings present but no bullets beneath", () => {
+    const md = "## Definition of Done\n\n## Code Quality\n\n## Testing";
+    const out = parseCriteria(md);
+    expect(out.criteria).toEqual([]);
+    expect(out.emptyListsDetected).toBe(true);
+  });
+
+  it("returns empty on null / empty / non-string input", () => {
+    expect(parseCriteria("").criteria).toEqual([]);
+    expect(parseCriteria(null as unknown as string).criteria).toEqual([]);
+    expect(parseCriteria(undefined as unknown as string).criteria).toEqual([]);
+  });
+});
+
+describe("dodComplete", () => {
+  it("returns true when no DoD configured (vacuously complete)", () => {
+    expect(dodComplete([], [])).toBe(true);
+    expect(dodComplete(undefined, undefined)).toBe(true);
+  });
+
+  it("returns false when any criterion is unticked", () => {
+    expect(dodComplete(["a", "b", "c"], [true, false, true])).toBe(false);
+    expect(dodComplete(["a", "b", "c"], [true, true])).toBe(false); // missing index
+    expect(dodComplete(["a", "b", "c"], null)).toBe(false);
+  });
+
+  it("returns true when every criterion has true at its index", () => {
+    expect(dodComplete(["a", "b", "c"], [true, true, true])).toBe(true);
+  });
+
+  it("only `true` counts — null/false/other truthy values are unmet", () => {
+    expect(dodComplete(["a"], ["true"])).toBe(false);
+    expect(dodComplete(["a"], [1])).toBe(false);
+  });
+});
+
+describe("criteriaDelta", () => {
+  it("reports satisfied/total counts and the unmet list", () => {
+    const out = criteriaDelta(["a", "b", "c"], [true, false, true]);
+    expect(out.complete).toBe(false);
+    expect(out.satisfied).toBe(2);
+    expect(out.total).toBe(3);
+    expect(out.unmet).toEqual(["b"]);
+  });
+
+  it("complete=true with empty unmet when all ticked", () => {
+    const out = criteriaDelta(["a", "b"], [true, true]);
+    expect(out.complete).toBe(true);
+    expect(out.unmet).toEqual([]);
+  });
+
+  it("complete=true when no criteria configured", () => {
+    expect(criteriaDelta([], []).complete).toBe(true);
+    expect(criteriaDelta(undefined, undefined).complete).toBe(true);
+  });
+});

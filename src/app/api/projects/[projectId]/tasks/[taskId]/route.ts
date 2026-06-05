@@ -41,6 +41,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     isCriticalPath, dependencies,
     parentId, sprintId,
     type, epic, labels, blocked,
+    moscow, dodChecks, dorChecks,
   } = body;
 
   const data: Record<string, any> = {};
@@ -65,8 +66,86 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (epic           !== undefined) data.epic           = epic;
   if (labels         !== undefined) data.labels         = labels;
   if (blocked        !== undefined) data.blocked        = blocked;
+  if (moscow         !== undefined) data.moscow         = moscow;
+  if (dodChecks      !== undefined) data.dodChecks      = dodChecks;
+  if (dorChecks      !== undefined) data.dorChecks      = dorChecks;
 
   data.lastEditedBy = (session.user as any).id || "user";
+
+  // ── DoD gate ──────────────────────────────────────────────────────────
+  // When the user (or agent) flips status to DONE, refuse if the project
+  // has a Definition of Done with criteria AND any criterion is still
+  // unticked on this task's dodChecks. Returns 422 with the unmet items
+  // so the UI can highlight what's missing.
+  const flippingToDone = data.status && data.status.toUpperCase() === "DONE";
+  if (flippingToDone) {
+    try {
+      const [project, currentTask] = await Promise.all([
+        db.project.findUnique({
+          where: { id: projectId },
+          select: { definitionOfDone: true, methodology: true },
+        }),
+        db.task.findUnique({ where: { id: taskId }, select: { dodChecks: true } }),
+      ]);
+      const dod = project?.definitionOfDone as { criteria?: string[] } | null;
+      if (dod?.criteria && dod.criteria.length > 0) {
+        const { dodComplete, criteriaDelta } = await import("@/lib/agents/criteria-parser");
+        // Prefer the incoming dodChecks (user just ticked something in the
+        // same request) over the stored value, so the gate sees the latest.
+        const effectiveChecks = (data.dodChecks !== undefined ? data.dodChecks : currentTask?.dodChecks) ?? [];
+        if (!dodComplete(dod.criteria, effectiveChecks)) {
+          const delta = criteriaDelta(dod.criteria, effectiveChecks);
+          return NextResponse.json({
+            error: "Definition of Done not met",
+            reason: "dod_incomplete",
+            satisfied: delta.satisfied,
+            total: delta.total,
+            unmet: delta.unmet,
+          }, { status: 422 });
+        }
+      }
+    } catch (e) {
+      console.error("[task PATCH] DoD gate check failed (allowing through):", e);
+    }
+  }
+
+  // ── DoR gate ──────────────────────────────────────────────────────────
+  // When a backlog task is pulled into a sprint (sprintId: null → set),
+  // refuse if the project has a Definition of Ready with criteria AND any
+  // criterion is still unticked on dorChecks. Same 422 contract as DoD.
+  const pullingIntoSprint = data.sprintId !== undefined && data.sprintId !== null && data.sprintId !== "";
+  if (pullingIntoSprint) {
+    try {
+      const [project, currentTask] = await Promise.all([
+        db.project.findUnique({
+          where: { id: projectId },
+          select: { definitionOfReady: true },
+        }),
+        db.task.findUnique({ where: { id: taskId }, select: { dorChecks: true, sprintId: true } }),
+      ]);
+      // Only enforce on the *transition* (null → set). Reassigning a task
+      // already in a sprint to a different sprint is treated as a move,
+      // not a fresh pull, so we don't re-gate it.
+      const wasOutOfSprint = !currentTask?.sprintId;
+      const dor = project?.definitionOfReady as { criteria?: string[] } | null;
+      if (wasOutOfSprint && dor?.criteria && dor.criteria.length > 0) {
+        const { dodComplete, criteriaDelta } = await import("@/lib/agents/criteria-parser");
+        const effectiveChecks = (data.dorChecks !== undefined ? data.dorChecks : currentTask?.dorChecks) ?? [];
+        if (!dodComplete(dor.criteria, effectiveChecks)) {
+          const delta = criteriaDelta(dor.criteria, effectiveChecks);
+          return NextResponse.json({
+            error: "Definition of Ready not met",
+            reason: "dor_incomplete",
+            satisfied: delta.satisfied,
+            total: delta.total,
+            unmet: delta.unmet,
+          }, { status: 422 });
+        }
+      }
+    } catch (e) {
+      console.error("[task PATCH] DoR gate check failed (allowing through):", e);
+    }
+  }
 
   // Auto-sync status ↔ progress: DONE always means 100%, and setting 100% means DONE
   if (data.status && data.status.toUpperCase() === "DONE") {

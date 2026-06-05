@@ -223,6 +223,15 @@ model Project {
   calendarEvents CalendarEvent[]
   decisions      Decision[]
   sprints        Sprint[]
+  // ── DoD / DoR criteria (parsed from approved artefacts) ────────────────
+  // Populated when the Definition of Done / Definition of Ready artefact
+  // for this project transitions to APPROVED — the markdown is parsed
+  // into a structured criteria list so the UI can render a checklist on
+  // every task and the Task status gate can enforce them.
+  // Shape: { criteria: string[], sourceArtefactId: string, approvedAt: ISO }
+  // null = no DoD/DoR artefact approved yet for this project.
+  definitionOfDone  Json?
+  definitionOfReady Json?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   // Archive metadata — soft-archive preserves the audit trail while marking
@@ -493,6 +502,17 @@ model Task {
   actualHours     Float?    // actual tracked hours for EVM AC calculation
   isCriticalPath  Boolean   @default(false) // set by critical-path engine
   dependencies    Json?
+  // ── DoD / DoR checks (Scrum / Hybrid / SAFe) ──────────────────────────
+  // dodChecks: which Definition-of-Done criteria have been ticked for
+  //   this task. Stored as a boolean array indexed against the project's
+  //   parsed `Project.definitionOfDone.criteria[]`. NULL = nothing ticked
+  //   yet (treated as all-false). The Task status PATCH gate refuses
+  //   to flip status → DONE when any DoD criterion is still false.
+  // dorChecks: same shape for Definition of Ready. Gated when a backlog
+  //   item is being PULLED into a sprint (sprintId transitions from null
+  //   to a sprint id).
+  dodChecks       Json?
+  dorChecks       Json?
   createdBy       String?   // "agent:<agentId>" or "user:<userId>"
   lastEditedBy    String?
   // ── Source artefact linkage (artefact action extraction) ─────────────

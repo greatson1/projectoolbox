@@ -5,7 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,6 +92,7 @@ export default function SprintTrackerPage() {
   const { data: apiTasks } = useProjectTasks(projectId);
   const { data: apiSprints } = useProjectSprints(projectId);
   const { data: project } = useProject(projectId);
+  const { data: criteria } = useProjectCriteria(projectId);
 
   // Methodology guard. The sidebar tab is already hidden for non-sprint
   // methodologies, but the route stays accessible by direct URL. Without
@@ -957,6 +958,43 @@ export default function SprintTrackerPage() {
             </ProgressRing>
           </div>
         </div>
+      </Card>
+
+      {/* ═══ 10. DEFINITION OF DONE (project-wide) ═══
+          One source of truth for what "done" means on every task in this
+          sprint. Sourced from the approved Definition of Done artefact —
+          edits there flow through automatically via the artefact PATCH
+          ingest hook. Per-task ticks live on the Task detail panel; this
+          card just shows the bar everyone is being held against. */}
+      <Card>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Definition of Done</h3>
+            <p className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+              Every task in this sprint must satisfy these before it can be marked Done.
+            </p>
+          </div>
+          {criteria?.definitionOfDone?.criteria?.length ? (
+            <Badge variant="outline" className="text-[10px]">
+              {criteria.definitionOfDone.criteria.length} criteri{criteria.definitionOfDone.criteria.length === 1 ? "on" : "a"}
+            </Badge>
+          ) : null}
+        </div>
+        {criteria?.definitionOfDone?.criteria?.length ? (
+          <ul className="space-y-1.5">
+            {criteria.definitionOfDone.criteria.map((c, i) => (
+              <li key={i} className="flex items-start gap-2 text-[12px]" style={{ color: "var(--foreground)" }}>
+                <span className="mt-[3px] w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#10B981" }} />
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[12px] italic" style={{ color: "var(--muted-foreground)" }}>
+            No Definition of Done approved yet — generate and approve the "Definition of Done" artefact in the Artefacts tab.
+            Until then, the Done-gate stays open and tasks can move freely.
+          </p>
+        )}
       </Card>
     </div>
   );
