@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAgent, useAgentArtefacts, useUpdateArtefact, useApprovals, useAgentKnowledge, useDeleteKnowledgeItem, useIngest, useAgentMetrics } from "@/hooks/use-api";
+import { classifyPhase } from "@/lib/agents/phase-class";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -275,7 +276,14 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
         const dep = apiAgent.deployments?.find((d: any) => d.isActive) || apiAgent.deployments?.[0];
         const phase = dep?.currentPhase;
         const status = dep?.phaseStatus;
-        if (status === "researching") return `Researching project context for ${phase || "first"} phase`;
+        if (status === "researching") {
+          // Same routing as agent-status-bar: execution scans progress,
+          // closing sweeps closure readiness, everything else researches.
+          const cls = classifyPhase(phase);
+          if (cls === "execution") return `Scanning ${phase} progress — tasks, risks, costs and schedule drift`;
+          if (cls === "closing") return `Sweeping ${phase} closure readiness — outstanding work, lessons, benefits`;
+          return `Researching project context for ${phase || "first"} phase`;
+        }
         if (status === "awaiting_clarification") return `Awaiting your review — assumptions presented for ${phase || "current"} phase`;
         // Use latest non-stale activity (within last 24h)
         const latestActivity = apiAgent.activities?.[0];

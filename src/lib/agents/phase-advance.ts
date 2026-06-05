@@ -46,15 +46,46 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
     console.error(`[phase-advance:${ctx.toPhase}] task scaffolding failed:`, e);
   }
 
-  // 1. Phase research — capture latest context before generating docs
+  // 1. Phase context-gathering — class-specific.
+  //
+  //   - "front" phases (Pre-Project / Initiation / Planning / etc.) run
+  //     the outward Perplexity research that already existed: benchmarks,
+  //     governance norms, market rates. The team still needs to figure
+  //     out *what* to build, so external context is useful.
+  //
+  //   - "execution" phases scan the project's own data instead: schedule
+  //     drift, risk materialisation, cost variance, open issues. By now
+  //     the team is *delivering*, not deciding, so a web search for
+  //     "scope creep prevention best practices" is noise — what they
+  //     need is "is this project on track?".
+  //
+  //   - "closing" phases sweep for closure-readiness: outstanding work,
+  //     lessons captured, benefits realisation evidence, final budget
+  //     position. Same "scan your own project" pattern.
+  //
+  // All three return the same ResearchResult shape so the chat
+  // __RESEARCH_FINDINGS__ card and the clarification seeder don't need
+  // to branch on which scan ran.
   try {
     await db.agentDeployment.update({
       where: { id: ctx.deploymentId },
       data: { phaseStatus: "researching" },
     }).catch(() => {});
 
-    const { runPhaseResearch } = await import("@/lib/agents/feasibility-research");
-    const research = await runPhaseResearch(ctx.agentId, ctx.projectId, ctx.orgId, ctx.toPhase);
+    const { classifyPhase } = await import("@/lib/agents/phase-class");
+    const phaseClass = classifyPhase(ctx.toPhase);
+
+    let research;
+    if (phaseClass === "execution") {
+      const { runExecutionProgressScan } = await import("@/lib/agents/execution-progress-scan");
+      research = await runExecutionProgressScan(ctx.agentId, ctx.projectId, ctx.toPhase);
+    } else if (phaseClass === "closing") {
+      const { runClosureScan } = await import("@/lib/agents/closure-scan");
+      research = await runClosureScan(ctx.agentId, ctx.projectId, ctx.toPhase);
+    } else {
+      const { runPhaseResearch } = await import("@/lib/agents/feasibility-research");
+      research = await runPhaseResearch(ctx.agentId, ctx.projectId, ctx.orgId, ctx.toPhase);
+    }
 
     if (research.factsDiscovered > 0) {
       await db.chatMessage.create({
@@ -69,12 +100,13 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
             sections: research.sections,
             facts: research.facts,
             phase: ctx.toPhase,
+            phaseClass,
           } as any,
         },
       }).catch(() => {});
     }
   } catch (e) {
-    console.error(`[phase-advance:${ctx.toPhase}] research failed:`, e);
+    console.error(`[phase-advance:${ctx.toPhase}] phase scan failed:`, e);
   }
 
   // 2. Clarification — phase-specific questions seeded from research + KB gaps

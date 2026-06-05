@@ -130,6 +130,7 @@ function activityAt(a: RawActivity): string {
 // surface-specific extras (paused / research_approval_waiting / setup /
 // blocked_by_tasks-when-canAdvance-false) on top.
 import { getAgentCurrentState, type AgentCurrentState } from "@/lib/agents/current-state";
+import { classifyPhase } from "@/lib/agents/phase-class";
 
 function deriveState(
   agentDeployed: boolean,
@@ -304,10 +305,24 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
     case "research_approval_waiting":
       return `${slot.agentName} has research findings waiting in the Approvals queue — review which ones to keep before they can shape ${phase} artefacts.`;
 
-    case "researching":
+    case "researching": {
+      // phaseStatus="researching" is shared by all three phase classes —
+      // front (external research), execution (internal progress scan)
+      // and closing (closure-readiness sweep). Pick the right verb so
+      // the toast doesn't say "Researching Execution context" when the
+      // agent is actually scanning the project's own tasks/risks/costs.
+      const phaseClass = classifyPhase(phase);
+      const verb = phaseClass === "execution" ? "Scanning" : phaseClass === "closing" ? "Sweeping" : "Researching";
+      const noun = phaseClass === "execution" ? "progress" : phaseClass === "closing" ? "closure readiness" : "context";
+      const tail = phaseClass === "execution"
+        ? "schedule, risks, costs and open issues — findings will be summarised for your review."
+        : phaseClass === "closing"
+          ? "outstanding work, lessons, benefits realisation and final budget — findings will be summarised for your review."
+          : "facts will be summarised for your approval before any artefacts are drafted.";
       return actText
-        ? `Researching ${phase} context — ${actText.slice(0, 120)}`
-        : `Researching ${phase} context — facts will be summarised for your approval before any artefacts are drafted.`;
+        ? `${verb} ${phase} ${noun} — ${actText.slice(0, 120)}`
+        : `${verb} ${phase} ${noun} — ${tail}`;
+    }
 
     case "generating":
       return actText
