@@ -1167,40 +1167,81 @@ function buildSpreadsheetPrompt(project: any, phaseName: string, artefactNames: 
     let dataInstructions = "";
 
     if (lname.includes("schedule") || lname.includes("wbs") || lname.includes("work breakdown") || lname.includes("schedule baseline")) {
-      const taskCategories = isTravel
-        ? "Pre-Departure Planning, Bookings & Reservations, Documentation & Visas, Health Preparation, Packing, Day-by-Day Itinerary, Post-Trip"
-        : "Project Setup, Requirements, Design, Build, Test, Deploy, Closure";
-      const nigeriaTaskDetails = isNigeria ? `
-MANDATORY TRAVEL TASKS TO INCLUDE (with realistic dates):
-- Research Nigeria / Lagos trip (Pre-Departure Planning)
-- Book return flights LHR→LOS (Bookings)
-- Apply for Nigerian visa — allow 6+ weeks (Documentation & Visas)
-- Obtain yellow fever vaccination certificate — MANDATORY FOR ENTRY — book GP appt (Health Preparation)
-- Malaria prophylaxis prescription — GP appointment 6+ weeks before travel (Health Preparation)
-- Book accommodation in Victoria Island or Ikoyi (Bookings)
-- Arrange airport transfer from MMIA (Bookings)
-- Purchase travel insurance with medical & repatriation cover (Documentation)
-- Register trip with FCDO TravelAware website (Documentation)
-- Get local Nigerian SIM card details / research Airtel or MTN (Pre-Departure)
-- Pack and pre-departure checklist review (Packing)
-- Day-by-day itinerary activities (Day-by-Day)
-- Post-trip expense reconciliation (Post-Trip)` : "";
-      dataInstructions = `Generate 15-25 specific task rows.
-Task categories: ${taskCategories}
-${nigeriaTaskDetails}
-⚠️ DATE RULES — CRITICAL:
-- The project START date is ${startDate}. The FIRST task must begin on exactly ${startDate}.
-- All subsequent tasks must cascade forward from ${startDate} — no task may have a Planned Start before ${startDate}.
-- Spread tasks across the full project timeline up to ${endDate}.
-- Tasks are a PLAN — they have no actual start/end yet. Leave Actual Start and Actual End columns blank.
-Assign each task to a ROLE TITLE only (e.g. "Project Manager", "Travel Booker") — NEVER invent personal names; use "TBD" if the person is unknown.
-⚠️ STATUS RULES — CRITICAL:
+      const isWBS = lname.includes("wbs") || lname.includes("work breakdown");
+      const isSchedule = lname.includes("schedule");
+
+      if (isWBS) {
+        dataInstructions = `Generate a PROPER hierarchical Work Breakdown Structure using dot-notation WBS IDs.
+
+⚠️ WBS HIERARCHY RULES (PMI Standard — MANDATORY):
+The WBS MUST have at minimum 3 levels of decomposition:
+
+Level 1: DELIVERABLES (major project outputs) — WBS ID: "1", "2", "3", etc.
+  Level 2: WORK PACKAGES (groupings within a deliverable) — WBS ID: "1.1", "1.2", "2.1", etc.
+    Level 3: TASKS/ACTIVITIES (actual work items with hours) — WBS ID: "1.1.1", "1.1.2", "2.1.1", etc.
+
+Rules:
+- Level 1 rows represent DELIVERABLES — the "Deliverable" column = deliverable name, "Work Package" = same name, hours = SUM of children (leave blank — calculated)
+- Level 2 rows represent WORK PACKAGES — "Deliverable" = parent deliverable name, "Work Package" = work package name, hours = SUM of children
+- Level 3 rows represent TASKS — "Deliverable" = parent deliverable, "Work Package" = parent work package, "Description" = actual activity description, hours = estimated effort
+- Generate 30-50 rows total to properly decompose the project
+- Every Level 3 task MUST have estimated hours. Level 1 and Level 2 rows should leave hours blank (they aggregate from children)
+- The WBS ID column MUST use dot-notation: "1", "1.1", "1.1.1", "1.1.2", "1.2", "1.2.1", etc.
+- Dependencies column: reference WBS IDs (e.g. "1.1.2" depends on "1.1.1")
+
+Example structure for a software project:
+"1","Deliverable: Requirements","Requirements","","","","","","","",""
+"1.1","Requirements","Requirements Gathering","","","","","","","",""
+"1.1.1","Requirements","Requirements Gathering","Conduct stakeholder interviews","Project Manager","5","${startDate}","","1.1.2","0","Not Started"
+"1.1.2","Requirements","Requirements Gathering","Document functional requirements","Business Analyst","8","","","","0","Not Started"
+"1.2","Requirements","Requirements Sign-off","","","","","","","",""
+"1.2.1","Requirements","Requirements Sign-off","Present requirements to sponsor","Project Manager","2","","","1.1.2","0","Not Started"
+"2","Deliverable: Design","Design","","","","","","","",""
+...
+
+⚠️ DATE RULES:
+- The project START date is ${startDate}. The FIRST Level 3 task must begin on ${startDate}.
+- Cascade dates forward through the project timeline to ${endDate}.
+- Level 1 and Level 2 rows: leave dates blank (they span from earliest to latest child).
+- Tasks are a PLAN — leave Actual Start and Actual End columns blank.
+
+⚠️ OWNER RULES:
+- Assign each Level 3 task to a ROLE TITLE only (e.g. "Project Manager", "Developer") — NEVER invent personal names.
+- Level 1 and Level 2 rows: set Owner to the overall responsible role.
+
+⚠️ STATUS RULES:
 - Set ALL tasks to Status "Not Started" and % Complete = 0.
-- Do NOT infer completion from dates. You have NO knowledge of what has actually been done.
-- Do NOT mark any task "Complete" or set % Complete > 0 — the user updates actuals as work happens.
-- RAG column: set ALL tasks to "Green" as the baseline plan.
-- Critical Path: Yes/No — identify which tasks must not slip.
+- Do NOT mark any task "Complete" or set progress > 0.
+
 Quote any fields containing commas.`;
+      } else {
+        // Schedule with Dependencies
+        dataInstructions = `Generate 25-40 task rows with realistic dates and dependency chains.
+
+⚠️ SCHEDULE RULES:
+- If a WBS artefact exists for this project, the Schedule MUST reference the SAME task names and structure. Do not invent new tasks — expand the WBS work packages into scheduled activities.
+- Each row represents a schedulable activity with start date, end date, and predecessor dependencies.
+- Use Task IDs (T001, T002, etc.) and reference them in the Predecessors column.
+- Identify the Critical Path: tasks where any delay directly delays the project end date.
+
+⚠️ DATE RULES:
+- The project START date is ${startDate}. The FIRST task must begin on exactly ${startDate}.
+- All subsequent tasks cascade forward from ${startDate} — no task may start before ${startDate}.
+- Spread tasks across the full project timeline to ${endDate}.
+- Leave Actual Start and Actual End columns blank — tasks are a plan.
+
+⚠️ DEPENDENCY RULES:
+- Every task (except the first) MUST have at least one predecessor in the Predecessors column.
+- Use Finish-to-Start (FS) dependencies by default — reference the Task ID of the predecessor.
+- Identify Float (days) for each task: 0 float = on the critical path.
+
+⚠️ STATUS AND OWNER RULES:
+- Set ALL tasks to Status "Not Started", % Complete = 0, RAG = "Green".
+- Assign to ROLE TITLES only — never invent personal names.
+- Critical Path: Yes for tasks with 0 float, No otherwise.
+
+Quote any fields containing commas.`;
+      }
     } else if (lname.includes("risk")) {
       const riskRows = isTravel ? (isNigeria ? `"R001","Logistics","Flight cancellation or severe delay","Return flight LHR-LOS cancelled or delayed >6hrs disrupting entire itinerary","2","4","8","HIGH","Traveller","Book flexible/refundable fares. Comprehensive travel insurance with cancellation cover","Rebook next available flight. Claim insurance","4","Open","${today}"
 "R002","Documentation","Lost or stolen passport","Passport lost or stolen preventing travel or return to UK","1","5","5","MEDIUM","Traveller","Digital copies in cloud. Note British High Commission Lagos: +234 (0)1 277-0780","Emergency travel document via British High Commission","2","Open","${today}"

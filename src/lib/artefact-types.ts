@@ -41,7 +41,7 @@ export const SPREADSHEET_ARTEFACTS = new Set([
 
 /** Column definitions per artefact type — used in the generation prompt and xlsx formatting */
 export const ARTEFACT_COLUMNS: Record<string, string[]> = {
-  "Work Breakdown Structure": ["WBS ID", "Deliverable", "Work Package", "Description", "Owner", "Est. Duration (days)", "Planned Start", "Planned End", "Dependencies", "% Complete", "Status"],
+  "Work Breakdown Structure": ["WBS ID", "Deliverable", "Work Package", "Description", "Owner", "Est. Duration (days)", "Planned Start", "Planned End", "Dependencies", "% Complete", "Status", "Level"],
   "Schedule with Dependencies": ["Task ID", "Activity", "Category", "Owner", "Planned Start", "Planned End", "Duration (days)", "Predecessors", "Actual Start", "Actual End", "% Complete", "Status", "RAG", "Float (days)", "Critical Path", "Notes"],
   "Cost Management Plan": ["Work Package", "Category", "Resource/Item", "Unit", "Qty", "Unit Cost (£)", "Planned Total (£)", "Actual Cost (£)", "Variance (£)", "% Spent", "Phase", "Status", "Notes"],
   "Resource Management Plan": ["Role", "Name/TBD", "Work Package", "Allocation (%)", "Start Date", "End Date", "Cost Rate (£/day)", "Planned Cost (£)", "Actual Cost (£)", "RACI", "Status"],

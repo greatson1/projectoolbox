@@ -169,13 +169,29 @@ function buildWBSTasks(rows: Record<string, string>[]): ParsedTask[] {
 
   for (const row of rows) {
     // Work Package is the actual task name; Deliverable is the parent group.
-    // Use Work Package if present, otherwise Deliverable as fallback.
+    // For hierarchical WBS: Level 1 title = Deliverable, Level 2 = Work Package, Level 3 = Description or Work Package
     const workPackage = col(row, ["Work Package", "Task", "Activity"]);
     const deliverableGroup = col(row, ["Deliverable", "Phase", "Category"]);
-    const deliverable = workPackage || deliverableGroup || col(row, ["Name"]);
+    const sourceId    = col(row, ["WBS ID", "ID", "Task ID"]).trim();
+    const levelRaw    = col(row, ["Level"]);
+
+    // Determine WBS level from dot-notation depth or explicit Level column
+    const dotDepth = sourceId ? sourceId.split(".").length : 0;
+    const level = levelRaw ? parseInt(levelRaw, 10) : dotDepth;
+
+    // Pick the best title based on hierarchy level
+    let deliverable: string;
+    if (level === 1) {
+      deliverable = deliverableGroup || workPackage || col(row, ["Name"]) || "";
+    } else if (level === 2) {
+      deliverable = workPackage || deliverableGroup || col(row, ["Name"]) || "";
+    } else {
+      // Level 3+ (tasks/activities): prefer Description if it looks like a task, else Work Package
+      const desc = col(row, ["Description"]);
+      deliverable = (desc && desc.length > 5 && desc.length < 200) ? desc : (workPackage || deliverableGroup || col(row, ["Name"]) || "");
+    }
     if (!deliverable) continue;
 
-    const sourceId    = col(row, ["WBS ID", "ID", "Task ID"]).trim();
     const description = col(row, ["Description"]);
     const startRaw    = col(row, ["Planned Start", "Start Date", "Start"]);
     const endRaw      = col(row, ["Planned End",   "End Date",   "End"]);
