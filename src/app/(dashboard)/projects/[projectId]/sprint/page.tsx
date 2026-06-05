@@ -5,7 +5,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectTasks, useProjectSprints, useStoryPointCalibration } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration } from "@/hooks/use-api";
+import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,10 +90,58 @@ export default function SprintTrackerPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: apiTasks } = useProjectTasks(projectId);
   const { data: apiSprints } = useProjectSprints(projectId);
+  const { data: project } = useProject(projectId);
+
+  // Methodology guard. The sidebar tab is already hidden for non-sprint
+  // methodologies, but the route stays accessible by direct URL. Without
+  // this check a user on a Waterfall/PMBOK/Travel project could create
+  // sprints that nothing else on their methodology renders — orphan data
+  // forever. See audit 2026-06.
+  const sprintsEnabled = useMemo(() => {
+    if (!project?.methodology) return true; // fail-open while loading
+    try {
+      return methodologyFeatures(project.methodology).sprints;
+    } catch {
+      return true;
+    }
+  }, [project?.methodology]);
+
+  // Initialise selectedSprint to the ACTIVE sprint (was always 1, which
+  // showed the WRONG sprint on any project mid-second-sprint). Uses a ref
+  // so the auto-pick only fires once — if the user manually picks a
+  // different sprint, we don't yank them back.
+  const [selectedSprint, setSelectedSprint] = useState(1);
+  const sprintInitialisedRef = useRef(false);
+  useEffect(() => {
+    if (sprintInitialisedRef.current) return;
+    if (!apiSprints || apiSprints.length === 0) return;
+    const activeIdx = apiSprints.findIndex((s: any) => s.status === "ACTIVE");
+    if (activeIdx >= 0) setSelectedSprint(activeIdx + 1);
+    sprintInitialisedRef.current = true;
+  }, [apiSprints]);
+
+  // The real DB sprintId of whichever sprint is currently selected. Used
+  // to filter SPRINT_ITEMS_DATA so the sprint-goal tracker, backlog
+  // pipeline, and blockers only show items in this sprint — previously
+  // they aggregated EVERY project task regardless of sprint membership.
+  const selectedSprintRowId = useMemo(() => {
+    const idx = selectedSprint - 1;
+    return (apiSprints && apiSprints[idx]?.id) ?? null;
+  }, [apiSprints, selectedSprint]);
+
+  // When there are real sprints, only show tasks belonging to the selected
+  // one. When no sprints exist yet, show all tasks so the synthetic
+  // "Project Backlog" wrapper still has something to display.
+  const filteredApiTasks = useMemo(() => {
+    if (!apiTasks) return [];
+    if (!apiSprints || apiSprints.length === 0) return apiTasks; // no sprints → show all
+    if (!selectedSprintRowId) return [];
+    return apiTasks.filter((t: any) => t.sprintId === selectedSprintRowId);
+  }, [apiTasks, apiSprints, selectedSprintRowId]);
 
   const SPRINT_ITEMS_DATA: SprintItem[] = useMemo(() => {
-    if (!apiTasks || apiTasks.length === 0) return [];
-    return apiTasks.map((t: any) => ({
+    if (!filteredApiTasks || filteredApiTasks.length === 0) return [];
+    return filteredApiTasks.map((t: any) => ({
       id: t.id?.slice(-6) || t.id,
       title: t.title || t.name || "",
       type: (t.type === "bug" ? "bug" : t.type === "spike" ? "spike" : t.type === "task" ? "task" : "story") as IssueType,
@@ -104,53 +153,24 @@ export default function SprintTrackerPage() {
       blocked: t.blocked || t.status === "blocked" || t.status === "BLOCKED",
       atRisk: t.atRisk || false,
     }));
-  }, [apiTasks]);
+  }, [filteredApiTasks]);
 
-  // Derive chart data from apiTasks — empty arrays when no data
-  const burndownData = useMemo(() => {
-    const tasks = apiTasks || [];
-    if (tasks.length === 0) return [];
-    const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed" || t.status === "DONE").length;
-    const remaining = total - done;
-    const days = 10;
-    return Array.from({ length: days }, (_, i) => ({
-      day: `D${i + 1}`,
-      ideal: Math.round(total * (1 - (i + 1) / days)),
-      actual: i < 6 ? Math.max(0, Math.round(remaining + (total - remaining) * ((6 - i - 1) / 6))) : undefined,
-      projected: i >= 5 ? Math.max(0, Math.round(remaining * (1 - (i - 5) / (days - 5)))) : undefined,
-      scope: total,
-    }));
-  }, [apiTasks]);
+  // Burndown / burnup require DAILY HISTORICAL SNAPSHOTS — how many points
+  // remained at end-of-day for each day in the sprint. We don't capture
+  // those yet. The previous version fabricated a curve by linearly
+  // interpolating today's count over the sprint window, which is worse
+  // than no data: it implied progress that didn't necessarily happen.
+  // Return [] so the chart component shows its empty state until we wire
+  // a real daily snapshot table (e.g. TaskStatusSnapshot { sprintId,
+  // capturedAt, remainingPoints }).
+  const burndownData = useMemo(() => [], []);
+  const burnupData = useMemo(() => [], []);
 
-  const burnupData = useMemo(() => {
-    const tasks = apiTasks || [];
-    if (tasks.length === 0) return [];
-    const total = tasks.length;
-    const done = tasks.filter((t: any) => t.status === "done" || t.status === "completed" || t.status === "DONE").length;
-    const days = 10;
-    return Array.from({ length: days }, (_, i) => ({
-      day: `D${i + 1}`,
-      scope: total,
-      completed: i < 6 ? Math.round(done * ((i + 1) / 6)) : null,
-      accepted: i < 6 ? Math.round(done * 0.8 * ((i + 1) / 6)) : null,
-    }));
-  }, [apiTasks]);
-
-  const cycleTimeData = useMemo(() => {
-    const tasks = apiTasks || [];
-    if (tasks.length === 0) return CYCLE_TIME_DATA;
-    const statusMap: Record<string, { total: number; count: number }> = {
-      "To Do": { total: 0, count: 0 }, "In Progress": { total: 0, count: 0 },
-      "In Review": { total: 0, count: 0 }, "Done": { total: 0, count: 0 },
-    };
-    tasks.forEach((t: any) => {
-      const s = t.status === "done" || t.status === "completed" ? "Done" : t.status === "in_review" ? "In Review" : t.status === "in_progress" || t.status === "active" ? "In Progress" : "To Do";
-      statusMap[s].total += 1;
-      statusMap[s].count += 1;
-    });
-    return Object.entries(statusMap).map(([status, { count }]) => ({ status, avg: count > 0 ? +(count * 0.8).toFixed(1) : 0 }));
-  }, [apiTasks]);
+  // Cycle time requires status-transition timestamps per task (time spent
+  // in "In Progress" before reaching "Done", etc.). We don't have those.
+  // The old `(count * 0.8).toFixed(1)` formula was synthetic and didn't
+  // even reference the accumulator. Empty until we wire a transition log.
+  const cycleTimeData = useMemo(() => [], []);
 
   // Velocity trend: only meaningful when there are real completed sprints
   // with committedPoints / completedPoints recorded. Don't fabricate fake
@@ -185,7 +205,8 @@ export default function SprintTrackerPage() {
   }, [apiTasks]);
 
   const mode = "dark";
-  const [selectedSprint, setSelectedSprint] = useState(1);
+  // selectedSprint state was declared near the top of the component to drive
+  // the per-sprint filter on SPRINT_ITEMS_DATA. Don't redeclare it here.
   const [standupView, setStandupView] = useState<"today" | "previous">("today");
   const [backlogFilter, setBacklogFilter] = useState<"all" | "in_progress" | "blocked" | "done" | "at_risk">("all");
 
@@ -271,6 +292,23 @@ export default function SprintTrackerPage() {
   const activeBlockers = derivedBlockers;
   const activeGoal = derivedGoal;
 
+  // Methodology guard — if the project's methodology doesn't support
+  // sprints, show a friendly empty state instead of letting the user
+  // create orphan sprints that nothing else on their methodology renders.
+  if (!sprintsEnabled) {
+    return (
+      <div className="max-w-[640px] mx-auto py-24 text-center space-y-3">
+        <h1 className="text-[20px] font-bold" style={{ color: "var(--foreground)" }}>Sprints aren&apos;t part of this methodology</h1>
+        <p className="text-[13px]" style={{ color: "var(--muted-foreground)" }}>
+          This project is running on the <strong>{project?.methodology}</strong> methodology, which uses phase-gated delivery rather than sprints. Switch the project methodology in <Link href={`/projects/${projectId}`} className="text-primary hover:underline">Project Overview</Link> if you want sprint tracking.
+        </p>
+        <Link href={`/projects/${projectId}/schedule`}>
+          <Button variant="default" size="sm" className="mt-2">Go to Schedule</Button>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-[1600px]">
       {/* ═══ 1. HEADER ═══ */}
@@ -318,7 +356,9 @@ export default function SprintTrackerPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <p className="text-[11px] font-semibold mt-1" style={{ color: "#10B981" }}>5 SP ahead of ideal</p>
+          <p className="text-[11px] mt-1" style={{ color: "var(--muted-foreground)" }}>
+            Daily snapshot capture not wired yet — chart will populate once history exists.
+          </p>
         </Card>
 
         {/* Velocity Pace */}
@@ -326,7 +366,7 @@ export default function SprintTrackerPage() {
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Velocity Pace</p>
           <p className="text-[22px] font-bold" style={{ color: paceVsAvg >= 100 ? "#10B981" : "#F59E0B" }}>{paceVsAvg}%</p>
           <p className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>
-            {(sprint.done / sprint.daysPassed).toFixed(1)} SP/day vs avg {(avgVelocity / 10).toFixed(1)}
+            {sprint.daysPassed > 0 ? (sprint.done / sprint.daysPassed).toFixed(1) : "0.0"} SP/day vs avg {(avgVelocity / sprint.days).toFixed(1)}
           </p>
         </Card>
 

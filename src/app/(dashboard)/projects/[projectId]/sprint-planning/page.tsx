@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useProjectTasks, useProjectSprints, useCreateSprint, useUpdateTask, useUpdateSprint, useDeleteSprint } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useCreateSprint, useUpdateTask, useUpdateSprint, useDeleteSprint } from "@/hooks/use-api";
+import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +44,16 @@ export default function SprintPlanningPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: tasks, isLoading: tasksLoading } = useProjectTasks(projectId);
   const { data: sprints, isLoading: sprintsLoading } = useProjectSprints(projectId);
+  const { data: project } = useProject(projectId);
+  // Methodology guard. Sidebar already hides the tab for non-sprint
+  // methodologies; this is the second line of defence against a user who
+  // pastes the URL on a Waterfall / PMBOK / Travel project and creates
+  // orphan sprints nothing else on their methodology renders.
+  const sprintsEnabled = useMemo(() => {
+    if (!project?.methodology) return true;
+    try { return methodologyFeatures(project.methodology).sprints; }
+    catch { return true; }
+  }, [project?.methodology]);
   const createSprint = useCreateSprint(projectId);
   const updateTask = useUpdateTask(projectId);
   const updateSprint = useUpdateSprint(projectId);
@@ -156,6 +168,21 @@ export default function SprintPlanningPage() {
       <Skeleton className="h-64 rounded-xl" />
     </div>
   );
+
+  // ─── Methodology guard ────────────────────────────────────────────────────
+  if (!sprintsEnabled) {
+    return (
+      <div className="max-w-[640px] mx-auto py-24 text-center space-y-3">
+        <h1 className="text-[20px] font-bold">Sprint planning isn&apos;t part of this methodology</h1>
+        <p className="text-[13px] text-muted-foreground">
+          This project is running on the <strong>{project?.methodology}</strong> methodology, which uses phase-gated delivery rather than sprints. Switch the methodology in <Link href={`/projects/${projectId}`} className="text-primary hover:underline">Project Overview</Link> if you want sprint planning.
+        </p>
+        <Link href={`/projects/${projectId}/schedule`}>
+          <Button variant="default" size="sm" className="mt-2">Go to Schedule</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-[1400px]">
