@@ -141,6 +141,15 @@ function deriveState(
   canAdvance?: boolean,
   hasCompletionData?: boolean,
   agentStatus?: string | null,
+  /** nextStep from the canonical phase-next-action resolver (via /metrics).
+   *  This is the source of truth for "what should the user do RIGHT NOW".
+   *  The deployment's `phaseStatus` column is stored ahead-of-time during
+   *  the agent lifecycle and can lag behind the actual approval queue (e.g.
+   *  research_finding rows exist in the DB but phaseStatus is still
+   *  "awaiting_approval" from an earlier artefact draft). When nextStep is
+   *  available, prefer it over phaseStatus so the bar agrees with the chat
+   *  banner and Process Pipeline page. */
+  nextStep?: string | null,
 ): AgentState {
   if (!agentDeployed) return "idle";
 
@@ -149,9 +158,31 @@ function deriveState(
   // never want to show "Monitoring · everything is under control" when the
   // user has actively stopped the agent.
   if (agentStatus === "PAUSED") return "paused";
+
+  // ── Resolver-step override (source of truth) ──
+  // The phase-next-action resolver counts PENDING approvals directly from
+  // the DB and is the same source the chat banner + Process Pipeline page
+  // consult. When nextStep is known, it wins over the lagging
+  // deployment.phaseStatus column — that's why the user could see the chat
+  // banner say "Approve research" while the bottom bar said "0 documents
+  // ready". Maps every resolver step to the closest bar state so the bar
+  // commentary stays correct.
+  switch (nextStep) {
+    case "research":                  return "researching";
+    case "research_approval":         return "research_approval_waiting";
+    case "clarification":
+    case "clarification_in_progress": return "questions_waiting";
+    case "generation":                return "generating";
+    case "review_artefacts":          return "review";
+    case "delivery_tasks":            return "blocked_by_tasks";
+    case "gate_approval":             return "review"; // commentary handles gate-specific copy
+    case "advance":
+    case "complete":                  return "phase_complete";
+  }
+
   // Research-approval gate: when the strict-sequencing flow has parked the
-  // deployment in awaiting_research_approval, surface that. The agent will
-  // resume the lifecycle as soon as the user clears the queue.
+  // deployment in awaiting_research_approval, surface that. Kept as a
+  // secondary check in case nextStep is missing (e.g. resolver threw).
   if (phaseStatus === "awaiting_research_approval") return "research_approval_waiting";
 
   // ── Recent activity window — fed to the canonical resolver as
@@ -284,11 +315,16 @@ function buildCommentary(slot: AgentSlot, _activityIdx: number): string {
         : `Writing ${phase} phase documents — ready in ~30–60 s`;
 
     case "review": {
-      // We only reach "review" when canAdvance is true or unknown
-      // (deriveState demotes to "blocked_by_tasks" when canAdvance is
-      // explicitly false). Even so — approving the listed drafts is
-      // only one step; the user still needs to click "Approve gate"
-      // afterwards. Honest copy reflects that.
+      // The bar reaches "review" for two different next-steps:
+      //   - review_artefacts: user must approve DRAFT artefacts
+      //   - gate_approval:    artefacts already approved; user must
+      //                       approve the phase-gate row itself
+      // Distinguish the two so the copy isn't nonsense ("0 documents
+      // ready for your review. Approve them...") when there are zero
+      // drafts but a phase-gate is pending.
+      if (slot.nextStep === "gate_approval") {
+        return `${phase} phase gate is awaiting your approval — open Pending Approvals to submit the gate and advance to ${next}.`;
+      }
       const docCopy = `${pendingCount} ${phase} document${pendingCount === 1 ? "" : "s"} ready for your review`;
       return slot.canAdvance === true
         ? `${docCopy}. Approve them, then submit the phase gate to advance to ${next}.`
@@ -471,6 +507,7 @@ export function AgentStatusBar() {
           canAdvance,
           completion !== null,
           (agent as any).status ?? null,
+          nextStep, // canonical source of truth — see deriveState doc
         );
 
         return {
