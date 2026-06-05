@@ -132,6 +132,46 @@ export async function seedArtefactData(
     return;
   }
 
+  // ── Travel artefacts ──
+  if (lname.includes("booking tracker")) {
+    await seedGenericSpreadsheetToKB(artefact, agentId, "booking");
+    return;
+  }
+  if (lname.includes("documentation checklist")) {
+    await seedGenericSpreadsheetToKB(artefact, agentId, "documentation");
+    return;
+  }
+  if (lname.includes("packing list")) {
+    await seedGenericSpreadsheetToKB(artefact, agentId, "packing");
+    return;
+  }
+  if (lname.includes("expense tracker")) {
+    await seedExpenseTracker(artefact, agentId);
+    return;
+  }
+  if (lname.includes("incident log") && !lname.includes("issue")) {
+    await seedIssues(artefact, agentId); // same shape as issue log
+    return;
+  }
+
+  // ── Kanban artefacts ──
+  if (lname.includes("flow metrics")) {
+    await seedGenericSpreadsheetToKB(artefact, agentId, "flow_metrics");
+    return;
+  }
+
+  // ── PMBOK artefacts ──
+  if (lname.includes("earned value")) {
+    await seedGenericSpreadsheetToKB(artefact, agentId, "evm");
+    return;
+  }
+
+  // ── RACI Matrix ──
+  if (lname.includes("raci")) {
+    await seedGenericSpreadsheetToKB(artefact, agentId, "raci");
+    return;
+  }
+
   // Schedule Baseline / WBS are handled by schedule-parser.ts — no duplicate seeding here
 }
 
@@ -1044,5 +1084,99 @@ async function seedResourceAllocations(artefact: ArtefactInput, agentId: string)
     console.log(`[seedResourceAllocations] Seeded ${rows.length} resource entries from "${artefact.name}"`);
   } catch (e) {
     console.error("[seedResourceAllocations] failed:", e);
+  }
+}
+
+// ─── Generic spreadsheet → KB seeder ─────────────────────────────────────────
+// For artefacts that don't have a dedicated DB table (Booking Tracker,
+// Documentation Checklist, Packing List, Flow Metrics, RACI, Earned Value).
+// Each CSV row becomes a tagged KnowledgeBaseItem so it's searchable in the
+// Knowledge Base and accessible to the agent's prompts.
+
+async function seedGenericSpreadsheetToKB(
+  artefact: ArtefactInput,
+  agentId: string,
+  tag: string,
+): Promise<void> {
+  try {
+    const rows = parseCSV(artefact.content || "");
+    if (rows.length === 0) return;
+
+    // Delete previously seeded items for this artefact type
+    await db.knowledgeBaseItem.deleteMany({
+      where: {
+        agentId,
+        projectId: artefact.projectId,
+        source: "artefact_seed",
+        tags: { has: tag },
+      },
+    });
+
+    let seeded = 0;
+    for (const row of rows) {
+      // Use the first non-empty value as the title, rest as content
+      const values = Object.entries(row).filter(([_, v]) => v && v.trim());
+      if (values.length === 0) continue;
+
+      const titleValue = values[0][1].trim();
+      const contentLines = values.map(([k, v]) => `${k}: ${v}`).join("\n");
+
+      await db.knowledgeBaseItem.create({
+        data: {
+          agentId,
+          projectId: artefact.projectId,
+          title: `[${tag}] ${titleValue}`,
+          content: contentLines,
+          source: "artefact_seed",
+          trustLevel: "STANDARD",
+          tags: [tag, artefact.name.toLowerCase().replace(/\s+/g, "_")],
+        },
+      });
+      seeded++;
+    }
+    console.log(`[seedGenericSpreadsheetToKB] Seeded ${seeded} ${tag} items from "${artefact.name}"`);
+  } catch (e) {
+    console.error(`[seedGenericSpreadsheetToKB:${tag}] failed:`, e);
+  }
+}
+
+// ─── Expense Tracker → CostEntry seeder ──────────────────────────────────────
+// Travel Expense Tracker rows map to CostEntry (same table as Cost Management Plan).
+
+async function seedExpenseTracker(artefact: ArtefactInput, agentId: string): Promise<void> {
+  try {
+    const rows = parseCSV(artefact.content || "");
+    if (rows.length === 0) return;
+
+    // Delete previously seeded expense entries
+    await db.costEntry.deleteMany({
+      where: { projectId: artefact.projectId, createdBy: `agent:${agentId}`, type: "ACTUAL" },
+    });
+
+    for (const row of rows) {
+      const description = col(row, ["Description", "Item", "Category"]);
+      if (!description.trim()) continue;
+
+      const amountRaw = col(row, ["Amount", "Cost", "GBP Equivalent"]).replace(/[^0-9.-]/g, "");
+      const amount = parseFloat(amountRaw) || 0;
+      const category = col(row, ["Category", "Type"]) || "Travel Expense";
+      const dateRaw = col(row, ["Date"]);
+      const date = dateRaw ? new Date(dateRaw) : null;
+
+      await db.costEntry.create({
+        data: {
+          projectId: artefact.projectId,
+          description: description.trim(),
+          category,
+          amount,
+          type: "ACTUAL",
+          date: date && !isNaN(date.getTime()) ? date : new Date(),
+          createdBy: `agent:${agentId}`,
+        },
+      });
+    }
+    console.log(`[seedExpenseTracker] Seeded ${rows.length} expense entries from "${artefact.name}"`);
+  } catch (e) {
+    console.error("[seedExpenseTracker] failed:", e);
   }
 }
