@@ -552,17 +552,80 @@ export default function SchedulePage() {
                           </span>
                         )}
                       </div>
-                      {/* Tooltip on*/}
+                      {/* Tooltip */}
                       <div className="hidden group-hover:block absolute top-full left-0 z-30 mt-1 p-2 rounded-[8px] text-[11px] whitespace-nowrap"
                         style={{ background: true ? "#1E2337" : "#FFF", border: `1px solid ${"var(--border)"}`, boxShadow: "0 4px 6px rgba(0,0,0,0.07)", color: "var(--foreground)" }}>
                         <div className="font-semibold">{t.name}</div>
                         <div style={{ color: "var(--muted-foreground)" }}>{formatDate(tStart)} → {formatDate(tEnd)} · {diffDays(tStart, tEnd) + 1}d</div>
                         {t.assignee && <div style={{ color: "var(--muted-foreground)" }}>Assignee: {t.assignee}</div>}
+                        {t.dependsOn && t.dependsOn.length > 0 && (
+                          <div style={{ color: "var(--muted-foreground)" }}>Depends on: {t.dependsOn.join(", ")}</div>
+                        )}
                         {isCritical && <div className="text-red-400 font-semibold">Critical Path</div>}
                       </div>
                     </div>
                   );
                 })}
+
+                {/* ── Dependency arrows (SVG overlay) ── */}
+                <svg className="absolute inset-0 pointer-events-none z-10" style={{ width: totalDays * dayWidth, height: visibleTasks.length * ROW_HEIGHT }}>
+                  {(() => {
+                    // Build a lookup: task name (lowercased) → row index + bar position
+                    const taskRowMap = new Map<string, { rowIdx: number; task: ScheduleTask }>();
+                    visibleTasks.forEach((item, idx) => {
+                      if (item.type === "task") {
+                        taskRowMap.set(item.task.name.toLowerCase(), { rowIdx: idx, task: item.task });
+                        // Also map by task ID if it looks like a source ID
+                        if (item.task.id) taskRowMap.set(item.task.id.toLowerCase(), { rowIdx: idx, task: item.task });
+                      }
+                    });
+
+                    const arrows: React.ReactElement[] = [];
+                    visibleTasks.forEach((item, rowIdx) => {
+                      if (item.type !== "task" || !item.task.dependsOn) return;
+                      const successor = item.task;
+                      const succStart = parseDate(successor.start);
+                      const succLeft = diffDays(timelineStart, succStart) * dayWidth;
+                      const succY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+                      for (const dep of successor.dependsOn) {
+                        if (!dep) continue;
+                        // Try to find predecessor by name or ID
+                        const predEntry = taskRowMap.get(dep.toLowerCase())
+                          || taskRowMap.get(dep.trim().toLowerCase());
+                        if (!predEntry) continue;
+
+                        const pred = predEntry.task;
+                        const predEnd = parseDate(pred.end);
+                        const predRight = (diffDays(timelineStart, predEnd) + 1) * dayWidth;
+                        const predY = predEntry.rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+                        // Draw a right-angle connector: pred end → right → down/up → successor start
+                        const midX = predRight + 8;
+                        const isCrit = pred.isCriticalPath && successor.isCriticalPath && showCriticalPath;
+                        const color = isCrit ? "#EF4444" : "rgba(99,102,241,0.4)";
+
+                        arrows.push(
+                          <g key={`dep-${pred.id}-${successor.id}-${dep}`}>
+                            <path
+                              d={`M ${predRight} ${predY} L ${midX} ${predY} L ${midX} ${succY} L ${succLeft} ${succY}`}
+                              fill="none"
+                              stroke={color}
+                              strokeWidth={isCrit ? 1.5 : 1}
+                              strokeDasharray={isCrit ? undefined : "4 2"}
+                            />
+                            {/* Arrowhead */}
+                            <polygon
+                              points={`${succLeft},${succY} ${succLeft - 5},${succY - 3} ${succLeft - 5},${succY + 3}`}
+                              fill={color}
+                            />
+                          </g>
+                        );
+                      }
+                    });
+                    return arrows;
+                  })()}
+                </svg>
               </div>
             </div>
           </div>
