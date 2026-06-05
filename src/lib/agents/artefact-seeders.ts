@@ -20,6 +20,7 @@
 
 import { db } from "@/lib/db";
 import { looksLikeFabricatedName } from "./fabricated-names";
+import { createKbItem } from "./kb-writer";
 
 // ─── Public dispatcher ────────────────────────────────────────────────────────
 
@@ -1112,10 +1113,6 @@ async function seedGenericSpreadsheetToKB(
     const rows = parseCSV(artefact.content || "");
     if (rows.length === 0) return;
 
-    // KnowledgeBaseItem.orgId is required — resolve it once from the project.
-    const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true } });
-    if (!project?.orgId) return;
-
     // Delete previously seeded items for this artefact type
     await db.knowledgeBaseItem.deleteMany({
       where: {
@@ -1135,17 +1132,16 @@ async function seedGenericSpreadsheetToKB(
       const titleValue = values[0][1].trim();
       const contentLines = values.map(([k, v]) => `${k}: ${v}`).join("\n");
 
-      await db.knowledgeBaseItem.create({
-        data: {
-          agentId,
-          projectId: artefact.projectId,
-          orgId: project.orgId,
-          title: `[${tag}] ${titleValue}`,
-          content: contentLines,
-          source: "artefact_seed",
-          trustLevel: "STANDARD",
-          tags: [tag, artefact.name.toLowerCase().replace(/\s+/g, "_")],
-        },
+      // createKbItem resolves the required orgId from the project — callers
+      // can't forget it (the input type doesn't accept orgId).
+      await createKbItem({
+        agentId,
+        projectId: artefact.projectId,
+        title: `[${tag}] ${titleValue}`,
+        content: contentLines,
+        source: "artefact_seed",
+        trustLevel: "STANDARD",
+        tags: [tag, artefact.name.toLowerCase().replace(/\s+/g, "_")],
       });
       seeded++;
     }
@@ -1208,11 +1204,6 @@ async function seedProseToKB(artefact: ArtefactInput, agentId: string): Promise<
     const content = (artefact.content || "").trim();
     if (!content || content.length < 50) return; // too short to extract from
 
-    // KnowledgeBaseItem.orgId is required — resolve once from the project.
-    const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true } });
-    if (!project?.orgId) return;
-    const orgId = project.orgId;
-
     const tag = `custom_${artefact.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")}`;
 
     // Delete previously seeded items for this artefact
@@ -1229,17 +1220,14 @@ async function seedProseToKB(artefact: ArtefactInput, agentId: string): Promise<
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       // Fallback: store the whole document as a single KB item
-      await db.knowledgeBaseItem.create({
-        data: {
-          agentId,
-          projectId: artefact.projectId,
-          orgId,
-          title: `[${tag}] ${artefact.name}`,
-          content: content.slice(0, 5000),
-          source: "artefact_seed",
-          trustLevel: "STANDARD",
-          tags: [tag, "custom_artefact"],
-        },
+      await createKbItem({
+        agentId,
+        projectId: artefact.projectId,
+        title: `[${tag}] ${artefact.name}`,
+        content: content.slice(0, 5000),
+        source: "artefact_seed",
+        trustLevel: "STANDARD",
+        tags: [tag, "custom_artefact"],
       });
       return;
     }
@@ -1275,17 +1263,14 @@ ${content.slice(0, 4000)}`,
 
     if (!res.ok) {
       // Fallback: store as single KB item
-      await db.knowledgeBaseItem.create({
-        data: {
-          agentId,
-          projectId: artefact.projectId,
-          orgId,
-          title: `[${tag}] ${artefact.name}`,
-          content: content.slice(0, 5000),
-          source: "artefact_seed",
-          trustLevel: "STANDARD",
-          tags: [tag, "custom_artefact"],
-        },
+      await createKbItem({
+        agentId,
+        projectId: artefact.projectId,
+        title: `[${tag}] ${artefact.name}`,
+        content: content.slice(0, 5000),
+        source: "artefact_seed",
+        trustLevel: "STANDARD",
+        tags: [tag, "custom_artefact"],
       });
       return;
     }
@@ -1304,34 +1289,28 @@ ${content.slice(0, 4000)}`,
 
     if (facts.length === 0) {
       // No facts extracted — store whole doc as single item
-      await db.knowledgeBaseItem.create({
-        data: {
-          agentId,
-          projectId: artefact.projectId,
-          orgId,
-          title: `[${tag}] ${artefact.name}`,
-          content: content.slice(0, 5000),
-          source: "artefact_seed",
-          trustLevel: "STANDARD",
-          tags: [tag, "custom_artefact"],
-        },
+      await createKbItem({
+        agentId,
+        projectId: artefact.projectId,
+        title: `[${tag}] ${artefact.name}`,
+        content: content.slice(0, 5000),
+        source: "artefact_seed",
+        trustLevel: "STANDARD",
+        tags: [tag, "custom_artefact"],
       });
       console.log(`[seedProseToKB] No facts extracted from "${artefact.name}" — stored as single KB item`);
       return;
     }
 
     for (const fact of facts) {
-      await db.knowledgeBaseItem.create({
-        data: {
-          agentId,
-          projectId: artefact.projectId,
-          orgId,
-          title: `[${tag}:${fact.type}] ${fact.title}`,
-          content: fact.content,
-          source: "artefact_seed",
-          trustLevel: "STANDARD",
-          tags: [tag, "custom_artefact", fact.type, artefact.name.toLowerCase()],
-        },
+      await createKbItem({
+        agentId,
+        projectId: artefact.projectId,
+        title: `[${tag}:${fact.type}] ${fact.title}`,
+        content: fact.content,
+        source: "artefact_seed",
+        trustLevel: "STANDARD",
+        tags: [tag, "custom_artefact", fact.type, artefact.name.toLowerCase()],
       });
     }
     console.log(`[seedProseToKB] Extracted ${facts.length} facts from "${artefact.name}"`);
