@@ -119,10 +119,119 @@ export async function extractAndStoreArtefactKnowledge(
  * Pulls the most recent HIGH_TRUST KB items for this project, plus workspace-level items.
  * Designed to be prepended to both buildSpreadsheetPrompt and buildArtefactPrompt.
  */
+/**
+ * Inverse of DEPENDENCY_MAP: for each target artefact, which upstream
+ * artefacts must be decomposed *from* — i.e. the WBS is the upstream of
+ * the Schedule, the Charter is the upstream of the WBS, etc. When the
+ * agent is generating one of these targets, the upstream content gets
+ * promoted from "PREVIOUSLY APPROVED — do not contradict" to "REQUIRED
+ * UPSTREAM INPUT — decompose from this" so the agent treats it as the
+ * source it must build on, not just background context.
+ *
+ * Kept in lock-step with src/lib/agents/artefact-sync.ts DEPENDENCY_MAP.
+ */
+export const REQUIRED_UPSTREAM: Record<string, { upstream: string; instruction: string }[]> = {
+  "Schedule with Dependencies": [
+    { upstream: "Work Breakdown Structure", instruction: "Decompose each WBS work package into one or more Schedule activities. Every Schedule activity must map back to a WBS Work Package ID. The set of Schedule activities must collectively cover every WBS work package — none missing, none invented." },
+    { upstream: "Project Charter", instruction: "Schedule earliest start and latest end MUST fit inside the Charter project window. Do not schedule work before project start or after project end." },
+  ],
+  "Cost Management Plan": [
+    { upstream: "Work Breakdown Structure", instruction: "Labour costs must derive from WBS estimated hours × a stated labour rate. Show the rate explicitly. Total labour hours in the Cost Plan must equal the WBS hours total within ±10 %." },
+    { upstream: "Project Charter", instruction: "Cost Plan ESTIMATE total MUST equal the Charter / Project budget. If your line items don't add up, revise the line items — never silently differ from the budget." },
+  ],
+  "Cost Estimate": [
+    { upstream: "Work Breakdown Structure", instruction: "Cost estimate must be a bottom-up roll-up of WBS work packages. Reference WBS IDs in each line item." },
+  ],
+  "Budget Breakdown": [
+    { upstream: "Work Breakdown Structure", instruction: "Each budget line must trace to a WBS work package or category." },
+    { upstream: "Project Charter", instruction: "Total budget must match the Charter budget." },
+  ],
+  "Resource Management Plan": [
+    { upstream: "Work Breakdown Structure", instruction: "Resource demand must derive from WBS hours per role." },
+  ],
+  "Risk Management Plan": [
+    { upstream: "Initial Risk Register", instruction: "Risk Management Plan must reference every risk in the Initial Risk Register by ID. Do not silently drop or invent risks." },
+  ],
+  "Communication Plan": [
+    { upstream: "Stakeholder Register", instruction: "Communication Plan must cover every stakeholder in the Stakeholder Register and reference their stated communication preferences." },
+  ],
+  "Sprint Plans": [
+    { upstream: "Initial Product Backlog", instruction: "Sprint commitments must be drawn from the Product Backlog by Story ID. Do not create new stories in the Sprint Plan — refine the backlog first." },
+  ],
+};
+
+/**
+ * Standalone, batch-callable version of the REQUIRED UPSTREAM block.
+ *
+ * Use this when getProjectKnowledgeContext has already been called once
+ * for the surrounding phase / generation run and you need to prepend a
+ * cheap per-batch "decompose from these upstream artefacts" block to
+ * each prompt without re-running all the KB queries.
+ *
+ * Returns "" when no targets, no upstream rules, and no approved
+ * upstream artefacts apply — so prompt builders can blindly concatenate.
+ */
+export async function buildRequiredUpstreamBlock(
+  projectId: string,
+  targetArtefactNames: string[],
+): Promise<string> {
+  if (!targetArtefactNames || targetArtefactNames.length === 0) return "";
+  const needles = new Set<string>();
+  const pairs: { target: string; upstream: string; instruction: string }[] = [];
+  for (const target of targetArtefactNames) {
+    const upstreams = REQUIRED_UPSTREAM[target];
+    if (!upstreams) continue;
+    for (const u of upstreams) {
+      pairs.push({ target, upstream: u.upstream, instruction: u.instruction });
+      needles.add(u.upstream.toLowerCase());
+    }
+  }
+  if (pairs.length === 0) return "";
+
+  const approvedArtefacts = await db.agentArtefact.findMany({
+    where: { projectId, status: "APPROVED" },
+    select: { name: true, content: true, format: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+  }).catch(() => []);
+
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const { target, upstream, instruction } of pairs) {
+    const key = `${upstream}→${target}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const found = approvedArtefacts.find(a => a.name.toLowerCase().includes(upstream.toLowerCase()));
+    if (!found) {
+      lines.push(`• ${target} ← ${upstream}: upstream artefact is NOT yet approved. Flag a [TBC] block in the output explaining what data would come from the ${upstream}.`);
+      continue;
+    }
+    const preview = found.format === "csv"
+      ? truncate(found.content, 1500)
+      : truncate(stripHtml(found.content), 1500);
+    lines.push(
+      `• ${target} ← ${upstream} [approved ${new Date(found.updatedAt).toLocaleDateString("en-GB")}]:`,
+      `  Instruction: ${instruction}`,
+      `  Upstream content:`,
+      `  ${preview.replace(/\n/g, "\n  ")}`,
+      "",
+    );
+  }
+
+  if (lines.length === 0) return "";
+  return [
+    "── REQUIRED UPSTREAM INPUTS (decompose from these — do not generate parallel content) ──",
+    ...lines,
+    "",
+  ].join("\n");
+}
+
 export async function getProjectKnowledgeContext(
   agentId: string,
   projectId: string,
   orgId: string,
+  /** Optional — when set, upstream artefacts for these targets get
+   *  promoted to a REQUIRED UPSTREAM block ahead of everything else. */
+  targetArtefactNames?: string[],
 ): Promise<string> {
   try {
     const [projectItems, workspaceItems, stakeholderRows, approvedArtefacts, project] = await Promise.all([
@@ -231,6 +340,48 @@ export async function getProjectKnowledgeContext(
       "If a fact you need is NOT below, write [TBC — what's needed] rather than inventing one.",
       "",
     ];
+
+    // ── REQUIRED UPSTREAM INPUTS (must decompose from these) ──
+    // When the agent is generating a downstream artefact like the Schedule
+    // or Cost Plan, the WBS / Charter / Backlog must drive the output —
+    // not just sit in background context. We inject the full upstream
+    // content here with explicit "decompose from this" instructions so the
+    // generated artefact is genuinely DERIVED from the upstream rather
+    // than parallel to it. This is what closes the "Schedule is wired to
+    // the WBS" loop.
+    if (targetArtefactNames && targetArtefactNames.length > 0) {
+      const requiredUpstreamLines: string[] = [];
+      const seen = new Set<string>();
+      for (const target of targetArtefactNames) {
+        const upstreams = REQUIRED_UPSTREAM[target];
+        if (!upstreams) continue;
+        for (const { upstream, instruction } of upstreams) {
+          const key = `${upstream}→${target}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const found = approvedArtefacts.find(a => a.name.toLowerCase().includes(upstream.toLowerCase()));
+          if (!found) {
+            requiredUpstreamLines.push(`• ${target} ← ${upstream}: upstream artefact is NOT yet approved. Generation MAY proceed but flag a [TBC] block explaining what data would come from the ${upstream}.`);
+            continue;
+          }
+          const preview = found.format === "csv"
+            ? truncate(found.content, 1500)
+            : truncate(stripHtml(found.content), 1500);
+          requiredUpstreamLines.push(
+            `• ${target} ← ${upstream} [approved ${new Date(found.updatedAt).toLocaleDateString("en-GB")}]:`,
+            `  Instruction: ${instruction}`,
+            `  Upstream content:`,
+            `  ${preview.replace(/\n/g, "\n  ")}`,
+            "",
+          );
+        }
+      }
+      if (requiredUpstreamLines.length > 0) {
+        lines.push("── REQUIRED UPSTREAM INPUTS (decompose from these — do not generate parallel content) ──");
+        lines.push(...requiredUpstreamLines);
+        lines.push("");
+      }
+    }
 
     // ── CONFIRMED FACTS (system-of-record — top priority) ──
     // Loaded from the consolidated confirmed-facts module so any artefact

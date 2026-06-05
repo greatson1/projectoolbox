@@ -407,6 +407,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         })(),
       );
 
+      // ── Cross-artefact numerical reconciliation ──
+      // After staleness flips have settled, re-run the structural arithmetic
+      // pass: WBS total hours vs Cost Plan labour, Schedule date range vs
+      // Charter window, Cost Plan estimate total vs Project budget, etc.
+      // The contradiction-detector catches scalar prose disagreements; this
+      // catches the case where each artefact agrees on the headline number
+      // but the line items don't add up.
+      waitUntil(
+        (async () => {
+          try {
+            const { reconcileProjectArtefacts } = await import("@/lib/agents/cross-artefact-reconciliation");
+            await reconcileProjectArtefacts(artefact.projectId);
+          } catch (e) {
+            console.error("[artefact PATCH] reconciliation failed:", e);
+          }
+        })(),
+      );
+
     } catch (e) {
       console.error("[artefact PATCH] seeding dispatch failed:", e);
     }

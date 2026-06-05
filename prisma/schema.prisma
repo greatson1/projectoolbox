@@ -231,6 +231,11 @@ model Project {
   archivedAt     DateTime?
   archivedBy     String?
   archiveReason  String?
+  // Project-scoped metadata Json — currently carries:
+  //   • reconciliation: last cross-artefact numerical reconciliation result
+  //     (WBS-hours vs Cost-labour, Schedule-range vs Charter-window, etc.)
+  //   • teamVelocity: optional measured velocity for sprint commitment checks
+  metadata       Json?
 }
 
 model ProjectMember {
