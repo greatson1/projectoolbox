@@ -652,11 +652,12 @@ export default function SchedulePage() {
                     visibleTasks.forEach((item, rowIdx) => {
                       if (item.type !== "task" || !item.task.dependsOn) return;
                       const successor = item.task;
+                      const dependsOn = item.task.dependsOn;
                       const succStart = parseDate(successor.start);
                       const succLeft = diffDays(timelineStart, succStart) * dayWidth;
                       const succY = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
 
-                      for (const dep of successor.dependsOn) {
+                      for (const dep of dependsOn) {
                         if (!dep) continue;
                         // Try to find predecessor by name or ID
                         const predEntry = taskRowMap.get(dep.toLowerCase())
