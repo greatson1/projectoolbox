@@ -164,7 +164,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (meta && meta.subtype === "research_finding") {
         const { applyResearchApprovalDecision } = await import("@/lib/agents/research-approval");
         const out = await applyResearchApprovalDecision(
-          { id: approval.id, impact: approval.impact },
+          { id: approval.id, impact: approval.impact, projectId: approval.projectId, requestedById: approval.requestedById },
           newStatus as "APPROVED" | "REJECTED",
         );
         await db.agentActivity.create({

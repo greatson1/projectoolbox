@@ -139,7 +139,7 @@ export async function createResearchApproval(
  * row's status has been updated. No-op when subtype is not research.
  */
 export async function applyResearchApprovalDecision(
-  approval: { impact: any; id: string },
+  approval: { impact: any; id: string; projectId?: string; requestedById?: string },
   decision: "APPROVED" | "REJECTED",
 ): Promise<{ applied: number }> {
   const meta = approval.impact as Partial<ResearchFindingMetadata> | null;
@@ -174,8 +174,8 @@ export async function applyResearchApprovalDecision(
   // clarification flow. lifecycle-init / phase-advance both deferred
   // clarification waiting for this moment.
   try {
-    const projectId = rows[0]?.projectId;
-    const agentId = rows[0]?.agentId;
+    const projectId = approval.projectId || rows[0]?.projectId;
+    const agentId = approval.requestedById || rows[0]?.agentId;
     if (projectId && agentId) {
       const stillPending = await db.approval.count({
         where: {
