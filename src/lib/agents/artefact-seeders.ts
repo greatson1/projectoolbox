@@ -173,6 +173,16 @@ export async function seedArtefactData(
   }
 
   // Schedule Baseline / WBS are handled by schedule-parser.ts — no duplicate seeding here
+
+  // ── Fallback: custom/unknown artefacts ──
+  // Any artefact that doesn't match a known type above gets generic treatment:
+  // - CSV/spreadsheet → seed rows into KB as tagged items
+  // - Prose/markdown → extract key facts into KB so the agent can reference them
+  if (artefact.format === "csv") {
+    await seedGenericSpreadsheetToKB(artefact, agentId, `custom_${lname.replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")}`);
+  } else {
+    await seedProseToKB(artefact, agentId);
+  }
 }
 
 // ─── Stakeholder seeder ───────────────────────────────────────────────────────
@@ -1183,5 +1193,140 @@ async function seedExpenseTracker(artefact: ArtefactInput, agentId: string): Pro
     console.log(`[seedExpenseTracker] Seeded ${rows.length} expense entries from "${artefact.name}"`);
   } catch (e) {
     console.error("[seedExpenseTracker] failed:", e);
+  }
+}
+
+// ─── Prose artefact → KB seeder ──────────────────────────────────────────────
+// For custom/unknown prose artefacts that don't have a dedicated DB table.
+// Uses Claude Haiku to extract key facts, decisions, action items, dates,
+// and stakeholder references from the document content. Each extracted fact
+// becomes a tagged KnowledgeBaseItem so the agent can reference it in
+// later phases and artefact generation.
+
+async function seedProseToKB(artefact: ArtefactInput, agentId: string): Promise<void> {
+  try {
+    const content = (artefact.content || "").trim();
+    if (!content || content.length < 50) return; // too short to extract from
+
+    const tag = `custom_${artefact.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")}`;
+
+    // Delete previously seeded items for this artefact
+    await db.knowledgeBaseItem.deleteMany({
+      where: {
+        agentId,
+        projectId: artefact.projectId,
+        source: "artefact_seed",
+        tags: { has: tag },
+      },
+    });
+
+    // Use Claude Haiku to extract structured facts from prose
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      // Fallback: store the whole document as a single KB item
+      await db.knowledgeBaseItem.create({
+        data: {
+          agentId,
+          projectId: artefact.projectId,
+          title: `[${tag}] ${artefact.name}`,
+          content: content.slice(0, 5000),
+          source: "artefact_seed",
+          trustLevel: "STANDARD",
+          tags: [tag, "custom_artefact"],
+        },
+      });
+      return;
+    }
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 2048,
+        messages: [{
+          role: "user",
+          content: `Extract key facts from this project document titled "${artefact.name}". Return a JSON array of objects with {title: string, content: string, type: "fact"|"decision"|"action"|"date"|"stakeholder"|"risk"|"cost"}.
+
+Only extract concrete, referenceable facts — not summaries or opinions. Each fact should be self-contained (understandable without the source document).
+
+Examples of good extractions:
+- {title: "Budget approved", content: "Total budget of £50,000 approved by steering committee on 15 March", type: "decision"}
+- {title: "Go-live date", content: "System go-live scheduled for 1 September 2026", type: "date"}
+- {title: "Data migration approach", content: "Phased migration over 3 weekends, starting with customer data", type: "fact"}
+
+Return [] if no concrete facts can be extracted. JSON only, no markdown.
+
+Document content (first 4000 chars):
+${content.slice(0, 4000)}`,
+        }],
+      }),
+    });
+
+    if (!res.ok) {
+      // Fallback: store as single KB item
+      await db.knowledgeBaseItem.create({
+        data: {
+          agentId,
+          projectId: artefact.projectId,
+          title: `[${tag}] ${artefact.name}`,
+          content: content.slice(0, 5000),
+          source: "artefact_seed",
+          trustLevel: "STANDARD",
+          tags: [tag, "custom_artefact"],
+        },
+      });
+      return;
+    }
+
+    const data = await res.json();
+    const text = data.content?.[0]?.text || "[]";
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    let facts: Array<{ title: string; content: string; type: string }> = [];
+    if (jsonMatch) {
+      try {
+        facts = JSON.parse(jsonMatch[0]).filter(
+          (f: any) => f.title && f.content
+        );
+      } catch { /* malformed JSON — fall through to fallback */ }
+    }
+
+    if (facts.length === 0) {
+      // No facts extracted — store whole doc as single item
+      await db.knowledgeBaseItem.create({
+        data: {
+          agentId,
+          projectId: artefact.projectId,
+          title: `[${tag}] ${artefact.name}`,
+          content: content.slice(0, 5000),
+          source: "artefact_seed",
+          trustLevel: "STANDARD",
+          tags: [tag, "custom_artefact"],
+        },
+      });
+      console.log(`[seedProseToKB] No facts extracted from "${artefact.name}" — stored as single KB item`);
+      return;
+    }
+
+    for (const fact of facts) {
+      await db.knowledgeBaseItem.create({
+        data: {
+          agentId,
+          projectId: artefact.projectId,
+          title: `[${tag}:${fact.type}] ${fact.title}`,
+          content: fact.content,
+          source: "artefact_seed",
+          trustLevel: "STANDARD",
+          tags: [tag, "custom_artefact", fact.type, artefact.name.toLowerCase()],
+        },
+      });
+    }
+    console.log(`[seedProseToKB] Extracted ${facts.length} facts from "${artefact.name}"`);
+  } catch (e) {
+    console.error("[seedProseToKB] failed:", e);
   }
 }
