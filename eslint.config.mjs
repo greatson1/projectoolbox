@@ -61,6 +61,19 @@ const eslintConfig = defineConfig([
       "react-hooks/static-components": "warn",
     },
   },
+  // Playwright e2e specs are not React. The react-hooks plugin false-positives
+  // on the standard fixture pattern `base.extend({ request: async ({...}, use)
+  // => { await use(ctx) } })` — it reads `use(...)` as a React Hook call in a
+  // non-component function and errors on rules-of-hooks. Disable the React
+  // hook rules for these files; they keep firing everywhere that matters.
+  {
+    files: ["tests/e2e/**", "tests/**/*.spec.ts", "playwright.config.ts"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/static-components": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
