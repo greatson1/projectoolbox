@@ -222,6 +222,13 @@ const PHASE_BADGE: Record<string, { label: string; bg: string; text: string }> =
   ACTIVE:    { label: "Active",   bg: "bg-primary/10",             text: "text-primary" },
   PENDING:   { label: "Pending",  bg: "bg-muted",                  text: "text-muted-foreground" },
   BLOCKED:   { label: "Blocked",  bg: "bg-red-500/10",             text: "text-red-600 dark:text-red-400" },
+  // STALE — Phase.status=COMPLETED in the DB but today's stricter
+  // getPhaseCompletion finds unmet prereqs / missing research-audit
+  // timestamps. The phase-tracker route rewrites the status to STALE
+  // when it spots this, so the badge no longer claims "Done" next to
+  // a 3-item BLOCKERS list. Amber to read as "needs revisiting", not
+  // "freshly broken".
+  STALE:     { label: "Needs review", bg: "bg-amber-500/10",       text: "text-amber-600 dark:text-amber-400" },
   // REVERTED phases — set when the user has stepped back to an earlier
   // phase. The phase row was previously COMPLETED or ACTIVE; now it's
   // paused until the project re-advances through it. Amber matches the

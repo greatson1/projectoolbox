@@ -123,7 +123,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   // ── Build per-phase payload ──────────────────────────────────────────
   const phases = methodology.phases.map((phaseDef, idx) => {
     const phaseRow = phaseRows.find(p => p.name === phaseDef.name);
-    const status = phaseRow?.status || "PENDING";
+    const rawStatus = phaseRow?.status || "PENDING";
+    // Read-time reconciliation. The DB Phase.status column was written by
+    // legacy fast-paths (e.g. artefacts/generate/route.ts:170) before
+    // getPhaseCompletion gained its mandatory-prereq + research-audit
+    // checks. Result: stale rows show status=COMPLETED → "Done" badge,
+    // while the same phase's live blockers list still has 3 items. UI
+    // renders both → user sees "Done" next to a BLOCKERS section in the
+    // same card. We override to STALE here when the writers' historical
+    // view of "done" no longer matches today's checker; the badge mapper
+    // in PhasePlanTracker renders STALE as a distinct amber state with
+    // copy explaining the phase needs the new prereqs cleared.
+    const blockersForPhase = completionByPhase.get(phaseDef.name)?.blockers || [];
+    const status = (rawStatus === "COMPLETED" && blockersForPhase.length > 0)
+      ? "STALE"
+      : rawStatus;
 
     // Artefact status for THIS phase only — match by phaseId or by phaseName
     // (legacy rows store phaseName in phaseId).

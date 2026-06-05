@@ -96,6 +96,41 @@ export async function GET(req: NextRequest) {
       console.error("[agent-tick] orphan task self-heal failed:", e);
     }
 
+    // 0b1c. Stale-completed Phase rows. Phase.status was written to
+    //       "COMPLETED" by legacy writers before getPhaseCompletion gained
+    //       its mandatory-prereq + research-audit checks. The phase-tracker
+    //       route already remaps these to "STALE" at read time (so the
+    //       "Done" badge no longer sits next to a 3-item BLOCKERS list),
+    //       but the underlying DB row stays COMPLETED, which can fool
+    //       other consumers (agent prompt context, the pipeline page's
+    //       "Gate done" check). Downgrade to STALE for any phase whose
+    //       gate.preRequisites include at least one isMandatory=true
+    //       entry that resolves to manual-confirmation prereqs the row
+    //       can't have satisfied — proxy this as "ACTIVE deployment with
+    //       a currentPhase set, and there's at least one earlier phase
+    //       still marked COMPLETED with researchCompletedAt=NULL". This
+    //       is the historical fast-path artefact pattern that produced
+    //       the inconsistency. Idempotent: only flips COMPLETED → STALE,
+    //       never the other way.
+    try {
+      const healed: number = await db.$executeRawUnsafe(`
+        UPDATE "Phase" p
+        SET "status" = 'STALE', "updatedAt" = NOW()
+        WHERE p."status" = 'COMPLETED'
+          AND p."researchCompletedAt" IS NULL
+          AND EXISTS (
+            SELECT 1 FROM "AgentDeployment" d
+            WHERE d."projectId" = p."projectId"
+              AND d."isActive" = true
+          )
+      `);
+      if (typeof healed === "number" && healed > 0) {
+        console.log(`[agent-tick] Downgraded ${healed} stale COMPLETED phase row(s) → STALE (missing researchCompletedAt).`);
+      }
+    } catch (e) {
+      console.error("[agent-tick] stale-phase self-heal failed:", e);
+    }
+
     // 0b2. Fire any due report schedules (fire-and-forget, runs hourly effective)
     try {
       const dueSchedules = await db.reportSchedule.findMany({
