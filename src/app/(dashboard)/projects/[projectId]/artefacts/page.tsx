@@ -177,9 +177,13 @@ export default function ArtefactsPage() {
             // Delay slightly so the phase-advance DB write propagates before we hit the generate endpoint
             setTimeout(() => handleGenerate(), 1500);
           } else if (Array.isArray(currentCompletion?.blockers) && currentCompletion.blockers.length > 0) {
-            const n = currentCompletion.blockers.length;
+            // Intentionally NO count here. `blockers` from /phase-completion is a
+            // list of categorical blockers ("3 artefacts not yet approved",
+            // "2 PM tasks incomplete"), but the PM Tracker renders every
+            // individual row inside those categories. Showing blockers.length
+            // mismatched the tracker's row count and confused users.
             toast.success(
-              `Artefact approved ✓ — ${n} blocker${n === 1 ? "" : "s"} remain before the phase can advance. Open the PM Tracker to clear them.`,
+              `Artefact approved ✓ — the phase isn't ready to advance yet. Open the PM Tracker to see what's left.`,
               { duration: 6000 },
             );
           } else {
