@@ -1102,6 +1102,10 @@ async function seedGenericSpreadsheetToKB(
     const rows = parseCSV(artefact.content || "");
     if (rows.length === 0) return;
 
+    // KnowledgeBaseItem.orgId is required — resolve it once from the project.
+    const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true } });
+    if (!project?.orgId) return;
+
     // Delete previously seeded items for this artefact type
     await db.knowledgeBaseItem.deleteMany({
       where: {
@@ -1125,6 +1129,7 @@ async function seedGenericSpreadsheetToKB(
         data: {
           agentId,
           projectId: artefact.projectId,
+          orgId: project.orgId,
           title: `[${tag}] ${titleValue}`,
           content: contentLines,
           source: "artefact_seed",
@@ -1150,7 +1155,7 @@ async function seedExpenseTracker(artefact: ArtefactInput, agentId: string): Pro
 
     // Delete previously seeded expense entries
     await db.costEntry.deleteMany({
-      where: { projectId: artefact.projectId, createdBy: `agent:${agentId}`, type: "ACTUAL" },
+      where: { projectId: artefact.projectId, createdBy: `agent:${agentId}`, entryType: "ACTUAL" },
     });
 
     for (const row of rows) {
@@ -1169,8 +1174,8 @@ async function seedExpenseTracker(artefact: ArtefactInput, agentId: string): Pro
           description: description.trim(),
           category,
           amount,
-          type: "ACTUAL",
-          date: date && !isNaN(date.getTime()) ? date : new Date(),
+          entryType: "ACTUAL",
+          recordedAt: date && !isNaN(date.getTime()) ? date : new Date(),
           createdBy: `agent:${agentId}`,
         },
       });

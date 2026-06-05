@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { formatMoney, normaliseCurrency } from "@/lib/currency";
 import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
+import { computeCompletionFraction } from "@/lib/agents/evm-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
         org: { select: { currency: true } },
       },
     }),
-    db.task.findMany({ where: { projectId, ...EXCLUDE_PM_OVERHEAD }, select: { status: true, storyPoints: true, endDate: true, createdAt: true, updatedAt: true } }),
+    db.task.findMany({ where: { projectId, ...EXCLUDE_PM_OVERHEAD }, select: { status: true, progress: true, estimatedHours: true, storyPoints: true, endDate: true, createdAt: true, updatedAt: true } }),
     db.risk.findMany({ where: { projectId }, select: { score: true, status: true, createdAt: true } }),
     db.issue.findMany({ where: { projectId }, select: { priority: true, status: true, createdAt: true } }),
     db.stakeholder.findMany({ where: { projectId }, select: { sentiment: true, power: true, interest: true } }),
@@ -78,7 +79,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     const elapsed = Math.max(0, Math.min(totalDuration, now.getTime() - start!.getTime()));
     timeElapsedRatio = elapsed / totalDuration;
   }
-  const actualProgress = doneTasks / totalTasks;
+  // Effort-weighted completion (shared helper) drives SPI + EV so the
+  // scorecard agrees with the Overview/EVM page rather than using a separate
+  // unweighted done/total ratio. Scope score below stays count-based on
+  // purpose (it measures "% of scope items delivered", not value).
+  const actualProgress = computeCompletionFraction(tasks);
   const spiInsufficientData = !projectHasStarted || timeElapsedRatio < SPI_MIN_ELAPSED;
   const spi: number | null = spiInsufficientData
     ? null

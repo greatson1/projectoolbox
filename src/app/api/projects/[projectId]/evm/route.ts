@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
+import { computeCompletionFraction } from "@/lib/agents/evm-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     }),
     db.task.findMany({
       where: { projectId, ...EXCLUDE_PM_OVERHEAD },
-      select: { status: true, storyPoints: true, endDate: true, estimatedHours: true, actualHours: true },
+      select: { status: true, progress: true, storyPoints: true, endDate: true, estimatedHours: true, actualHours: true },
     }),
     db.costEntry.findMany({
       where: { projectId },
@@ -67,7 +68,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
 
   // Project timeline state
   const projectHasStarted = start !== null && start <= now;
-  const hasEarnedValue = doneTasks > 0 && totalTasks > 0;
+  // Effort-weighted completion (shared helper) — partial-progress credit,
+  // weighted by estimatedHours → storyPoints → 1.
+  const completionFraction = computeCompletionFraction(tasks);
+  const hasEarnedValue = completionFraction > 0 && totalTasks > 0;
 
   // Planned Value — only when project has actually started with a timeline
   let pv = 0;
@@ -79,8 +83,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     pv = Math.round(bac * plannedProgress);
   }
 
-  // Earned Value — based on task completion ratio × budget
-  const ev = hasEarnedValue ? Math.round(bac * (doneTasks / totalTasks)) : 0;
+  // Earned Value — budget × effort-weighted completion (shared helper).
+  const ev = hasEarnedValue ? Math.round(bac * completionFraction) : 0;
 
   // SPI — only when project is underway with a valid timeline
   if (projectHasStarted && pv > 0) {

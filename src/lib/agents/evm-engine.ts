@@ -10,6 +10,46 @@
 import { db } from "@/lib/db";
 import type { ActionProposal } from "./decision-classifier";
 
+/** Minimal task shape needed to compute effort-weighted completion. */
+export interface EvmTaskInput {
+  status: string;
+  progress?: number | null;
+  estimatedHours?: number | null;
+  storyPoints?: number | null;
+}
+
+/**
+ * Effort-weighted completion fraction (0..1) — the single source of truth for
+ * "how much of the work is done" used by Earned Value across the app.
+ *
+ * Why weighted: plain done/total treats a £100 task and a £50k task as equal
+ * and only credits binary completion. Each task is weighted by effort
+ * (estimatedHours, else storyPoints, else 1) and earns partial credit from
+ * `progress`, so a half-finished large work package earns more than a finished
+ * trivial one. A DONE task always counts as 100% regardless of a stale
+ * `progress` value. Degrades exactly to done/total when no effort data exists
+ * and progress is binary.
+ *
+ *   fraction = Σ(weight × progressFraction) / Σ(weight)
+ */
+export function computeCompletionFraction(tasks: EvmTaskInput[]): number {
+  let weightSum = 0;
+  let earnedWeightSum = 0;
+  for (const t of tasks) {
+    const weight = (t.estimatedHours && t.estimatedHours > 0)
+      ? t.estimatedHours
+      : (t.storyPoints && t.storyPoints > 0)
+        ? t.storyPoints
+        : 1;
+    const progressFraction = t.status === "DONE"
+      ? 1
+      : Math.max(0, Math.min(100, t.progress ?? 0)) / 100;
+    weightSum += weight;
+    earnedWeightSum += weight * progressFraction;
+  }
+  return weightSum > 0 ? earnedWeightSum / weightSum : 0;
+}
+
 export interface EvmMetrics {
   // Core (daily)
   bac: number;    // Budget At Completion (total approved budget)
@@ -45,7 +85,7 @@ export async function calculateEvm(projectId: string): Promise<EvmMetrics | null
 
   const tasks = await db.task.findMany({
     where: { projectId },
-    select: { status: true, storyPoints: true, startDate: true, endDate: true },
+    select: { status: true, progress: true, estimatedHours: true, storyPoints: true },
   });
 
   const bac = project.budget;
@@ -59,10 +99,10 @@ export async function calculateEvm(projectId: string): Promise<EvmMetrics | null
   // PV = BAC * planned progress %
   const pv = Math.round(bac * plannedProgress);
 
-  // EV = BAC * actual progress % (based on completed tasks weighted by story points)
-  const totalSP = tasks.reduce((s, t) => s + (t.storyPoints || 1), 0) || 1;
-  const doneSP = tasks.filter(t => t.status === "DONE").reduce((s, t) => s + (t.storyPoints || 1), 0);
-  const actualProgress = doneSP / totalSP;
+  // EV = BAC * effort-weighted completion fraction (shared helper — same
+  // definition the metrics route and scorecard use, with partial-progress
+  // credit rather than binary done-count).
+  const actualProgress = computeCompletionFraction(tasks);
   const ev = Math.round(bac * actualProgress);
 
   // AC = estimated from progress (in real system, this comes from finance integration)

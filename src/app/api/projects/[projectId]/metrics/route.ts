@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
+import { computeCompletionFraction } from "@/lib/agents/evm-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     artefacts,
     approvals,
     actualCosts,
+    tasksForEvm,
   ] = await Promise.all([
     db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, status: true, methodology: true, budget: true, startDate: true, endDate: true } }),
     db.task.groupBy({ by: ["status"], where: taskWhere, _count: true, _sum: { storyPoints: true } }),
@@ -76,6 +78,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
       _sum: { amount: true },
       _count: true,
     }),
+    // Small projection for EFFORT-WEIGHTED earned value. groupBy/aggregate
+    // can't express "Σ weight×progress / Σ weight", so pull the four fields
+    // EV needs. Covered by @@index([projectId, status]); the row set is the
+    // project's delivery tasks (PM overhead already excluded by taskWhere).
+    db.task.findMany({ where: taskWhere, select: { status: true, progress: true, estimatedHours: true, storyPoints: true } }),
   ]);
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -93,6 +100,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   const totalSP = spSums._sum.storyPoints ?? 0;
   const doneSP = findStatus("DONE")?._sum.storyPoints ?? 0;
   const progressPct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+  // ── Effort-weighted completion fraction (drives Earned Value) ──
+  // Shared helper — the single source of truth for "how much work is done",
+  // weighted by effort (estimatedHours → storyPoints → 1) with partial-
+  // progress credit. See computeCompletionFraction for the rationale.
+  const completionFraction = computeCompletionFraction(tasksForEvm);
 
   // ── Risk metrics ──
   // Total comes from the by-category aggregate (covers every status). High /
@@ -124,7 +137,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   const end = project.endDate ? new Date(project.endDate) : null;
 
   const projectHasStarted = start !== null && start <= now;
-  const hasEarnedValue = doneTasks > 0 && budget > 0;
+  // Earned value exists once any measurable progress has accrued (a fully
+  // done task, or partial progress on an in-flight one) and a budget is set.
+  const hasEarnedValue = completionFraction > 0 && budget > 0;
 
   // Planned Value — only if project has actually started
   let pv = 0;
@@ -137,8 +152,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     pv = Math.round(budget * timeElapsedRatio);
   }
 
-  // Earned Value
-  const ev = hasEarnedValue ? Math.round(budget * (doneTasks / totalTasks)) : 0;
+  // Earned Value — budget scaled by the EFFORT-WEIGHTED completion fraction
+  // (was the unweighted done/total task count). Now a half-finished large
+  // work package earns proportionally more than a finished trivial one.
+  const ev = hasEarnedValue ? Math.round(budget * completionFraction) : 0;
 
   // Actual Cost — from real CostEntry records only. Never fake it.
   const realAC = actualCosts._sum.amount || 0;
