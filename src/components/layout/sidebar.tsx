@@ -284,10 +284,17 @@ export function Sidebar() {
               /* Expanded: full strip */
               <div className="mx-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-2">
                 <div className="flex items-center gap-2">
-                  <FolderOpen className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-                  <span className="flex-1 truncate text-[11px] font-semibold text-indigo-300 leading-tight">
-                    {activeProjectName ?? "Active project"}
-                  </span>
+                  <button
+                    onClick={() => setShowSwitcher((v) => !v)}
+                    className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80 transition-opacity"
+                    title="Switch project"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                    <span className="flex-1 truncate text-[11px] font-semibold text-indigo-300 leading-tight text-left">
+                      {activeProjectName ?? "Active project"}
+                    </span>
+                    <ChevronsUpDown className="w-3 h-3 text-indigo-400/60 flex-shrink-0" />
+                  </button>
                   {/* Deselect */}
                   <button
                     onClick={() => { setActiveProject(null, null); router.push("/projects"); }}
@@ -297,14 +304,6 @@ export function Sidebar() {
                     <X className="w-3 h-3" />
                   </button>
                 </div>
-                {/* Switch button */}
-                <button
-                  onClick={() => setShowSwitcher((v) => !v)}
-                  className="mt-1.5 w-full flex items-center justify-between rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 px-2 py-1 text-[11px] text-indigo-300/80 hover:text-indigo-200 transition-colors"
-                >
-                  <span>Switch project</span>
-                  <ChevronsUpDown className="w-3 h-3" />
-                </button>
               </div>
             )}
 
