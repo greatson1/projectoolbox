@@ -45,19 +45,48 @@ export async function GET(req: NextRequest) {
       await generateDailyDigest();
     } catch {}
 
+    // 0b1-pre. Self-heal AgentArtefact rows with empty projectId. This is the
+    //       single nastiest leak: rows with projectId='' are INVISIBLE to
+    //       /projects/:id/artefacts (filters by exact projectId match), so
+    //       the user sees the agent saying "Cost Management Plan needs your
+    //       review" while the artefacts page shows nothing. The create_artefact
+    //       tool now refuses empty projectId (see chat/stream/route.ts), but
+    //       this sweep catches anything historical or from other writers.
+    //       Relinks to the active deployment for the same agentId.
+    try {
+      const healed: number = await db.$executeRawUnsafe(`
+        UPDATE "AgentArtefact" a
+        SET "projectId" = d."projectId", "updatedAt" = NOW()
+        FROM "AgentDeployment" d
+        WHERE (a."projectId" IS NULL OR a."projectId" = '')
+          AND d."agentId" = a."agentId"
+          AND d."isActive" = true
+      `);
+      if (typeof healed === "number" && healed > 0) {
+        console.log(`[agent-tick] Self-healed ${healed} orphan artefact(s) by relinking projectId.`);
+      }
+    } catch (e) {
+      console.error("[agent-tick] orphan-projectId artefact self-heal failed:", e);
+    }
+
     // 0b1. Self-heal orphan artefacts (phaseId IS NULL).
     //      AgentArtefact rows must always have a phaseId — otherwise the
     //      phase-tracker can't count them and the visible completion %
     //      silently halves. Several create paths can leak NULL on edge
     //      cases (race against Phase row creation, webhook callers that
-    //      forget to include phaseId, etc). This relinks each orphan to
-    //      its project's active deployment currentPhase name, recovering
-    //      within ~1 minute of the leak.
+    //      forget to include phaseId, etc). Relinks each orphan to its
+    //      project's Phase ROW ID (preferred) so the strict id-based
+    //      consumers join correctly. Falls back to the deployment's
+    //      currentPhase NAME if no matching Phase row exists yet — the
+    //      phase-tracker accepts both forms for compatibility.
     try {
       const healed: number = await db.$executeRawUnsafe(`
         UPDATE "AgentArtefact" a
-        SET "phaseId" = d."currentPhase", "updatedAt" = NOW()
+        SET "phaseId" = COALESCE(p."id", d."currentPhase"), "updatedAt" = NOW()
         FROM "AgentDeployment" d
+        LEFT JOIN "Phase" p
+          ON p."projectId" = d."projectId"
+         AND p."name" = d."currentPhase"
         WHERE a."phaseId" IS NULL
           AND d."projectId" = a."projectId"
           AND d."isActive" = true
@@ -71,19 +100,17 @@ export async function GET(req: NextRequest) {
     }
 
     // 0b1b. Self-heal orphan tasks (phaseId IS NULL).
-    //       Same pattern as artefacts. The Gantt/Schedule page groups
-    //       tasks by phase — NULL tasks all bunch up under an "Unassigned"
-    //       header which looks like a bug to users (they assume it means
-    //       "no assignee" not "no phase"). The user-facing tasks API
-    //       (POST /api/projects/:id/tasks) doesn't require phaseId, and
-    //       schedule-parser can leak NULL when the AI emits a phase name
-    //       that doesn't match any project Phase row. Relink to the
-    //       deployment's currentPhase so the Gantt groups them sensibly.
+    //       Same pattern as artefacts — prefer Phase.id over the name, fall
+    //       back to the name when the Phase row hasn't been created yet.
+    //       The Gantt groups by phase; NULL tasks bunch under "Unassigned".
     try {
       const healed: number = await db.$executeRawUnsafe(`
         UPDATE "Task" t
-        SET "phaseId" = d."currentPhase", "updatedAt" = NOW()
+        SET "phaseId" = COALESCE(p."id", d."currentPhase"), "updatedAt" = NOW()
         FROM "AgentDeployment" d
+        LEFT JOIN "Phase" p
+          ON p."projectId" = d."projectId"
+         AND p."name" = d."currentPhase"
         WHERE t."phaseId" IS NULL
           AND d."projectId" = t."projectId"
           AND d."isActive" = true
