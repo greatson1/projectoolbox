@@ -17,7 +17,10 @@ export function Header() {
 
   return (
     <header
-      className="sticky top-0 z-30 flex items-center justify-between h-14 lg:h-16 px-3 lg:px-6 border-b border-border bg-background/80 backdrop-blur-md gap-2"
+      // z-50 keeps popovers anchored inside the header (project switcher,
+      // user menu) above the z-40 sticky ProjectTabBar directly below.
+      // Sidebar is also z-50 but never overlaps the header horizontally.
+      className="sticky top-0 z-50 flex items-center justify-between h-14 lg:h-16 px-3 lg:px-6 border-b border-border bg-background/80 backdrop-blur-md gap-2"
     >
       {/* Mobile: hamburger + logo */}
       <div className="flex items-center gap-2 lg:hidden flex-shrink-0">
