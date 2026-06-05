@@ -129,6 +129,138 @@ Reference ALL prior phase artefacts to compile the closure summary.`,
     artefactGuidance: `DEPTH: OPERATIONAL. Booking phase — booking tracker, documentation checklist, packing list.`,
     clarificationDepth: "moderate",
   },
+  "travel": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: OPERATIONAL. Active travel phase — status reports, incident tracking, daily updates.`,
+    clarificationDepth: "minimal",
+  },
+  "wrap-up": {
+    researchQueries: 1,
+    maxTokens: 4096,
+    artefactGuidance: `DEPTH: SUMMARY. Post-trip wrap-up — expense reconciliation, closure report, lessons learned.`,
+    clarificationDepth: "minimal",
+  },
+
+  // ── Hybrid phases ──
+  "foundation": {
+    researchQueries: 3,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: FOUNDATION. Hybrid foundation — charter, delivery approach, initial registers. Concise but complete.`,
+    clarificationDepth: "moderate",
+  },
+  "iterative delivery": {
+    researchQueries: 3,
+    maxTokens: 8192,
+    artefactGuidance: `DEPTH: OPERATIONAL. Iterative delivery — sprint plans, status reports, working deliverables. Track against the approved plan.`,
+    clarificationDepth: "moderate",
+  },
+
+  // ── SAFe phases ──
+  "pi planning": {
+    researchQueries: 4,
+    maxTokens: 10240,
+    artefactGuidance: `DEPTH: COMPREHENSIVE. PI Planning — program increment objectives, feature decomposition, team capacity, risk ROAMing. This is the heaviest planning ceremony in SAFe.`,
+    clarificationDepth: "thorough",
+  },
+  "iteration cadence": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: ITERATIVE. Iteration cycle — iteration plans, team sync, continuous delivery. Build on PI objectives.`,
+    clarificationDepth: "minimal",
+  },
+  "inspect and adapt": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: REFLECTIVE. Inspect & Adapt — quantitative metrics review, problem-solving workshop, improvement backlog.`,
+    clarificationDepth: "minimal",
+  },
+  "inspect & adapt": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: REFLECTIVE. Inspect & Adapt — quantitative metrics review, problem-solving workshop, improvement backlog.`,
+    clarificationDepth: "minimal",
+  },
+
+  // ── Kanban phases ──
+  "setup": {
+    researchQueries: 3,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: FOUNDATION. Kanban setup — board design, WIP limits, service level expectations, initial backlog.`,
+    clarificationDepth: "moderate",
+  },
+  "continuous delivery": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: OPERATIONAL. Continuous delivery — flow metrics, WIP tracking, bottleneck analysis, status reports.`,
+    clarificationDepth: "minimal",
+  },
+  "review": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: REFLECTIVE. Review phase — retrospective, metrics analysis, process improvements, lessons learned.`,
+    clarificationDepth: "minimal",
+  },
+
+  // ── Scrum / shared ──
+  "release": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: OPERATIONAL. Release — deployment plans, release notes, rollback strategy, stakeholder communication.`,
+    clarificationDepth: "minimal",
+  },
+
+  // ── PMBOK-specific phases ──
+  "initiating": {
+    researchQueries: 4,
+    maxTokens: 8192,
+    artefactGuidance: `DEPTH: DETAILED. PMBOK Initiating — project charter, initial stakeholder register. Formal authorisation of the project.`,
+    clarificationDepth: "moderate",
+  },
+  "monitoring and controlling": {
+    researchQueries: 3,
+    maxTokens: 8192,
+    artefactGuidance: `DEPTH: ANALYTICAL. Monitoring & Controlling — performance reports, earned value analysis, variance analysis, change control. Track against the approved baselines from Planning.`,
+    clarificationDepth: "moderate",
+  },
+  "monitoring & controlling": {
+    researchQueries: 3,
+    maxTokens: 8192,
+    artefactGuidance: `DEPTH: ANALYTICAL. Monitoring & Controlling — performance reports, earned value analysis, variance analysis, change control.`,
+    clarificationDepth: "moderate",
+  },
+
+  // ── Waterfall-specific phases ──
+  "requirements": {
+    researchQueries: 3,
+    maxTokens: 8192,
+    artefactGuidance: `DEPTH: DETAILED. Requirements phase — elicitation, documentation, traceability. Foundation for all downstream work.`,
+    clarificationDepth: "thorough",
+  },
+  "design": {
+    researchQueries: 4,
+    maxTokens: 10240,
+    artefactGuidance: `DEPTH: COMPREHENSIVE. Design phase — detailed technical/functional design, WBS, schedule, cost estimates. Second heaviest phase after Planning.`,
+    clarificationDepth: "thorough",
+  },
+  "build": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: OPERATIONAL. Build phase — construction/development tracking, quality assurance, progress against schedule.`,
+    clarificationDepth: "minimal",
+  },
+  "test": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: OPERATIONAL. Test phase — test execution, defect tracking, acceptance testing against criteria from Design.`,
+    clarificationDepth: "minimal",
+  },
+  "deploy": {
+    researchQueries: 2,
+    maxTokens: 6144,
+    artefactGuidance: `DEPTH: OPERATIONAL. Deploy phase — cutover planning, rollback strategy, go-live checklist, training delivery.`,
+    clarificationDepth: "minimal",
+  },
 };
 
 /** Get depth config for a phase. Falls back to moderate defaults for unknown phases. */
