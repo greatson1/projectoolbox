@@ -66,7 +66,12 @@ export interface EvmMetrics {
   sv: number;            // Schedule Variance (EV - PV)
   cv: number | null;     // Cost Variance (EV - AC) — null without real AC
   // Indices
-  spi: number;           // Schedule Performance Index (EV / PV)
+  // SPI is null very early in the timeline: with <15% elapsed PV≈0, so EV/PV
+  // explodes (e.g. 4.6× on day 3 of a year) and falsely reads "ahead", or a
+  // rounding wobble could trip a false "behind schedule" alert. Suppressed
+  // until the project is far enough in — matches the metrics route guard.
+  spi: number | null;    // Schedule Performance Index (EV / PV) — null when too early
+  spiInsufficientData: boolean; // true when suppressed for being too early
   cpi: number | null;    // Cost Performance Index (EV / AC) — null without real AC
   // Forecasts (weekly)
   eac: number | null;    // Estimate At Completion (BAC / CPI) — null without CPI
@@ -74,7 +79,7 @@ export interface EvmMetrics {
   tcpi: number | null;   // To-Complete Performance Index — null without AC
   vac: number | null;    // Variance At Completion (BAC - EAC) — null without EAC
   // Health
-  scheduleHealth: "GREEN" | "AMBER" | "RED";
+  scheduleHealth: "GREEN" | "AMBER" | "RED" | "UNKNOWN"; // UNKNOWN when SPI suppressed
   costHealth: "GREEN" | "AMBER" | "RED" | "UNKNOWN"; // UNKNOWN when no real AC
 }
 
@@ -125,9 +130,15 @@ export async function calculateEvm(projectId: string): Promise<EvmMetrics | null
   const hasRealCosts = actualCosts._count > 0 && realAC > 0;
   const ac: number | null = hasRealCosts ? Math.round(realAC) : null;
 
-  // Schedule variance/index only need EV + PV → always computable.
+  // Schedule variance is always computable. SPI is suppressed until ≥15% of
+  // the timeline has elapsed — before that PV≈0 makes EV/PV meaningless and
+  // would mislead the monitoring alerts. Matches the metrics route guard.
   const sv = ev - pv;
-  const spi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : 1;
+  const SPI_MIN_ELAPSED = 0.15;
+  const spiInsufficientData = plannedProgress < SPI_MIN_ELAPSED;
+  const spi: number | null = (!spiInsufficientData && pv > 0)
+    ? Math.round((ev / pv) * 100) / 100
+    : null;
 
   // Cost-side metrics require real AC. Without it they are null (not a
   // fabricated 0.95) so callers can show N/A and alerts don't false-fire.
@@ -150,10 +161,12 @@ export async function calculateEvm(projectId: string): Promise<EvmMetrics | null
     costHealth = cpi === null ? "UNKNOWN" : cpi >= 0.95 ? "GREEN" : cpi >= 0.9 ? "AMBER" : "RED";
   }
 
-  // Health RAG
-  const scheduleHealth = spi >= 0.95 ? "GREEN" : spi >= 0.9 ? "AMBER" : "RED";
+  // Health RAG — UNKNOWN while SPI is suppressed (too early to judge).
+  const scheduleHealth: "GREEN" | "AMBER" | "RED" | "UNKNOWN" = spi === null
+    ? "UNKNOWN"
+    : spi >= 0.95 ? "GREEN" : spi >= 0.9 ? "AMBER" : "RED";
 
-  return { bac, pv, ev, ac, hasRealCosts, sv, cv, spi, cpi, eac, etc, tcpi, vac, scheduleHealth, costHealth };
+  return { bac, pv, ev, ac, hasRealCosts, sv, cv, spi, spiInsufficientData, cpi, eac, etc, tcpi, vac, scheduleHealth, costHealth };
 }
 
 /**
@@ -166,8 +179,10 @@ export async function checkEvmThresholds(projectId: string, agentId: string): Pr
 
   const proposals: ActionProposal[] = [];
 
-  // SPI < 0.9 → behind schedule
-  if (evm.spi < 0.9) {
+  // SPI < 0.9 → behind schedule. Only fires once SPI is meaningful (≥15% of
+  // the timeline elapsed) — before that it's null and an early project must
+  // not be flagged "behind" on a PV≈0 artefact.
+  if (evm.spi !== null && evm.spi < 0.9) {
     proposals.push({
       type: "ESCALATION",
       description: `Schedule Performance Index is ${evm.spi} (below 0.9 threshold). Project is ${Math.round((1 - evm.spi) * 100)}% behind planned progress.`,

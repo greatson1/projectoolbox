@@ -1208,6 +1208,11 @@ async function seedProseToKB(artefact: ArtefactInput, agentId: string): Promise<
     const content = (artefact.content || "").trim();
     if (!content || content.length < 50) return; // too short to extract from
 
+    // KnowledgeBaseItem.orgId is required — resolve once from the project.
+    const project = await db.project.findUnique({ where: { id: artefact.projectId }, select: { orgId: true } });
+    if (!project?.orgId) return;
+    const orgId = project.orgId;
+
     const tag = `custom_${artefact.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")}`;
 
     // Delete previously seeded items for this artefact
@@ -1228,6 +1233,7 @@ async function seedProseToKB(artefact: ArtefactInput, agentId: string): Promise<
         data: {
           agentId,
           projectId: artefact.projectId,
+          orgId,
           title: `[${tag}] ${artefact.name}`,
           content: content.slice(0, 5000),
           source: "artefact_seed",
@@ -1273,6 +1279,7 @@ ${content.slice(0, 4000)}`,
         data: {
           agentId,
           projectId: artefact.projectId,
+          orgId,
           title: `[${tag}] ${artefact.name}`,
           content: content.slice(0, 5000),
           source: "artefact_seed",
@@ -1301,6 +1308,7 @@ ${content.slice(0, 4000)}`,
         data: {
           agentId,
           projectId: artefact.projectId,
+          orgId,
           title: `[${tag}] ${artefact.name}`,
           content: content.slice(0, 5000),
           source: "artefact_seed",
@@ -1317,6 +1325,7 @@ ${content.slice(0, 4000)}`,
         data: {
           agentId,
           projectId: artefact.projectId,
+          orgId,
           title: `[${tag}:${fact.type}] ${fact.title}`,
           content: fact.content,
           source: "artefact_seed",
