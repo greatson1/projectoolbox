@@ -21,8 +21,9 @@ import { marked } from "marked";
 import { Progress } from "@/components/ui/progress";
 import {
   FileText, FolderOpen, Upload, Clock, Download, Eye, CheckCircle2,
-  XCircle, ChevronDown, Edit3, RefreshCw, Bot, ArrowRight, Sparkles, AlertCircle, CalendarDays,
+  XCircle, ChevronDown, Edit3, RefreshCw, Bot, ArrowRight, Sparkles, AlertCircle, CalendarDays, X, RotateCcw,
 } from "lucide-react";
+import { useAppStore } from "@/stores/app";
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   APPROVED: "default",
@@ -801,18 +802,29 @@ function AgentStatusBanner({
   //      and any whose name isn't in the Set are missing. Split into
   //      required vs optional so each gets its own banner styling
   //      (required = amber, optional = blue, less alarming).
-  const { missingRequiredNames, missingOptionalNames } = (() => {
+  // Read per-phase dismissals from the Zustand store so the optional
+  // banner stops nagging once the user explicitly chose to skip a doc.
+  const dismissedArtefacts = useAppStore((s) => s.dismissedArtefacts);
+  const dismissArtefact = useAppStore((s) => s.dismissArtefact);
+  const restoreAllArtefacts = useAppStore((s) => s.restoreAllArtefacts);
+  const dismissalKey = activePhaseForFilter?.name
+    ? `${projectId}::${activePhaseForFilter.name}`
+    : "";
+  const dismissedSet = new Set(dismissedArtefacts[dismissalKey] || []);
+
+  const { missingRequiredNames, missingOptionalNames, dismissedCount } = (() => {
     const meth = (project as any)?.methodology;
-    if (!meth || !activePhaseForFilter?.name) return { missingRequiredNames: [] as string[], missingOptionalNames: [] as string[] };
+    if (!meth || !activePhaseForFilter?.name) return { missingRequiredNames: [] as string[], missingOptionalNames: [] as string[], dismissedCount: 0 };
     try {
       const def = getMethodology(meth);
       const phaseDef = def.phases.find(p => p.name === activePhaseForFilter.name);
-      if (!phaseDef) return { missingRequiredNames: [], missingOptionalNames: [] };
+      if (!phaseDef) return { missingRequiredNames: [], missingOptionalNames: [], dismissedCount: 0 };
       const haveNames = new Set(
         currentPhaseItems.map((a: any) => (a.name || "").toLowerCase().trim())
       );
       const missingReq: string[] = [];
       const missingOpt: string[] = [];
+      let dismissed = 0;
       for (const art of phaseDef.artefacts) {
         if (!art.aiGeneratable) continue;
         const c = art.name.toLowerCase().trim();
@@ -821,12 +833,13 @@ function AgentStatusBanner({
         const have = haveNames.has(c) || Array.from(haveNames).some(h => h.includes(c) || c.includes(h));
         if (!have) {
           if (art.required) missingReq.push(art.name);
+          else if (dismissedSet.has(art.name)) dismissed++;
           else missingOpt.push(art.name);
         }
       }
-      return { missingRequiredNames: missingReq, missingOptionalNames: missingOpt };
+      return { missingRequiredNames: missingReq, missingOptionalNames: missingOpt, dismissedCount: dismissed };
     } catch {
-      return { missingRequiredNames: [], missingOptionalNames: [] };
+      return { missingRequiredNames: [], missingOptionalNames: [], dismissedCount: 0 };
     }
   })();
   const total = Math.max(expectedCount, generated);
@@ -970,24 +983,52 @@ function AgentStatusBanner({
         forgotten ("did I generate the Communication Plan?") and silently
         leave the project incomplete. Skipped entirely when there's
         nothing missing OR when the current phase has nothing generated
-        yet (the empty / "Generate Artefacts" state covers that case). */}
+        yet (the empty / "Generate Artefacts" state covers that case).
+
+        Each missing item gets a small "×" so the user can mark it as
+        intentionally skipped — the next reload won't re-flag it. A
+        "Restore skipped" link reappears once anything is dismissed so
+        nothing is permanently buried. State lives in the Zustand store
+        (localStorage) keyed by `${projectId}::${phaseName}`. */}
     {missingOptionalNames.length > 0 && generated > 0 && !generating && (
       <Card className="border border-blue-500/30 bg-blue-500/5">
         <CardContent className="p-3 flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2 min-w-0">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
             <FileText className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm text-blue-700 dark:text-blue-400">
                 <span className="font-semibold">
                   {missingOptionalNames.length} optional document{missingOptionalNames.length === 1 ? "" : "s"} not yet generated for {phaseName}
                 </span>
               </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                {missingOptionalNames.slice(0, 4).join(" · ")}
-                {missingOptionalNames.length > 4 && ` · +${missingOptionalNames.length - 4} more`}
-              </p>
-              <p className="text-[10px] text-muted-foreground/80 mt-1">
-                You can advance the phase without these, but they&apos;re part of the methodology&apos;s recommended set.
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {missingOptionalNames.map((name) => (
+                  <span key={name}
+                    className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20">
+                    {name}
+                    <button
+                      type="button"
+                      title={`Skip "${name}" — won't re-flag on reload`}
+                      onClick={() => dismissArtefact(projectId, activePhaseForFilter?.name || phaseName, name)}
+                      className="hover:bg-blue-500/20 rounded-full p-0.5 -mr-0.5"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground/80 mt-1.5">
+                You can advance without these — click × to skip any you don&apos;t need.
+                {dismissedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => restoreAllArtefacts(projectId, activePhaseForFilter?.name || phaseName)}
+                    className="ml-2 inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    Restore {dismissedCount} skipped
+                  </button>
+                )}
               </p>
             </div>
           </div>

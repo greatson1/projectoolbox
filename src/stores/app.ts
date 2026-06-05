@@ -32,6 +32,14 @@ interface AppState {
   recentProjectIds: string[];
   touchRecentProject: (id: string) => void;
 
+  // Optional-artefacts the user has explicitly dismissed per phase.
+  // Keyed by `${projectId}::${phaseName}`. Read by the artefacts-page
+  // missing-optionals banner so we don't re-flag a doc the user
+  // already chose to skip.
+  dismissedArtefacts: Record<string, string[]>;
+  dismissArtefact: (projectId: string, phaseName: string, artefactName: string) => void;
+  restoreAllArtefacts: (projectId: string, phaseName: string) => void;
+
   // Command palette
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -85,6 +93,31 @@ export const useAppStore = create<AppState>()(
           return { recentProjectIds: next };
         }),
 
+      // Optional-artefact dismiss state — keyed by `${projectId}::${phaseName}`.
+      // When the user clicks "Skip" on an optional artefact in the
+      // missing-optionals banner, its name lands here so the banner
+      // stops nagging about it. Persisted across sessions but local to
+      // the device — moves to DB later if cross-device sync becomes
+      // important. The user can "Restore" any dismissal from the same
+      // banner; no DB migration, fully reversible.
+      dismissedArtefacts: {},
+      dismissArtefact: (projectId, phaseName, artefactName) =>
+        set((s) => {
+          if (!projectId || !phaseName || !artefactName) return s;
+          const k = `${projectId}::${phaseName}`;
+          const cur = s.dismissedArtefacts[k] || [];
+          if (cur.includes(artefactName)) return s;
+          return { dismissedArtefacts: { ...s.dismissedArtefacts, [k]: [...cur, artefactName] } };
+        }),
+      restoreAllArtefacts: (projectId, phaseName) =>
+        set((s) => {
+          const k = `${projectId}::${phaseName}`;
+          if (!s.dismissedArtefacts[k]) return s;
+          const map = { ...s.dismissedArtefacts };
+          delete map[k];
+          return { dismissedArtefacts: map };
+        }),
+
       commandPaletteOpen: false,
       setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
 
@@ -104,6 +137,7 @@ export const useAppStore = create<AppState>()(
         collapsedGroups: state.collapsedGroups,
         pinnedPages: state.pinnedPages,
         recentProjectIds: state.recentProjectIds,
+        dismissedArtefacts: state.dismissedArtefacts,
       }),
     }
   )
