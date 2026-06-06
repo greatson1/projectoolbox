@@ -8,11 +8,24 @@ import Link from "next/link";
 import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card as BaseCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+/**
+ * Local Card wrapper for this page. The base ui/card has vertical padding
+ * (py-4) but NO horizontal padding — that lives on CardHeader/CardContent.
+ * This page drops content straight into <Card> (no CardContent), so without
+ * this wrapper every value hugged the left/right edges. Inject comfortable
+ * symmetric padding (px-5 py-4) once here so all ~20 cards breathe, while
+ * still forwarding className/key/size and any overrides.
+ */
+function Card({ className, ...props }: Parameters<typeof BaseCard>[0]) {
+  return <BaseCard className={cn("px-5 py-4", className)} {...props} />;
+}
 
 /**
  * Sprint Tracker — Sprint progress, burndown/burnup, stand-ups, team performance,
@@ -348,7 +361,9 @@ export default function SprintTrackerPage() {
       </div>
 
       {/* ═══ 2. SPRINT HEALTH DASHBOARD — 6 cards ═══ */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* 6-up only on xl+; on laptops go 3-up so each card stays roomy
+          rather than squeezing all six into a cramped strip. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* Progress Ring */}
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Sprint Progress</p>
