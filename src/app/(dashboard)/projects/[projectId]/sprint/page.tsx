@@ -5,7 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
 import { Card as BaseCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,6 +106,7 @@ export default function SprintTrackerPage() {
   const { data: apiSprints } = useProjectSprints(projectId);
   const { data: project } = useProject(projectId);
   const { data: criteria } = useProjectCriteria(projectId);
+  const { data: apiChangeRequests } = useProjectChangeRequests(projectId);
 
   // Methodology guard. The sidebar tab is already hidden for non-sprint
   // methodologies, but the route stays accessible by direct URL. Without
@@ -336,6 +337,46 @@ export default function SprintTrackerPage() {
     return SPRINT_ITEMS_DATA.filter(i => i.status === backlogFilter);
   }, [backlogFilter, SPRINT_ITEMS_DATA]);
 
+  // ── Team Workload (real, derived from the selected sprint's tasks) ──
+  // Group sprint tasks by assignee and bucket by status, summing story
+  // points (fallback 1 SP/task when unestimated). capacity = that member's
+  // total SP in the sprint, so the stacked bar always fills to their load.
+  // Replaces the empty TEAM placeholder. velocityHistory stays empty (no
+  // per-member historical snapshots captured yet) — the sparkline simply
+  // renders flat rather than fabricating a trend.
+  const derivedTeam = useMemo(() => {
+    const byAssignee = new Map<string, { name: string; done: number; inProgress: number; todo: number; blocked: number }>();
+    for (const t of (filteredApiTasks || [])) {
+      const name = (t.assigneeName || t.assignee || "").trim();
+      // Skip agent-self assignments ("agent:<id>") — those aren't team members.
+      if (!name || name.startsWith("agent:")) continue;
+      const sp = Number(t.storyPoints) > 0 ? Number(t.storyPoints) : 1;
+      const row = byAssignee.get(name) || { name, done: 0, inProgress: 0, todo: 0, blocked: 0 };
+      const st = (t.status || "").toLowerCase();
+      if (t.blocked || st === "blocked") row.blocked += sp;
+      else if (st === "done" || st === "completed") row.done += sp;
+      else if (st === "in_progress" || st === "active" || st === "in_review") row.inProgress += sp;
+      else row.todo += sp;
+      byAssignee.set(name, row);
+    }
+    return Array.from(byAssignee.values())
+      .map(m => ({ ...m, capacity: Math.max(1, m.done + m.inProgress + m.todo + m.blocked), velocityHistory: [] as number[] }))
+      .sort((a, b) => b.capacity - a.capacity);
+  }, [filteredApiTasks]);
+
+  // ── Scope Changes (real, from ChangeRequest rows) ──
+  // The card was a hardcoded "—". Count change requests for this project,
+  // splitting approved/implemented from those still open, so the user sees
+  // how much scope churn has occurred. ChangeRequest has no sprintId, so
+  // this is project-level (labelled as such in the card).
+  const scopeChangeStats = useMemo(() => {
+    const crs = apiChangeRequests || [];
+    const total = crs.length;
+    const approved = crs.filter((c: any) => ["APPROVED", "IMPLEMENTED"].includes((c.status || "").toUpperCase())).length;
+    const open = crs.filter((c: any) => ["SUBMITTED", "UNDER_REVIEW", "PENDING"].includes((c.status || "").toUpperCase())).length;
+    return { total, approved, open };
+  }, [apiChangeRequests]);
+
   // Use derived data instead of hardcoded constants throughout
   const activeBlockers = derivedBlockers;
   const activeGoal = derivedGoal;
@@ -448,14 +489,19 @@ export default function SprintTrackerPage() {
           </div>
         </Card>
 
-        {/* Scope Changes — derived from real ChangeRequest rows when available */}
+        {/* Scope Changes — real count from ChangeRequest rows (project-level) */}
         <Card>
           <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>Scope Changes</p>
           <div className="flex items-baseline gap-2">
-            <span className="text-[28px] font-bold" style={{ color: "var(--muted-foreground)" }}>—</span>
+            <span className="text-[28px] font-bold" style={{ color: scopeChangeStats.total > 0 ? "#F59E0B" : "var(--muted-foreground)" }}>
+              {scopeChangeStats.total === 0 ? "—" : scopeChangeStats.total}
+            </span>
+            {scopeChangeStats.open > 0 && <Badge variant="secondary">{scopeChangeStats.open} open</Badge>}
           </div>
           <p className="text-[10px] mt-1" style={{ color: "var(--muted-foreground)" }}>
-            Tracked once a Change Request is logged
+            {scopeChangeStats.total === 0
+              ? "Tracked once a Change Request is logged"
+              : `${scopeChangeStats.approved} approved · ${scopeChangeStats.open} open (project total)`}
           </p>
         </Card>
 
@@ -750,15 +796,21 @@ export default function SprintTrackerPage() {
         {/* Workload bars */}
         <Card>
           <h3 className="text-[14px] font-semibold mb-3" style={{ color: "var(--foreground)" }}>Team Workload</h3>
+          {derivedTeam.length === 0 ? (
+            <p className="text-[11px] py-6 text-center" style={{ color: "var(--muted-foreground)" }}>
+              No assigned work yet — assign sprint tasks to team members to see their load here.
+            </p>
+          ) : (
           <div className="space-y-3">
-            {TEAM.map(m => {
+            {derivedTeam.map(m => {
               const total = m.done + m.inProgress + m.todo + m.blocked;
               const bar = (val: number, color: string) => ({ width: `${(val / m.capacity) * 100}%`, background: color });
+              const initial = (m.name.trim()[0] || "?").toUpperCase();
               return (
                 <div key={m.name}>
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
+                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">{initial}</div>
                       <span className="text-[12px] font-medium" style={{ color: "var(--foreground)" }}>{m.name.split(" ")[0]}</span>
                     </div>
                     <span className="text-[10px]" style={{ color: "var(--muted-foreground)" }}>{total}/{m.capacity} SP</span>
@@ -769,18 +821,22 @@ export default function SprintTrackerPage() {
                     <div className="h-full" style={bar(m.todo, "#64748B")} />
                     {m.blocked > 0 && <div className="h-full" style={bar(m.blocked, "#EF4444")} />}
                   </div>
-                  {/* Individual sparkline */}
-                  <div className="mt-1 h-[20px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={m.velocityHistory.map((v, i) => ({ s: i, v }))}>
-                        <Line type="monotone" dataKey="v" stroke={"var(--primary)"} strokeWidth={1.5} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {/* Per-member velocity sparkline — only when historical
+                      snapshots exist (none captured yet, so usually hidden). */}
+                  {m.velocityHistory.length > 1 && (
+                    <div className="mt-1 h-[20px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={m.velocityHistory.map((v, i) => ({ s: i, v }))}>
+                          <Line type="monotone" dataKey="v" stroke={"var(--primary)"} strokeWidth={1.5} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
+          )}
           <div className="flex items-center gap-3 mt-3 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
             <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm" style={{ background: "#10B981" }} /> Done</span>
             <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm" style={{ background: "#6366F1" }} /> In Progress</span>
