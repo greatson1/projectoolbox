@@ -47,10 +47,7 @@ export async function GET(
   // Fetch the active deployment with project and agent
   const deployment = await db.agentDeployment.findFirst({
     where: { agentId, isActive: true },
-    // omit definitionOfDone / definitionOfReady — declared in schema but the
-    // production DB doesn't have them yet (db push blocked by pre-existing
-    // unique-constraint duplicates). The pipeline doesn't read these fields.
-    include: { project: { omit: { definitionOfDone: true, definitionOfReady: true } }, agent: true },
+    include: { project: true, agent: true },
     orderBy: { deployedAt: "desc" },
   });
 
