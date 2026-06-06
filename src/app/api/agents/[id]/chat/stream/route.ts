@@ -1139,15 +1139,29 @@ ${await (async () => {
     const missing = expected.filter(a => !generated.has(a.name.toLowerCase()));
     const generatedCount = expected.length - missing.length;
     const strictlyRequired = expected.filter(a => a.required);
+    // Split missing into required-and-missing vs optional-and-missing so
+    // the agent uses the right verb for each ("you need to generate the
+    // Project Charter" vs "you could optionally generate Communication
+    // Plan"). Previously the prompt lumped them under one "Not yet
+    // drafted" line, which made Sonnet say "you still need 4 more" for
+    // four artefacts that were all required:false — exactly the
+    // confusion the user reported.
+    const missingRequired = missing.filter(a => a.required);
+    const missingOptional = missing.filter(a => !a.required);
 
     const lines: string[] = [];
     lines.push(`This phase defines ${expected.length} ai-generatable artefact${expected.length === 1 ? "" : "s"}: ${expected.map(a => a.name).join(", ")}.`);
     lines.push(`Generated so far: ${generatedCount} of ${expected.length}.`);
+    if (missingRequired.length > 0) {
+      lines.push(`⛔ Required, not yet drafted: ${missingRequired.map(a => a.name).join(", ")} — the phase CANNOT advance until each of these is generated and approved.`);
+    }
+    if (missingOptional.length > 0) {
+      lines.push(`💡 Optional / methodology-recommended, not yet drafted: ${missingOptional.map(a => a.name).join(", ")} — the methodology lists these as recommended extras. The phase CAN advance without them; offer to generate them but do NOT tell the user they "need" or "must" or "still need" to produce these. The right phrasing is "you could also generate X, Y, Z" or "the methodology suggests X, Y, Z as optional extras".`);
+    }
     if (missing.length > 0) {
-      lines.push(`⚠️ Not yet drafted: ${missing.map(a => a.name).join(", ")} — generate these before claiming the phase is complete.`);
       lines.push("");
-      lines.push("🚫 CRITICAL — DO NOT DESCRIBE THESE AS 'NEEDS REVIEW' OR 'AWAITING APPROVAL':");
-      lines.push(`The artefacts listed in "Not yet drafted" above DO NOT EXIST in the database. They have NEVER been generated. The user cannot review what doesn't exist. You MUST describe them as "not yet generated" or "still to be created", NEVER as:`);
+      lines.push("🚫 CRITICAL — DO NOT DESCRIBE ANY OF THE ABOVE AS 'NEEDS REVIEW' OR 'AWAITING APPROVAL':");
+      lines.push(`The artefacts listed as "not yet drafted" above DO NOT EXIST in the database. They have NEVER been generated. The user cannot review what doesn't exist. You MUST describe them as "not yet generated" or "still to be created", NEVER as:`);
       lines.push(`  - "X needs review"`);
       lines.push(`  - "X is awaiting your approval"`);
       lines.push(`  - "X is a draft"`);

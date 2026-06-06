@@ -83,6 +83,26 @@ export default function ArtefactsPage() {
     }
   })();
 
+  /** Lower-cased name → required flag, across every phase of the
+   * methodology. Used to render a Required / Optional pill next to the
+   * Methodology badge on each artefact card so the user can see at a
+   * glance which methodology slot each one fills. Last write wins if
+   * the same name appears in multiple phases (rare; safe to ignore). */
+  const methodologyRequiredByName = (() => {
+    const map = new Map<string, boolean>();
+    const meth = (project as any)?.methodology;
+    if (!meth) return map;
+    try {
+      const def = getMethodology(meth);
+      for (const p of def.phases) {
+        for (const a of p.artefacts) {
+          if (a.aiGeneratable) map.set(a.name.toLowerCase(), !!a.required);
+        }
+      }
+    } catch { /* ignore */ }
+    return map;
+  })();
+
   if (isLoading) {
     return (
       <div className="space-y-6 max-w-[1400px]">
@@ -586,21 +606,49 @@ export default function ArtefactsPage() {
                             artefact catalogue. Bespoke ones don't gate phase advancement. */}
                         {methodologyArtefactSet.size > 0 && (() => {
                           const itemName = (art.name || "").toLowerCase().trim();
-                          // Exact match → Methodology. Otherwise check fuzzy
-                          // match against the set so a custom-named upload
-                          // like "Project Brief - Family Trip to Lagos" is
-                          // recognised as fulfilling "Project Brief" and
-                          // labelled Methodology — same logic the banner
-                          // uses to count fulfilment.
+                          // Resolve to the methodology slot this artefact fills
+                          // (exact match first, then fuzzy match — same logic as
+                          // the missing-artefacts banner). The slot tells us
+                          // whether this card sits in a required or optional
+                          // position in the methodology, which we render as a
+                          // second badge so the user doesn't have to guess.
+                          let matchedSlot: string | null = null;
                           if (methodologyArtefactSet.has(itemName)) {
-                            return <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30" title="Defined by the project's methodology — counts toward phase gate when required.">Methodology</Badge>;
-                          }
-                          for (const canonical of methodologyArtefactSet) {
-                            if (itemName.includes(canonical) || canonical.includes(itemName)) {
-                              return <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30" title={`Custom name matches the methodology's "${canonical}" — counts toward phase fulfilment.`}>Methodology</Badge>;
+                            matchedSlot = itemName;
+                          } else {
+                            for (const canonical of methodologyArtefactSet) {
+                              if (itemName.includes(canonical) || canonical.includes(itemName)) {
+                                matchedSlot = canonical;
+                                break;
+                              }
                             }
                           }
-                          return <Badge variant="outline" className="text-[9px] text-amber-400 border-amber-400/30" title="Custom document created via chat or upload — does not gate phase advancement.">Custom</Badge>;
+                          if (!matchedSlot) {
+                            return <Badge variant="outline" className="text-[9px] text-amber-400 border-amber-400/30" title="Custom document created via chat or upload — does not gate phase advancement.">Custom</Badge>;
+                          }
+                          const isRequired = methodologyRequiredByName.get(matchedSlot);
+                          return (
+                            <>
+                              <Badge variant="outline" className="text-[9px] text-indigo-400 border-indigo-400/30"
+                                title={matchedSlot === itemName
+                                  ? "Defined by the project's methodology."
+                                  : `Custom name matches the methodology's "${matchedSlot}".`}>
+                                Methodology
+                              </Badge>
+                              {isRequired === true && (
+                                <Badge variant="outline" className="text-[9px] text-red-500 border-red-500/40"
+                                  title="The methodology marks this artefact as required — the phase gate blocks until it's generated and approved.">
+                                  Required
+                                </Badge>
+                              )}
+                              {isRequired === false && (
+                                <Badge variant="outline" className="text-[9px] text-sky-500 border-sky-500/40"
+                                  title="The methodology marks this artefact as optional — recommended but not required for phase advancement.">
+                                  Optional
+                                </Badge>
+                              )}
+                            </>
+                          );
                         })()}
                         <span className="text-[10px] text-muted-foreground ml-auto">v{art.version || 1}</span>
                       </div>
