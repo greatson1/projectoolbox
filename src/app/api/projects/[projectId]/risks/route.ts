@@ -407,6 +407,13 @@ ${project?.name ?? "Project"} — AI Project Manager`;
       },
     });
 
+    // Escalation used to early-return before the line-~442 sync ran, so
+    // every escalation (status → ESCALATED + responseLog entry) silently
+    // drifted the Risk Register artefact. Run the sync explicitly here.
+    import("@/lib/agents/artefact-sync")
+      .then(({ syncRisksToArtefact }) => syncRisksToArtefact(projectId))
+      .catch((e) => console.error(`[artefact-sync] syncRisksToArtefact failed after escalate for project ${projectId}:`, e));
+
     return NextResponse.json({
       data: updatedRisk,
       emailsSent,
@@ -438,10 +445,12 @@ ${project?.name ?? "Project"} — AI Project Manager`;
     }).catch(() => {});
   }
 
-  // Reverse sync: update Risk Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncRisksToArtefact }) =>
-    syncRisksToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  // Reverse sync: update Risk Register artefact CSV.
+  // Logged on failure so silent drift becomes visible in logs — previously
+  // both the import error and the sync error were swallowed by .catch(() => {}).
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncRisksToArtefact }) => syncRisksToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncRisksToArtefact failed for project ${projectId}:`, e));
 
   // Mark the scaffolded "Review and update Risk Register" monitoring task done
   // for this phase — only on substantive field updates (probability/impact/

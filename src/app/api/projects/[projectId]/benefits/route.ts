@@ -50,10 +50,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     },
   });
 
-  // Reverse sync: update Benefits artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncBenefitsToArtefact }) =>
-    syncBenefitsToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  // Reverse sync: update Benefits artefact CSV. Logged on failure so
+  // silent drift surfaces in logs instead of disappearing into .catch(() => {}).
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncBenefitsToArtefact }) => syncBenefitsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncBenefitsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: benefit }, { status: 201 });
 }
@@ -87,10 +88,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     }).catch(() => {});
   }
 
-  // Reverse sync: update Benefits artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncBenefitsToArtefact }) =>
-    syncBenefitsToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  // Reverse sync: update Benefits artefact CSV. Logged on failure so
+  // silent drift surfaces in logs instead of disappearing into .catch(() => {}).
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncBenefitsToArtefact }) => syncBenefitsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncBenefitsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: benefit });
 }

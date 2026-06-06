@@ -102,9 +102,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   }).catch(() => {});
 
   // Reverse sync: update Stakeholder Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncStakeholdersToArtefact }) =>
-    syncStakeholdersToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncStakeholdersToArtefact }) => syncStakeholdersToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncStakeholdersToArtefact failed for project ${projectId}:`, e));
 
   // Mark the scaffolded "Stakeholder communication and updates" PM task as
   // completed for this phase — see task-scaffolding.UNIVERSAL_TASKS.
@@ -154,9 +154,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   }).catch(() => {});
 
   // Reverse sync: update Stakeholder Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncStakeholdersToArtefact }) =>
-    syncStakeholdersToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncStakeholdersToArtefact }) => syncStakeholdersToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncStakeholdersToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: stakeholder });
 }
@@ -192,9 +192,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   }).catch(() => {});
 
   // Reverse sync: update Stakeholder Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncStakeholdersToArtefact }) =>
-    syncStakeholdersToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncStakeholdersToArtefact }) => syncStakeholdersToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncStakeholdersToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: { id: stakeholderId } });
 }

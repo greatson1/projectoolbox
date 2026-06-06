@@ -30,9 +30,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const cr = await db.changeRequest.create({ data: { ...body, projectId } });
 
   // Reverse sync: update Change Request Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncChangeRequestsToArtefact }) =>
-    syncChangeRequestsToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncChangeRequestsToArtefact }) => syncChangeRequestsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncChangeRequestsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: cr }, { status: 201 });
 }
@@ -59,9 +59,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   const cr = await db.changeRequest.update({ where: { id: crId }, data });
 
   // Reverse sync: update Change Request Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncChangeRequestsToArtefact }) =>
-    syncChangeRequestsToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncChangeRequestsToArtefact }) => syncChangeRequestsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncChangeRequestsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: cr });
 }
@@ -89,9 +89,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   await db.changeRequest.delete({ where: { id: crId } });
 
   // Reverse sync: update Change Request Register artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncChangeRequestsToArtefact }) =>
-    syncChangeRequestsToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncChangeRequestsToArtefact }) => syncChangeRequestsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncChangeRequestsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ ok: true });
 }

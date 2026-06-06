@@ -171,6 +171,11 @@ const TRADITIONAL: MethodologyDefinition = {
         { name: "Exception Reports", required: false, aiGeneratable: true },
         // required:true — gate prereq "Quality reviews passed" is a mandatory review.
         { name: "Quality Review Records", required: true, aiGeneratable: true },
+        // PRINCE2 canonical — Issue Register captures issues / exceptions /
+        // unplanned events through delivery. Reverse-synced from db.issue.
+        // The Issues page is meaningless if no artefact owns the data. Added
+        // 2026-06 per methodology audit.
+        { name: "Issue Log", required: true, aiGeneratable: true },
         // PRINCE2 canonical — End Stage Reports record what happened in the
         // stage that's closing and recommend whether the next stage should
         // begin. Without one, a stage gate is decided with no documented
@@ -285,6 +290,11 @@ const WATERFALL: MethodologyDefinition = {
       artefacts: [
         { name: "Status Reports", required: true, aiGeneratable: true },
         { name: "Change Request Register", required: false, aiGeneratable: true },
+        // PMBOK / Waterfall canonical — Issue Log captures issues discovered
+        // during construction (not the same as Change Requests, which are
+        // scope modifications). Reverse-synced from db.issue. Without it
+        // the Issues page has no owning artefact. Added 2026-06 per audit.
+        { name: "Issue Log", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Build Complete",
@@ -327,6 +337,11 @@ const WATERFALL: MethodologyDefinition = {
         { name: "Release Plan", required: false, aiGeneratable: true },
         // required:true — gate prereq "Operations handover accepted" is a mandatory sign-off.
         { name: "Handover Documentation", required: true, aiGeneratable: true },
+        // Universal closing-phase artefact — Lessons Learned is the input to
+        // future projects and the de-facto standard across PMBOK / PRINCE2.
+        // Previously missing from Waterfall despite the gate's "Lessons
+        // learned documented" prereq. Added 2026-06 per audit.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Go-Live Approval",
@@ -418,6 +433,11 @@ const SCRUM: MethodologyDefinition = {
         { name: "Release Plan", required: false, aiGeneratable: true },
         { name: "Final Retrospective", required: false, aiGeneratable: true },
         { name: "Closure Report", required: false, aiGeneratable: true },
+        // Universal closing-phase artefact. Sprint retrospectives capture
+        // sprint-local lessons; Lessons Learned synthesises across the
+        // whole project as the input to future engagements. Added 2026-06
+        // per audit.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Release Approval",
@@ -490,6 +510,10 @@ const KANBAN: MethodologyDefinition = {
         { name: "Cumulative Flow Diagram", required: false, aiGeneratable: true },
         { name: "Process Improvement Report", required: false, aiGeneratable: true },
         { name: "Retrospective", required: false, aiGeneratable: true },
+        // Universal closing-phase artefact. The Retrospective above captures
+        // recent flow lessons; Lessons Learned synthesises across the whole
+        // engagement as the input to future projects. Added 2026-06 per audit.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "Review Complete",
@@ -566,6 +590,10 @@ const SAFE: MethodologyDefinition = {
       artefacts: [
         { name: "PI Report", required: false, aiGeneratable: true },
         { name: "Improvement Backlog", required: false, aiGeneratable: true },
+        // Universal closing-phase artefact. I&A is the SAFe equivalent of
+        // a project closing review — Lessons Learned captures cross-PI
+        // insights that feed the Improvement Backlog. Added 2026-06.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "I&A Complete",
@@ -667,7 +695,10 @@ const HYBRID: MethodologyDefinition = {
       color: "#F59E0B",
       artefacts: [
         { name: "Acceptance Certificate", required: false, aiGeneratable: true },
-        { name: "Lessons Learned", required: false, aiGeneratable: true },
+        // Upgraded required:false → true 2026-06 per methodology audit.
+        // Universal closing-phase input; was inconsistently optional in
+        // Hybrid despite being required in Traditional / PMBOK.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
       ],
       gate: {
@@ -770,7 +801,10 @@ const TRAVEL: MethodologyDefinition = {
       description: "Reconcile expenses, capture lessons learned, archive memories and documents",
       color: "#F59E0B",
       artefacts: [
-        { name: "Lessons Learned", required: false, aiGeneratable: true },
+        // Upgraded required:false → true 2026-06 per audit. The travel
+        // pipeline's whole point is "do better next trip" — Lessons Learned
+        // is the load-bearing artefact for that.
+        { name: "Lessons Learned", required: true, aiGeneratable: true },
         { name: "Closure Report", required: true, aiGeneratable: true },
       ],
       gate: {

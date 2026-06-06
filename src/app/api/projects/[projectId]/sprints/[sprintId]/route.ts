@@ -54,11 +54,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     data,
   });
 
-  // Reverse sync: update Sprint Plans artefact CSV
-  try {
-    const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
-    syncSprintsToArtefact(projectId).catch(() => {});
-  } catch {}
+  // Reverse sync: update Sprint Plans artefact CSV. Logged on failure.
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncSprintsToArtefact }) => syncSprintsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncSprintsToArtefact failed for project ${projectId}:`, e));
 
   // Track sprint completion in KB
   if (body.status === "COMPLETED") {
@@ -87,11 +86,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   await db.sprint.delete({ where: { id: sprintId, projectId } });
 
-  // Reverse sync: update Sprint Plans artefact CSV
-  try {
-    const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
-    syncSprintsToArtefact(projectId).catch(() => {});
-  } catch {}
+  // Reverse sync: update Sprint Plans artefact CSV. Logged on failure.
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncSprintsToArtefact }) => syncSprintsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncSprintsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ success: true });
 }

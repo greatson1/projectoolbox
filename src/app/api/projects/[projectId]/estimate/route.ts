@@ -93,7 +93,7 @@ export async function POST(
   });
 
   // Fire-and-forget reverse sync — keep the Cost artefact CSV up to date
-  syncCostEntriesToArtefact(projectId).catch(() => {});
+  syncCostEntriesToArtefact(projectId).catch((e) => console.error(`[artefact-sync] syncCostEntriesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: entry }, { status: 201 });
 }
@@ -144,7 +144,7 @@ export async function PUT(
     },
   });
 
-  syncCostEntriesToArtefact(projectId).catch(() => {});
+  syncCostEntriesToArtefact(projectId).catch((e) => console.error(`[artefact-sync] syncCostEntriesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: updated });
 }
@@ -171,7 +171,7 @@ export async function DELETE(
 
   await db.costEntry.delete({ where: { id: entryId } });
 
-  syncCostEntriesToArtefact(projectId).catch(() => {});
+  syncCostEntriesToArtefact(projectId).catch((e) => console.error(`[artefact-sync] syncCostEntriesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ success: true });
 }

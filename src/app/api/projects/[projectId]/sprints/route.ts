@@ -52,11 +52,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     },
   });
 
-  // Reverse sync: update Sprint Plans artefact CSV
-  try {
-    const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
-    syncSprintsToArtefact(projectId).catch(() => {});
-  } catch {}
+  // Reverse sync: update Sprint Plans artefact CSV. Logged on failure.
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncSprintsToArtefact }) => syncSprintsToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncSprintsToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: sprint }, { status: 201 });
 }

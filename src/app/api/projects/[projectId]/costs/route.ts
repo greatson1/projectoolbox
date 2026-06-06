@@ -97,9 +97,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   // generated, even after the user edited line items.
   // Fire-and-forget so the POST returns quickly; failure is logged
   // and doesn't fail the cost insert.
-  import("@/lib/agents/artefact-sync").then(({ syncCostEntriesToArtefact }) =>
-    syncCostEntriesToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncCostEntriesToArtefact }) => syncCostEntriesToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncCostEntriesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: entry }, { status: 201 });
 }

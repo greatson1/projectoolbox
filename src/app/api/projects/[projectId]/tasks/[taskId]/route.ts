@@ -210,18 +210,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }).catch(() => {}); // non-blocking
   }
 
-  // Reverse sync: update the WBS/Schedule artefact CSV to reflect this task edit
-  try {
-    const { syncTaskToArtefact } = await import("@/lib/agents/artefact-sync");
-    syncTaskToArtefact(projectId, taskId, data).catch(() => {});
-  } catch {}
+  // Reverse sync: update the WBS/Schedule artefact CSV to reflect this task edit.
+  // Logged on failure so silent drift surfaces in logs.
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncTaskToArtefact }) => syncTaskToArtefact(projectId, taskId, data))
+    .catch((e) => console.error(`[artefact-sync] syncTaskToArtefact failed for project ${projectId} task ${taskId}:`, e));
 
   // Reverse sync Sprint Plans artefact when sprint assignment OR status/progress changes
   if ("sprintId" in data || "status" in data || "progress" in data || "storyPoints" in data) {
-    try {
-      const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
-      syncSprintsToArtefact(projectId).catch(() => {});
-    } catch {}
+    import("@/lib/agents/artefact-sync")
+      .then(({ syncSprintsToArtefact }) => syncSprintsToArtefact(projectId))
+      .catch((e) => console.error(`[artefact-sync] syncSprintsToArtefact failed for project ${projectId}:`, e));
   }
 
   // Update scaffolded task progress if this is an agent task

@@ -30,9 +30,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const issue = await db.issue.create({ data: { ...body, projectId } });
 
   // Reverse sync: update Issue Log artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncIssuesToArtefact }) =>
-    syncIssuesToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncIssuesToArtefact }) => syncIssuesToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncIssuesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: issue }, { status: 201 });
 }
@@ -66,9 +66,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   }
 
   // Reverse sync: update Issue Log artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncIssuesToArtefact }) =>
-    syncIssuesToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncIssuesToArtefact }) => syncIssuesToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncIssuesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ data: issue });
 }
@@ -96,9 +96,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   await db.issue.delete({ where: { id: issueId } });
 
   // Reverse sync: update Issue Log artefact CSV
-  import("@/lib/agents/artefact-sync").then(({ syncIssuesToArtefact }) =>
-    syncIssuesToArtefact(projectId).catch(() => {})
-  ).catch(() => {});
+  import("@/lib/agents/artefact-sync")
+    .then(({ syncIssuesToArtefact }) => syncIssuesToArtefact(projectId))
+    .catch((e) => console.error(`[artefact-sync] syncIssuesToArtefact failed for project ${projectId}:`, e));
 
   return NextResponse.json({ ok: true });
 }

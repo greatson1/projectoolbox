@@ -94,13 +94,26 @@ export async function planSprints(
     }),
   ]);
 
-  if (!project) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
+  // If the clear branch above wiped sprints but we're about to early-return
+  // without planning new ones, we still need to flush the deletion to the
+  // Sprint Plans artefact — otherwise the artefact CSV keeps listing
+  // sprints the DB no longer has. Run a fire-and-forget sync before each
+  // early-return path so the artefact reflects the cleared state.
+  const flushClearedSyncIfNeeded = () => {
+    if (cleared > 0) {
+      import("@/lib/agents/artefact-sync")
+        .then(({ syncSprintsToArtefact }) => syncSprintsToArtefact(projectId))
+        .catch((e) => console.error(`[artefact-sync] syncSprintsToArtefact (post-clear) failed for project ${projectId}:`, e));
+    }
+  };
+
+  if (!project) { flushClearedSyncIfNeeded(); return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared }; }
 
   // Only plan for unassigned tasks — if everything is already sprint-linked, there's nothing to do.
   // NOTE: We intentionally do NOT bail just because sprints already exist. When a WBS is approved
   // after a Backlog (or vice versa), the new tasks need to be slotted into existing sprints.
   const backlogTasks = tasks.filter(t => !t.sprintId);
-  if (backlogTasks.length === 0) return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared };
+  if (backlogTasks.length === 0) { flushClearedSyncIfNeeded(); return { sprints: 0, tasksAssigned: 0, pointsPlanned: 0, cleared }; }
 
   // ── Step 1: Estimate story points using Claude Haiku ──
   await estimateStoryPoints(backlogTasks, project);
@@ -219,11 +232,17 @@ export async function planSprints(
     },
   });
 
-  // Reverse sync: update Sprint Plans artefact
+  // Reverse sync: update Sprint Plans artefact. Awaited (not fire-and-forget)
+  // because the caller is a server-side flow, not an HTTP response we're
+  // trying to return fast — drift after auto-planning would be worse than
+  // a slight extra wait. Errors are logged but not thrown so an artefact
+  // sync failure doesn't unwind the (successful) sprint creation above.
   try {
     const { syncSprintsToArtefact } = await import("@/lib/agents/artefact-sync");
     await syncSprintsToArtefact(projectId);
-  } catch {}
+  } catch (e) {
+    console.error(`[artefact-sync] syncSprintsToArtefact (post-autoplan) failed for project ${projectId}:`, e);
+  }
 
   return { sprints: sprintsCreated, tasksAssigned, pointsPlanned, cleared };
 }
