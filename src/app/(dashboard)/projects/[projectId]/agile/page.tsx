@@ -24,6 +24,7 @@ import {
 } from "@/hooks/use-api";
 import { CriteriaChecklist } from "@/components/agile/criteria-checklist";
 import { useQueryClient } from "@tanstack/react-query";
+import { classifyClassOfService, classOfServiceStyle } from "@/lib/kanban-cos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,7 +44,7 @@ type BoardType = "scrum" | "kanban";
 type ColumnId = "backlog" | "todo" | "in_progress" | "in_review" | "done";
 type Priority = "critical" | "high" | "medium" | "low";
 type IssueType = "story" | "bug" | "task" | "spike";
-type SwimlaneSetting = "none" | "epic" | "assignee" | "priority" | "label";
+type SwimlaneSetting = "none" | "epic" | "assignee" | "priority" | "label" | "class";
 
 interface Issue {
   id: string;
@@ -709,6 +710,11 @@ export default function AgileBoardPage() {
           <option value="assignee">By Assignee</option>
           <option value="priority">By Priority</option>
           <option value="label">By Label</option>
+          {/* Class of Service swimlanes — works on any board where tasks
+              carry a Kanban class label (Expedite / Standard / Fixed
+              Date / Intangible). Sorted by class urgency so Expedite
+              renders at the top. */}
+          <option value="class">By Class of Service</option>
         </select>
 
         {hasActiveFilters && (
@@ -1205,14 +1211,36 @@ function SwimlanedBoard({ swimlane, columns, issues, onCardClick, getLabelColor 
   const groups = useMemo(() => {
     const map = new Map<string, Issue[]>();
     for (const issue of issues) {
-      const key = swimlane === "epic" ? (issue.epic || "No Epic")
-        : swimlane === "assignee" ? (issue.assignee || "Unassigned")
-        : swimlane === "priority" ? issue.priority
-        : (issue.labels[0] || "No Label");
+      // Class-of-service mode scans every label on the issue for one
+      // that classifies as a known Kanban CoS bucket (Expedite / Fixed
+      // Date / Standard / Intangible). The FIRST classified label wins;
+      // an issue with no CoS label falls into "Unclassified".
+      let key: string;
+      if (swimlane === "class") {
+        const cosLabel = issue.labels.find((l) => classifyClassOfService(l) !== "other");
+        key = cosLabel || (issue.labels.length > 0 ? issue.labels[0] : "Unclassified");
+      } else {
+        key = swimlane === "epic" ? (issue.epic || "No Epic")
+          : swimlane === "assignee" ? (issue.assignee || "Unassigned")
+          : swimlane === "priority" ? issue.priority
+          : (issue.labels[0] || "No Label");
+      }
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(issue);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    const entries = Array.from(map.entries());
+    // Class-of-service mode orders by canonical urgency (Expedite first,
+    // then Fixed, Standard, Intangible, then Other — see kanban-cos
+    // helper). Everything else stays alphabetical.
+    if (swimlane === "class") {
+      return entries.sort(([a], [b]) => {
+        const oa = classOfServiceStyle(a).order;
+        const ob = classOfServiceStyle(b).order;
+        if (oa !== ob) return oa - ob;
+        return a.localeCompare(b);
+      });
+    }
+    return entries.sort(([a], [b]) => a.localeCompare(b));
   }, [issues, swimlane]);
 
   const toggle = (key: string) => setCollapsed(prev => {
@@ -1225,7 +1253,9 @@ function SwimlanedBoard({ swimlane, columns, issues, onCardClick, getLabelColor 
     <div className="space-y-3">
       {groups.map(([group, groupIssues]) => {
         const isCollapsed  = collapsed.has(group);
-        const groupColor   = swimlane === "priority" ? PRIORITY_COLORS[group as Priority] || "#64748B" : "var(--primary)";
+        const groupColor   = swimlane === "priority" ? PRIORITY_COLORS[group as Priority] || "#64748B"
+          : swimlane === "class" ? classOfServiceStyle(group).color
+          : "var(--primary)";
         return (
           <div key={group} className="rounded-xl border border-border/30">
             <div className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none rounded-xl"

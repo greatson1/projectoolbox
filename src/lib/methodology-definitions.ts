@@ -166,6 +166,11 @@ const TRADITIONAL: MethodologyDefinition = {
       color: "#10B981",
       artefacts: [
         { name: "Status Reports", required: true, aiGeneratable: true },
+        // PRINCE2 canonical — Highlight Reports are the periodic project-
+        // board-facing status update separate from the more detailed
+        // delivery-team Status Reports. Each stage produces at least one.
+        // Added 2026-06 per methodology audit follow-up.
+        { name: "Highlight Reports", required: false, aiGeneratable: true },
         { name: "Risk Reviews", required: false, aiGeneratable: true },
         { name: "Change Request Register", required: false, aiGeneratable: true },
         { name: "Exception Reports", required: false, aiGeneratable: true },
@@ -289,6 +294,11 @@ const WATERFALL: MethodologyDefinition = {
       color: "#22D3EE",
       artefacts: [
         { name: "Status Reports", required: true, aiGeneratable: true },
+        // Programme-board-facing periodic update — distinct from the
+        // delivery-team Status Reports above. PRINCE2 canonical;
+        // Waterfall projects often run a similar cadence to keep
+        // sponsors informed without burying them in detail. Added 2026-06.
+        { name: "Highlight Reports", required: false, aiGeneratable: true },
         { name: "Change Request Register", required: false, aiGeneratable: true },
         // PMBOK / Waterfall canonical — Issue Log captures issues discovered
         // during construction (not the same as Change Requests, which are

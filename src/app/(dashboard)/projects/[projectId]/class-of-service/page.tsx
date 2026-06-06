@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Layers3, AlertCircle, Sparkles, Zap, Clock, Calendar, Cloud } from "lucide-react";
+import { classifyClassOfService, classOfServiceStyle } from "@/lib/kanban-cos";
 
 /**
  * Kanban Class of Service Definitions.
@@ -22,23 +23,19 @@ import { Layers3, AlertCircle, Sparkles, Zap, Clock, Calendar, Cloud } from "luc
  * Classes not in the canonical four still render but with a neutral
  * icon — the artefact author may have introduced a project-specific
  * class and we don't want to drop it.
+ *
+ * Bucket classification + colours come from the shared kanban-cos
+ * helper so the Agile Board's class-of-service swimlane uses the same
+ * palette as this page.
  */
 
-const CANONICAL_ICONS: Record<string, { icon: typeof Zap; color: string; bg: string }> = {
-  expedite: { icon: Zap, color: "#EF4444", bg: "bg-red-500/5" },
-  standard: { icon: Clock, color: "#6366F1", bg: "bg-indigo-500/5" },
-  fixed: { icon: Calendar, color: "#F59E0B", bg: "bg-amber-500/5" },
-  intangible: { icon: Cloud, color: "#64748B", bg: "bg-slate-500/5" },
+const ICONS: Record<string, typeof Zap> = {
+  expedite: Zap,
+  standard: Clock,
+  fixed: Calendar,
+  intangible: Cloud,
+  other: Layers3,
 };
-
-function classifyClass(name: string): keyof typeof CANONICAL_ICONS | "other" {
-  const n = name.toLowerCase();
-  if (n.includes("expedite") || n.includes("urgent")) return "expedite";
-  if (n.includes("fixed") || n.includes("date") || n.includes("deadline")) return "fixed";
-  if (n.includes("intangible") || n.includes("tech debt") || n.includes("improvement")) return "intangible";
-  if (n.includes("standard") || n.includes("normal") || n.includes("default")) return "standard";
-  return "other";
-}
 
 export default function ClassOfServicePage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -136,12 +133,9 @@ export default function ClassOfServicePage() {
       {classes && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {classes.map((cls, ci) => {
-            const bucket = classifyClass(cls.name);
-            const style =
-              bucket === "other"
-                ? { icon: Layers3, color: "#8B5CF6", bg: "bg-purple-500/5" }
-                : CANONICAL_ICONS[bucket];
-            const Icon = style.icon;
+            const bucket = classifyClassOfService(cls.name);
+            const style = classOfServiceStyle(cls.name);
+            const Icon = ICONS[bucket] || Layers3;
             return (
               <Card key={`cls-${ci}`} className={`${style.bg} overflow-hidden`}>
                 <CardContent className="p-4 space-y-3">

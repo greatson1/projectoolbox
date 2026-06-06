@@ -154,6 +154,10 @@ const PROJECT_TABS: TabGroup[] = [
     color: "#EC4899",
     items: [
       { label: "Reports", href: "/reports", icon: FileBarChart },
+      // Status & Highlight Reports aggregator — every approved Status /
+      // Highlight / Exception / End Stage report across phases in one
+      // chronological feed. Universal.
+      { label: "Status Reports", href: "/status-reports", icon: FileBarChart },
       { label: "Composer", href: "/report-composer", icon: Layers },
       // Lessons Learned aggregates every approved Lessons artefact in the
       // project. Universal — every methodology now requires Lessons in
