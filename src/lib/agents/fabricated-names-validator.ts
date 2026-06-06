@@ -23,10 +23,26 @@
 
 import type { AllowedNamesRegistry } from "@/lib/agents/allowed-names";
 
-const ROLE_KEYWORDS = /\b(manager|lead|director|sponsor|owner|team|member|representative|analyst|head|officer|coordinator|chair|agent|provider|supplier|contractor|partner|client|user|stakeholder|body|department|commission|authority|board|council|ministry|traveller|family|spouse|child|parent|guardian|companion|host|contact|emergency|insurance|airline|hotel|agency|primary|secondary|self|tbd|unassigned|tbc)\b/i;
+// Words that indicate a role/job-title rather than a person name. Extended
+// to cover concrete technical / delivery roles so "Technical Architect",
+// "Solution Architect", "Senior Engineer" stop reading as fabricated names
+// on every Charter / Vision / Business-Case draft. New entries: architect,
+// engineer, developer, designer, tester, master (scrum master), specialist,
+// principal, senior, junior, expert, consultant, advisor, secretary.
+const ROLE_KEYWORDS = /\b(manager|lead|director|sponsor|owner|team|member|representative|analyst|head|officer|coordinator|chair|agent|provider|supplier|contractor|partner|client|user|stakeholder|body|department|commission|authority|board|council|ministry|traveller|family|spouse|child|parent|guardian|companion|host|contact|emergency|insurance|airline|hotel|agency|primary|secondary|self|tbd|unassigned|tbc|architect|engineer|developer|designer|tester|master|specialist|principal|senior|junior|expert|consultant|advisor|adviser|secretary)\b/i;
 
 const ORG_KEYWORDS = /\b(ltd|inc|corp|llc|plc|gmbh|airlines?|hotel|resort|clinic|hospital|bank|airways|ventures?|group|services?|solutions?|systems?|consultancy|consulting|agency|centre|center|commission|embassy|high commission|authority|department|ministry|international)\b/i;
 
+// First-word allowlist — any 2-4 word candidate starting with one of these
+// is treated as concept/sectioning, not a person name. Extended with
+// concept-prefix terms commonly used in Vision / Charter / Business-Case
+// docs: Strategic, Business, Technical, Status, Target, Key, Core,
+// Vision, Product, Field, Document, Initiative, Awaiting, Not, Category,
+// Measure, Metric, Metrics, Modernise, Modernize, Integrate, Improve,
+// Enable, Escalate, Continuous, Operational, Acceptance, Definition,
+// Quality, Performance, Reporting, Implementation, Delivery, Test,
+// Testing, Development, Production, Staging, Release, Migration,
+// Modular, Cloud, On, Multi, Cross, Non.
 const STOP_PREFIXES = new Set([
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -38,8 +54,23 @@ const STOP_PREFIXES = new Set([
   "Strengths", "Weaknesses", "Opportunities", "Threats",
   "High", "Medium", "Low", "Critical",
   "United", "British", "American", "European", "International",
+  // Concept-phrase prefixes — added 2026-06 to cut false-positive load on
+  // Vision / Charter / Business-Case drafts.
+  "Strategic", "Business", "Technical", "Status", "Target", "Key", "Core",
+  "Vision", "Product", "Field", "Document", "Initiative", "Awaiting",
+  "Not", "Category", "Measure", "Metric", "Metrics", "Modernise",
+  "Modernize", "Integrate", "Improve", "Enable", "Escalate", "Continuous",
+  "Operational", "Acceptance", "Definition", "Quality", "Performance",
+  "Reporting", "Implementation", "Delivery", "Test", "Testing",
+  "Development", "Production", "Staging", "Release", "Migration",
+  "Cloud", "On", "Multi", "Cross", "Non", "Scrum", "Kanban", "Agile",
+  "Waterfall", "Hybrid", "SAFe",
 ]);
 
+// Whole-phrase allowlist. STOP_PREFIXES catches anything starting with the
+// listed word; this list catches multi-word phrases whose first word is a
+// legitimate name candidate (e.g. "Standard Operating Procedure", "End
+// User Acceptance"). Add here ONLY phrases that are NEVER person names.
 const SECTION_HEADINGS = new Set([
   "Executive Summary", "Project Charter", "Project Brief", "Project Plan",
   "Communication Plan", "Risk Register", "Risk Management Plan",
@@ -49,6 +80,15 @@ const SECTION_HEADINGS = new Set([
   "Business Case", "Benefits Management Plan", "Pre Project",
   "Pre-Project", "Post Project", "Post-Project",
   "Action Items", "Next Actions", "Summary and Next Actions",
+  // Concept phrases that don't begin with a STOP_PREFIX. Listed here so
+  // the whole-phrase check catches them without polluting STOP_PREFIXES
+  // with single words like "Standard" or "End" that ARE plausible first
+  // names ("Standard Chartered" wouldn't be a person, but "End User" is
+  // generic).
+  "End User", "End Users", "Standard Operating Procedure", "Service Level Agreement",
+  "Single Sign On", "Single Sign-On", "Disaster Recovery",
+  "Change Request", "Change Requests", "Change Control",
+  "Lessons Learned", "Lessons Learnt", "Go Live", "Go-Live",
 ]);
 
 export interface NameViolation {

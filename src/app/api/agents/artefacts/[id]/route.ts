@@ -93,15 +93,44 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     const meta = (checkExisting?.metadata as any) || {};
     const fabricatedNames = Array.isArray(meta.fabricatedNames) ? meta.fabricatedNames : [];
-    if (fabricatedNames.length > 0) {
+    // confirmNotNames=true is the user explicitly acknowledging that the
+    // flagged tokens are NOT real person/organisation names (concept
+    // phrases, project terminology, table-cell concatenations the
+    // heuristic mis-parsed). This is the escape hatch for the validator's
+    // unavoidable false positives on Vision / Charter / Business-Case
+    // drafts; the regex matches any 2-4 capitalised words and there's no
+    // way to make it perfect without an LLM-based classifier. The
+    // approval is audit-trailed in metadata.fabricatedNamesOverride so we
+    // can see who overrode and when.
+    if (fabricatedNames.length > 0 && body.confirmNotNames !== true) {
       return NextResponse.json(
         {
           error: "Artefact contains fabricated names",
           fabricatedNames,
-          message: `This draft contains ${fabricatedNames.length} name${fabricatedNames.length === 1 ? "" : "s"} that aren't in the project's allowed-names registry: ${fabricatedNames.slice(0, 5).map((v: any) => v.name).join(", ")}${fabricatedNames.length > 5 ? "…" : ""}. Edit the document to replace them with [TBC — role] markers or actual confirmed names before approval.`,
+          message: `This draft contains ${fabricatedNames.length} name${fabricatedNames.length === 1 ? "" : "s"} that aren't in the project's allowed-names registry: ${fabricatedNames.slice(0, 5).map((v: any) => v.name).join(", ")}${fabricatedNames.length > 5 ? "…" : ""}. Edit the document to replace them with [TBC — role] markers or actual confirmed names — or, if these are concept phrases / project terminology mis-flagged by the heuristic, pass confirmNotNames=true to override.`,
         },
         { status: 409 },
       );
+    }
+    if (fabricatedNames.length > 0 && body.confirmNotNames === true) {
+      // Stamp the override so the audit log shows who waved through what.
+      try {
+        await db.agentArtefact.update({
+          where: { id },
+          data: {
+            metadata: {
+              ...meta,
+              fabricatedNamesOverride: {
+                approvedAt: new Date().toISOString(),
+                approvedBy: (session.user as any).id || "user",
+                overriddenCount: fabricatedNames.length,
+              },
+            } as any,
+          },
+        });
+      } catch (e) {
+        console.error("[artefact PATCH] override audit-stamp failed:", e);
+      }
     }
     const contradictions = Array.isArray(meta.contradictions) ? meta.contradictions : [];
     if (contradictions.length > 0 && body.confirmIntentional !== true) {

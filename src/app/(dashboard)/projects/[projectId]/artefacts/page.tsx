@@ -217,12 +217,14 @@ export default function ArtefactsPage() {
       rollback();
       // Parse the actual API error so the user knows what to fix
       let errMsg = "Approval failed";
+      let fabricatedFalsePositives = false;
       try {
         const body = await res.json();
         if (body.error === "Artefact contains fabricated names" && Array.isArray(body.fabricatedNames)) {
           const count = body.fabricatedNames.length;
           const samples = body.fabricatedNames.slice(0, 3).map((v: any) => v.name || v).join(", ");
-          errMsg = `Can't approve — ${count} invented name${count === 1 ? "" : "s"} found (${samples}${count > 3 ? "…" : ""}). Open the document, replace them with [TBC] markers, then re-approve.`;
+          errMsg = `Can't approve — ${count} flagged token${count === 1 ? "" : "s"} (${samples}${count > 3 ? "…" : ""}). If these are real fabricated names, edit them out. If they're concept phrases mis-flagged by the heuristic, use "Approve anyway".`;
+          fabricatedFalsePositives = true;
         } else if (body.error === "Artefact contradicts confirmed facts" && Array.isArray(body.contradictions)) {
           errMsg = `${body.contradictions.length} contradiction${body.contradictions.length === 1 ? "" : "s"} with confirmed facts. Open the document and click "Approve anyway" if you're happy to proceed.`;
         } else if (body.message) {
@@ -231,7 +233,31 @@ export default function ArtefactsPage() {
           errMsg = body.error.slice(0, 200);
         }
       } catch {}
-      toast.error(errMsg, { duration: 8000 });
+      if (fabricatedFalsePositives) {
+        // Toast with an inline override action — retries the same PATCH
+        // with confirmNotNames=true so the server stamps the audit-trail
+        // override and lets the approval through. This is the escape
+        // hatch for the validator's regex-based false positives on
+        // concept-heavy docs (Vision, Charter, Business Case).
+        toast.error(errMsg, {
+          duration: 12000,
+          action: {
+            label: "Approve anyway",
+            onClick: async () => {
+              const rb = optimisticPatch(artId, { status: "APPROVED" });
+              const r2 = await fetch(`/api/agents/artefacts/${artId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "APPROVED", confirmNotNames: true }),
+              });
+              if (r2.ok) { refreshArtefacts(); toast.success("Artefact approved ✓ (override stamped on audit trail)"); }
+              else { rb(); toast.error("Override failed — see console"); console.error(await r2.text()); }
+            },
+          },
+        });
+      } else {
+        toast.error(errMsg, { duration: 8000 });
+      }
     }
   };
 

@@ -70,7 +70,7 @@ const ROLE_PLACEHOLDERS = [
 ];
 
 export async function getAllowedNamesRegistry(projectId: string): Promise<AllowedNamesRegistry> {
-  const [stakeholders, kbItems] = await Promise.all([
+  const [stakeholders, kbItems, project] = await Promise.all([
     db.stakeholder.findMany({
       where: { projectId },
       select: { name: true, organisation: true },
@@ -86,10 +86,35 @@ export async function getAllowedNamesRegistry(projectId: string): Promise<Allowe
       select: { title: true, content: true },
       take: 100,
     }).catch(() => []),
+    // The project's own name — without this, "Digital Transformation
+    // Initiative" gets flagged as a fabricated name inside every artefact
+    // because the validator can't tell it apart from a real person/org
+    // token. Auto-allowing it (plus every 2..N-word contiguous substring,
+    // since the matcher uses equality not substring) closes that hole
+    // without needing the user to remember to add their own project name
+    // to the Stakeholder Register.
+    db.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
+    }).catch(() => null),
   ]);
 
   const people = new Set<string>();
   const organisations = new Set<string>();
+
+  if (project?.name) {
+    const projectWords = project.name.split(/\s+/).filter(w => /^[A-Z][a-z]+$/.test(w));
+    // Add every 2..full-length contiguous n-gram. For "Digital
+    // Transformation Initiative" this adds "Digital Transformation",
+    // "Transformation Initiative", and "Digital Transformation
+    // Initiative". The single-word terms are already excluded by the
+    // validator's wordCount<2 guard.
+    for (let n = 2; n <= projectWords.length; n++) {
+      for (let i = 0; i + n <= projectWords.length; i++) {
+        people.add(projectWords.slice(i, i + n).join(" "));
+      }
+    }
+  }
 
   for (const s of stakeholders) {
     if (s.name && s.name.trim()) people.add(s.name.trim());
