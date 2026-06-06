@@ -43,6 +43,24 @@ export interface LayerStatus {
   items?: Array<{ id: string; title: string; status: string; progress?: number }>;
 }
 
+export interface DodCoverage {
+  /** Total number of criteria in the project's Definition of Done. */
+  criteriaTotal: number;
+  /** Tasks currently IN_PROGRESS / in_review in this phase (post-DoD-approval). */
+  inFlightTaskCount: number;
+  /** Average 0..1 — what fraction of DoD criteria are ticked across
+   *  in-flight + done tasks. UI can render as "62/64 criteria ticked
+   *  on average". */
+  averageTickRate: number;
+  /** Tasks marked DONE in this phase but whose dodChecks don't satisfy
+   *  the DoD. These ARE blockers — they bypassed the Task PATCH gate
+   *  via raw DB edit, bulk import, or pre-API direct write. */
+  bypassedTaskCount: number;
+  /** First 25 IDs so the UI can deep-link without paging an unbounded
+   *  list. The blocker string carries the headline count. */
+  bypassedTaskIds: string[];
+}
+
 export interface PhaseCompletionStatus {
   phaseName: string;
   phaseId: string;
@@ -53,6 +71,9 @@ export interface PhaseCompletionStatus {
   overall: number;
   canAdvance: boolean;
   blockers: string[];
+  /** DoD enforcement + observability for this phase. null when the
+   *  project has no Definition of Done configured. */
+  dodCoverage: DodCoverage | null;
 }
 
 export interface PhaseCompletionConfig {
@@ -701,6 +722,7 @@ export async function getPhaseCompletion(
     overall,
     canAdvance,
     blockers,
+    dodCoverage,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCriteria, parseBacklogItems, dodComplete, criteriaDelta } from "./criteria-parser";
+import { parseCriteria, parseBacklogItems, dodComplete, criteriaDelta, criterionKey, isCriterionChecked } from "./criteria-parser";
 
 describe("parseCriteria", () => {
   it("extracts dash bullets", () => {
@@ -132,6 +132,90 @@ describe("criteriaDelta", () => {
   it("complete=true when no criteria configured", () => {
     expect(criteriaDelta([], []).complete).toBe(true);
     expect(criteriaDelta(undefined, undefined).complete).toBe(true);
+  });
+});
+
+describe("criterionKey — stable normalisation", () => {
+  it("lowercases and collapses whitespace", () => {
+    expect(criterionKey("Code  Review   Completed")).toBe("code review completed");
+    expect(criterionKey("  Code Reviewed  ")).toBe("code reviewed");
+    expect(criterionKey("Code\tReviewed")).toBe("code reviewed");
+  });
+
+  it("returns empty string for null/undefined/empty input", () => {
+    expect(criterionKey("")).toBe("");
+    expect(criterionKey(undefined as any)).toBe("");
+    expect(criterionKey(null as any)).toBe("");
+  });
+});
+
+describe("isCriterionChecked — dual-shape resolver", () => {
+  it("reads legacy positional boolean[] by index", () => {
+    expect(isCriterionChecked("any", [true, false], 0)).toBe(true);
+    expect(isCriterionChecked("any", [true, false], 1)).toBe(false);
+    expect(isCriterionChecked("any", [true, false], 9)).toBe(false); // out of range
+  });
+
+  it("reads keyed Record by criterion text", () => {
+    const checks = { "code review completed": true, "tests passing": false };
+    expect(isCriterionChecked("Code Review Completed", checks, 0)).toBe(true);
+    expect(isCriterionChecked("Tests Passing", checks, 1)).toBe(false);
+    expect(isCriterionChecked("Not in record", checks, 2)).toBe(false);
+  });
+
+  it("only `true` counts in either shape", () => {
+    expect(isCriterionChecked("x", [1 as any], 0)).toBe(false);
+    expect(isCriterionChecked("x", { x: 1 } as any, 0)).toBe(false);
+  });
+
+  it("returns false for null/undefined/non-object checks", () => {
+    expect(isCriterionChecked("x", null, 0)).toBe(false);
+    expect(isCriterionChecked("x", undefined, 0)).toBe(false);
+    expect(isCriterionChecked("x", "string", 0)).toBe(false);
+  });
+});
+
+describe("dodComplete — works with both shapes", () => {
+  const criteria = ["Code reviewed", "Tests passing", "Docs updated"];
+
+  it("legacy positional array — all true", () => {
+    expect(dodComplete(criteria, [true, true, true])).toBe(true);
+  });
+
+  it("keyed record — all true", () => {
+    const checks = {
+      "code reviewed": true,
+      "tests passing": true,
+      "docs updated": true,
+    };
+    expect(dodComplete(criteria, checks)).toBe(true);
+  });
+
+  it("keyed record survives reordering of criteria (the whole point)", () => {
+    // Same checks, but the DoD reordered the criteria list.
+    const reordered = ["Docs updated", "Code reviewed", "Tests passing"];
+    const checks = {
+      "code reviewed": true,
+      "tests passing": true,
+      "docs updated": true,
+    };
+    expect(dodComplete(reordered, checks)).toBe(true);
+  });
+
+  it("legacy positional array breaks on reorder (motivates the keyed shape)", () => {
+    // Positional array [true, true, false] meant criterion[2] was unmet.
+    // After reorder, criterion[2] is a DIFFERENT criterion — and the
+    // array's false now applies to it. Demonstrates the bug we're fixing.
+    expect(dodComplete(["a", "b", "c"], [true, true, false])).toBe(false);
+    const reordered = ["c", "a", "b"];
+    // Same array of checks, but now "c" inherits the true at index 0 —
+    // wrong but expected behaviour given the positional shape.
+    expect(dodComplete(reordered, [true, true, false])).toBe(false);
+  });
+
+  it("keyed record — missing key counts as unticked", () => {
+    const checks = { "code reviewed": true, "tests passing": true };
+    expect(dodComplete(criteria, checks)).toBe(false); // docs updated absent
   });
 });
 
