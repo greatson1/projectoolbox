@@ -5,7 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests, useProjectCycleTime } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests, useProjectCycleTime, useSprintBurndown } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
 import { Card as BaseCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -146,6 +146,10 @@ export default function SprintTrackerPage() {
     return (apiSprints && apiSprints[idx]?.id) ?? null;
   }, [apiSprints, selectedSprint]);
 
+  // Burndown/burnup series from daily SprintSnapshot rows for the selected
+  // sprint. Empty until the snapshot cron has captured at least one day.
+  const { data: apiBurndown } = useSprintBurndown(projectId, selectedSprintRowId);
+
   // When there are real sprints, only show tasks belonging to the selected
   // one. When no sprints exist yet, show all tasks so the synthetic
   // "Project Backlog" wrapper still has something to display.
@@ -172,16 +176,13 @@ export default function SprintTrackerPage() {
     }));
   }, [filteredApiTasks]);
 
-  // Burndown / burnup require DAILY HISTORICAL SNAPSHOTS — how many points
-  // remained at end-of-day for each day in the sprint. We don't capture
-  // those yet. The previous version fabricated a curve by linearly
-  // interpolating today's count over the sprint window, which is worse
-  // than no data: it implied progress that didn't necessarily happen.
-  // Return [] so the chart component shows its empty state until we wire
-  // a real daily snapshot table (e.g. TaskStatusSnapshot { sprintId,
-  // capturedAt, remainingPoints }).
-  const burndownData = useMemo(() => [], []);
-  const burnupData = useMemo(() => [], []);
+  // Burndown / burnup from REAL daily snapshots (SprintSnapshot, captured by
+  // the sprint-snapshot cron). Each point has ideal/actual (remaining) for
+  // burndown and completed (cumulative done) for burnup. Empty until the cron
+  // has captured at least one day — the charts show their empty state then.
+  // No fabricated interpolation: a point exists only for a day we measured.
+  const burndownData = useMemo(() => apiBurndown || [], [apiBurndown]);
+  const burnupData = useMemo(() => apiBurndown || [], [apiBurndown]);
 
   // Cycle time — real averages from the TaskStatusTransition log (captured
   // on every status change via the task PATCH path). Empty until the project
@@ -465,7 +466,9 @@ export default function SprintTrackerPage() {
             </ResponsiveContainer>
           </div>
           <p className="text-[11px] mt-1" style={{ color: "var(--muted-foreground)" }}>
-            Daily snapshot capture not wired yet — chart will populate once history exists.
+            {burndownData.length === 0
+              ? "Populates from the nightly snapshot once the sprint is active."
+              : `${burndownData.length} day${burndownData.length === 1 ? "" : "s"} captured`}
           </p>
         </Card>
 
@@ -561,34 +564,38 @@ export default function SprintTrackerPage() {
             <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Burndown Chart</h3>
             <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Remaining SP over time</span>
           </div>
+          {burndownData.length === 0 ? (
+            <div style={{ height: 260 }} className="flex items-center justify-center">
+              <p className="text-[11px] text-center max-w-[260px]" style={{ color: "var(--muted-foreground)" }}>
+                Burndown builds from daily snapshots — the first point lands after the nightly capture runs on an active sprint.
+              </p>
+            </div>
+          ) : (
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={burndownData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
                 <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} domain={[0, 60]} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                 <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
-                {/* Shaded area between ideal and actual — approximate with area */}
+                {/* Shaded area under the ideal line */}
                 <Area type="monotone" dataKey="ideal" stroke="none" fill={`${"#10B981"}08`} />
-                {/* Scope line */}
-                <Line type="stepAfter" dataKey="scope" stroke="#F59E0B" strokeDasharray="4 2" dot={false} strokeWidth={1.5} name="Scope" />
                 {/* Ideal line */}
                 <Line type="monotone" dataKey="ideal" stroke="#64748B" strokeDasharray="5 5" dot={false} strokeWidth={1.5} name="Ideal" />
                 {/* Actual line */}
                 <Line type="monotone" dataKey="actual" stroke={"var(--primary)"} dot={{ r: 3, fill: "var(--primary)" }} strokeWidth={2.5} name="Actual" connectNulls={false} />
-                {/* AI projection */}
-                <Line type="monotone" dataKey="projected" stroke={"var(--primary)"} strokeDasharray="6 3" dot={false} strokeWidth={1.5} name="Projected" connectNulls={false} />
-                {/* Today marker */}
-                <ReferenceLine x="D6" stroke={"#EF4444"} strokeDasharray="3 3" label={{ value: "Today", position: "top", fontSize: 9, fill: "#EF4444" }} />
+                {/* Today marker — current day index within the sprint */}
+                <ReferenceLine x={sprint.daysPassed} stroke={"#EF4444"} strokeDasharray="3 3" label={{ value: "Today", position: "top", fontSize: 9, fill: "#EF4444" }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#64748B", borderTop: "1px dashed #64748B" }} /> Ideal</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "var(--primary)" }} /> Actual</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "var(--primary)", borderTop: "1px dashed " + "var(--primary)" }} /> Projected</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#F59E0B", borderTop: "1px dotted #F59E0B" }} /> Scope</span>
-          </div>
+          )}
+          {burndownData.length > 0 && (
+            <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
+              <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#64748B", borderTop: "1px dashed #64748B" }} /> Ideal</span>
+              <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "var(--primary)" }} /> Actual (remaining)</span>
+            </div>
+          )}
         </Card>
 
         {/* Burnup */}
@@ -597,29 +604,37 @@ export default function SprintTrackerPage() {
             <h3 className="text-[14px] font-semibold" style={{ color: "var(--foreground)" }}>Burnup Chart</h3>
             <span className="text-[11px]" style={{ color: "var(--muted-foreground)" }}>Cumulative work completed</span>
           </div>
+          {burnupData.length === 0 ? (
+            <div style={{ height: 260 }} className="flex items-center justify-center">
+              <p className="text-[11px] text-center max-w-[260px]" style={{ color: "var(--muted-foreground)" }}>
+                Burnup builds from daily snapshots — completed vs scope appears once the nightly capture has run on an active sprint.
+              </p>
+            </div>
+          ) : (
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={burnupData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={`${"var(--border)"}33`} />
                 <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} domain={[0, 60]} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
                 <Tooltip contentStyle={{ background: "var(--card)", border: `1px solid ${"var(--border)"}`, borderRadius: 8, fontSize: 11, color: "var(--foreground)" }} />
-                {/* Scope line */}
-                <Line type="stepAfter" dataKey="scope" stroke="#F59E0B" strokeWidth={2} dot={false} name="Scope" />
+                {/* Scope line (total committed SP that day) */}
+                <Line type="stepAfter" dataKey="total" stroke="#F59E0B" strokeWidth={2} dot={false} name="Scope" />
                 {/* Completed line */}
                 <Area type="monotone" dataKey="completed" stroke={"var(--primary)"} fill={`${"var(--primary)"}15`} strokeWidth={2.5} dot={{ r: 3, fill: "var(--primary)" }} name="Completed" connectNulls={false} />
-                {/* Accepted line */}
-                <Line type="monotone" dataKey="accepted" stroke="#10B981" strokeWidth={2} dot={{ r: 2, fill: "#10B981" }} name="Accepted" connectNulls={false} />
-                <ReferenceLine x="D6" stroke={"#EF4444"} strokeDasharray="3 3" />
+                {/* Today marker — current day index within the sprint */}
+                <ReferenceLine x={sprint.daysPassed} stroke={"#EF4444"} strokeDasharray="3 3" />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#F59E0B" }} /> Scope</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "var(--primary)" }} /> Completed</span>
-            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#10B981" }} /> Accepted</span>
-            <span className="text-[10px] ml-auto font-medium" style={{ color: "var(--muted-foreground)" }}>Gap = {sprint.scope - sprint.done} SP remaining</span>
-          </div>
+          )}
+          {burnupData.length > 0 && (
+            <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: "var(--muted-foreground)" }}>
+              <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#F59E0B" }} /> Scope</span>
+              <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "var(--primary)" }} /> Completed</span>
+              <span className="text-[10px] ml-auto font-medium" style={{ color: "var(--muted-foreground)" }}>Gap = {sprint.scope - sprint.done} SP remaining</span>
+            </div>
+          )}
         </Card>
       </div>
 

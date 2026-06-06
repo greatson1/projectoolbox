@@ -1364,3 +1364,22 @@ enum WaitlistStatus {
   INVITED
   REGISTERED
 }
+
+// Daily end-of-day snapshot of a sprint's burndown/burnup state. One row per
+// sprint per day, written by the snapshot cron. Burndown chart = remaining
+// over time; burnup = completed over time. Without this the charts had no
+// history to plot. dayIndex is days since sprint start (0-based) for a stable
+// x-axis even if a day's capture is missed.
+model SprintSnapshot {
+  id              String   @id @default(cuid())
+  sprintId        String
+  projectId       String
+  capturedAt      DateTime @default(now())
+  dayIndex        Int      // days since sprint start at capture time
+  totalPoints     Int      @default(0) // committed scope (SP) at capture
+  completedPoints Int      @default(0) // SP done at capture
+  remainingPoints Int      @default(0) // totalPoints - completedPoints
+
+  @@unique([sprintId, dayIndex]) // one snapshot per sprint per day; cron upserts
+  @@index([sprintId])
+}

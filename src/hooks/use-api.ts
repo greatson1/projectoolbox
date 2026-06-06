@@ -293,6 +293,18 @@ export function useProjectCycleTime(projectId: string | null) {
   });
 }
 
+/** Burndown/burnup series for a sprint, built from daily SprintSnapshot rows.
+ *  Empty until the snapshot cron has captured at least one day. */
+export function useSprintBurndown(projectId: string | null, sprintId: string | null) {
+  return useQuery({
+    queryKey: ["sprint-burndown", projectId, sprintId],
+    queryFn: () => api<Array<{ day: number; label: string; ideal: number; actual: number; completed: number }>>(
+      `/api/projects/${projectId}/sprints/${sprintId}/burndown`,
+    ),
+    enabled: !!projectId && !!sprintId,
+  });
+}
+
 export function useProjectChangeRequests(projectId: string | null) {
   return useQuery({
     queryKey: ["change-requests", projectId],
