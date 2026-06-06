@@ -77,6 +77,15 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // has a Definition of Done with criteria AND any criterion is still
   // unticked on this task's dodChecks. Returns 422 with the unmet items
   // so the UI can highlight what's missing.
+  //
+  // Scope: DELIVERY work only. Scaffolded PM/governance tasks
+  // ("Submit Sprint Zero gate approval", "Generate Definition of Done",
+  // "Review and update Risk Register") aren't subject to the DoD —
+  // they're meta-tasks the methodology adds to track process, not
+  // product. Without this filter the gate would refuse every PM task
+  // tick because they don't carry dodChecks. The [scaffolded:delivery]
+  // tag still IS in scope — it marks real delivery work the agent
+  // scaffolded for a phase that has no WBS yet.
   const flippingToDone = data.status && data.status.toUpperCase() === "DONE";
   if (flippingToDone) {
     try {
@@ -85,10 +94,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
           where: { id: projectId },
           select: { definitionOfDone: true, methodology: true },
         }),
-        db.task.findUnique({ where: { id: taskId }, select: { dodChecks: true } }),
+        db.task.findUnique({ where: { id: taskId }, select: { dodChecks: true, description: true } }),
       ]);
+      const desc = currentTask?.description || "";
+      const isScaffoldedNonDelivery = desc.includes("[scaffolded]") && !desc.includes("[scaffolded:delivery]");
       const dod = project?.definitionOfDone as { criteria?: string[] } | null;
-      if (dod?.criteria && dod.criteria.length > 0) {
+      if (!isScaffoldedNonDelivery && dod?.criteria && dod.criteria.length > 0) {
         const { dodComplete, criteriaDelta } = await import("@/lib/agents/criteria-parser");
         // Prefer the incoming dodChecks (user just ticked something in the
         // same request) over the stored value, so the gate sees the latest.
@@ -113,6 +124,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // When a backlog task is pulled into a sprint (sprintId: null → set),
   // refuse if the project has a Definition of Ready with criteria AND any
   // criterion is still unticked on dorChecks. Same 422 contract as DoD.
+  // Same delivery-only scope as the DoD gate — scaffolded PM tasks never
+  // get pulled into sprints anyway, but the filter is symmetric for
+  // future-proofing.
   const pullingIntoSprint = data.sprintId !== undefined && data.sprintId !== null && data.sprintId !== "";
   if (pullingIntoSprint) {
     try {
@@ -121,14 +135,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
           where: { id: projectId },
           select: { definitionOfReady: true },
         }),
-        db.task.findUnique({ where: { id: taskId }, select: { dorChecks: true, sprintId: true } }),
+        db.task.findUnique({ where: { id: taskId }, select: { dorChecks: true, sprintId: true, description: true } }),
       ]);
       // Only enforce on the *transition* (null → set). Reassigning a task
       // already in a sprint to a different sprint is treated as a move,
       // not a fresh pull, so we don't re-gate it.
       const wasOutOfSprint = !currentTask?.sprintId;
+      const desc = currentTask?.description || "";
+      const isScaffoldedNonDelivery = desc.includes("[scaffolded]") && !desc.includes("[scaffolded:delivery]");
       const dor = project?.definitionOfReady as { criteria?: string[] } | null;
-      if (wasOutOfSprint && dor?.criteria && dor.criteria.length > 0) {
+      if (!isScaffoldedNonDelivery && wasOutOfSprint && dor?.criteria && dor.criteria.length > 0) {
         const { dodComplete, criteriaDelta } = await import("@/lib/agents/criteria-parser");
         const effectiveChecks = (data.dorChecks !== undefined ? data.dorChecks : currentTask?.dorChecks) ?? [];
         if (!dodComplete(dor.criteria, effectiveChecks)) {
