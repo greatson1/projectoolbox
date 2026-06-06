@@ -212,7 +212,18 @@ Reference the Hybrid Charter from Foundation — call out when iteration finding
   "pi planning": {
     researchQueries: 4,
     maxTokens: 10240,
-    artefactGuidance: `DEPTH: COMPREHENSIVE. PI Planning — program increment objectives, feature decomposition, team capacity, risk ROAMing. This is the heaviest planning ceremony in SAFe.`,
+    artefactGuidance: `DEPTH: COMPREHENSIVE. PI Planning — the heaviest planning ceremony in SAFe.
+Substantive (3-8 pages each):
+- PI Objectives: 5-10 SMART objectives with business value (1-10) per ART, traceable to vision
+- Roadmap: multi-PI horizon — minimum next 3 PIs, with epics anchored to release timelines + dependencies between ARTs
+- Feature Hierarchy: Epic → Feature → Story decomposition. Every committed Feature must trace to an Epic; every Story must trace to a Feature. 15-30 features for one PI.
+- Team Backlogs: per-team breakdown of the Program Backlog. Each team gets a backlog of stories sized to their velocity for the PI, with capacity calculation (sprints × velocity × team) shown.
+- ROAM Risk Board: every identified risk classified Resolved / Owned / Accepted / Mitigated. Each must have an owner (for Owned/Mitigated) or an explicit acceptance decision (for Accepted). No risk left untriaged.
+- Programme Board: visual dependencies across teams, milestones, external dependencies
+- Solution Vision: 1-2 pages of vision + minimum viable solution boundaries
+- Architectural Runway: NFRs + integration points + enablers needed to deliver the features
+- Team Topologies: team interaction modes (collaboration / X-as-a-Service / facilitating)
+ALL artefacts must trace upward: stories → features → epics → vision. The Roadmap's first PI must match the PI Objectives word-for-word.`,
     clarificationDepth: "thorough",
   },
   "iteration cadence": {
@@ -258,7 +269,10 @@ Substantive (3-5 pages each):
 - Kanban Board Design: columns (To Do / Doing / Done at minimum, plus class-of-service swimlanes if relevant), policies per column
 - WIP Limits Justification: per-column limits based on team size + cycle-time data (or stated assumption if no data yet)
 - Service Level Expectations: per class of service (Expedite / Standard / Fixed Date / Intangible) — target cycle times with percentiles
-- Initial Backlog: ready cards with explicit acceptance criteria — replenishment cadence stated
+- Definition of Done: explicit acceptance checklist applied at the "Done" column — code review / tests / docs / deploy / accepted. Without this the board has no exit criterion.
+- Class of Service Definitions: per-class pull rules. Expedite (drop everything, no WIP cap), Fixed Date (must finish by X — pulled when within lead-time window), Standard (FIFO within WIP), Intangible (lowest priority, pulled only when capacity allows). State the WIP allowance per class.
+- Replenishment Policy: replenishment cadence + meeting trigger (e.g. weekly + when backlog buffer drops below N) + who attends + how priority is decided
+- Initial Backlog: ready cards with explicit acceptance criteria
 - Cadence Policies: replenishment, delivery, review meeting schedule
 NOT a sprint plan — Kanban is flow-based, not iteration-based.`,
     clarificationDepth: "moderate",

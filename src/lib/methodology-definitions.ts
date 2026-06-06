@@ -471,15 +471,25 @@ const KANBAN: MethodologyDefinition = {
         // required:true — gate prereq "WIP limits configured" mandates this.
         { name: "WIP Policies", required: true, aiGeneratable: true },
         { name: "Service Level Agreement", required: false, aiGeneratable: true },
+        // ── Canonical Kanban Method additions (2026-06 audit) ──
+        // Kanban without Definition of Done is "Scrum board without
+        // sprints"; without Class of Service it can't honour different
+        // priority commitments; without a Replenishment Policy the
+        // backlog refresh becomes ad-hoc. These are core to the method.
+        { name: "Definition of Done", required: true, aiGeneratable: true },
+        { name: "Class of Service Definitions", required: true, aiGeneratable: true },
+        { name: "Replenishment Policy", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Board Live",
-        criteria: "Board live, WIP policies agreed",
+        criteria: "Board live, WIP policies agreed, Definition of Done explicit, classes of service declared",
         preRequisites: [
           { description: "WIP limits configured", category: "document", isMandatory: true, requiresHumanApproval: true },
           { description: "Workflow stages defined", category: "document", isMandatory: true, requiresHumanApproval: false },
           { description: "Backlog populated", category: "document", isMandatory: true, requiresHumanApproval: false },
+          { description: "Definition of Done agreed", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Classes of Service declared", category: "document", isMandatory: true, requiresHumanApproval: false },
         ],
       },
     },
@@ -493,6 +503,13 @@ const KANBAN: MethodologyDefinition = {
         { name: "Change Request Register", required: false, aiGeneratable: true },
         { name: "Service Level Reports", required: false, aiGeneratable: true },
         { name: "Bottleneck Analysis", required: false, aiGeneratable: true },
+        // ── Canonical Kanban Method additions (2026-06 audit) ──
+        // CFD is the visual aggregate of Flow Metrics — kept separate
+        // because reviewers consume it differently (trend at a glance
+        // vs. table inspection). Class of Service Tracker reports per-
+        // class SLE adherence so each class isn't reduced to an average.
+        { name: "Cumulative Flow Diagram", required: false, aiGeneratable: true },
+        { name: "Class of Service Tracker", required: false, aiGeneratable: true },
       ],
       gate: {
         name: "Continuous Review",
@@ -548,6 +565,20 @@ const SAFE: MethodologyDefinition = {
         { name: "Architectural Runway", required: false, aiGeneratable: true },
         { name: "Team Topologies", required: false, aiGeneratable: true },
         { name: "Communication Plan", required: false, aiGeneratable: true },
+        // ── Canonical SAFe additions (2026-06 audit) ──
+        // Roadmap spans multiple PIs; without it teams can't see the
+        // horizon beyond the current PI. Feature Hierarchy records the
+        // Epic→Feature→Story decomposition that SAFe enforces — the
+        // single "Product Backlog" entry above flattens what should be
+        // a tree. Team Backlogs split the Program Backlog per-team so
+        // each team's commitment is auditable. ROAM Risk Board is SAFe's
+        // canonical PI-planning risk-classification artefact: each
+        // identified risk is marked Resolved / Owned / Accepted /
+        // Mitigated before commitment.
+        { name: "Roadmap", required: true, aiGeneratable: true },
+        { name: "Feature Hierarchy", required: true, aiGeneratable: true },
+        { name: "Team Backlogs", required: true, aiGeneratable: true },
+        { name: "ROAM Risk Board", required: true, aiGeneratable: true },
       ],
       gate: {
         name: "PI Commitment",
