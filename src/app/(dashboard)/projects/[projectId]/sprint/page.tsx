@@ -5,7 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests, useProjectCycleTime } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
 import { Card as BaseCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -107,6 +107,7 @@ export default function SprintTrackerPage() {
   const { data: project } = useProject(projectId);
   const { data: criteria } = useProjectCriteria(projectId);
   const { data: apiChangeRequests } = useProjectChangeRequests(projectId);
+  const { data: apiCycleTime } = useProjectCycleTime(projectId);
 
   // Methodology guard. The sidebar tab is already hidden for non-sprint
   // methodologies, but the route stays accessible by direct URL. Without
@@ -182,11 +183,10 @@ export default function SprintTrackerPage() {
   const burndownData = useMemo(() => [], []);
   const burnupData = useMemo(() => [], []);
 
-  // Cycle time requires status-transition timestamps per task (time spent
-  // in "In Progress" before reaching "Done", etc.). We don't have those.
-  // The old `(count * 0.8).toFixed(1)` formula was synthetic and didn't
-  // even reference the accumulator. Empty until we wire a transition log.
-  const cycleTimeData = useMemo(() => [], []);
+  // Cycle time — real averages from the TaskStatusTransition log (captured
+  // on every status change via the task PATCH path). Empty until the project
+  // has accrued some status changes; the chart shows its empty state then.
+  const cycleTimeData = apiCycleTime || [];
 
   // Velocity trend: only meaningful when there are real completed sprints
   // with committedPoints / completedPoints recorded. Don't fabricate fake
@@ -849,6 +849,11 @@ export default function SprintTrackerPage() {
         <div className="space-y-4">
           <Card>
             <h3 className="text-[14px] font-semibold mb-2" style={{ color: "var(--foreground)" }}>Avg Cycle Time by Status</h3>
+            {cycleTimeData.length === 0 ? (
+              <p className="text-[11px] py-8 text-center" style={{ color: "var(--muted-foreground)" }}>
+                Builds up as tasks move between statuses — average days-in-status will appear here once changes are recorded.
+              </p>
+            ) : (
             <div style={{ height: 130 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={cycleTimeData} layout="vertical" barSize={14}>
@@ -863,6 +868,7 @@ export default function SprintTrackerPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            )}
           </Card>
 
           <Card>

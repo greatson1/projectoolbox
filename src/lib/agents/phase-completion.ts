@@ -272,7 +272,11 @@ export async function getPhaseCompletion(
     }),
     db.project.findUnique({
       where: { id: projectId },
-      select: { methodology: true },
+      // definitionOfDone is loaded here so the gate-level DoD check below
+      // can verify that DONE tasks actually satisfied the project's DoD
+      // (rather than trusting the Task PATCH gate to have caught every
+      // path — direct DB edits, raw SQL, or bulk imports can bypass it).
+      select: { methodology: true, definitionOfDone: true },
     }),
     db.task.findMany({
       where: {
@@ -305,7 +309,11 @@ export async function getPhaseCompletion(
           })),
         ],
       },
-      select: { id: true, title: true, status: true, progress: true },
+      // dodChecks + updatedAt are needed for the gate-level DoD enforcement
+      // below — verifying that DONE tasks actually satisfied the DoD rather
+      // than bypassed it. updatedAt filters out tasks that were already DONE
+      // before the DoD was approved (we don't penalise pre-DoD legacy).
+      select: { id: true, title: true, status: true, progress: true, dodChecks: true, updatedAt: true },
     }),
     db.knowledgeBaseItem.findMany({
       where: {
@@ -493,6 +501,61 @@ export async function getPhaseCompletion(
   // Delivery task check — uses progress-based percentage
   if (deliveryTotal > 0 && deliveryPct / 100 < cfg.deliveryThreshold) {
     blockers.push(`Delivery tasks at ${deliveryPct}% progress (${deliveryDone}/${deliveryTotal} complete) — need ${Math.round(cfg.deliveryThreshold * 100)}%`);
+  }
+
+  // ── Gate-level DoD enforcement + coverage metric ─────────────────────────
+  // The Task PATCH route already refuses status→DONE when dodChecks don't
+  // satisfy the DoD. But that gate only fires on the API path — direct DB
+  // edits, raw SQL, or bulk imports can mark a task DONE without ticking
+  // anything. Re-verify at phase-completion time so the bypass surfaces as
+  // a real blocker rather than a silent compliance hole. Also computes a
+  // coverage metric the UI can render: "62/64 criteria ticked on average
+  // across this sprint's in-flight tasks".
+  //
+  // Only inspect tasks updated AFTER the DoD was approved — pre-DoD legacy
+  // DONE work isn't a bypass, it's just history we can't retroactively
+  // enforce on.
+  const dod = (projectForMethodology?.definitionOfDone as { criteria?: string[]; approvedAt?: string } | null) || null;
+  let dodCoverage: {
+    criteriaTotal: number;
+    inFlightTaskCount: number;
+    averageTickRate: number;
+    bypassedTaskCount: number;
+    bypassedTaskIds: string[];
+  } | null = null;
+  if (dod && Array.isArray(dod.criteria) && dod.criteria.length > 0) {
+    const { dodComplete, isCriterionChecked } = await import("./criteria-parser");
+    const approvedAt = dod.approvedAt ? new Date(dod.approvedAt).getTime() : 0;
+    const isPostDoD = (t: { updatedAt: Date }) => t.updatedAt.getTime() >= approvedAt;
+    const doneTasks = uniqueDelivery.filter(t =>
+      (t.status === "DONE" || t.status === "COMPLETE" || (t.progress || 0) >= 100) && isPostDoD(t),
+    );
+    const inFlight = uniqueDelivery.filter(t =>
+      (t.status === "IN_PROGRESS" || t.status === "in_progress" || t.status === "active" || t.status === "in_review") && isPostDoD(t),
+    );
+    const bypassed = doneTasks.filter(t => !dodComplete(dod.criteria!, t.dodChecks));
+    // Average per-task tick rate across in-flight + done — gives the team a
+    // moving picture of compliance, not just a binary pass/fail at the gate.
+    const sampleTasks = [...doneTasks, ...inFlight];
+    let totalTickRateSum = 0;
+    for (const t of sampleTasks) {
+      let ticks = 0;
+      for (let i = 0; i < dod.criteria.length; i++) {
+        if (isCriterionChecked(dod.criteria[i], t.dodChecks, i)) ticks++;
+      }
+      totalTickRateSum += ticks / dod.criteria.length;
+    }
+    const averageTickRate = sampleTasks.length > 0 ? totalTickRateSum / sampleTasks.length : 0;
+    dodCoverage = {
+      criteriaTotal: dod.criteria.length,
+      inFlightTaskCount: inFlight.length,
+      averageTickRate,
+      bypassedTaskCount: bypassed.length,
+      bypassedTaskIds: bypassed.slice(0, 25).map(t => t.id),
+    };
+    if (bypassed.length > 0) {
+      blockers.push(`${bypassed.length} task${bypassed.length === 1 ? "" : "s"} marked DONE without satisfying the Definition of Done — review and either tick the criteria or move them back to in-progress`);
+    }
   }
 
   // KB-informed blockers

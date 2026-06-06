@@ -283,6 +283,16 @@ export function useProjectStakeholders(projectId: string | null) {
   });
 }
 
+/** Avg cycle time (days) per status — drives the Sprint Tracker chart.
+ *  Empty until task status changes have been captured. */
+export function useProjectCycleTime(projectId: string | null) {
+  return useQuery({
+    queryKey: ["cycle-time", projectId],
+    queryFn: () => api<Array<{ status: string; avg: number }>>(`/api/projects/${projectId}/cycle-time`),
+    enabled: !!projectId,
+  });
+}
+
 export function useProjectChangeRequests(projectId: string | null) {
   return useQuery({
     queryKey: ["change-requests", projectId],

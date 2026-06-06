@@ -18,7 +18,7 @@
  */
 
 import { db } from "@/lib/db";
-import { parseCriteria } from "./criteria-parser";
+import { parseCriteria, parseBacklogItems } from "./criteria-parser";
 
 export async function ingestCriteriaArtefact(
   artefact: { id: string; name: string; content: string; projectId: string },
@@ -61,12 +61,15 @@ export async function ingestCriteriaArtefact(
   }
 
   // ── Initial Product Backlog → Task rows ─────────────────────────────
-  // Parses the artefact's bulleted items into story-typed Task rows.
-  // Tagged [source:initial-backlog] in the description so re-runs can
-  // wipe and re-seed without touching tasks created by other paths.
+  // Parses the artefact's items into story-typed Task rows. parseBacklogItems
+  // handles the formats the generator actually produces (`#### PBI-NNN:`
+  // headings, markdown tables, bullets), so this no longer no-ops when the
+  // artefact uses the richer document layout. Tagged [source:initial-backlog]
+  // in the description so re-runs can wipe and re-seed without touching
+  // tasks created by other paths.
   if (lname.includes("initial product backlog") || lname.includes("product backlog")) {
-    const parsed = parseCriteria(artefact.content || "");
-    if (parsed.criteria.length === 0) {
+    const items = parseBacklogItems(artefact.content || "");
+    if (items.length === 0) {
       return { kind: "initialProductBacklog", tasks: 0 };
     }
     const SOURCE_TAG = "[source:initial-backlog]";
@@ -91,22 +94,29 @@ export async function ingestCriteriaArtefact(
     const phaseId = activeDep?.currentPhase ?? null;
 
     let created = 0;
-    for (const title of parsed.criteria) {
+    for (const item of items) {
       // Lightweight MoSCoW hint from the item prose. We only set Must
       // when the line carries strong language — Should/Could/Wont are
       // left null so the user can prioritise after triage.
-      const moscow = /\bmust\b/i.test(title) ? "MUST"
-        : /\bshould\b/i.test(title) ? "SHOULD"
-        : /\bcould\b/i.test(title) ? "COULD"
-        : /\bwon[' ]?t\b|\bwont\b/i.test(title) ? "WONT"
+      const moscow = /\bmust\b/i.test(item.title) ? "MUST"
+        : /\bshould\b/i.test(item.title) ? "SHOULD"
+        : /\bcould\b/i.test(item.title) ? "COULD"
+        : /\bwon[' ]?t\b|\bwont\b/i.test(item.title) ? "WONT"
         : null;
+
+      // Description carries the source tag (so re-runs can find and replace
+      // these rows) plus the PBI reference for traceability back to the
+      // artefact, where the full acceptance criteria live.
+      const description = item.pbiRef
+        ? `${SOURCE_TAG} Seeded from Initial Product Backlog artefact (${item.pbiRef}).`
+        : `${SOURCE_TAG} Seeded from Initial Product Backlog artefact.`;
 
       try {
         await db.task.create({
           data: {
             projectId: artefact.projectId,
-            title: title.slice(0, 255),
-            description: `${SOURCE_TAG} Seeded from Initial Product Backlog artefact.`,
+            title: item.title.slice(0, 255),
+            description,
             status: "TODO",
             priority: "MEDIUM",
             type: "story",
@@ -119,7 +129,7 @@ export async function ingestCriteriaArtefact(
         });
         created++;
       } catch (e) {
-        console.error("[criteria-ingest] backlog task create failed:", title, e);
+        console.error("[criteria-ingest] backlog task create failed:", item.title, e);
       }
     }
     return { kind: "initialProductBacklog", tasks: created };

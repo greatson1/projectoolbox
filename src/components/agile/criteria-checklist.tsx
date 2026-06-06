@@ -17,10 +17,15 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { criterionKey } from "@/lib/agents/criteria-parser";
 
 interface Props {
   kind: "dod" | "dor";
   criteria: string[];
+  /** Either the legacy boolean[] (positional) or the keyed
+   *  Record<criterionKey,boolean>. The component reads both and writes
+   *  the keyed shape on every save so reordering the criteria in the
+   *  artefact won't shuffle existing ticks. */
   checks: unknown;
   taskId: string;
   projectId: string;
@@ -28,7 +33,7 @@ interface Props {
    *  query. The mutation hook used by the parent already invalidates the
    *  `["tasks", projectId]` cache, so callers typically just pass that
    *  hook's `mutate`. */
-  onPatch: (payload: { dodChecks?: boolean[]; dorChecks?: boolean[] }) => Promise<void> | void;
+  onPatch: (payload: { dodChecks?: Record<string, boolean>; dorChecks?: Record<string, boolean> }) => Promise<void> | void;
 }
 
 export function CriteriaChecklist({ kind, criteria, checks, taskId: _taskId, projectId: _projectId, onPatch }: Props) {
@@ -38,22 +43,36 @@ export function CriteriaChecklist({ kind, criteria, checks, taskId: _taskId, pro
   const fieldName = kind === "dod" ? "dodChecks" : "dorChecks";
   const accentColor = kind === "dod" ? "#10B981" : "#6366F1";
 
-  // Normalise the persisted shape: pad with `false` if the array is shorter
-  // than the criteria list (new criteria added after the task was created).
-  const checksArray: boolean[] = (() => {
-    const base = Array.isArray(checks) ? checks : [];
-    const out = new Array(criteria.length).fill(false);
-    for (let i = 0; i < criteria.length; i++) out[i] = base[i] === true;
+  // Project the persisted shape (either positional or keyed) onto a stable
+  // keyed record we use for rendering AND the next write. Keys are the
+  // normalised criterion text — same key the server uses in dodComplete.
+  // Any old positional array gets migrated to keyed form on the first save.
+  const checksRecord: Record<string, boolean> = (() => {
+    const out: Record<string, boolean> = {};
+    if (Array.isArray(checks)) {
+      // Legacy positional shape — map by index.
+      for (let i = 0; i < criteria.length; i++) {
+        if (checks[i] === true) out[criterionKey(criteria[i])] = true;
+      }
+    } else if (checks && typeof checks === "object") {
+      // Already keyed — copy through only the criteria we recognise so a
+      // criterion that was removed from the DoD doesn't keep a stale tick.
+      for (const c of criteria) {
+        const k = criterionKey(c);
+        if ((checks as Record<string, unknown>)[k] === true) out[k] = true;
+      }
+    }
     return out;
   })();
 
-  const satisfied = checksArray.filter(Boolean).length;
+  const satisfied = criteria.filter(c => checksRecord[criterionKey(c)] === true).length;
   const total = criteria.length;
 
   async function toggle(idx: number) {
     setPendingIdx(idx);
-    const next = [...checksArray];
-    next[idx] = !next[idx];
+    const k = criterionKey(criteria[idx]);
+    const next: Record<string, boolean> = { ...checksRecord };
+    if (next[k]) delete next[k]; else next[k] = true;
     try {
       await onPatch({ [fieldName]: next } as any);
     } catch (e: any) {
@@ -84,7 +103,7 @@ export function CriteriaChecklist({ kind, criteria, checks, taskId: _taskId, pro
       </div>
       <ul className="space-y-1.5">
         {criteria.map((c, i) => {
-          const checked = checksArray[i];
+          const checked = checksRecord[criterionKey(c)] === true;
           return (
             <li key={`${i}-${c}`} className="flex items-start gap-2">
               <button

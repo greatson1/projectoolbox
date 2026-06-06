@@ -38,6 +38,47 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
     console.error("[tasks GET] lazy backfill failed (returning whatever exists):", e);
   }
 
+  // ── Lazy backfill #2: Initial Product Backlog artefact → Task rows ────
+  // The DoD/DoR criteria GET endpoint already does this for the criteria
+  // columns. Apply the same pattern here so the Product Backlog page isn't
+  // empty when an approved backlog artefact exists but the ingest hook
+  // either pre-dated it or no-op'd because the parser didn't recognise the
+  // PBI-heading format. Idempotent: ingestCriteriaArtefact deletes its own
+  // previously seeded rows (createdBy=agent:*, description carries
+  // [source:initial-backlog]) before re-creating, and only fires when
+  // there are zero source:initial-backlog rows currently in the project.
+  try {
+    const alreadySeeded = await db.task.count({
+      where: {
+        projectId,
+        description: { contains: "[source:initial-backlog]" },
+      },
+    });
+    if (alreadySeeded === 0) {
+      const backlogArtefact = await db.agentArtefact.findFirst({
+        where: {
+          projectId,
+          status: "APPROVED",
+          OR: [
+            { name: { contains: "initial product backlog", mode: "insensitive" } },
+            { name: { contains: "product backlog", mode: "insensitive" } },
+          ],
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, name: true, content: true, agentId: true, projectId: true },
+      });
+      if (backlogArtefact?.content) {
+        const { ingestCriteriaArtefact } = await import("@/lib/agents/criteria-ingest");
+        const out = await ingestCriteriaArtefact(backlogArtefact, backlogArtefact.agentId);
+        if ((out.tasks ?? 0) > 0) {
+          console.log(`[tasks GET] backlog backfill: ${out.tasks} task(s) seeded from "${backlogArtefact.name}"`);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[tasks GET] backlog backfill failed (returning whatever exists):", e);
+  }
+
   let tasks = await db.task.findMany({
     where: {
       projectId,

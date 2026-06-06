@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCriteria, dodComplete, criteriaDelta } from "./criteria-parser";
+import { parseCriteria, parseBacklogItems, dodComplete, criteriaDelta } from "./criteria-parser";
 
 describe("parseCriteria", () => {
   it("extracts dash bullets", () => {
@@ -132,5 +132,97 @@ describe("criteriaDelta", () => {
   it("complete=true when no criteria configured", () => {
     expect(criteriaDelta([], []).complete).toBe(true);
     expect(criteriaDelta(undefined, undefined).complete).toBe(true);
+  });
+});
+
+describe("parseBacklogItems", () => {
+  it("extracts PBI-numbered headings (the format the generator actually uses)", () => {
+    const md = `# Initial Product Backlog
+
+## Backlog Items
+
+#### PBI-001: Cloud Platform Setup
+**User Story:** As a business user...
+
+#### PBI-002: Identity and Access Management
+**User Story:** As a system admin...
+
+#### PBI-003: ERP System Integration
+Description here.`;
+    const out = parseBacklogItems(md);
+    expect(out).toEqual([
+      { title: "Cloud Platform Setup", pbiRef: "PBI-001" },
+      { title: "Identity and Access Management", pbiRef: "PBI-002" },
+      { title: "ERP System Integration", pbiRef: "PBI-003" },
+    ]);
+  });
+
+  it("does not pick up section headings like '### Epic 2' as items", () => {
+    // Section headings without a PBI prefix shouldn't be treated as items
+    // when ANY PBI-prefixed item exists. The presence of PBI items signals
+    // we're in heading-format mode; non-PBI headings are sectioning, not
+    // items.
+    const md = `### Epic 1: Foundation
+
+#### PBI-001: Cloud Setup
+
+### Epic 2: Legacy Integration
+
+#### PBI-002: ERP Integration`;
+    const out = parseBacklogItems(md);
+    expect(out.map(i => i.pbiRef)).toEqual(["PBI-001", "PBI-002"]);
+  });
+
+  it("falls back to markdown tables when no PBI headings present", () => {
+    const md = `## Backlog
+
+| ID | Title | Story Points |
+|---|---|---|
+| PBI-001 | Login screen | 5 |
+| PBI-002 | Reset password flow | 8 |`;
+    const out = parseBacklogItems(md);
+    expect(out).toEqual([
+      { title: "Login screen", pbiRef: "PBI-001" },
+      { title: "Reset password flow", pbiRef: "PBI-002" },
+    ]);
+  });
+
+  it("falls back to bullets when neither headings nor tables present", () => {
+    const md = `## Backlog
+
+- Build the auth flow
+- Wire the dashboard
+- Ship analytics`;
+    const out = parseBacklogItems(md);
+    expect(out).toEqual([
+      { title: "Build the auth flow", pbiRef: null },
+      { title: "Wire the dashboard", pbiRef: null },
+      { title: "Ship analytics", pbiRef: null },
+    ]);
+  });
+
+  it("returns empty when the artefact has prose but no structured items", () => {
+    const md = "This is the product backlog. We will build many things.";
+    expect(parseBacklogItems(md)).toEqual([]);
+  });
+
+  it("dedups case-insensitively within heading format", () => {
+    const md = `#### PBI-001: Login Screen
+#### PBI-002: login screen
+#### PBI-003: Dashboard`;
+    const out = parseBacklogItems(md);
+    expect(out.map(i => i.title)).toEqual(["Login Screen", "Dashboard"]);
+  });
+
+  it("handles bold markers around the heading title", () => {
+    const md = "#### **PBI-001: Cloud Setup**";
+    expect(parseBacklogItems(md)).toEqual([
+      { title: "Cloud Setup", pbiRef: "PBI-001" },
+    ]);
+  });
+
+  it("returns empty on null / empty input", () => {
+    expect(parseBacklogItems("")).toEqual([]);
+    expect(parseBacklogItems(null as unknown as string)).toEqual([]);
   });
 });

@@ -168,7 +168,29 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "No updatable fields provided" }, { status: 400 });
   }
 
+  // Capture the prior status BEFORE the update so we can record a
+  // cycle-time transition with the right duration. Only read when status is
+  // actually changing (keeps the hot path lean for progress-only edits).
+  let priorStatus: string | null = null;
+  if (data.status !== undefined) {
+    const prev = await db.task.findUnique({ where: { id: taskId }, select: { status: true } });
+    priorStatus = prev?.status ?? null;
+  }
+
   const task = await db.task.update({ where: { id: taskId }, data });
+
+  // Record the status transition for cycle-time analytics (best-effort).
+  if (data.status !== undefined && priorStatus !== data.status) {
+    import("@/lib/agents/cycle-time").then(({ recordStatusTransition }) =>
+      recordStatusTransition({
+        taskId,
+        projectId,
+        fromStatus: priorStatus,
+        toStatus: data.status,
+        changedBy: `user:${(session.user as any).id || "?"}`,
+      }),
+    ).catch((e) => console.error("[task PATCH] cycle-time capture failed:", e));
+  }
 
   // If task has a parent, update parent progress aggregate
   if (task.parentId) {
