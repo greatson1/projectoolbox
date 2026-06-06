@@ -1340,6 +1340,25 @@ model InviteToken {
   createdAt DateTime @default(now())
 }
 
+// Records each task status change so we can measure how long work spends in
+// each status (cycle time). One row per transition: `fromStatus` is the
+// status being left, `durationMs` is how long the task sat in it before this
+// change. Cycle-time-by-status = average durationMs grouped by fromStatus.
+// Written from the task PATCH path on every status change.
+model TaskStatusTransition {
+  id         String   @id @default(cuid())
+  taskId     String
+  projectId  String
+  fromStatus String?  // null for the very first transition
+  toStatus   String
+  durationMs Float    @default(0) // time spent in fromStatus before this change
+  changedAt  DateTime @default(now())
+  changedBy  String?  // user:<id> | agent:<id>
+
+  @@index([projectId, fromStatus])
+  @@index([taskId])
+}
+
 enum WaitlistStatus {
   WAITING
   INVITED
