@@ -1065,21 +1065,23 @@ export interface MethodologyFeatures {
   evm: boolean;
   procurement: boolean;
   wbs: boolean;
-  /** SAFe-only structural pages: Roadmap, Feature Hierarchy, ROAM Risk Board. */
+  /** SAFe-only structural pages: Roadmap, Feature Hierarchy, ROAM Risk Board, Team Backlogs. */
   safeStructural: boolean;
-  /** Travel-only structural pages: Itinerary, Booking Tracker, Packing List. */
+  /** Travel-only structural pages: Itinerary, Booking Tracker, Packing List, etc. */
   travelStructural: boolean;
+  /** Kanban-only structural pages: Class of Service, Replenishment Policy. */
+  kanbanStructural: boolean;
 }
 
 const FEATURE_MAP: Record<MethodologyId, MethodologyFeatures> = {
-  traditional: { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
-  waterfall:   { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
-  scrum:       { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: false },
-  kanban:      { sprints: false, agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: false }, // legacy
-  safe:        { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: true,  travelStructural: false }, // legacy
-  hybrid:      { sprints: true,  agileBoard: true,  evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
-  travel:      { sprints: false, agileBoard: false, evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: true  },
-  pmbok:       { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
+  traditional: { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
+  waterfall:   { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
+  scrum:       { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: false, kanbanStructural: false },
+  kanban:      { sprints: false, agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: false, kanbanStructural: true  }, // legacy
+  safe:        { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: true,  travelStructural: false, kanbanStructural: false }, // legacy
+  hybrid:      { sprints: true,  agileBoard: true,  evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
+  travel:      { sprints: false, agileBoard: false, evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: true,  kanbanStructural: false },
+  pmbok:       { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
 };
 
 /**

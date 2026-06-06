@@ -14,6 +14,7 @@ import {
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
   ChevronDown, LayoutDashboard, ListChecks, Route, Map as MapIcon, CalendarDays,
   Plane, Backpack, BookOpen, Receipt, FileCheck2,
+  Layers3, Repeat, Lightbulb,
 } from "lucide-react";
 
 interface TabItem {
@@ -54,9 +55,7 @@ function tabsForMethodology(methodology: string | null | undefined): TabGroup[] 
     "/expense-reconciliation",
     "/documents-checklist",
   ]);
-  // SAFE_ONLY + TRAVEL_ONLY hrefs that may also live in the Cost or
-  // Control groups (not just Execute) get filtered out by the same
-  // pass below via item.href checks.
+  const KANBAN_ONLY = new Set(["/class-of-service", "/replenishment"]);
   return PROJECT_TABS.map(group => ({
     ...group,
     items: group.items
@@ -73,6 +72,7 @@ function tabsForMethodology(methodology: string | null | undefined): TabGroup[] 
       // other methodologies. Routes stay reachable by direct URL.
       .filter(item => f.safeStructural || !SAFE_ONLY.has(item.href))
       .filter(item => f.travelStructural || !TRAVEL_ONLY.has(item.href))
+      .filter(item => f.kanbanStructural || !KANBAN_ONLY.has(item.href))
       // Relabel the board page so a Traditional PM doesn't see
       // "Agile Board" in their sidebar. Page itself is unchanged.
       .map(item => item.href === "/agile" ? { ...item, label: boardLabel } : item),
@@ -107,6 +107,9 @@ const PROJECT_TABS: TabGroup[] = [
       { label: "Roadmap", href: "/roadmap", icon: MapIcon },
       { label: "Feature Hierarchy", href: "/feature-hierarchy", icon: Layers },
       { label: "Team Backlogs", href: "/team-backlogs", icon: Users },
+      // Kanban-only structural pages — gated by f.kanbanStructural.
+      { label: "Class of Service", href: "/class-of-service", icon: Layers3 },
+      { label: "Replenishment", href: "/replenishment", icon: Repeat },
       // Travel-only structural pages — gated by f.travelStructural so
       // they only appear for trip projects.
       { label: "Itinerary", href: "/itinerary", icon: CalendarDays },
@@ -152,6 +155,10 @@ const PROJECT_TABS: TabGroup[] = [
     items: [
       { label: "Reports", href: "/reports", icon: FileBarChart },
       { label: "Composer", href: "/report-composer", icon: Layers },
+      // Lessons Learned aggregates every approved Lessons artefact in the
+      // project. Universal — every methodology now requires Lessons in
+      // its closing-equivalent phase, so this is always relevant.
+      { label: "Lessons Learned", href: "/lessons-learned", icon: Lightbulb },
       { label: "Artefacts", href: "/artefacts", icon: FileText },
       { label: "Documents", href: "/documents", icon: FolderOpen },
     ],
