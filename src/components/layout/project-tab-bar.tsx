@@ -13,6 +13,7 @@ import {
   Package, DollarSign, Calculator, TrendingUp, Award, BarChart3,
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
   ChevronDown, LayoutDashboard, ListChecks, Route, Map as MapIcon, CalendarDays,
+  Plane, Backpack, BookOpen, Receipt, FileCheck2,
 } from "lucide-react";
 
 interface TabItem {
@@ -44,8 +45,18 @@ function tabsForMethodology(methodology: string | null | undefined): TabGroup[] 
   const boardLabel = boardPageLabel(methodology);
   // Hrefs that only belong to a specific structural methodology bucket.
   // Listed once here so the filter chain below stays readable.
-  const SAFE_ONLY = new Set(["/feature-hierarchy", "/roadmap", "/roam"]);
-  const TRAVEL_ONLY = new Set(["/itinerary"]);
+  const SAFE_ONLY = new Set(["/feature-hierarchy", "/roadmap", "/roam", "/team-backlogs"]);
+  const TRAVEL_ONLY = new Set([
+    "/itinerary",
+    "/bookings",
+    "/packing",
+    "/travel-log",
+    "/expense-reconciliation",
+    "/documents-checklist",
+  ]);
+  // SAFE_ONLY + TRAVEL_ONLY hrefs that may also live in the Cost or
+  // Control groups (not just Execute) get filtered out by the same
+  // pass below via item.href checks.
   return PROJECT_TABS.map(group => ({
     ...group,
     items: group.items
@@ -95,9 +106,14 @@ const PROJECT_TABS: TabGroup[] = [
       // tabsForMethodology so they only appear for SAFe projects.
       { label: "Roadmap", href: "/roadmap", icon: MapIcon },
       { label: "Feature Hierarchy", href: "/feature-hierarchy", icon: Layers },
-      // Travel-only structural page — gated by f.travelStructural so it
-      // only appears for trip projects.
+      { label: "Team Backlogs", href: "/team-backlogs", icon: Users },
+      // Travel-only structural pages — gated by f.travelStructural so
+      // they only appear for trip projects.
       { label: "Itinerary", href: "/itinerary", icon: CalendarDays },
+      { label: "Bookings", href: "/bookings", icon: Plane },
+      { label: "Packing", href: "/packing", icon: Backpack },
+      { label: "Travel Log", href: "/travel-log", icon: BookOpen },
+      { label: "Pre-Travel Checklist", href: "/documents-checklist", icon: FileCheck2 },
     ],
   },
   {
@@ -124,6 +140,10 @@ const PROJECT_TABS: TabGroup[] = [
       { label: "EVM", href: "/evm", icon: TrendingUp },
       { label: "Scorecard", href: "/scorecard", icon: Award },
       { label: "Benefits", href: "/benefits", icon: BarChart3 },
+      // Travel-only cost view — gated by f.travelStructural. Sits in
+      // Cost rather than Execute because it's a post-trip financial
+      // reconciliation rather than an execution-time tracker.
+      { label: "Expense Reconciliation", href: "/expense-reconciliation", icon: Receipt },
     ],
   },
   {
