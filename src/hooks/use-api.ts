@@ -305,6 +305,24 @@ export function useSprintBurndown(projectId: string | null, sprintId: string | n
   });
 }
 
+/** Daily stand-up entries. Pass a YYYY-MM-DD date to scope to that day,
+ *  or omit for the recent history. */
+export function useProjectStandups(projectId: string | null, date?: string) {
+  return useQuery({
+    queryKey: ["standups", projectId, date ?? "all"],
+    queryFn: () => api<any[]>(`/api/projects/${projectId}/standups${date ? `?date=${date}` : ""}`),
+    enabled: !!projectId,
+  });
+}
+
+export function useUpsertStandup(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api(`/api/projects/${projectId}/standups`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["standups", projectId] }),
+  });
+}
+
 export function useProjectChangeRequests(projectId: string | null) {
   return useQuery({
     queryKey: ["change-requests", projectId],

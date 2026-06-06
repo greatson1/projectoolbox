@@ -1383,3 +1383,26 @@ model SprintSnapshot {
   @@unique([sprintId, dayIndex]) // one snapshot per sprint per day; cron upserts
   @@index([sprintId])
 }
+
+// A daily stand-up entry for one team member on one day. Backs the Sprint
+// Tracker "Daily Stand-up" table (previously hardcoded empty). `standupDate`
+// is the calendar day (UTC midnight) the entry applies to, so "Today" vs
+// "Previous Days" filtering and one-entry-per-person-per-day upserts work.
+model Standup {
+  id          String   @id @default(cuid())
+  projectId   String
+  sprintId    String?  // optional — links the entry to the sprint it was logged in
+  standupDate DateTime // calendar day (UTC midnight) the entry is for
+  memberName  String
+  yesterday   String?  @db.Text
+  today       String?  @db.Text
+  blockers    String?  @db.Text
+  mood        String?  // emoji or short token
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, standupDate, memberName]) // one entry per person per day
+  @@index([projectId, standupDate])
+  @@index([sprintId])
+}

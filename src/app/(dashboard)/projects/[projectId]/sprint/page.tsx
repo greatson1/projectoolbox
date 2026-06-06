@@ -5,7 +5,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests, useProjectCycleTime, useSprintBurndown } from "@/hooks/use-api";
+import { useProjectTasks, useProjectSprints, useProject, useStoryPointCalibration, useProjectCriteria, useProjectChangeRequests, useProjectCycleTime, useSprintBurndown, useProjectStandups, useUpsertStandup } from "@/hooks/use-api";
 import { methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_VALUES, MOSCOW_LABELS, MOSCOW_HEX, summariseByMoscow, type Moscow } from "@/lib/moscow";
 import { Card as BaseCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -150,6 +150,13 @@ export default function SprintTrackerPage() {
   // sprint. Empty until the snapshot cron has captured at least one day.
   const { data: apiBurndown } = useSprintBurndown(projectId, selectedSprintRowId);
 
+  // Daily stand-up entries — "today" shows just today (UTC); "previous"
+  // shows recent history. The standupView toggle drives which we fetch.
+  const [standupView, setStandupView] = useState<"today" | "previous">("today");
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const { data: apiStandups } = useProjectStandups(projectId, standupView === "today" ? todayKey : undefined);
+  const upsertStandup = useUpsertStandup(projectId);
+
   // When there are real sprints, only show tasks belonging to the selected
   // one. When no sprints exist yet, show all tasks so the synthetic
   // "Project Backlog" wrapper still has something to display.
@@ -224,7 +231,7 @@ export default function SprintTrackerPage() {
   const mode = "dark";
   // selectedSprint state was declared near the top of the component to drive
   // the per-sprint filter on SPRINT_ITEMS_DATA. Don't redeclare it here.
-  const [standupView, setStandupView] = useState<"today" | "previous">("today");
+  // standupView is declared earlier (it gates which stand-ups we fetch).
   const [backlogFilter, setBacklogFilter] = useState<"all" | "in_progress" | "blocked" | "done" | "at_risk">("all");
 
   // Derive sprints. Prefer real Sprint rows from the DB — they have real
@@ -364,6 +371,41 @@ export default function SprintTrackerPage() {
       .map(m => ({ ...m, capacity: Math.max(1, m.done + m.inProgress + m.todo + m.blocked), velocityHistory: [] as number[] }))
       .sort((a, b) => b.capacity - a.capacity);
   }, [filteredApiTasks]);
+
+  // ── Daily Stand-up rows (real, from the Standup table) ──
+  // Map DB rows to the table's shape. The DB stores yesterday/today/blockers
+  // as free text; split on newlines into the bullet lists the table renders.
+  const standupRows = useMemo(() => {
+    const toLines = (s: string | null | undefined) =>
+      (s || "").split("\n").map(x => x.trim()).filter(Boolean);
+    return (apiStandups || []).map((s: any) => ({
+      id: s.id,
+      name: s.memberName,
+      mood: s.mood || "—",
+      date: s.standupDate,
+      yesterday: toLines(s.yesterday),
+      today: toLines(s.today),
+      blockers: toLines(s.blockers),
+    }));
+  }, [apiStandups]);
+
+  // Add/edit stand-up entry form state.
+  const [standupForm, setStandupForm] = useState<{ memberName: string; yesterday: string; today: string; blockers: string; mood: string } | null>(null);
+  function submitStandup() {
+    if (!standupForm?.memberName.trim()) return;
+    upsertStandup.mutate(
+      {
+        memberName: standupForm.memberName.trim(),
+        date: todayKey,
+        yesterday: standupForm.yesterday,
+        today: standupForm.today,
+        blockers: standupForm.blockers,
+        mood: standupForm.mood || null,
+        sprintId: selectedSprintRowId,
+      },
+      { onSuccess: () => setStandupForm(null) },
+    );
+  }
 
   // ── Scope Changes (real, from ChangeRequest rows) ──
   // The card was a hardcoded "—". Count change requests for this project,
@@ -649,16 +691,54 @@ export default function SprintTrackerPage() {
                 : new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}
             </p>
           </div>
-          <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid ${"var(--border)"}` }}>
-            {(["today", "previous"] as const).map(v => (
-              <button key={v} className="px-3 py-1 text-[11px] font-semibold capitalize"
-                onClick={() => setStandupView(v)}
-                style={{ background: standupView === v ? "var(--primary)" : "transparent", color: standupView === v ? "#FFF" : "var(--muted-foreground)" }}>
-                {v === "today" ? "Today" : "Previous Days"}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid ${"var(--border)"}` }}>
+              {(["today", "previous"] as const).map(v => (
+                <button key={v} className="px-3 py-1 text-[11px] font-semibold capitalize"
+                  onClick={() => setStandupView(v)}
+                  style={{ background: standupView === v ? "var(--primary)" : "transparent", color: standupView === v ? "#FFF" : "var(--muted-foreground)" }}>
+                  {v === "today" ? "Today" : "Previous Days"}
+                </button>
+              ))}
+            </div>
+            {standupView === "today" && (
+              <Button size="sm" variant="outline"
+                onClick={() => setStandupForm(standupForm ? null : { memberName: "", yesterday: "", today: "", blockers: "", mood: "" })}>
+                {standupForm ? "Cancel" : "+ Add entry"}
+              </Button>
+            )}
           </div>
         </div>
+
+        {/* Add stand-up entry form (today only) */}
+        {standupForm && standupView === "today" && (
+          <div className="mb-4 p-3 rounded-[8px]" style={{ border: `1px solid ${"var(--border)"}`, background: `${"var(--muted)"}10` }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+              <input className="px-2 py-1.5 rounded-[6px] text-[12px]" placeholder="Team member name"
+                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}
+                value={standupForm.memberName} onChange={e => setStandupForm({ ...standupForm, memberName: e.target.value })} />
+              <input className="px-2 py-1.5 rounded-[6px] text-[12px]" placeholder="Mood (e.g. 🙂 / blocked / on track)"
+                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}
+                value={standupForm.mood} onChange={e => setStandupForm({ ...standupForm, mood: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <textarea className="px-2 py-1.5 rounded-[6px] text-[12px] min-h-[60px]" placeholder="Yesterday (one item per line)"
+                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}
+                value={standupForm.yesterday} onChange={e => setStandupForm({ ...standupForm, yesterday: e.target.value })} />
+              <textarea className="px-2 py-1.5 rounded-[6px] text-[12px] min-h-[60px]" placeholder="Today (one item per line)"
+                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}
+                value={standupForm.today} onChange={e => setStandupForm({ ...standupForm, today: e.target.value })} />
+              <textarea className="px-2 py-1.5 rounded-[6px] text-[12px] min-h-[60px]" placeholder="Blockers (one item per line, blank if none)"
+                style={{ background: "var(--card)", color: "var(--foreground)", border: `1px solid ${"var(--border)"}` }}
+                value={standupForm.blockers} onChange={e => setStandupForm({ ...standupForm, blockers: e.target.value })} />
+            </div>
+            <div className="flex justify-end mt-2">
+              <Button size="sm" onClick={submitStandup} disabled={!standupForm.memberName.trim() || upsertStandup.isPending}>
+                {upsertStandup.isPending ? "Saving…" : "Save entry"}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* AI Summary — built from real task counts only. No fabricated names or ticket IDs. */}
         {SPRINT_ITEMS_DATA.length > 0 && (() => {
@@ -699,11 +779,20 @@ export default function SprintTrackerPage() {
               </tr>
             </thead>
             <tbody>
-              {STANDUP_DATA.map(s => (
-                <tr key={s.name} style={{ borderBottom: `1px solid ${"var(--border)"}22` }}>
+              {standupRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+                    {standupView === "today"
+                      ? "No stand-up entries for today yet — add one below."
+                      : "No stand-up history yet."}
+                  </td>
+                </tr>
+              )}
+              {standupRows.map(s => (
+                <tr key={s.id} style={{ borderBottom: `1px solid ${"var(--border)"}22` }}>
                   <td className="py-2.5 px-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">A</div>
+                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[9px] font-bold text-white">{(s.name.trim()[0] || "?").toUpperCase()}</div>
                       <span className="font-medium">{s.name.split(" ")[0]}</span>
                     </div>
                   </td>
