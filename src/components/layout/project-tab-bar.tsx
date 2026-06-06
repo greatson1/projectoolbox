@@ -12,7 +12,7 @@ import {
   ShieldAlert, AlertTriangle, GitPullRequest, TestTube2, ShieldCheck,
   Package, DollarSign, Calculator, TrendingUp, Award, BarChart3,
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
-  ChevronDown, LayoutDashboard, ListChecks, Route,
+  ChevronDown, LayoutDashboard, ListChecks, Route, Map as MapIcon, CalendarDays,
 } from "lucide-react";
 
 interface TabItem {
@@ -42,6 +42,10 @@ interface TabGroup {
 function tabsForMethodology(methodology: string | null | undefined): TabGroup[] {
   const f = methodologyFeatures(methodology);
   const boardLabel = boardPageLabel(methodology);
+  // Hrefs that only belong to a specific structural methodology bucket.
+  // Listed once here so the filter chain below stays readable.
+  const SAFE_ONLY = new Set(["/feature-hierarchy", "/roadmap", "/roam"]);
+  const TRAVEL_ONLY = new Set(["/itinerary"]);
   return PROJECT_TABS.map(group => ({
     ...group,
     items: group.items
@@ -53,6 +57,11 @@ function tabsForMethodology(methodology: string | null | undefined): TabGroup[] 
       .filter(item => f.evm || item.href !== "/evm")
       // Drop Procurement when not applicable (Travel, Scrum, etc.).
       .filter(item => f.procurement || item.href !== "/procurement")
+      // SAFe-only structural pages (Roadmap, Feature Hierarchy, ROAM)
+      // and Travel-only structural pages (Itinerary) are hidden from
+      // other methodologies. Routes stay reachable by direct URL.
+      .filter(item => f.safeStructural || !SAFE_ONLY.has(item.href))
+      .filter(item => f.travelStructural || !TRAVEL_ONLY.has(item.href))
       // Relabel the board page so a Traditional PM doesn't see
       // "Agile Board" in their sidebar. Page itself is unchanged.
       .map(item => item.href === "/agile" ? { ...item, label: boardLabel } : item),
@@ -82,6 +91,13 @@ const PROJECT_TABS: TabGroup[] = [
       { label: "Sprint Tracker", href: "/sprint", icon: Timer },
       { label: "Delivery Plan", href: "/delivery-plan", icon: Route },
       { label: "Actions", href: "/actions", icon: ClipboardList },
+      // SAFe-only structural pages — gated by f.safeStructural in
+      // tabsForMethodology so they only appear for SAFe projects.
+      { label: "Roadmap", href: "/roadmap", icon: MapIcon },
+      { label: "Feature Hierarchy", href: "/feature-hierarchy", icon: Layers },
+      // Travel-only structural page — gated by f.travelStructural so it
+      // only appears for trip projects.
+      { label: "Itinerary", href: "/itinerary", icon: CalendarDays },
     ],
   },
   {
@@ -89,6 +105,9 @@ const PROJECT_TABS: TabGroup[] = [
     color: "#F59E0B",
     items: [
       { label: "Risk Register", href: "/risk", icon: ShieldAlert },
+      // SAFe-only — sits next to Risk Register so the ROAM classification
+      // is one click from the risk list.
+      { label: "ROAM Risk Board", href: "/roam", icon: ShieldAlert },
       { label: "Issues", href: "/issues", icon: AlertTriangle },
       { label: "Change Control", href: "/change-control", icon: GitPullRequest },
       { label: "QA & Testing", href: "/qa-testing", icon: TestTube2 },

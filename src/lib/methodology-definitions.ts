@@ -1065,17 +1065,21 @@ export interface MethodologyFeatures {
   evm: boolean;
   procurement: boolean;
   wbs: boolean;
+  /** SAFe-only structural pages: Roadmap, Feature Hierarchy, ROAM Risk Board. */
+  safeStructural: boolean;
+  /** Travel-only structural pages: Itinerary, Booking Tracker, Packing List. */
+  travelStructural: boolean;
 }
 
 const FEATURE_MAP: Record<MethodologyId, MethodologyFeatures> = {
-  traditional: { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true  },
-  waterfall:   { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true  },
-  scrum:       { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false },
-  kanban:      { sprints: false, agileBoard: true,  evm: false, procurement: false, wbs: false }, // legacy
-  safe:        { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false }, // legacy
-  hybrid:      { sprints: true,  agileBoard: true,  evm: true,  procurement: true,  wbs: true  },
-  travel:      { sprints: false, agileBoard: false, evm: false, procurement: false, wbs: false }, // itinerary, not WBS
-  pmbok:       { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true  },
+  traditional: { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
+  waterfall:   { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
+  scrum:       { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: false },
+  kanban:      { sprints: false, agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: false }, // legacy
+  safe:        { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: false, safeStructural: true,  travelStructural: false }, // legacy
+  hybrid:      { sprints: true,  agileBoard: true,  evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
+  travel:      { sprints: false, agileBoard: false, evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: true  },
+  pmbok:       { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false },
 };
 
 /**
