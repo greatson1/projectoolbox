@@ -700,20 +700,52 @@ export default function AgileBoardPage() {
       </div>
 
       {/* ── Empty state ── */}
-      {allIssues.length === 0 && !tasksLoading && (
+      {/*
+        Two distinct cases produce zero tasks on the board; the messaging
+        was the same for both, which misled users.
+
+        Case A — no sprints AND no tasks: the project hasn't been started
+        yet. Tell the user to generate a Schedule/WBS or Sprint Plan.
+
+        Case B — sprint(s) exist but the board is empty (Scrum mode):
+        this is the trap. The agent generated a "Sprint Plan" artefact
+        which creates the Sprint row but does NOT seed tasks. For Scrum
+        boards, tasks come from a SEPARATE "Product Backlog" / "Sprint
+        Backlog" artefact. Calling that out specifically saves the user
+        from "I approved the Sprint Plan, where are my tasks?".
+      */}
+      {allIssues.length === 0 && !tasksLoading && (() => {
+        const hasSprint = sprints.length > 0;
+        const isScrumWithSprint = boardType === "scrum" && hasSprint;
+        return (
         <div className="rounded-xl border border-border bg-card p-8 text-center mb-4">
           <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <Columns3 className="w-7 h-7 text-primary/40" />
           </div>
-          <h3 className="text-sm font-bold mb-1.5">No tasks on the board yet</h3>
-          <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed mb-4">
-            Tasks appear here when you create them manually or when your AI agent generates and you approve a Schedule, WBS, or Sprint Plan artefact.
-          </p>
+          {isScrumWithSprint ? (
+            <>
+              <h3 className="text-sm font-bold mb-1.5">Sprint is set up — but it has no tasks yet</h3>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed mb-4">
+                A <strong>Sprint Plan</strong> artefact creates the sprint itself, but tasks come from a separate{" "}
+                <strong>Product Backlog</strong> (or <strong>Sprint Backlog</strong>) artefact. Generate and approve one of those to populate this board.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-sm font-bold mb-1.5">No tasks on the board yet</h3>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed mb-4">
+                Tasks appear here when you create them manually, or when your AI agent generates and you approve a Schedule, WBS, or <strong>Product Backlog</strong> artefact.
+              </p>
+            </>
+          )}
           <div className="flex flex-col sm:flex-row gap-2 justify-center items-center">
             <button onClick={() => setShowCreateIssue(true)}
               className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
               + Create Issue
             </button>
+            <Link href={`/projects/${projectId}/artefacts`} className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Open Artefacts
+            </Link>
             <Link href="/agents/chat" className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
               Chat with Agent
             </Link>
@@ -721,14 +753,26 @@ export default function AgileBoardPage() {
           <div className="mt-5 rounded-lg bg-muted/30 p-3 text-left max-w-sm mx-auto">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">How tasks get populated:</p>
             <div className="space-y-1 text-[11px] text-muted-foreground">
-              <div className="flex gap-2"><span className="text-primary font-bold">1.</span> Agent generates Schedule/WBS artefact</div>
-              <div className="flex gap-2"><span className="text-primary font-bold">2.</span> You approve it (click Approve in chat or artefacts tab)</div>
-              <div className="flex gap-2"><span className="text-primary font-bold">3.</span> Tasks are automatically created from the artefact</div>
-              <div className="flex gap-2"><span className="text-primary font-bold">4.</span> Approve Sprint Plans to assign tasks to sprints</div>
+              {isScrumWithSprint ? (
+                <>
+                  <div className="flex gap-2"><span className="text-primary font-bold">1.</span> <span><strong>Sprint Plan</strong> creates the Sprint row only ✓ done</span></div>
+                  <div className="flex gap-2"><span className="text-primary font-bold">2.</span> <span><strong>Product Backlog</strong> / <strong>Sprint Backlog</strong> creates the actual task rows ← next step</span></div>
+                  <div className="flex gap-2"><span className="text-primary font-bold">3.</span> Approve it — tasks land on the board, assigned to this sprint</div>
+                  <div className="flex gap-2"><span className="text-primary font-bold">4.</span> Drag cards between columns; changes sync back to the artefact</div>
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-2"><span className="text-primary font-bold">1.</span> Agent generates a Schedule, WBS, or Product Backlog artefact</div>
+                  <div className="flex gap-2"><span className="text-primary font-bold">2.</span> You approve it (click Approve in chat or artefacts tab)</div>
+                  <div className="flex gap-2"><span className="text-primary font-bold">3.</span> Tasks are automatically created from the artefact</div>
+                  <div className="flex gap-2"><span className="text-primary font-bold">4.</span> Approve a Sprint Plan to group tasks into sprints</div>
+                </>
+              )}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Board + Analytics ── */}
       <div className="flex gap-4">
