@@ -254,6 +254,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .then(({ syncTaskToArtefact }) => syncTaskToArtefact(projectId, taskId, data))
     .catch((e) => console.error(`[artefact-sync] syncTaskToArtefact failed for project ${projectId} task ${taskId}:`, e));
 
+  // Reverse sync action items back to source artefact's "Next Actions" table
+  if (task.sourceArtefactId) {
+    import("@/lib/agents/artefact-sync")
+      .then(({ syncActionToSourceArtefact }) => syncActionToSourceArtefact(task.sourceArtefactId!, task.title, data))
+      .catch((e) => console.error(`[artefact-sync] syncActionToSourceArtefact failed:`, e));
+  }
+
   // Reverse sync Sprint Plans artefact when sprint assignment OR status/progress changes
   if ("sprintId" in data || "status" in data || "progress" in data || "storyPoints" in data) {
     import("@/lib/agents/artefact-sync")

@@ -905,3 +905,77 @@ export async function syncChangeRequestsToArtefact(projectId: string): Promise<v
     console.error("[artefact-sync] syncChangeRequestsToArtefact failed:", e);
   }
 }
+
+/**
+ * Updates an action item's status/owner in the source artefact's "Next Actions" table.
+ * Called when a user edits an action on the Actions page that was extracted from an artefact.
+ */
+export async function syncActionToSourceArtefact(
+  artefactId: string,
+  actionTitle: string,
+  changes: Record<string, any>,
+): Promise<void> {
+  try {
+    const artefact = await db.agentArtefact.findUnique({
+      where: { id: artefactId },
+      select: { id: true, content: true, name: true, projectId: true },
+    });
+    if (!artefact || !artefact.content) return;
+
+    // Find the "Next Actions" section in the prose content
+    const content = artefact.content;
+    const actionsMatch = content.match(/(##?\s*(?:Summary and )?Next Actions.*?)(?=\n##?\s|\n---|\Z)/is);
+    if (!actionsMatch) return;
+
+    const section = actionsMatch[0];
+    let updated = section;
+
+    // Find the row matching this action title in the markdown table
+    const lines = section.split("\n");
+    const updatedLines = lines.map(line => {
+      if (!line.includes("|")) return line;
+      // Skip separator rows
+      if (/^\|[\s\-:|]+\|$/.test(line.trim())) return line;
+
+      const cells = line.split("|").map(c => c.trim());
+      const actionIdx = cells.findIndex(c => normalise(c) === normalise(actionTitle));
+      if (actionIdx < 0) return line;
+
+      // Update status cell if present
+      if (changes.status) {
+        const statusIdx = cells.findIndex((c, i) =>
+          i > actionIdx && /^(open|todo|in.progress|done|complete|overdue|blocked)$/i.test(c.trim())
+        );
+        if (statusIdx >= 0) {
+          cells[statusIdx] = changes.status === "DONE" ? "Done"
+            : changes.status === "IN_PROGRESS" ? "In Progress"
+            : changes.status === "TODO" ? "Open" : cells[statusIdx];
+        }
+      }
+
+      // Update owner cell if present
+      if (changes.assigneeName !== undefined) {
+        const ownerIdx = cells.findIndex((c, i) => i > 0 && i !== actionIdx && /^(pm|project manager|tbd|unassigned|owner|sponsor|lead)/i.test(c.trim()));
+        if (ownerIdx >= 0) cells[ownerIdx] = changes.assigneeName || "TBD";
+      }
+
+      return cells.join(" | ");
+    });
+
+    updated = updatedLines.join("\n");
+    if (updated === section) return; // no changes
+
+    const newContent = content.replace(section, updated);
+    await db.agentArtefact.update({
+      where: { id: artefact.id },
+      data: { content: newContent, version: { increment: 1 } },
+    });
+
+    if (artefact.projectId) {
+      await flagDependentsStale(artefact.projectId, artefact.name);
+    }
+    console.log(`[artefact-sync] Updated action "${actionTitle}" in artefact "${artefact.name}"`);
+  } catch (e) {
+    console.error("[artefact-sync] syncActionToSourceArtefact failed:", e);
+  }
+}
