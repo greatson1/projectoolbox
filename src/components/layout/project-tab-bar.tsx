@@ -14,7 +14,7 @@ import {
   FileBarChart, Layers, FileText, FolderOpen, Users, UserCog,
   ChevronDown, LayoutDashboard, ListChecks, Route, Map as MapIcon, CalendarDays,
   Plane, Backpack, BookOpen, Receipt, FileCheck2,
-  Layers3, Repeat, Lightbulb,
+  Layers3, Repeat, Lightbulb, LayoutGrid, FolderArchive,
 } from "lucide-react";
 
 interface TabItem {
@@ -46,7 +46,13 @@ function tabsForMethodology(methodology: string | null | undefined): TabGroup[] 
   const boardLabel = boardPageLabel(methodology);
   // Hrefs that only belong to a specific structural methodology bucket.
   // Listed once here so the filter chain below stays readable.
-  const SAFE_ONLY = new Set(["/feature-hierarchy", "/roadmap", "/roam", "/team-backlogs"]);
+  const SAFE_ONLY = new Set([
+    "/feature-hierarchy",
+    "/roadmap",
+    "/roam",
+    "/team-backlogs",
+    "/programme-board",
+  ]);
   const TRAVEL_ONLY = new Set([
     "/itinerary",
     "/bookings",
@@ -107,6 +113,7 @@ const PROJECT_TABS: TabGroup[] = [
       { label: "Roadmap", href: "/roadmap", icon: MapIcon },
       { label: "Feature Hierarchy", href: "/feature-hierarchy", icon: Layers },
       { label: "Team Backlogs", href: "/team-backlogs", icon: Users },
+      { label: "Programme Board", href: "/programme-board", icon: LayoutGrid },
       // Kanban-only structural pages — gated by f.kanbanStructural.
       { label: "Class of Service", href: "/class-of-service", icon: Layers3 },
       { label: "Replenishment", href: "/replenishment", icon: Repeat },
@@ -127,6 +134,9 @@ const PROJECT_TABS: TabGroup[] = [
       // SAFe-only — sits next to Risk Register so the ROAM classification
       // is one click from the risk list.
       { label: "ROAM Risk Board", href: "/roam", icon: ShieldAlert },
+      // Risk Reviews aggregator — universal. Walks every approved Risk
+      // Review / Risk Update artefact across phases.
+      { label: "Risk Reviews", href: "/risk-reviews", icon: ShieldAlert },
       { label: "Issues", href: "/issues", icon: AlertTriangle },
       { label: "Change Control", href: "/change-control", icon: GitPullRequest },
       { label: "QA & Testing", href: "/qa-testing", icon: TestTube2 },
@@ -163,6 +173,10 @@ const PROJECT_TABS: TabGroup[] = [
       // project. Universal — every methodology now requires Lessons in
       // its closing-equivalent phase, so this is always relevant.
       { label: "Lessons Learned", href: "/lessons-learned", icon: Lightbulb },
+      // Documentation Bundle composes the canonical subsidiary plans for
+      // the project's methodology into a single print-ready view.
+      // Universal — useful on any plan-driven methodology.
+      { label: "Document Bundle", href: "/document-bundle", icon: FolderArchive },
       { label: "Artefacts", href: "/artefacts", icon: FileText },
       { label: "Documents", href: "/documents", icon: FolderOpen },
     ],
