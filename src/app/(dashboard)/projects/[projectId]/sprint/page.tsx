@@ -75,7 +75,7 @@ interface TeamMember {
 // EMPTY DEFAULTS — populated from API data in component useMemo hooks
 // ═══════════════════════════════════════════════════════════════════
 
-const SPRINTS: { id: number; name: string; start: string; end: string; days: number; daysPassed: number; scope: number; done: number }[] = [];
+const SPRINTS: { id: number; name: string; goal?: string; start: string; end: string; days: number; daysPassed: number; daysUntilStart?: number; phase?: "upcoming" | "active" | "completed" | "cancelled"; scope: number; done: number }[] = [];
 const BURNDOWN_DATA: any[] = [];
 const BURNUP_DATA: any[] = [];
 const CYCLE_TIME_DATA: { status: string; avg: number }[] = [];
@@ -244,14 +244,29 @@ export default function SprintTrackerPage() {
         const sprintTasks = (apiTasks || []).filter((t: any) => t.sprintId === s.id);
         const scope = sprintTasks.length || s.committedPoints || 0;
         const done = sprintTasks.filter((t: any) => ["done", "completed", "DONE"].includes(t.status)).length;
+        // Lifecycle derived from dates + the DB status. A sprint dated in the
+        // future must NOT read "In Progress" — show "Starts in N days". The DB
+        // `status` (PLANNING/ACTIVE/COMPLETED/CANCELLED) is authoritative when
+        // it says completed/cancelled; otherwise we infer from the clock.
+        const now = Date.now();
+        const dbStatus = (s.status || "").toUpperCase();
+        const daysUntilStart = Math.max(0, Math.ceil((start.getTime() - now) / 86400000));
+        let phase: "upcoming" | "active" | "completed" | "cancelled";
+        if (dbStatus === "CANCELLED") phase = "cancelled";
+        else if (dbStatus === "COMPLETED" || now > end.getTime()) phase = "completed";
+        else if (now < start.getTime()) phase = "upcoming";
+        else phase = "active";
         return {
           id: i + 1,
           sprintId: s.id,
           name: s.name || `Sprint ${i + 1}`,
+          goal: s.goal || "",
           start: start.toISOString().slice(0, 10),
           end: end.toISOString().slice(0, 10),
           days,
           daysPassed,
+          daysUntilStart,
+          phase,
           scope,
           done,
         };
@@ -265,28 +280,33 @@ export default function SprintTrackerPage() {
     return [{
       id: 1,
       name: "Project Backlog (no sprint set up yet)",
+      goal: "",
       start: new Date().toISOString().slice(0, 10),
       end: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
       days: 14,
       daysPassed: 0,
+      daysUntilStart: 0,
+      phase: "active" as const,
       scope: total,
       done,
     }];
   }, [apiTasks, apiSprints]);
 
-  const sprint = derivedSprints.find(s => s.id === selectedSprint) || { id: 0, name: "No Sprint", start: "", end: "", days: 1, daysPassed: 0, scope: 0, done: 0 };
+  const sprint = derivedSprints.find(s => s.id === selectedSprint) || { id: 0, name: "No Sprint", goal: "", start: "", end: "", days: 1, daysPassed: 0, daysUntilStart: 0, phase: "active" as const, scope: 0, done: 0 };
   const progressPct = sprint.scope > 0 ? Math.round((sprint.done / sprint.scope) * 100) : 0;
   const avgVelocity = sprint.scope > 0 ? sprint.scope : 1;
   const paceVsAvg = sprint.daysPassed > 0 ? Math.round(((sprint.done / sprint.daysPassed) / (avgVelocity / sprint.days)) * 100) : 0;
 
-  // Derive sprint goal from tasks
+  // Derive sprint goal — text from the real Sprint.goal field (falls back to
+  // a generic line only when the sprint has no goal set), counts from tasks.
   const derivedGoal = useMemo(() => {
     if (SPRINT_ITEMS_DATA.length === 0) return SPRINT_GOAL;
     const aligned = SPRINT_ITEMS_DATA.length;
     const done = SPRINT_ITEMS_DATA.filter(i => i.status === "done").length;
     const pct = aligned > 0 ? Math.round((done / aligned) * 100) : 0;
-    return { text: "Complete all sprint tasks on schedule", alignedItems: aligned, doneItems: done, prediction: pct };
-  }, [SPRINT_ITEMS_DATA]);
+    const text = sprint.goal?.trim() || "Complete all sprint tasks on schedule";
+    return { text, alignedItems: aligned, doneItems: done, prediction: pct };
+  }, [SPRINT_ITEMS_DATA, sprint.goal]);
 
   // MoSCoW breakdown for the selected sprint — per-priority done vs total.
   // Drives the "Must: 4/5 done · Should: 2/4 · Could: 0/3" panel under the
@@ -351,11 +371,28 @@ export default function SprintTrackerPage() {
           </select>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-[8px]"
-            style={{ background: `${"#10B981"}12`, border: `1px solid ${"#10B981"}33` }}>
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-[12px] font-semibold" style={{ color: "#10B981" }}>Day {sprint.daysPassed} of {sprint.days} — In Progress</span>
-          </div>
+          {(() => {
+            // Status pill reflects the real lifecycle phase, not a hardcoded
+            // "In Progress". A future-dated sprint reads "Starts in N days";
+            // a past one "Completed"; only a live one is "In Progress".
+            const STATUS: Record<string, { label: string; color: string; pulse: boolean }> = {
+              upcoming: {
+                label: sprint.daysUntilStart === 0 ? "Starts today" : `Starts in ${sprint.daysUntilStart} day${sprint.daysUntilStart === 1 ? "" : "s"}`,
+                color: "#6366F1", pulse: false,
+              },
+              active: { label: `Day ${sprint.daysPassed} of ${sprint.days} — In Progress`, color: "#10B981", pulse: true },
+              completed: { label: "Completed", color: "#64748B", pulse: false },
+              cancelled: { label: "Cancelled", color: "#EF4444", pulse: false },
+            };
+            const st = STATUS[sprint.phase ?? "active"] || STATUS.active;
+            return (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-[8px]"
+                style={{ background: `${st.color}12`, border: `1px solid ${st.color}33` }}>
+                <span className="w-2 h-2 rounded-full" style={{ background: st.color, animation: st.pulse ? "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" : undefined }} />
+                <span className="text-[12px] font-semibold" style={{ color: st.color }}>{st.label}</span>
+              </div>
+            );
+          })()}
           <Button variant="default" size="sm" disabled title="Coming soon">Export Report</Button>
         </div>
       </div>
