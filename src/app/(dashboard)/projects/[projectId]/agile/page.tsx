@@ -339,6 +339,26 @@ export default function AgileBoardPage() {
     return Array.from(set).map((name, i) => ({ name, color: LABEL_COLORS[i % LABEL_COLORS.length] }));
   }, [allIssues]);
 
+  // Distinct existing epic names — feeds the <datalist> on the Create
+  // Issue modal so users autocomplete onto epics the artefact (or other
+  // tasks) already define. Closes the typo-fragmentation gap where
+  // "Cloud Setup" and "cloud setup" would become two separate
+  // swimlanes. Case-insensitive dedup keeps the first-seen casing as
+  // the canonical label. Empty / null epics are excluded.
+  const existingEpics = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const issue of allIssues) {
+      const e = issue.epic?.trim();
+      if (!e) continue;
+      const key = e.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+    }
+    return out.sort((a, b) => a.localeCompare(b));
+  }, [allIssues]);
+
   function getLabelColor(name: string) {
     return derivedLabels.find(l => l.name === name)?.color || "#64748B";
   }
@@ -1032,8 +1052,23 @@ export default function AgileBoardPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Epic</label>
-                  <input className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
-                    value={issueForm.epic} onChange={e => setIssueForm(f => ({ ...f, epic: e.target.value }))} placeholder="Epic name" />
+                  {/* Autocomplete from existing epics on this project so users
+                      snap to e.g. "Cloud Foundation" instead of typing
+                      "Cloud Setup" → "cloud setup" → three swimlanes for what
+                      should be one. The list is built from every Task.epic on
+                      the project (incl. agent-seeded backlog rows that
+                      inherit the artefact's Epic headings). Free text is
+                      still allowed so users can introduce new epics. */}
+                  <input
+                    list="epic-suggestions"
+                    className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm"
+                    value={issueForm.epic}
+                    onChange={e => setIssueForm(f => ({ ...f, epic: e.target.value }))}
+                    placeholder={existingEpics.length > 0 ? "Start typing or pick…" : "Epic name"}
+                  />
+                  <datalist id="epic-suggestions">
+                    {existingEpics.map(e => <option key={e} value={e} />)}
+                  </datalist>
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">Sprint</label>

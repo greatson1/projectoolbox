@@ -160,10 +160,22 @@ export function isCriterionChecked(criterion: string, checks: unknown, idx: numb
 const PBI_HEADING_RE = /^#{2,6}\s+(?:\*\*)?(PBI[-_\s]?\d+)[:.\s]+(.+?)(?:\*\*)?$/i;
 const PBI_PLAIN_RE = /^#{2,6}\s+(?:\*\*)?(.+?)(?:\*\*)?$/;
 const TABLE_ROW_RE = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|(.*)$/;
+// Epic headings sit ABOVE PBI items in the artefact and group them
+// hierarchically: `### Epic 2: Legacy System Integration` → children
+// `#### PBI-003: ERP System Integration` etc. We strip the `Epic N:`
+// prefix so the captured name is the epic's actual subject ("Legacy
+// System Integration"), which is what the Task swimlanes show. Heading
+// levels 1-3 only — `####` is reserved for PBI items themselves.
+const EPIC_HEADING_RE = /^#{1,3}\s+(?:\*\*)?(?:Epic\s*\d+\s*[:.\-–—]\s*)?(.+?)(?:\*\*)?$/i;
 
 export interface ParsedBacklogItem {
   title: string;
   pbiRef: string | null;
+  /** Name of the Epic this item lives under, if the artefact uses Epic
+   *  sub-headings. Null when no Epic heading precedes the item. Used by
+   *  criteria-ingest to populate `Task.epic` so seeded backlog items
+   *  inherit the same swimlane grouping the artefact uses. */
+  epic: string | null;
 }
 
 export function parseBacklogItems(markdown: string): ParsedBacklogItem[] {
@@ -175,20 +187,54 @@ export function parseBacklogItems(markdown: string): ParsedBacklogItem[] {
   // hit first on real data. Stripping the PBI prefix keeps the title clean
   // ("Cloud Platform Setup") while we preserve the ref ("PBI-001") for the
   // Task description.
+  //
+  // Epic context — walk the lines in order so we can remember the most
+  // recent `### Epic N:` heading seen above each PBI item. When the next
+  // PBI heading lands, currentEpic carries the epic name to attach. An
+  // explicit "no epic" group ("### Uncategorised") resets currentEpic to
+  // null. Epic detection only matches headings at level 1-3; PBI headings
+  // at level 4+ won't ever overwrite the epic context.
   const headingItems: ParsedBacklogItem[] = [];
   const seen = new Set<string>();
+  let currentEpic: string | null = null;
   for (const raw of lines) {
     const line = raw.trim();
-    const m = PBI_HEADING_RE.exec(line);
-    if (!m) continue;
-    const pbiRef = m[1].toUpperCase().replace(/[_\s]/g, "-");
-    let title = m[2].trim().replace(/^\*\*|\*\*$/g, "").trim();
-    if (title.length < 3) continue;
-    if (title.length > 240) title = `${title.slice(0, 237)}…`;
-    const key = title.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    headingItems.push({ title, pbiRef });
+
+    // Try PBI line first — if it matches, attach the current epic and move on.
+    const pbi = PBI_HEADING_RE.exec(line);
+    if (pbi) {
+      const pbiRef = pbi[1].toUpperCase().replace(/[_\s]/g, "-");
+      let title = pbi[2].trim().replace(/^\*\*|\*\*$/g, "").trim();
+      if (title.length < 3) continue;
+      if (title.length > 240) title = `${title.slice(0, 237)}…`;
+      const key = title.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      headingItems.push({ title, pbiRef, epic: currentEpic });
+      continue;
+    }
+
+    // Not a PBI — check if it's an Epic-level heading we should track. We
+    // require the heading to be at level 1-3 (`#`, `##`, `###`) AND either
+    // (a) literally start with "Epic" or (b) be the only-recognised section
+    // structure in the document. To avoid mistaking the document title
+    // ("# Initial Product Backlog") or generic prose headings ("## Executive
+    // Summary") for epics, we only match when the heading text contains
+    // "Epic" or matches the literal "Backlog Items" pattern that signals a
+    // catch-all group with no explicit epic.
+    if (/^#{1,3}\s+/.test(line)) {
+      const m = EPIC_HEADING_RE.exec(line);
+      if (m && /epic/i.test(line)) {
+        currentEpic = m[1].trim().replace(/^\*\*|\*\*$/g, "").trim() || null;
+        if (currentEpic && currentEpic.length > 80) currentEpic = currentEpic.slice(0, 80);
+      } else if (/(backlog items|uncategorised|uncategorized|other)/i.test(line)) {
+        // Explicit catch-all section — items below have no epic.
+        currentEpic = null;
+      }
+      // Other headings (executive summary, product goal, etc.) leave the
+      // current epic context untouched — they're prose sectioning, not
+      // grouping.
+    }
   }
   if (headingItems.length > 0) return headingItems;
 
@@ -223,14 +269,16 @@ export function parseBacklogItems(markdown: string): ParsedBacklogItem[] {
     seen.add(key);
     const pbiRefRaw = idColIdx >= 0 ? cells[idColIdx] : "";
     const pbiRef = /pbi[-_]?\d+/i.test(pbiRefRaw) ? pbiRefRaw.toUpperCase().replace(/[_\s]/g, "-") : null;
-    tableItems.push({ title, pbiRef });
+    // Tables don't carry epic context per-row in any consistent shape, so
+    // we leave epic null. Users can group via the Epic field manually.
+    tableItems.push({ title, pbiRef, epic: null });
   }
   if (tableItems.length > 0) return tableItems;
 
   // Strategy 3 — fall back to the strict bullet parser. Useful when the
   // user manually edits the artefact down to a quick bullet list.
   const bulletParsed = parseCriteria(markdown);
-  return bulletParsed.criteria.map(title => ({ title, pbiRef: null }));
+  return bulletParsed.criteria.map(title => ({ title, pbiRef: null, epic: null }));
 }
 
 /**

@@ -121,6 +121,14 @@ export async function ingestCriteriaArtefact(
             priority: "MEDIUM",
             type: "story",
             moscow,
+            // Inherit the artefact's epic grouping when the parser found
+            // one. Closes the consistency gap where agent-seeded backlog
+            // tasks would land with epic=null while manually-created tasks
+            // carry user-typed epic strings — the Agile Board swimlane
+            // would then show "(no epic)" for seeded rows alongside the
+            // user's epics. Truncated to 80 chars so a verbose Epic
+            // heading doesn't blow out the swimlane width.
+            epic: item.epic ? item.epic.slice(0, 80) : null,
             sprintId: null,
             phaseId,
             createdBy: `agent:${agentId}`,

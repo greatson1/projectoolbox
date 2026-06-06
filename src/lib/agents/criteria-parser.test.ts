@@ -235,9 +235,9 @@ describe("parseBacklogItems", () => {
 Description here.`;
     const out = parseBacklogItems(md);
     expect(out).toEqual([
-      { title: "Cloud Platform Setup", pbiRef: "PBI-001" },
-      { title: "Identity and Access Management", pbiRef: "PBI-002" },
-      { title: "ERP System Integration", pbiRef: "PBI-003" },
+      { title: "Cloud Platform Setup", pbiRef: "PBI-001", epic: null },
+      { title: "Identity and Access Management", pbiRef: "PBI-002", epic: null },
+      { title: "ERP System Integration", pbiRef: "PBI-003", epic: null },
     ]);
   });
 
@@ -257,6 +257,62 @@ Description here.`;
     expect(out.map(i => i.pbiRef)).toEqual(["PBI-001", "PBI-002"]);
   });
 
+  it("attaches the current Epic heading to each PBI item below it", () => {
+    // The actual artefact-generator output groups PBI items under Epic
+    // sub-headings. Seeded Task rows need to inherit the epic so the
+    // Agile Board swimlanes group them the same way the artefact does.
+    const md = `# Initial Product Backlog
+
+### Epic 1: Foundation
+**Priority:** HIGH
+
+#### PBI-001: Cloud Platform Setup
+**User Story:** As a business user...
+
+#### PBI-002: Identity and Access Management
+**User Story:** As a system admin...
+
+### Epic 2: Legacy System Integration
+
+#### PBI-003: ERP System Integration
+Description.
+
+#### PBI-004: CRM Migration
+Description.`;
+    const out = parseBacklogItems(md);
+    expect(out).toEqual([
+      { title: "Cloud Platform Setup",          pbiRef: "PBI-001", epic: "Foundation" },
+      { title: "Identity and Access Management", pbiRef: "PBI-002", epic: "Foundation" },
+      { title: "ERP System Integration",        pbiRef: "PBI-003", epic: "Legacy System Integration" },
+      { title: "CRM Migration",                 pbiRef: "PBI-004", epic: "Legacy System Integration" },
+    ]);
+  });
+
+  it("resets epic to null when a 'Backlog Items' / 'Uncategorised' catch-all section appears", () => {
+    const md = `### Epic 1: Foundation
+
+#### PBI-001: In epic
+
+### Backlog Items
+
+#### PBI-002: No epic`;
+    const out = parseBacklogItems(md);
+    expect(out).toEqual([
+      { title: "In epic", pbiRef: "PBI-001", epic: "Foundation" },
+      { title: "No epic", pbiRef: "PBI-002", epic: null },
+    ]);
+  });
+
+  it("leaves epic null when no Epic headings exist", () => {
+    // The artefact may be just a flat list of PBI items with no epic
+    // grouping. The parser must not invent epics — Task.epic stays null
+    // and the user can categorise manually.
+    const md = `#### PBI-001: Cloud Setup
+#### PBI-002: Identity`;
+    const out = parseBacklogItems(md);
+    expect(out.every(i => i.epic === null)).toBe(true);
+  });
+
   it("falls back to markdown tables when no PBI headings present", () => {
     const md = `## Backlog
 
@@ -266,8 +322,8 @@ Description here.`;
 | PBI-002 | Reset password flow | 8 |`;
     const out = parseBacklogItems(md);
     expect(out).toEqual([
-      { title: "Login screen", pbiRef: "PBI-001" },
-      { title: "Reset password flow", pbiRef: "PBI-002" },
+      { title: "Login screen", pbiRef: "PBI-001", epic: null },
+      { title: "Reset password flow", pbiRef: "PBI-002", epic: null },
     ]);
   });
 
@@ -279,9 +335,9 @@ Description here.`;
 - Ship analytics`;
     const out = parseBacklogItems(md);
     expect(out).toEqual([
-      { title: "Build the auth flow", pbiRef: null },
-      { title: "Wire the dashboard", pbiRef: null },
-      { title: "Ship analytics", pbiRef: null },
+      { title: "Build the auth flow", pbiRef: null, epic: null },
+      { title: "Wire the dashboard", pbiRef: null, epic: null },
+      { title: "Ship analytics", pbiRef: null, epic: null },
     ]);
   });
 
@@ -301,7 +357,7 @@ Description here.`;
   it("handles bold markers around the heading title", () => {
     const md = "#### **PBI-001: Cloud Setup**";
     expect(parseBacklogItems(md)).toEqual([
-      { title: "Cloud Setup", pbiRef: "PBI-001" },
+      { title: "Cloud Setup", pbiRef: "PBI-001", epic: null },
     ]);
   });
 
