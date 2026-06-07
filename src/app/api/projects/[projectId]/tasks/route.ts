@@ -132,5 +132,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     console.error("[POST /tasks] artefact append failed (non-blocking):", e);
   }
 
+  // If this is a manual action item, append it to the most recent artefact's "Next Actions" table
+  const labels = body.labels as string[] | null;
+  if (labels?.includes("action_item") || labels?.includes("manual_action")) {
+    try {
+      const { appendActionToLatestArtefact } = await import("@/lib/agents/artefact-sync");
+      await appendActionToLatestArtefact(projectId, {
+        title: task.title,
+        owner: task.assigneeName || "TBD",
+        dueDate: task.endDate ? new Date(task.endDate).toISOString().slice(0, 10) : "TBD",
+        status: "Open",
+        priority: task.priority || "MEDIUM",
+      });
+    } catch (e) {
+      console.error("[POST /tasks] action append to artefact failed (non-blocking):", e);
+    }
+  }
+
   return NextResponse.json({ data: task }, { status: 201 });
 }

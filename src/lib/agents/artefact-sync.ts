@@ -979,3 +979,62 @@ export async function syncActionToSourceArtefact(
     console.error("[artefact-sync] syncActionToSourceArtefact failed:", e);
   }
 }
+
+/**
+ * Appends a manually created action to the most recent approved artefact's
+ * "Next Actions" table. Finds the latest artefact for the project's current
+ * phase that has a "Next Actions" section and adds a new row.
+ */
+export async function appendActionToLatestArtefact(
+  projectId: string,
+  action: { title: string; owner: string; dueDate: string; status: string; priority: string },
+): Promise<void> {
+  try {
+    // Find the most recent approved prose artefact that has a "Next Actions" table
+    const artefacts = await db.agentArtefact.findMany({
+      where: { projectId, status: "APPROVED", format: { in: ["markdown", "html"] } },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: { id: true, name: true, content: true, projectId: true },
+    });
+
+    const target = artefacts.find(a => a.content && /##?\s*(?:Summary and )?Next Actions/i.test(a.content));
+    if (!target || !target.content) return;
+
+    // Find the end of the Next Actions table and append a new row
+    const lines = target.content.split("\n");
+    let lastTableRow = -1;
+    let inActionsSection = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (/##?\s*(?:Summary and )?Next Actions/i.test(lines[i])) {
+        inActionsSection = true;
+        continue;
+      }
+      if (inActionsSection && lines[i].startsWith("|") && !/^\|[\s\-:|]+\|$/.test(lines[i].trim())) {
+        lastTableRow = i;
+      }
+      // End of section
+      if (inActionsSection && /^##?\s/.test(lines[i]) && !/Next Actions/i.test(lines[i])) {
+        break;
+      }
+    }
+
+    if (lastTableRow < 0) return;
+
+    // Build new row matching existing table format
+    const newRow = `| ${action.title} | ${action.owner} | ${action.dueDate} | ${action.priority} | ${action.status} |`;
+    lines.splice(lastTableRow + 1, 0, newRow);
+
+    const newContent = lines.join("\n");
+    await db.agentArtefact.update({
+      where: { id: target.id },
+      data: { content: newContent, version: { increment: 1 } },
+    });
+
+    await flagDependentsStale(projectId, target.name);
+    console.log(`[artefact-sync] Appended manual action "${action.title}" to "${target.name}" Next Actions table`);
+  } catch (e) {
+    console.error("[artefact-sync] appendActionToLatestArtefact failed:", e);
+  }
+}
