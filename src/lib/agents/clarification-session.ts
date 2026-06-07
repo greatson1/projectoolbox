@@ -228,6 +228,12 @@ ${isTravel ? `TRAVEL PROJECT QUESTION HINTS — prioritise these types of questi
 Ask only the questions that are genuinely needed — typically 3-12 depending on how much detail the project description already provides. A detailed description may only need 2-3 questions; a vague one-liner may need 10-12. Never pad with unnecessary questions but never skip a question that would prevent a [TBC] marker in the final documents. Prioritise fields that appear across multiple documents.
 Do NOT ask about things already in the description or KB above.
 
+⚠️ HARD CAPS — these prevent runaway questioning the user has explicitly complained about:
+- **Per-artefact cap: at most 3 questions for any single artefact.** If you genuinely need more than 3 facts for one document, prioritise the 3 that block the most other artefacts and leave the rest as [TBC] for the user to fill in later.
+- **Shape de-duplication: at most ONE "date / deadline" question per artefact.** If a document needs multiple dates (project start, milestone, deadline), ask ONE general "key dates" question and let the user list them — do NOT generate separate "kick-off date", "review deadline", "setup deadline", "team assembly deadline", "approval deadline" questions for the same artefact. The user reads these as nonsense (live incident 2026-06-07: 5 deadline questions for one Team Charter).
+- **No process-clock questions for non-scheduling artefacts.** A Team Charter, Definition of Done, Communication Plan, or Stakeholder Register does not need its own "deadline" — those are scheduling concerns that belong to a Schedule artefact, not to documents that capture policy / scope / responsibilities. Only ask date questions on artefacts where a date is a real field (Schedule with Dependencies, Cost Management Plan baselines, Release Plan, Sprint Plans).
+- **Skip a question entirely** if a sensible default exists from the methodology, the description, or industry standard. Mark it as [ASSUMPTION] in the generated artefact instead.
+
 ⚠️ "artefact" field MUST match one of the artefact names listed at the top
 of this prompt verbatim — those are the documents you're about to generate.
 Do NOT invent artefact names like "Detailed Trip Plan" or "Trip Itinerary"
@@ -332,11 +338,51 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
       }
       return true;
     });
-    return safe;
+    return capByArtefactAndShape(safe);
   } catch (e) {
     console.error("[clarification-session] question generation failed:", e);
     return [];
   }
+}
+
+/**
+ * Deterministic post-filter that the model can't bypass — enforces the
+ * per-artefact caps the prompt asks for. Live incident on 2026-06-07: the
+ * model emitted FIVE deadline questions for one Team Charter ("review
+ * deadline", "kick-off date", "setup deadline", "team assembly deadline",
+ * "approval deadline"). The prompt told it not to; it did it anyway. This
+ * filter is the hard backstop.
+ *
+ * Rules:
+ *   1. At most 3 questions per artefact (keep first 3, drop the rest).
+ *   2. At most 1 "date / deadline / kick-off / due" question per artefact.
+ *      Multiple date-shaped questions on one artefact almost always mean
+ *      the model is pattern-matching on a generic template.
+ *
+ * Drops are logged so over-asking surfaces in container logs.
+ */
+function capByArtefactAndShape(qs: ClarificationQuestion[]): ClarificationQuestion[] {
+  const DATE_SHAPE = /\b(deadline|kick[- ]?off|kickoff|due date|review date|start date|end date|setup date|assembly date|approval date|launch date|target date|milestone date)\b/i;
+  const perArtefact = new Map<string, { kept: number; dateSeen: boolean }>();
+  const out: ClarificationQuestion[] = [];
+  for (const q of qs) {
+    const key = (q.artefact || "").toLowerCase();
+    const state = perArtefact.get(key) || { kept: 0, dateSeen: false };
+    if (state.kept >= 3) {
+      console.warn(`[clarification-session] dropped over-cap question (artefact already has 3): "${q.question}"`);
+      continue;
+    }
+    const isDateShaped = q.type === "date" || DATE_SHAPE.test(q.question);
+    if (isDateShaped && state.dateSeen) {
+      console.warn(`[clarification-session] dropped redundant date question on "${q.artefact}": "${q.question}"`);
+      continue;
+    }
+    state.kept += 1;
+    if (isDateShaped) state.dateSeen = true;
+    perArtefact.set(key, state);
+    out.push(q);
+  }
+  return out;
 }
 
 // ─── TBC question phrasing ────────────────────────────────────────────────────
