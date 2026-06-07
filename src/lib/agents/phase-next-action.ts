@@ -22,6 +22,7 @@
 import { db } from "@/lib/db";
 import { getPhaseCompletion } from "@/lib/agents/phase-completion";
 import { getActiveSession } from "@/lib/agents/clarification-session";
+import { sessionHasUnansweredQuestions } from "@/lib/agents/clarification-session-state";
 
 export type RequiredStep =
   | "research"
@@ -462,15 +463,24 @@ async function detectResearchAlreadyHappened(
  *     implies clarification ran or was rationally skipped)
  *   - The user has answered at least one clarification question in
  *     the past for this project (user_confirmed / user_answer KB items)
+ *
+ * IMPORTANT: an active clarification session with >0 unanswered
+ * questions overrides the above signals. An artefact may exist from a
+ * prior phase / earlier round / partial path, but if there are open
+ * questions sitting in the active session the user hasn't been asked
+ * yet, then clarification has NOT meaningfully happened — and the chat
+ * agent must NOT short-circuit with "no pending questions" while the
+ * status card simultaneously says "19 Open questions". The session is
+ * the source of truth for "what's left to ask".
  */
-async function detectClarificationAlreadyHappened(
+export async function detectClarificationAlreadyHappened(
   projectId: string,
   phaseName: string,
   phaseId: string,
   agentId: string,
 ): Promise<boolean> {
   try {
-    const [anyArtefact, userAnswers] = await Promise.all([
+    const [anyArtefact, userAnswers, activeSession] = await Promise.all([
       db.agentArtefact.findFirst({
         where: {
           projectId,
@@ -486,7 +496,22 @@ async function detectClarificationAlreadyHappened(
         },
         select: { id: true },
       }),
+      db.knowledgeBaseItem.findFirst({
+        where: {
+          projectId,
+          agentId,
+          title: "__clarification_session__",
+          tags: { has: "active" },
+        },
+        select: { content: true },
+      }),
     ]);
+
+    // Source-of-truth check: if the active session still carries
+    // unanswered questions, clarification is provably NOT done — no
+    // matter what artefacts or prior answers exist.
+    if (sessionHasUnansweredQuestions(activeSession?.content)) return false;
+
     return !!(anyArtefact || userAnswers);
   } catch (e) {
     console.error("[phase-next-action] detectClarificationAlreadyHappened failed:", e);
