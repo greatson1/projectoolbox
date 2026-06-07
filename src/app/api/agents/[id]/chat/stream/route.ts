@@ -1289,29 +1289,39 @@ ${(() => {
     out += pmIncomplete.slice(0, 12).map(t => `- ${t.title} [${t.status}]${t.progress > 0 ? ` (${t.progress}%)` : ""}`).join("\n");
   }
 
+  // Explicit-absence formatter — every task line carries the same fields,
+  // with "no owner" / "no due date" when a field is missing rather than
+  // silently dropping it. Silent omission was inviting the agent to fill
+  // the gap by inventing dates and owners (live incident 2026-06-07).
+  const fmtTaskLine = (t: typeof delIncomplete[number]): string => {
+    const owner = t.assigneeName ? t.assigneeName : "no owner";
+    const due = t.endDate ? `due ${new Date(t.endDate).toLocaleDateString("en-GB")}` : "no due date";
+    const pct = t.progress > 0 ? `, ${t.progress}%` : "";
+    const blocked = t.blocked ? " ⛔ BLOCKED" : "";
+    return `- ${t.title} [${t.status}] — owner: ${owner}, ${due}${pct}${blocked}`;
+  };
+
   // Delivery work: list incomplete delivery tasks (not just in-progress)
   const delIncomplete = deliveryTasks.filter(t => t.status !== "DONE" && t.status !== "COMPLETE");
   if (delIncomplete.length > 0) {
     out += `\n\n📦 **DELIVERY — ${delIncomplete.length} incomplete:**\n`;
-    out += delIncomplete.slice(0, 12).map(t =>
-      `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""}${t.endDate ? ` (due ${new Date(t.endDate).toLocaleDateString("en-GB")})` : ""}${t.progress > 0 ? ` (${t.progress}%)` : ""}${t.blocked ? " ⛔ BLOCKED" : ""}`
-    ).join("\n");
+    out += delIncomplete.slice(0, 12).map(fmtTaskLine).join("\n");
   }
 
   if (overdue.length > 0) {
     out += `\n\n⚠️ **OVERDUE (${overdue.length}):**\n`;
-    out += overdue.slice(0, 8).map(t =>
-      `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""} (due ${new Date(t.endDate).toLocaleDateString("en-GB")})`
-    ).join("\n");
+    out += overdue.slice(0, 8).map(fmtTaskLine).join("\n");
   }
   if (critPath.length > 0) {
     out += `\n\n🔴 **CRITICAL PATH (${critPath.length} incomplete):**\n`;
-    out += critPath.slice(0, 6).map(t =>
-      `- ${t.title} [${t.status}]${t.assigneeName ? ` — ${t.assigneeName}` : ""}${t.endDate ? ` (due ${new Date(t.endDate).toLocaleDateString("en-GB")})` : ""}`
-    ).join("\n");
+    out += critPath.slice(0, 6).map(fmtTaskLine).join("\n");
   }
 
-  out += `\n\n⚠️ When the user asks "what's left to do" or "what's on the PM Tracker", name the specific tasks from the lists above. Do NOT redirect them to "go check the PM Tracker" — you already have the names.`;
+  out += `\n\n⚠️ TASK-LINE CITATION RULES (hard guardrails, no exceptions):\n` +
+    `1. When the user asks "what's left to do" or "what's on the PM Tracker", name the specific tasks from the lists above. Do NOT redirect them to "go check the PM Tracker" — you already have the names.\n` +
+    `2. When quoting a task's owner or due date, copy the EXACT text from the formatted line above. If a line says "no owner" or "no due date", SAY so — do not invent a name or a date.\n` +
+    `3. NEVER add parenthetical "(due …)" or "— [Name]" annotations that are not present verbatim in the formatted task lines above. The task list is the only source of truth for these fields.\n` +
+    `4. If the user challenges a date or owner you mentioned, re-read the task lines above and quote the actual content. Do NOT invent an "explanation" (e.g. "the data is corrupted") to cover a fabrication — admit the mistake plainly.`;
   return out;
 })()}
 
