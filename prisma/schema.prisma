@@ -1011,6 +1011,19 @@ model AgentArtefact {
   @@index([projectId, status])
 }
 
+model ArtefactVersion {
+  id          String   @id @default(cuid())
+  artefactId  String
+  version     Int
+  content     String   @db.Text
+  status      String
+  editedBy    String?
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  @@index([artefactId, version])
+}
+
 // ─── Cost Tracking ───
 
 model CostEntry {

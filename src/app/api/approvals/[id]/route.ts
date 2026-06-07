@@ -298,18 +298,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 requestedById: (session.user as any).id ?? null,
               }).catch((e) => console.error(`[approval] runPhaseAdvanceFlow failed:`, e));
             } else {
-              // No next phase — project complete!
+              // No next phase — run full project closure pipeline
               await db.agentActivity.create({
                 data: {
                   agentId: deployment.agentId,
                   type: "approval",
-                  summary: `Final phase gate approved: "${currentPhase}". Project lifecycle complete 🎉`,
+                  summary: `Final phase gate approved: "${currentPhase}". Running project closure pipeline...`,
                 },
               });
-              await db.agentDeployment.update({
-                where: { id: deployment.id },
-                data: { phaseStatus: "complete", isActive: false },
-              });
+
+              // Fire-and-forget: closure report + audit consolidation + auto-archive
+              const { runProjectClosure } = await import("@/lib/agents/project-closure");
+              runProjectClosure(
+                deployment.projectId!,
+                deployment.agentId,
+                (session.user as any).id ?? "user",
+              ).then(closureResult => {
+                if (closureResult.success) {
+                  console.log(`[approval] Project closure complete: archived, ${closureResult.auditEntriesConsolidated} audit entries consolidated`);
+                } else {
+                  console.log(`[approval] Project closure blocked: ${closureResult.blockers.join("; ")}`);
+                }
+              }).catch(e => console.error("[approval] Project closure pipeline failed:", e));
             }
           }
         } catch (e) {

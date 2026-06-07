@@ -317,6 +317,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // ── Version snapshot — preserve artefact content before any status/content change ──
+  if (status || content) {
+    try {
+      await db.artefactVersion.create({
+        data: {
+          artefactId: artefact.id,
+          version: artefact.version,
+          content: artefact.content,
+          status: artefact.status,
+          editedBy: (session.user as any)?.id || "user",
+          comment: feedback || (status ? `Status changed to ${status}` : "Content edited"),
+        },
+      });
+    } catch (e) {
+      console.error("[artefact PATCH] version snapshot failed (non-blocking):", e);
+    }
+  }
+
   // ── Artefact → DB seeding ─────────────────────────────────────────────────
   // Seed the relevant DB tables when:
   //   1. An artefact is approved for the first time (status → APPROVED)
