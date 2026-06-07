@@ -77,6 +77,9 @@ export async function seedArtefactData(
     lname.includes("sprint backlog") ||
     lname.includes("iteration backlog") ||         // SAFe iteration backlog (live working list)
     lname.includes("product backlog") ||           // Initial Product Backlog (Scrum, Kanban, SAFe)
+    lname.includes("team backlog") ||              // SAFe team-level backlog → work items
+    lname.includes("improvement backlog") ||       // retrospective action items → trackable tasks
+    lname.includes("release plan") ||              // release-scoped work items → tasks
     lname.includes("initial backlog") ||           // legacy alias
     (lname === "backlog")
   ) {
@@ -174,7 +177,13 @@ export async function seedArtefactData(
     return;
   }
 
-  // Schedule Baseline / WBS are handled by schedule-parser.ts — no duplicate seeding here
+  // Schedule Baseline / WBS / Activity List are handled by schedule-parser.ts
+  // (called separately on the approve path) → Task rows. Return here so the
+  // CSV fallback below doesn't ALSO dump their rows into the KB as a
+  // duplicate custom artefact.
+  if (lname.includes("schedule") || lname.includes("wbs") || lname.includes("work breakdown") || lname.includes("activity list")) {
+    return;
+  }
 
   // ── Fallback: custom/unknown artefacts ──
   // Any artefact that doesn't match a known type above gets generic treatment:

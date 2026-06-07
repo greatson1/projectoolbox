@@ -924,7 +924,9 @@ export async function syncActionToSourceArtefact(
 
     // Find the "Next Actions" section in the prose content
     const content = artefact.content;
-    const actionsMatch = content.match(/(##?\s*(?:Summary and )?Next Actions.*?)(?=\n##?\s|\n---|\Z)/is);
+    // [\s\S] instead of `.` + the `s` (dotAll) flag, which needs ES2018 —
+    // the project's TS target is older, so the `s` flag fails to compile.
+    const actionsMatch = content.match(/(##?\s*(?:Summary and )?Next Actions[\s\S]*?)(?=\n##?\s|\n---|$)/i);
     if (!actionsMatch) return;
 
     const section = actionsMatch[0];

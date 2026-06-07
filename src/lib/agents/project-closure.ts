@@ -89,7 +89,7 @@ export async function runProjectClosure(
           db.task.findMany({ where: { projectId, NOT: { description: { contains: "[scaffolded]" } } }, select: { title: true, status: true, progress: true } }),
           db.risk.findMany({ where: { projectId }, select: { title: true, status: true, score: true, category: true } }),
           db.issue.findMany({ where: { projectId }, select: { title: true, status: true, priority: true } }),
-          db.costEntry.findMany({ where: { projectId }, select: { description: true, amount: true, type: true, category: true } }),
+          db.costEntry.findMany({ where: { projectId }, select: { description: true, amount: true, entryType: true, category: true } }),
           db.stakeholder.findMany({ where: { projectId }, select: { name: true, role: true } }),
           db.benefit.findMany({ where: { projectId }, select: { name: true, status: true, targetValue: true, realisedValue: true } }),
           db.phase.findMany({ where: { projectId }, select: { name: true, status: true, gateApprovedAt: true }, orderBy: { order: "asc" } }),
@@ -97,8 +97,8 @@ export async function runProjectClosure(
         ]);
 
         const totalBudget = project.budget || 0;
-        const estimatedCosts = costs.filter((c: any) => c.type === "ESTIMATE").reduce((s: number, c: any) => s + (c.amount || 0), 0);
-        const actualCosts = costs.filter((c: any) => c.type === "ACTUAL").reduce((s: number, c: any) => s + (c.amount || 0), 0);
+        const estimatedCosts = costs.filter((c: any) => c.entryType === "ESTIMATE").reduce((s: number, c: any) => s + (c.amount || 0), 0);
+        const actualCosts = costs.filter((c: any) => c.entryType === "ACTUAL").reduce((s: number, c: any) => s + (c.amount || 0), 0);
         const completedTasks = tasks.filter((t: any) => t.status === "DONE" || t.status === "COMPLETED").length;
 
         const res = await fetch("https://api.anthropic.com/v1/messages", {

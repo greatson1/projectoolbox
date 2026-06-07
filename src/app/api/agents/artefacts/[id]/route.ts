@@ -359,8 +359,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       const lname = artefact.name.toLowerCase();
 
-      // Schedule Baseline / WBS → Task records (Gantt, Agile Board, Scope, Sprint Tracker)
-      if (lname.includes("schedule") || lname.includes("wbs") || lname.includes("work breakdown")) {
+      // Schedule Baseline / WBS / Activity List → Task records (Gantt, Agile
+      // Board, Scope, Sprint Tracker). Activity List is the PMBOK schedule-
+      // input artefact (activities with durations/dependencies) — same row
+      // shape the schedule parser already handles.
+      if (lname.includes("schedule") || lname.includes("wbs") || lname.includes("work breakdown") || lname.includes("activity list")) {
         const { parseScheduleArtefactIntoTasks } = await import("@/lib/agents/schedule-parser");
         waitUntil(
           parseScheduleArtefactIntoTasks(artefactForSeed, seedAgentId)
