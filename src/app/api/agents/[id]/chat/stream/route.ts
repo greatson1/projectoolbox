@@ -678,6 +678,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       nextActionHint = `\n\n## NEXT REQUIRED STEP (binding)\nThe phase-next-action resolver says the next required step on phase "${deployment.currentPhase}" is **${nextAction.step}** (${nextAction.bannerLabel}).\n\nReason: ${nextAction.reason}\n\nYou MUST NOT do work that comes after this step until it is complete. Specifically:\n- If step is "research": do not draft artefacts or ask clarification questions until phase research has run.\n- If step is "research_approval": research is done but findings are awaiting the user's approval on the Approvals page. DO NOT post clarification questions or draft artefacts yet. Direct the user to /approvals — once approved, clarification will start automatically.\n- If step is "clarification" or "clarification_in_progress": do not generate artefacts; either answer the user's questions or ask the user to answer the open ones.\n- If step is "generation": you may draft artefacts now.\n- If step is "review_artefacts": ask the user to review draft artefacts; do not advance the phase.\n- If step is "delivery_tasks": surface the blockers (${nextAction.blockedBy.join(", ") || "—"}); do not advance.\n- If step is "gate_approval": prompt the user to approve the phase gate. The approval has been created - direct the user to the Approvals page.\n- If step is "advance" or "complete": phase is ready — congratulate or propose advancement.\n\nWhen the user asks "what's next" or "what should I do", state this step in plain English and link to the relevant surface from the APP SURFACES list below.\n`;
+
+      // ── OPEN_QUESTIONS injection ─────────────────────────────────────
+      // The resolver step alone tells the LLM "ask the open ones" but
+      // doesn't say WHICH ones. Without the actual question text, the
+      // model either invents questions (violating zero-fabrication) or
+      // says "I don't have specific questions pending right now" — the
+      // exact failure mode the user reported. Inject the unanswered
+      // questions verbatim so the LLM can quote them.
+      if (nextAction.step === "clarification" || nextAction.step === "clarification_in_progress") {
+        try {
+          const session = await db.knowledgeBaseItem.findFirst({
+            where: {
+              projectId: deployment.projectId,
+              agentId,
+              title: "__clarification_session__",
+              tags: { has: "active" },
+            },
+            select: { content: true },
+          });
+          if (session?.content) {
+            const sess = JSON.parse(session.content);
+            const open = Array.isArray(sess?.questions)
+              ? sess.questions.filter((q: any) => !q?.answered)
+              : [];
+            if (open.length > 0) {
+              // Pull the next question (by currentQuestionIndex if valid,
+              // else the first unanswered) for the "ask one at a time"
+              // flow, plus a short list of the remaining for context.
+              const idx = typeof sess.currentQuestionIndex === "number" ? sess.currentQuestionIndex : 0;
+              const next = open[Math.min(idx, open.length - 1)] || open[0];
+              const upcoming = open.slice(0, 8).map((q: any, i: number) => `${i + 1}. ${q.text || q.question || ""}`.trim()).filter(Boolean);
+              nextActionHint += `\n\n## OPEN CLARIFICATION QUESTIONS (verbatim — quote, do not paraphrase or invent)\nThere are ${open.length} unanswered question${open.length === 1 ? "" : "s"} in the active clarification session.\n\n**Ask this one now:** ${next?.text || next?.question || "(question text missing)"}\n\n**Other open questions in queue:**\n${upcoming.join("\n")}\n\nRules:\n- Ask the next question above directly — do NOT say "I don't have specific questions" while these are open.\n- Quote the question text as written; do not rephrase.\n- Ask ONE question at a time unless the user explicitly asks for the full list.\n- If the user replies, the system stores their answer against the current question and advances the index — you don't need to track which is current.\n`;
+            }
+          }
+        } catch (e) {
+          console.error("[chat/stream] open-questions injection failed:", e);
+        }
+      }
     } catch (e) {
       console.error("[chat/stream] next-action resolver failed:", e);
     }
