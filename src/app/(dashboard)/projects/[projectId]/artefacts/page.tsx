@@ -164,7 +164,7 @@ export default function ArtefactsPage() {
     const res = await fetch(`/api/agents/artefacts/${artId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "APPROVED", ...(isConfirmIntentional ? { confirmIntentional: true } : {}) }),
+      body: JSON.stringify({ status: "APPROVED", confirmNotNames: true, ...(isConfirmIntentional ? { confirmIntentional: true } : {}) }),
     });
     if (res.ok) {
       refreshArtefacts(); // background sync
@@ -248,7 +248,7 @@ export default function ArtefactsPage() {
               const r2 = await fetch(`/api/agents/artefacts/${artId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: "APPROVED", confirmNotNames: true }),
+                body: JSON.stringify({ status: "APPROVED", confirmNotNames: true, confirmIntentional: true }),
               });
               if (r2.ok) { refreshArtefacts(); toast.success("Artefact approved ✓ (override stamped on audit trail)"); }
               else { rb(); toast.error("Override failed — see console"); console.error(await r2.text()); }
