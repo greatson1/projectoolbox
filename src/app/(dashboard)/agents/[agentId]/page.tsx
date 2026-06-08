@@ -752,8 +752,13 @@ export default function AgentProfilePage({ params }: { params: Promise<{ agentId
                               </Button>
                               {artefact.status !== "APPROVED" && (
                                 <Button variant="default" size="sm" onClick={() => {
-                                  updateArtefact.mutate({ artefactId: artefact.id, status: "APPROVED" });
-                                  toast.success(`${artefact.name} approved`);
+                                  updateArtefact.mutate(
+                                    { artefactId: artefact.id, status: "APPROVED", confirmNotNames: true },
+                                    {
+                                      onSuccess: () => toast.success(`${artefact.name} approved`),
+                                      onError: (err: any) => toast.error(err?.message || "Approval failed — check artefact for issues"),
+                                    }
+                                  );
                                 }}>
                                   Approve
                                 </Button>

@@ -299,14 +299,13 @@ export async function generatePhaseArtefacts(
           const artName = matchingDef || title;
           // Skip if now already exists (race condition guard)
           if (existingNames.has(artName.toLowerCase())) continue;
-          // Detect format: CSV for spreadsheets, HTML if content starts with tag, else markdown
+          // Detect format: CSV for spreadsheets, everything else is markdown.
+          // Previously HTML was detected by leading "<" but Claude mixes markdown
+          // with HTML tags — treating it all as markdown lets the viewer render both.
           let detectedFmt = "markdown";
           let cleaned = content;
           if (isSheet) { detectedFmt = "csv"; }
-          else if (content.trimStart().startsWith("<")) {
-            detectedFmt = "html";
-            cleaned = cleanMarkdownLeakage(content);
-          }
+          else { cleaned = cleanMarkdownLeakage(content); }
           // Strip fabricated personal names from any Owner/Assigned-to column
           // before persisting. The Sonnet prompt forbids inventing names but
           // it still slips through; this is the last-mile guard.
@@ -496,10 +495,7 @@ export async function generatePhaseArtefacts(
             let detectedFmt = "markdown";
             let cleanedRetry = stripped;
             if (isSheet) detectedFmt = "csv";
-            else if (stripped.startsWith("<")) {
-              detectedFmt = "html";
-              cleanedRetry = cleanMarkdownLeakage(stripped);
-            }
+            else { cleanedRetry = cleanMarkdownLeakage(stripped); }
             const sanitisedRetry = sanitiseArtefactContent(cleanedRetry, detectedFmt);
             if (sanitisedRetry.replaced > 0) {
               console.log(`[generatePhaseArtefacts retry] sanitised ${sanitisedRetry.replaced} fabricated owner cell(s) in "${name}"`);
