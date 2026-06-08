@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useOrgCurrency } from "@/hooks/use-currency";
 import { formatMoney } from "@/lib/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,9 @@ import {
   PoundSterling,
   ArrowUpDown,
 } from "lucide-react";
+import { useInvoices } from "@/hooks/use-api";
+import { PageHeader } from "@/components/layout/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "OVERDUE";
 
@@ -37,95 +40,32 @@ const STATUS_STYLES: Record<InvoiceStatus, { bg: string; text: string }> = {
   OVERDUE: { bg: "bg-red-500/10", text: "text-red-500" },
 };
 
-const DEMO_INVOICES: Invoice[] = [
-  {
-    id: "1",
-    number: "INV-2026-001",
-    project: "ERP Migration",
-    vendor: "Acme Consulting Ltd",
-    amount: 12500,
-    issueDate: "2026-03-15",
-    dueDate: "2026-04-14",
-    status: "PAID",
-  },
-  {
-    id: "2",
-    number: "INV-2026-002",
-    project: "Cloud Infrastructure",
-    vendor: "CloudOps Solutions",
-    amount: 34200,
-    issueDate: "2026-03-22",
-    dueDate: "2026-04-21",
-    status: "SENT",
-  },
-  {
-    id: "3",
-    number: "INV-2026-003",
-    project: "Office Relocation",
-    vendor: "Swift Logistics",
-    amount: 8750,
-    issueDate: "2026-02-10",
-    dueDate: "2026-03-12",
-    status: "OVERDUE",
-  },
-  {
-    id: "4",
-    number: "INV-2026-004",
-    project: "Website Redesign",
-    vendor: "Pixel Perfect Agency",
-    amount: 18900,
-    issueDate: "2026-04-01",
-    dueDate: "2026-05-01",
-    status: "DRAFT",
-  },
-  {
-    id: "5",
-    number: "INV-2026-005",
-    project: "ERP Migration",
-    vendor: "DataSync Partners",
-    amount: 6300,
-    issueDate: "2026-03-28",
-    dueDate: "2026-04-27",
-    status: "SENT",
-  },
-  {
-    id: "6",
-    number: "INV-2026-006",
-    project: "Cloud Infrastructure",
-    vendor: "SecureNet Ltd",
-    amount: 15400,
-    issueDate: "2026-01-20",
-    dueDate: "2026-02-19",
-    status: "OVERDUE",
-  },
-  {
-    id: "7",
-    number: "INV-2026-007",
-    project: "Training Programme",
-    vendor: "SkillForge Academy",
-    amount: 4200,
-    issueDate: "2026-03-05",
-    dueDate: "2026-04-04",
-    status: "PAID",
-  },
-];
+// Map DB invoice fields to the UI shape expected by the table
+function mapInvoice(inv: any): Invoice {
+  return {
+    id: inv.id,
+    number: inv.stripeId ? `INV-${inv.stripeId.slice(-8).toUpperCase()}` : `INV-${inv.id.slice(-8).toUpperCase()}`,
+    project: inv.org?.name || "—",
+    vendor: inv.org?.name || "—",
+    amount: inv.amount,
+    issueDate: new Date(inv.createdAt).toISOString().slice(0, 10),
+    dueDate: new Date(new Date(inv.createdAt).getTime() + 30 * 86400000).toISOString().slice(0, 10),
+    status: (inv.status?.toUpperCase() || "DRAFT") as InvoiceStatus,
+  };
+}
 
 export default function InvoicesPage() {
   const orgCurrency = useOrgCurrency();
   const formatCurrency = (amount: number, c?: string | null) => formatMoney(amount, c || orgCurrency);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/invoices")
-      .then(r => r.json())
-      .then(d => { if (Array.isArray(d?.data)) setInvoices(d.data); })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
-  }, []);
+  const { data: invoicesData, isLoading } = useInvoices();
   const [tab, setTab] = useState("all");
   const [sortField, setSortField] = useState<"amount" | "dueDate">("dueDate");
   const [sortAsc, setSortAsc] = useState(true);
+
+  const invoices: Invoice[] = useMemo(
+    () => (invoicesData || []).map(mapInvoice),
+    [invoicesData]
+  );
 
   const totalValue = invoices.reduce((sum, inv) => sum + inv.amount, 0);
   const pendingCount = invoices.filter(

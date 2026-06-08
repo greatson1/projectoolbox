@@ -179,6 +179,33 @@ export function useCreditUsage() {
   });
 }
 
+// ── Invoices ──
+
+export function useInvoices() {
+  return useQuery({
+    queryKey: ["invoices"],
+    queryFn: () => api<any[]>("/api/invoices"),
+    // no polling — static financial data
+  });
+}
+
+export function useCreateInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => api("/api/invoices", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
+  });
+}
+
+export function useUpdateInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invoiceId, ...data }: { invoiceId: string; [key: string]: unknown }) =>
+      api(`/api/invoices/${invoiceId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
+  });
+}
+
 // ── Billing ──
 
 export function useBilling() {

@@ -171,7 +171,7 @@ export default function AgentFleetPage() {
   }, [apiData]);
 
   const activities: ActivityEvent[] = useMemo(() => {
-    const raw = apiData?.activities;
+    const raw = apiData?.recentActivities;
     if (!raw || raw.length === 0) return [];
     return raw.map((a: any, i: number) => ({
       id: i + 1, agentId: a.agentId || "", agentName: a.agentName || "Agent",

@@ -13,13 +13,13 @@ export type ArchiveBlock = { error: string; status: number; reason?: string | nu
 export async function ensureProjectMutable(projectId: string): Promise<ArchiveBlock | null> {
   const p = await db.project.findUnique({
     where: { id: projectId },
-    select: { archivedAt: true, archiveReason: true },
+    select: { status: true, archiveReason: true },
   });
-  if (p?.archivedAt) {
+  if (p?.status === "ARCHIVED") {
     return {
       error: "Project is archived (read-only)",
-      reason: p.archiveReason,
-      status: 423, // Locked
+      reason: p.archiveReason ?? null,
+      status: 423,
     };
   }
   return null;
@@ -28,12 +28,12 @@ export async function ensureProjectMutable(projectId: string): Promise<ArchiveBl
 export async function ensureAgentMutable(agentId: string): Promise<ArchiveBlock | null> {
   const a = await db.agent.findUnique({
     where: { id: agentId },
-    select: { archivedAt: true, archiveReason: true },
+    select: { status: true, archiveReason: true },
   });
-  if (a?.archivedAt) {
+  if (a?.status === "ARCHIVED") {
     return {
       error: "Agent is archived (read-only)",
-      reason: a.archiveReason,
+      reason: a.archiveReason ?? null,
       status: 423,
     };
   }
