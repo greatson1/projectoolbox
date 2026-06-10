@@ -148,3 +148,115 @@ export function pick(row: ArtefactRow, ...candidates: string[]): string {
   }
   return "";
 }
+
+/**
+ * Find the canonical column name in the table headers that matches one of
+ * the candidates. Returns the first matching header name (preserving its
+ * original casing/punctuation in the table) so callers can WRITE to that
+ * column when round-tripping changes back. Used by the inline-edit pages.
+ *
+ * Returns the FIRST candidate as a fallback if no header matches — that
+ * way appending a new column is consistent.
+ */
+export function pickHeader(headers: string[], ...candidates: string[]): string {
+  for (const candidate of candidates) {
+    const c = candidate.toLowerCase().replace(/[_\s]/g, "");
+    for (const h of headers) {
+      if (h.toLowerCase().replace(/[_\s]/g, "") === c) return h;
+    }
+  }
+  return candidates[0];
+}
+
+// ─── Table parser + serializer for round-trip editing ────────────────────
+
+export type ArtefactFormat = "csv" | "markdown";
+
+export interface ArtefactTable {
+  format: ArtefactFormat;
+  headers: string[];
+  rows: ArtefactRow[];
+}
+
+/**
+ * Like parseArtefactRows but also returns the original headers (in their
+ * source order) and the format the artefact was stored in. Use this when
+ * you need to round-trip — serializeArtefactTable will write back in the
+ * same shape.
+ *
+ * Returns null when there's nothing parseable, so the caller can skip
+ * any write attempt and surface its empty state.
+ */
+export function parseArtefactTable(content: string | null | undefined): ArtefactTable | null {
+  if (!content) return null;
+  const cleaned = stripCodeFences(content).trim();
+  if (!cleaned) return null;
+
+  const pipeLines = cleaned.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const isPipeRow = (l: string) => l.startsWith("|") && l.lastIndexOf("|") > 0;
+
+  if (pipeLines.length >= 2 && pipeLines.every(isPipeRow)) {
+    const stripCells = (l: string) =>
+      l.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+    const headers = stripCells(pipeLines[0]);
+    const sepIdx = pipeLines.findIndex((l) => /^\|\s*[-:|\s]+\|\s*$/.test(l));
+    const dataStart = sepIdx >= 0 ? sepIdx + 1 : 1;
+    const rows: ArtefactRow[] = [];
+    for (let i = dataStart; i < pipeLines.length; i++) {
+      const cells = stripCells(pipeLines[i]);
+      if (cells.every((c) => !c)) continue;
+      const obj: ArtefactRow = {};
+      headers.forEach((h, idx) => { obj[h] = cells[idx] ?? ""; });
+      rows.push(obj);
+    }
+    if (rows.length === 0) return null;
+    return { format: "markdown", headers, rows };
+  }
+
+  // CSV fallback.
+  const lines = splitCsvLines(cleaned);
+  if (lines.length < 2) return null;
+  const headers = parseCsvRow(lines[0]).map((h) => h.trim());
+  const rows: ArtefactRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCsvRow(lines[i]);
+    if (cells.every((c) => !c.trim())) continue;
+    const obj: ArtefactRow = {};
+    headers.forEach((h, idx) => { obj[h] = (cells[idx] ?? "").trim(); });
+    rows.push(obj);
+  }
+  if (rows.length === 0) return null;
+  return { format: "csv", headers, rows };
+}
+
+/**
+ * Serialize a table back to its original format. CSV cells are quoted
+ * when they contain commas, quotes, or newlines; markdown cells get the
+ * pipe characters escaped. Headers preserve their original order even
+ * if a row is missing a key for one of them.
+ */
+export function serializeArtefactTable(table: ArtefactTable): string {
+  if (table.format === "markdown") {
+    const escape = (s: string) => (s ?? "").replace(/\|/g, "\\|");
+    const header = `| ${table.headers.map(escape).join(" | ")} |`;
+    const sep = `| ${table.headers.map(() => "---").join(" | ")} |`;
+    const body = table.rows
+      .map((row) => `| ${table.headers.map((h) => escape(row[h] ?? "")).join(" | ")} |`)
+      .join("\n");
+    return body.length > 0 ? `${header}\n${sep}\n${body}` : `${header}\n${sep}`;
+  }
+
+  // CSV.
+  const csvCell = (s: string) => {
+    const v = s ?? "";
+    if (v.includes(",") || v.includes("\n") || v.includes("\r") || v.includes('"')) {
+      return `"${v.replace(/"/g, '""')}"`;
+    }
+    return v;
+  };
+  const header = table.headers.map(csvCell).join(",");
+  const body = table.rows
+    .map((row) => table.headers.map((h) => csvCell(row[h] ?? "")).join(","))
+    .join("\n");
+  return body.length > 0 ? `${header}\n${body}` : header;
+}

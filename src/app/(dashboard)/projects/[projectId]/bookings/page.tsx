@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectArtefacts, useProject } from "@/hooks/use-api";
-import { parseArtefactRows, pick } from "@/lib/artefact-rows";
+import { useProjectArtefacts, useProject, useUpdateArtefact } from "@/hooks/use-api";
+import { parseArtefactTable, serializeArtefactTable, pickHeader, type ArtefactRow, type ArtefactTable } from "@/lib/artefact-rows";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plane, AlertCircle, Sparkles, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { toast } from "sonner";
+import { Plane, AlertCircle, Sparkles, CheckCircle2, Clock, XCircle, HelpCircle } from "lucide-react";
 
 type BookingStatus = "confirmed" | "pending" | "cancelled" | "unknown";
 
@@ -21,26 +22,47 @@ function classifyStatus(raw: string): BookingStatus {
   return "unknown";
 }
 
-const STATUS_STYLES: Record<BookingStatus, { color: string; bg: string; icon: typeof CheckCircle2; label: string }> = {
-  confirmed: { color: "#10B981", bg: "bg-emerald-500/10", icon: CheckCircle2, label: "Confirmed" },
-  pending: { color: "#F59E0B", bg: "bg-amber-500/10", icon: Clock, label: "Pending" },
-  cancelled: { color: "#EF4444", bg: "bg-red-500/10", icon: XCircle, label: "Cancelled" },
-  unknown: { color: "#64748B", bg: "bg-slate-500/10", icon: Clock, label: "Unknown" },
+const STATUS_STYLES: Record<BookingStatus, { color: string; bg: string; icon: typeof CheckCircle2; label: string; writeValue: string }> = {
+  confirmed: { color: "#10B981", bg: "bg-emerald-500/10", icon: CheckCircle2, label: "Confirmed", writeValue: "Confirmed" },
+  pending:   { color: "#F59E0B", bg: "bg-amber-500/10",   icon: Clock,        label: "Pending",   writeValue: "Pending" },
+  cancelled: { color: "#EF4444", bg: "bg-red-500/10",     icon: XCircle,      label: "Cancelled", writeValue: "Cancelled" },
+  unknown:   { color: "#64748B", bg: "bg-slate-500/10",   icon: HelpCircle,   label: "Unknown",   writeValue: "" },
 };
+
+/** Click cycle: Pending → Confirmed → Cancelled → Pending. Unknown → Pending. */
+const NEXT_STATUS: Record<BookingStatus, BookingStatus> = {
+  unknown: "pending",
+  pending: "confirmed",
+  confirmed: "cancelled",
+  cancelled: "pending",
+};
+
+function pickValue(row: ArtefactRow, ...candidates: string[]): string {
+  for (const c of candidates) {
+    const target = c.toLowerCase().replace(/[_\s]/g, "");
+    for (const k of Object.keys(row)) {
+      if (k.toLowerCase().replace(/[_\s]/g, "") === target) {
+        const v = row[k];
+        if (v && v.trim()) return v.trim();
+      }
+    }
+  }
+  return "";
+}
 
 /**
  * Travel Booking Tracker.
  *
- * Lists every booking from the approved Booking Tracker artefact —
- * flights / hotels / transfers / activities — with status classification
- * so the user can see at a glance what's confirmed vs. on hold.
- *
- * Optional filter row lets the user narrow by type or by status.
+ * Click any status pill to cycle the booking through Pending →
+ * Confirmed → Cancelled → Pending. Changes write back to the source
+ * artefact's Status column via PATCH so the next render and the
+ * Artefacts page see the same value.
  */
 export default function BookingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: artefacts, isLoading } = useProjectArtefacts(projectId);
   const { data: project } = useProject(projectId);
+  const updateArtefact = useUpdateArtefact();
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<BookingStatus | "all">("all");
 
@@ -56,27 +78,35 @@ export default function BookingsPage() {
     )[0];
   }, [artefacts]);
 
+  const [table, setTable] = useState<ArtefactTable | null>(null);
+  useEffect(() => {
+    setTable(artefact ? parseArtefactTable(artefact.content) : null);
+  }, [artefact?.id, artefact?.content]);
+
+  const statusHeader = useMemo(
+    () => (table ? pickHeader(table.headers, "Status", "State") : "Status"),
+    [table],
+  );
+
   const bookings = useMemo(() => {
-    if (!artefact?.content) return null;
-    const rows = parseArtefactRows(artefact.content);
-    if (rows.length === 0) return null;
-    return rows.map((row) => {
-      const rawStatus = pick(row, "Status", "State");
+    if (!table) return null;
+    return table.rows.map((row, idx) => {
+      const rawStatus = pickValue(row, "Status", "State");
       return {
-        type: pick(row, "Type", "Category") || "Other",
-        item: pick(row, "Item", "Booking", "Description", "Name", "Vendor") || "(Untitled)",
-        date: pick(row, "Date", "Travel Date", "Check-in"),
-        confirmation: pick(row, "Confirmation", "Booking Ref", "Reference", "PNR"),
-        vendor: pick(row, "Vendor", "Provider", "Airline", "Hotel"),
-        cost: pick(row, "Cost", "Amount", "Price"),
-        currency: pick(row, "Currency", "Ccy"),
-        payment: pick(row, "Payment", "Paid"),
+        rowIndex: idx,
+        type: pickValue(row, "Type", "Category") || "Other",
+        item: pickValue(row, "Item", "Booking", "Description", "Name", "Vendor") || "(Untitled)",
+        date: pickValue(row, "Date", "Travel Date", "Check-in"),
+        confirmation: pickValue(row, "Confirmation", "Booking Ref", "Reference", "PNR"),
+        vendor: pickValue(row, "Vendor", "Provider", "Airline", "Hotel"),
+        cost: pickValue(row, "Cost", "Amount", "Price"),
+        currency: pickValue(row, "Currency", "Ccy"),
         status: classifyStatus(rawStatus),
         statusRaw: rawStatus,
-        notes: pick(row, "Notes", "Detail"),
+        notes: pickValue(row, "Notes", "Detail"),
       };
     });
-  }, [artefact?.content]);
+  }, [table]);
 
   const types = useMemo(() => {
     if (!bookings) return [];
@@ -98,6 +128,33 @@ export default function BookingsPage() {
     );
   }, [bookings]);
 
+  const cycleStatus = async (rowIndex: number, current: BookingStatus) => {
+    if (!table || !artefact) return;
+    const target = NEXT_STATUS[current];
+    const writeValue = STATUS_STYLES[target].writeValue;
+    const previous = table;
+    const nextRows = table.rows.map((row, i) =>
+      i === rowIndex ? { ...row, [statusHeader]: writeValue } : row,
+    );
+    const nextHeaders = table.headers.includes(statusHeader)
+      ? table.headers
+      : [...table.headers, statusHeader];
+    const next: ArtefactTable = { ...table, headers: nextHeaders, rows: nextRows };
+    setTable(next);
+
+    try {
+      await updateArtefact.mutateAsync({
+        artefactId: artefact.id,
+        content: serializeArtefactTable(next),
+      });
+      toast.success(`Status → ${STATUS_STYLES[target].label}`);
+    } catch (err) {
+      setTable(previous);
+      const msg = err instanceof Error ? err.message : "Update failed";
+      toast.error(`Couldn't update status: ${msg}`);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4 max-w-[1400px]">
@@ -117,6 +174,7 @@ export default function BookingsPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Reservations for <span className="font-medium text-foreground">{project?.name}</span>.
+            Click any status pill to cycle it; changes write back to the source artefact.
           </p>
         </div>
         {bookings && (
@@ -219,11 +277,12 @@ export default function BookingsPage() {
                         </td>
                       </tr>
                     )}
-                    {filtered?.map((b, i) => {
+                    {filtered?.map((b) => {
                       const s = STATUS_STYLES[b.status];
                       const Icon = s.icon;
+                      const nextLabel = STATUS_STYLES[NEXT_STATUS[b.status]].label;
                       return (
-                        <tr key={i} className="hover:bg-muted/20 transition-colors">
+                        <tr key={b.rowIndex} className="hover:bg-muted/20 transition-colors">
                           <td className="px-3 py-2">
                             <Badge variant="outline" className="text-[10px]">{b.type}</Badge>
                           </td>
@@ -235,10 +294,16 @@ export default function BookingsPage() {
                             {b.cost ? `${b.currency ? b.currency + " " : ""}${b.cost}` : "—"}
                           </td>
                           <td className="px-3 py-2">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${s.bg}`} style={{ color: s.color }}>
+                            <button
+                              onClick={() => cycleStatus(b.rowIndex, b.status)}
+                              disabled={updateArtefact.isPending}
+                              title={`Click to mark as ${nextLabel}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${s.bg} hover:scale-105 transition-transform disabled:opacity-50 cursor-pointer`}
+                              style={{ color: s.color }}
+                            >
                               <Icon className="w-3 h-3" />
                               {s.label}
-                            </span>
+                            </button>
                           </td>
                         </tr>
                       );

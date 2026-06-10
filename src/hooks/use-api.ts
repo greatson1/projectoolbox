@@ -777,7 +777,17 @@ export function useUpdateArtefact() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ artefactId, ...data }: any) => api(`/api/agents/artefacts/${artefactId}`, { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["artefacts"] }); qc.invalidateQueries({ queryKey: ["agents"] }); },
+    onSuccess: () => {
+      // The agent-scoped (["artefacts", agentId]) and project-scoped
+      // (["project-artefacts", projectId]) caches both surface the same
+      // underlying rows. Invalidate both so the project view pages that
+      // use useProjectArtefacts (ROAM / Bookings / Feature Hierarchy
+      // inline-edit flows, plus all the read-only aggregators) pick
+      // up the change immediately.
+      qc.invalidateQueries({ queryKey: ["artefacts"] });
+      qc.invalidateQueries({ queryKey: ["project-artefacts"] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+    },
   });
 }
 

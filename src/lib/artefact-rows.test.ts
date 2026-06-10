@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { parseArtefactRows, pick } from "./artefact-rows";
+import {
+  parseArtefactRows,
+  parseArtefactTable,
+  serializeArtefactTable,
+  pick,
+  pickHeader,
+} from "./artefact-rows";
 
 describe("parseArtefactRows", () => {
   it("parses simple CSV with header", () => {
@@ -65,5 +71,76 @@ describe("pick", () => {
 
   it("returns empty string when nothing matches", () => {
     expect(pick({ Foo: "bar" }, "Epic")).toBe("");
+  });
+});
+
+describe("pickHeader", () => {
+  it("returns the matching header in its original casing", () => {
+    expect(pickHeader(["Epic Name", "Story", "Points"], "epic name", "epic")).toBe("Epic Name");
+    expect(pickHeader(["Status", "Owner"], "state", "status")).toBe("Status");
+  });
+
+  it("ignores underscores + whitespace when matching", () => {
+    expect(pickHeader(["story_points"], "Story Points")).toBe("story_points");
+  });
+
+  it("falls back to the first candidate when nothing matches", () => {
+    expect(pickHeader(["Foo", "Bar"], "Epic", "Theme")).toBe("Epic");
+  });
+});
+
+describe("parseArtefactTable + serializeArtefactTable round-trip", () => {
+  it("round-trips a CSV table", () => {
+    const src = "Epic,Feature,Story\nA,F1,S1\nA,F1,S2";
+    const t = parseArtefactTable(src)!;
+    expect(t.format).toBe("csv");
+    expect(t.headers).toEqual(["Epic", "Feature", "Story"]);
+    expect(t.rows).toHaveLength(2);
+    const out = serializeArtefactTable(t);
+    expect(out).toBe(src);
+  });
+
+  it("round-trips a markdown pipe table", () => {
+    const src = "| Epic | Feature | Story |\n| --- | --- | --- |\n| A | F1 | S1 |\n| A | F1 | S2 |";
+    const t = parseArtefactTable(src)!;
+    expect(t.format).toBe("markdown");
+    expect(t.headers).toEqual(["Epic", "Feature", "Story"]);
+    expect(t.rows).toHaveLength(2);
+    const out = serializeArtefactTable(t);
+    // Round-trip uses 3-dash separators, not whatever width the input had.
+    expect(out).toContain("| --- | --- | --- |");
+    expect(out).toContain("| A | F1 | S1 |");
+  });
+
+  it("preserves header order when a row is missing keys", () => {
+    const t = parseArtefactTable("A,B,C\n1,2,3")!;
+    t.rows.push({ A: "x", C: "z" }); // B missing
+    const out = serializeArtefactTable(t);
+    expect(out.split("\n")[2]).toBe("x,,z");
+  });
+
+  it("quotes CSV cells with commas, quotes or newlines", () => {
+    const t = parseArtefactTable("Name,Note\nA,B")!;
+    t.rows[0] = { Name: 'Smith, J', Note: 'he said "hi"' };
+    const out = serializeArtefactTable(t);
+    expect(out).toContain('"Smith, J"');
+    expect(out).toContain('"he said ""hi"""');
+  });
+
+  it("escapes pipe characters in markdown cells", () => {
+    const t = parseArtefactTable("| A | B |\n| --- | --- |\n| x | y |")!;
+    t.rows[0] = { A: "a|b", B: "c" };
+    const out = serializeArtefactTable(t);
+    expect(out).toContain("a\\|b");
+  });
+
+  it("returns null when content has no parseable table", () => {
+    expect(parseArtefactTable("")).toBeNull();
+    expect(parseArtefactTable(null)).toBeNull();
+    expect(parseArtefactTable("just one line of prose")).toBeNull();
+  });
+
+  it("parseArtefactRows still works on top of parseArtefactTable", () => {
+    expect(parseArtefactRows("A,B\n1,2")).toEqual([{ A: "1", B: "2" }]);
   });
 });

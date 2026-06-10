@@ -1,32 +1,49 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useProjectArtefacts, useProject } from "@/hooks/use-api";
-import { parseArtefactRows, pick } from "@/lib/artefact-rows";
+import { useProjectArtefacts, useProject, useUpdateArtefact } from "@/hooks/use-api";
+import { parseArtefactTable, serializeArtefactTable, pickHeader, type ArtefactRow, type ArtefactTable } from "@/lib/artefact-rows";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Layers, ChevronRight, ChevronDown, FileText, AlertCircle, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+import { Layers, ChevronRight, ChevronDown, FileText, AlertCircle, Sparkles, Plus, X } from "lucide-react";
+
+function pickValue(row: ArtefactRow, ...candidates: string[]): string {
+  for (const c of candidates) {
+    const target = c.toLowerCase().replace(/[_\s]/g, "");
+    for (const k of Object.keys(row)) {
+      if (k.toLowerCase().replace(/[_\s]/g, "") === target) {
+        const v = row[k];
+        if (v && v.trim()) return v.trim();
+      }
+    }
+  }
+  return "";
+}
 
 /**
- * SAFe Feature Hierarchy view.
+ * SAFe Feature Hierarchy with inline story addition.
  *
- * The artefact captures Epic → Feature → Story decomposition — SAFe's
- * structural backbone. Reading it as a flat CSV makes the trace harder
- * than necessary, so this page renders it as a collapsible tree and
- * shows row counts at each level.
+ * Reads the approved Feature Hierarchy artefact and renders Epic →
+ * Feature → Story as a collapsible tree. Under any feature, the user
+ * can click "+ Add Story" to insert a new row in the artefact CSV with
+ * the same Epic + Feature values prefilled. The new story round-trips
+ * straight to the artefact via PATCH; subsequent renders see it.
  *
- * Source artefact is matched fuzzy by name (the methodology defines
- * "Feature Hierarchy" but Sonnet has been known to append " - <project>"
- * or "Epic Decomposition"). We grab the latest APPROVED match.
+ * Optimistic updates: the new row appears immediately in the tree
+ * while the PATCH is in flight; failures roll back and toast the error.
  */
 export default function FeatureHierarchyPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: artefacts, isLoading } = useProjectArtefacts(projectId);
   const { data: project } = useProject(projectId);
+  const updateArtefact = useUpdateArtefact();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [newStory, setNewStory] = useState({ name: "", points: "" });
 
   const artefact = useMemo(() => {
     if (!artefacts) return null;
@@ -40,30 +57,46 @@ export default function FeatureHierarchyPage() {
       );
     });
     if (matches.length === 0) return null;
-    // Latest updated wins.
     return matches.sort(
       (a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     )[0];
   }, [artefacts]);
 
+  const [table, setTable] = useState<ArtefactTable | null>(null);
+  useEffect(() => {
+    setTable(artefact ? parseArtefactTable(artefact.content) : null);
+  }, [artefact?.id, artefact?.content]);
+
+  // Canonical header names — used for both reading and writing. Pick
+  // the actual header name from the table when one exists so the writes
+  // hit the same column we're already reading.
+  const headers = useMemo(() => {
+    if (!table) return null;
+    return {
+      epic: pickHeader(table.headers, "Epic Name", "Epic", "Theme"),
+      feature: pickHeader(table.headers, "Feature Name", "Feature"),
+      story: pickHeader(table.headers, "User Story", "Story", "Item"),
+      points: pickHeader(table.headers, "Story Points", "Points", "Pts"),
+      status: pickHeader(table.headers, "Status", "State"),
+    };
+  }, [table]);
+
   const tree = useMemo(() => {
-    if (!artefact?.content) return null;
-    const rows = parseArtefactRows(artefact.content);
-    if (rows.length === 0) return null;
+    if (!table) return null;
 
     type Story = { name: string; points: string; status: string };
     type Feature = { name: string; description: string; stories: Story[] };
     type Epic = { name: string; description: string; features: Map<string, Feature> };
 
     const epics = new Map<string, Epic>();
-    for (const row of rows) {
-      const epicName = pick(row, "Epic", "Epic Name", "Theme") || "(Unassigned Epic)";
-      const featureName = pick(row, "Feature", "Feature Name") || "(Unassigned Feature)";
-      const storyName = pick(row, "Story", "User Story", "Item");
-      const epicDesc = pick(row, "Epic Description", "Epic Goal");
-      const featureDesc = pick(row, "Feature Description", "Feature Goal", "Acceptance");
-      const points = pick(row, "Story Points", "Points", "Pts");
-      const status = pick(row, "Status", "State");
+    for (const row of table.rows) {
+      const epicName = pickValue(row, "Epic", "Epic Name", "Theme") || "(Unassigned Epic)";
+      const featureName = pickValue(row, "Feature", "Feature Name") || "(Unassigned Feature)";
+      const storyName = pickValue(row, "Story", "User Story", "Item");
+      const epicDesc = pickValue(row, "Epic Description", "Epic Goal");
+      const featureDesc = pickValue(row, "Feature Description", "Feature Goal", "Acceptance");
+      const points = pickValue(row, "Story Points", "Points", "Pts");
+      const status = pickValue(row, "Status", "State");
 
       let epic = epics.get(epicName);
       if (!epic) {
@@ -89,7 +122,7 @@ export default function FeatureHierarchyPage() {
       ...e,
       features: Array.from(e.features.values()),
     }));
-  }, [artefact?.content]);
+  }, [table]);
 
   const totals = useMemo(() => {
     if (!tree) return { epics: 0, features: 0, stories: 0 };
@@ -102,6 +135,71 @@ export default function FeatureHierarchyPage() {
       { epics: 0, features: 0, stories: 0 },
     );
   }, [tree]);
+
+  const openAddForm = (epicName: string, featureName: string) => {
+    setAddingTo(`${epicName}|||${featureName}`);
+    setNewStory({ name: "", points: "" });
+  };
+  const closeAddForm = () => {
+    setAddingTo(null);
+    setNewStory({ name: "", points: "" });
+  };
+
+  const addStory = async (epicName: string, featureName: string) => {
+    if (!table || !artefact || !headers) return;
+    const name = newStory.name.trim();
+    if (!name) {
+      toast.error("Story name required");
+      return;
+    }
+    const previous = table;
+    // Build the new row using the headers we already use for reading.
+    // Empty cells for columns we don't fill — serializer keeps header
+    // order and writes blanks where the row is missing keys.
+    const newRow: ArtefactRow = {
+      [headers.epic]: epicName,
+      [headers.feature]: featureName,
+      [headers.story]: name,
+    };
+    if (newStory.points.trim()) newRow[headers.points] = newStory.points.trim();
+
+    // Insert right after the last existing row for the same feature so
+    // the tree's grouping looks contiguous. If no rows match, append.
+    const insertAfter = (() => {
+      for (let i = table.rows.length - 1; i >= 0; i--) {
+        const r = table.rows[i];
+        const matchesEpic = pickValue(r, "Epic", "Epic Name", "Theme") === epicName;
+        const matchesFeature = pickValue(r, "Feature", "Feature Name") === featureName;
+        if (matchesEpic && matchesFeature) return i;
+      }
+      return table.rows.length - 1;
+    })();
+    const nextRows = [
+      ...table.rows.slice(0, insertAfter + 1),
+      newRow,
+      ...table.rows.slice(insertAfter + 1),
+    ];
+    // Make sure the headers contain every key we just wrote.
+    const ensuredHeaders = [...table.headers];
+    for (const key of Object.keys(newRow)) {
+      if (!ensuredHeaders.includes(key)) ensuredHeaders.push(key);
+    }
+    const next: ArtefactTable = { ...table, headers: ensuredHeaders, rows: nextRows };
+    setTable(next);
+    closeAddForm();
+
+    try {
+      await updateArtefact.mutateAsync({
+        artefactId: artefact.id,
+        content: serializeArtefactTable(next),
+      });
+      toast.success(`Added "${name.slice(0, 40)}${name.length > 40 ? "…" : ""}"`);
+    } catch (err) {
+      setTable(previous);
+      const msg = err instanceof Error ? err.message : "Update failed";
+      toast.error(`Couldn't add story: ${msg}`);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -123,7 +221,7 @@ export default function FeatureHierarchyPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Epic → Feature → Story decomposition for <span className="font-medium text-foreground">{project?.name}</span>.
-            Every story should trace upward.
+            Use "+ Add Story" under any feature to extend the hierarchy; changes write back to the source artefact.
           </p>
         </div>
         {tree && (
@@ -166,10 +264,7 @@ export default function FeatureHierarchyPage() {
         <Card className="border-amber-500/30 bg-amber-500/5">
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
             The approved Feature Hierarchy artefact contains no tabular data the page can parse.
-            <Link
-              href={`/projects/${projectId}/artefacts`}
-              className="ml-1 text-primary hover:underline"
-            >
+            <Link href={`/projects/${projectId}/artefacts`} className="ml-1 text-primary hover:underline">
               Open it to inspect or regenerate
             </Link>
             .
@@ -213,6 +308,8 @@ export default function FeatureHierarchyPage() {
                     {epic.features.map((feature, fi) => {
                       const featureKey = `feature-${ei}-${fi}`;
                       const featureCollapsed = collapsed[featureKey];
+                      const addKey = `${epic.name}|||${feature.name}`;
+                      const isAdding = addingTo === addKey;
                       return (
                         <div key={featureKey} className="border border-border/60 rounded-lg bg-card">
                           <button
@@ -237,28 +334,85 @@ export default function FeatureHierarchyPage() {
                               {feature.stories.length} {feature.stories.length === 1 ? "story" : "stories"}
                             </Badge>
                           </button>
-                          {!featureCollapsed && feature.stories.length > 0 && (
-                            <ul className="border-t border-border/40 px-3 py-2 space-y-1">
-                              {feature.stories.map((story, si) => (
-                                <li
-                                  key={`story-${ei}-${fi}-${si}`}
-                                  className="flex items-center gap-2 text-xs py-1"
+                          {!featureCollapsed && (
+                            <div className="border-t border-border/40">
+                              {feature.stories.length > 0 && (
+                                <ul className="px-3 py-2 space-y-1">
+                                  {feature.stories.map((story, si) => (
+                                    <li
+                                      key={`story-${ei}-${fi}-${si}`}
+                                      className="flex items-center gap-2 text-xs py-1"
+                                    >
+                                      <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                                      <span className="flex-1 truncate">{story.name}</span>
+                                      {story.points && (
+                                        <Badge variant="outline" className="text-[9px]">
+                                          {story.points} pts
+                                        </Badge>
+                                      )}
+                                      {story.status && (
+                                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                                          {story.status}
+                                        </span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {isAdding ? (
+                                <div className="px-3 py-2 border-t border-border/40 bg-muted/10 space-y-2">
+                                  <div className="flex gap-2">
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      placeholder="Story title"
+                                      value={newStory.name}
+                                      onChange={(e) => setNewStory((s) => ({ ...s, name: e.target.value }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") addStory(epic.name, feature.name);
+                                        if (e.key === "Escape") closeAddForm();
+                                      }}
+                                      className="flex-1 px-2 py-1 text-xs rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Pts"
+                                      value={newStory.points}
+                                      onChange={(e) => setNewStory((s) => ({ ...s, points: e.target.value }))}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") addStory(epic.name, feature.name);
+                                        if (e.key === "Escape") closeAddForm();
+                                      }}
+                                      className="w-16 px-2 py-1 text-xs rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => addStory(epic.name, feature.name)}
+                                      disabled={!newStory.name.trim() || updateArtefact.isPending}
+                                      className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[11px] font-semibold hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                                    >
+                                      Add
+                                    </button>
+                                    <button
+                                      onClick={closeAddForm}
+                                      className="px-2.5 py-1 rounded-md border border-border text-[11px] hover:bg-muted/40 transition-colors flex items-center gap-1"
+                                    >
+                                      <X className="w-3 h-3" />
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => openAddForm(epic.name, feature.name)}
+                                  className="w-full text-left px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors flex items-center gap-1.5 border-t border-border/40"
                                 >
-                                  <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                                  <span className="flex-1 truncate">{story.name}</span>
-                                  {story.points && (
-                                    <Badge variant="outline" className="text-[9px]">
-                                      {story.points} pts
-                                    </Badge>
-                                  )}
-                                  {story.status && (
-                                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                                      {story.status}
-                                    </span>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
+                                  <Plus className="w-3 h-3" />
+                                  Add story
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
