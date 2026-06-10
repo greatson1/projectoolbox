@@ -22,6 +22,9 @@ import { toast } from "sonner";
 import { MfaCard } from "@/components/settings/MfaCard";
 import { ExportButton } from "@/components/settings/ExportButton";
 import { RequireMfaToggle } from "@/components/settings/RequireMfaToggle";
+import { IpAllowlistCard } from "@/components/settings/IpAllowlistCard";
+import { useOrgPlan } from "@/hooks/use-org-plan";
+import { ScrollText } from "lucide-react";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: User },
@@ -49,6 +52,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { accentTheme, setAccentTheme } = useAppStore();
   const user = (sessionResult as any)?.data?.user ?? {};
+  const { can: planCan } = useOrgPlan();
 
   const [zoomStatus, setZoomStatus] = useState<IntegrationStatus>(null);
   const [gcalStatus, setGcalStatus] = useState<IntegrationStatus>(null);
@@ -191,8 +195,28 @@ export default function SettingsPage() {
                   </div>
                   <Button variant="outline" size="sm">View Sessions</Button>
                 </div>
+                <div className="flex items-center justify-between py-3 border-t border-border">
+                  <div>
+                    <p className="text-sm font-medium">Audit log</p>
+                    <p className="text-xs text-muted-foreground">Immutable history of governance actions (Business+)</p>
+                  </div>
+                  <Link href="/settings/audit-log">
+                    <Button variant="outline" size="sm"><ScrollText className="w-3.5 h-3.5 mr-1.5" />Open audit log</Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* IP allowlist sits inside the security section as a sibling card
+              so the BUSINESS-tier governance controls are grouped together
+              rather than buried under "Organisation". Only the Owner can
+              edit; everyone in the org can read. */}
+          {active === "security" && (
+            <IpAllowlistCard
+              canEdit={(user as any)?.role === "OWNER"}
+              planUnlocked={planCan("ipAllowlist")}
+            />
           )}
 
           {active === "appearance" && (

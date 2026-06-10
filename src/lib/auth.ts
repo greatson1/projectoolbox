@@ -312,6 +312,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         (session.user as any).role = token.role;
         (session.user as any).orgId = token.orgId;
         (session.user as any).onboardingComplete = token.onboardingComplete;
+        // Plan-tier fields stamped on the JWT — exposed to the client so
+        // UI components (useOrgPlan hook) can render upgrade hints
+        // without making a billing API round-trip on every mount. The
+        // server still re-enforces every feature flag at the route
+        // layer — this is for UI gating only.
+        (session.user as any).orgPlan = (token as any).orgPlan ?? null;
       }
       return session;
     },
