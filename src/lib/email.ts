@@ -306,4 +306,81 @@ export class EmailService {
       return false;
     }
   }
+
+  /**
+   * Heads-up to the team when someone completes account creation (not just
+   * waitlist signup). Distinct from the waitlist notification because this
+   * is a real registered user, not a "maybe in future" signal. Sent to
+   * SIGNUP_NOTIFY_EMAIL if set, otherwise falls back to WAITLIST_NOTIFY_EMAIL
+   * so the team still hears about every new account without needing two
+   * separate Vercel vars configured.
+   */
+  static async sendSignupAdminNotification(data: { email: string; name?: string | null; invitedFromWaitlist: boolean }) {
+    const to = process.env.SIGNUP_NOTIFY_EMAIL || process.env.WAITLIST_NOTIFY_EMAIL;
+    if (!to) return false;
+    try {
+      await getResend().emails.send({
+        from: "Projectoolbox <noreply@projectoolbox.com>",
+        to,
+        subject: `New account — ${data.email}${data.invitedFromWaitlist ? " (from waitlist)" : ""}`,
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 560px; margin: 0 auto;">
+            <div style="background: #0F172A; padding: 20px 24px; border-radius: 10px 10px 0 0;">
+              <p style="color: rgba(255,255,255,0.6); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin: 0;">Projectoolbox · Sign up</p>
+              <h1 style="color: white; margin: 4px 0 0; font-size: 18px;">New registered user</h1>
+            </div>
+            <div style="padding: 20px 24px; background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 0; border-radius: 0 0 10px 10px;">
+              <table style="width: 100%; font-size: 13px; color: #0F172A; border-collapse: collapse;">
+                <tr><td style="padding: 4px 0; color: #64748B; width: 110px;">Email</td><td><strong>${data.email}</strong></td></tr>
+                ${data.name ? `<tr><td style="padding: 4px 0; color: #64748B;">Name</td><td>${data.name}</td></tr>` : ""}
+                <tr><td style="padding: 4px 0; color: #64748B;">From waitlist</td><td>${data.invitedFromWaitlist ? "Yes" : "No (direct sign-up)"}</td></tr>
+              </table>
+            </div>
+          </div>
+        `,
+      });
+      return true;
+    } catch (e: any) {
+      console.error("[email] Signup admin notification failed:", e.message);
+      return false;
+    }
+  }
+
+  /**
+   * Welcome email to a freshly registered user. Symmetric with the waitlist
+   * confirmation but tailored to "you're in" rather than "you're on the list".
+   */
+  static async sendSignupWelcome(to: string, data: { name?: string | null }) {
+    try {
+      await getResend().emails.send({
+        from: "Projectoolbox <noreply@projectoolbox.com>",
+        to,
+        subject: "Welcome to Projectoolbox 🚀",
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #10B981, #6366F1); padding: 32px 24px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 22px;">Welcome${data.name ? `, ${data.name}` : ""}.</h1>
+              <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">Your Projectoolbox account is ready.</p>
+            </div>
+            <div style="padding: 24px; background: #F8FAFC; border: 1px solid #E2E8F0; border-top: 0; border-radius: 0 0 12px 12px;">
+              <p style="color: #0F172A; font-size: 14px; line-height: 1.6;">
+                You can now sign in at <a href="https://projectoolbox.com/login" style="color: #6366F1;">projectoolbox.com/login</a> and start a project.
+                The agent will run research, ask clarification questions, generate the methodology's documents, and govern the phase gates with you.
+              </p>
+              <p style="color: #0F172A; font-size: 14px; line-height: 1.6; margin-top: 16px;">
+                Reply to this email if anything looks off — we'd rather hear from you than miss a bug.
+              </p>
+              <p style="margin-top: 32px; color: #94A3B8; font-size: 12px;">
+                Projectoolbox · UK-based · Reply to unsubscribe.
+              </p>
+            </div>
+          </div>
+        `,
+      });
+      return true;
+    } catch (e: any) {
+      console.error("[email] Signup welcome send failed:", e.message);
+      return false;
+    }
+  }
 }

@@ -3,6 +3,7 @@ import { after as waitUntil } from "next/server";
 import { db } from "@/lib/db";
 import { EmailService } from "@/lib/email";
 import { checkRateLimit, rateLimitedResponse, extractClientIp } from "@/lib/rate-limit";
+import { looksLikeRandomName, RANDOM_NAME_ERROR } from "@/lib/waitlist-validators";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,13 @@ export async function POST(req: NextRequest) {
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "A valid email address is required." }, { status: 400 });
+  }
+
+  // Drop bot-stuffed names like "ccBLBPrVViYauVjkl" before they pollute
+  // the waitlist + cost a confirmation email. Pure check in
+  // waitlist-validators.ts so it's unit-tested.
+  if (name && looksLikeRandomName(name)) {
+    return NextResponse.json({ error: RANDOM_NAME_ERROR }, { status: 400 });
   }
 
   // Check for duplicate
