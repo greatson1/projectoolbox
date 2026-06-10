@@ -84,11 +84,18 @@ export const CREDIT_PACK_AMOUNTS: Record<string, { credits: number; amountMinor:
   pack_10000: { credits: 10000, amountMinor: 10000, label: "10,000 credits" },
 };
 
-// Plan credit grants on subscription
+// Plan credit grants on subscription. Derived from PLAN_LIMITS so the
+// webhook grants exactly what the UI advertises — drift between these two
+// sources used to cause customers to receive fewer credits than the
+// billing page promised. If you need to change a number, edit PLAN_LIMITS
+// in src/lib/utils.ts and every consumer (this Record, the home page, the
+// billing page, the PaywallScreen) gets it for free.
+import { PLAN_LIMITS } from "@/lib/utils";
+
 export const PLAN_CREDIT_GRANTS: Record<string, number> = {
-  FREE: 50,
-  STARTER: 500,
-  PROFESSIONAL: 2000,
-  BUSINESS: 10000,
-  ENTERPRISE: 50000,
+  FREE:         PLAN_LIMITS.FREE.credits,
+  STARTER:      PLAN_LIMITS.STARTER.credits,
+  PROFESSIONAL: PLAN_LIMITS.PROFESSIONAL.credits,
+  BUSINESS:     PLAN_LIMITS.BUSINESS.credits,
+  ENTERPRISE:   PLAN_LIMITS.ENTERPRISE.credits,
 };

@@ -85,7 +85,17 @@ export interface PlanDefinition {
   agents: number;           // max agents
   projects: number;         // max projects
   priceGbp: number;         // monthly price in GBP (0 = free)
-  // Feature gates
+  /** Highest autonomy level the org can deploy an agent at. L1 = advisor,
+   *  L2 = supervised, L3 = autonomous. autonomousCycle (background work)
+   *  rides on L3 specifically. */
+  maxAutonomyLevel: 1 | 2 | 3;
+  /** Document export tier:
+   *    "pdf-only"   — FREE; users can still preview HTML but export is PDF
+   *    "standard"   — PDF + Word + Excel
+   *    "all"        — adds PPT and any custom-branded formats added later
+   */
+  exportFormats: "pdf-only" | "standard" | "all";
+  // ── Resource feature gates ─────────────────────────────────────────────
   whisperAudio: boolean;       // Whisper audio transcription
   customBot: boolean;          // VPS Playwright meeting bot (STARTER+, 10 credits/hr)
   recallBot: boolean;          // Recall.ai live meeting bot (PROFESSIONAL+, 60 credits/hr)
@@ -93,52 +103,121 @@ export interface PlanDefinition {
   autonomousCycle: boolean;    // VPS background agent cycle
   emailInbox: boolean;         // agent email address + inbox
   apiAccess: boolean;          // REST API + API keys
+  webhooks: boolean;           // outbound webhooks (PROFESSIONAL+)
   topUpsAllowed: boolean;      // can buy extra credits
+  // ── Enterprise governance gates (BUSINESS+) ────────────────────────────
+  ssoSaml: boolean;            // SAML / SSO via WorkOS
+  auditLog: boolean;           // immutable per-org audit trail
+  orgMfaEnforce: boolean;      // org-wide MFA enforcement (Org.requireMfa)
+  ipAllowlist: boolean;        // restrict access by IP range
+  dedicatedCsm: boolean;       // dedicated CSM + SLA
+  // ── Enterprise-only ────────────────────────────────────────────────────
+  whiteLabel: boolean;         // custom branding, custom domain
+  customIntegrations: boolean; // bespoke integration work included
 }
 
+/**
+ * Single source of truth for the SaaS plan partition.
+ *
+ * Tier shape:
+ *   - FREE        — trial-only floor. 14-day paywall trial sits ON FREE,
+ *                   then middleware blocks the dashboard until upgrade.
+ *   - STARTER     — solo PM running 1-2 projects.
+ *   - PROFESSIONAL — small PMO, multi-project, API access, Recall.ai.
+ *   - BUSINESS    — programme / enterprise governance (SSO, audit log,
+ *                   IP allowlist, org-wide MFA).
+ *   - ENTERPRISE  — unlimited resources, bespoke contract, white-label.
+ *
+ * Principles:
+ *   - 1 agent = 1 active project, so `projects === agents` on every tier.
+ *   - PM-hygiene features (DoD/DoR enforcement, contradiction detector,
+ *     cross-artefact reconciliation, phase gates, multi-methodology) are
+ *     NOT plan-gated — they're fundamental to the product.
+ *   - Resource consumption (credits, agents, projects, autonomy) scales
+ *     by tier.
+ *   - Enterprise governance (SSO, audit log, IP allowlist) is BUSINESS+.
+ *   - White-label + bespoke integrations are ENTERPRISE-only.
+ *
+ * Drift guard: PLAN_CREDIT_GRANTS in src/lib/stripe.ts and ALL plan UI
+ * surfaces (home page, billing page, PaywallScreen) MUST derive from
+ * this object. If you change a number here, run grep for the old number
+ * and update copy.
+ */
 export const PLAN_LIMITS: Record<string, PlanDefinition> = {
   FREE: {
-    credits: 100,
+    credits: 50,
     agents: 1, projects: 1, priceGbp: 0,
+    maxAutonomyLevel: 1,
+    exportFormats: "pdf-only",
     whisperAudio: false, customBot: false, recallBot: false,
     perplexityResearch: false, autonomousCycle: false,
-    emailInbox: false, apiAccess: false, topUpsAllowed: false,
+    emailInbox: false, apiAccess: false, webhooks: false,
+    topUpsAllowed: false,
+    ssoSaml: false, auditLog: false, orgMfaEnforce: false,
+    ipAllowlist: false, dedicatedCsm: false,
+    whiteLabel: false, customIntegrations: false,
   },
   STARTER: {
-    credits: 2000,        // ~200 chats + 20 docs + some reports
-    agents: 1, projects: 3, priceGbp: 29,
-    whisperAudio: true,   // upload recordings
-    customBot: true,      // 200 hrs of custom bot / month (10 credits/hr)
-    recallBot: false,     // upsell lever — Recall is Professional+
+    credits: 500,
+    agents: 2, projects: 2, priceGbp: 29,
+    maxAutonomyLevel: 2,
+    exportFormats: "standard",  // PDF + Word + Excel
+    whisperAudio: true,        // upload recordings
+    customBot: true,           // ~50 hrs Playwright bot (10 credits/hr)
+    recallBot: false,          // upsell lever — Recall is PROFESSIONAL+
     perplexityResearch: true,
     autonomousCycle: true, emailInbox: true,
-    apiAccess: false, topUpsAllowed: true,
+    apiAccess: false, webhooks: false,
+    topUpsAllowed: true,
+    ssoSaml: false, auditLog: false, orgMfaEnforce: false,
+    ipAllowlist: false, dedicatedCsm: false,
+    whiteLabel: false, customIntegrations: false,
   },
   PROFESSIONAL: {
-    credits: 6000,
-    agents: 3, projects: 10, priceGbp: 79,
+    credits: 2000,
+    agents: 5, projects: 5, priceGbp: 79,
+    maxAutonomyLevel: 3,       // unlocks autonomous cycle for L3 deployments
+    exportFormats: "all",      // PDF + Word + Excel + PPT
     whisperAudio: true,
     customBot: true,
-    recallBot: true,      // ~8 hrs Recall/mo within budget
+    recallBot: true,           // ~30 hrs Recall.ai / mo (60 credits/hr)
     perplexityResearch: true,
     autonomousCycle: true, emailInbox: true,
-    apiAccess: true, topUpsAllowed: true,
+    apiAccess: true,           // REST API + API keys
+    webhooks: true,
+    topUpsAllowed: true,
+    ssoSaml: false, auditLog: false, orgMfaEnforce: false,
+    ipAllowlist: false, dedicatedCsm: false,
+    whiteLabel: false, customIntegrations: false,
   },
   BUSINESS: {
-    credits: 20000,
-    agents: 10, projects: 50, priceGbp: 199,
+    credits: 10000,
+    agents: 15, projects: 15, priceGbp: 199,
+    maxAutonomyLevel: 3,
+    exportFormats: "all",
     whisperAudio: true, customBot: true, recallBot: true,
     perplexityResearch: true,
     autonomousCycle: true, emailInbox: true,
-    apiAccess: true, topUpsAllowed: true,
+    apiAccess: true, webhooks: true,
+    topUpsAllowed: true,
+    // Enterprise governance — the upgrade reason at this tier.
+    ssoSaml: true, auditLog: true, orgMfaEnforce: true,
+    ipAllowlist: true, dedicatedCsm: true,
+    whiteLabel: false, customIntegrations: false,
   },
   ENTERPRISE: {
-    credits: 999999,
-    agents: 999, projects: 999, priceGbp: 0,
+    credits: 50000,
+    agents: 999, projects: 999, priceGbp: 0, // bespoke
+    maxAutonomyLevel: 3,
+    exportFormats: "all",
     whisperAudio: true, customBot: true, recallBot: true,
     perplexityResearch: true,
     autonomousCycle: true, emailInbox: true,
-    apiAccess: true, topUpsAllowed: true,
+    apiAccess: true, webhooks: true,
+    topUpsAllowed: true,
+    ssoSaml: true, auditLog: true, orgMfaEnforce: true,
+    ipAllowlist: true, dedicatedCsm: true,
+    whiteLabel: true, customIntegrations: true,
   },
 };
 
@@ -151,8 +230,10 @@ export const PLAN_LIMITS: Record<string, PlanDefinition> = {
 export function canUseFeature(
   plan: string | null | undefined,
   feature: keyof Pick<PlanDefinition,
-    "whisperAudio" | "recallBot" | "perplexityResearch" |
-    "autonomousCycle" | "emailInbox" | "apiAccess" | "topUpsAllowed"
+    "whisperAudio" | "customBot" | "recallBot" | "perplexityResearch" |
+    "autonomousCycle" | "emailInbox" | "apiAccess" | "webhooks" |
+    "topUpsAllowed" | "ssoSaml" | "auditLog" | "orgMfaEnforce" |
+    "ipAllowlist" | "dedicatedCsm" | "whiteLabel" | "customIntegrations"
   >,
 ): boolean {
   const def = PLAN_LIMITS[plan?.toUpperCase() ?? "FREE"];
@@ -160,7 +241,7 @@ export function canUseFeature(
 }
 
 export function planCreditsPerMonth(plan: string | null | undefined): number {
-  return PLAN_LIMITS[plan?.toUpperCase() ?? "FREE"]?.credits ?? 100;
+  return PLAN_LIMITS[plan?.toUpperCase() ?? "FREE"]?.credits ?? PLAN_LIMITS.FREE.credits;
 }
 
 export function insufficientPlanResponse(feature: string) {
@@ -171,6 +252,13 @@ export function insufficientPlanResponse(feature: string) {
     autonomousCycle: "Autonomous background agent requires Starter plan or above. Upgrade at /billing.",
     emailInbox: "Agent email inbox requires Starter plan or above. Upgrade at /billing.",
     apiAccess: "API access requires Professional plan or above. Upgrade at /billing.",
+    webhooks: "Outbound webhooks require Professional plan or above. Upgrade at /billing.",
+    ssoSaml: "SSO / SAML requires Business plan or above. Upgrade at /billing.",
+    auditLog: "Audit log access requires Business plan or above. Upgrade at /billing.",
+    orgMfaEnforce: "Org-wide MFA enforcement requires Business plan or above. Upgrade at /billing.",
+    ipAllowlist: "IP allowlisting requires Business plan or above. Upgrade at /billing.",
+    customIntegrations: "Custom integrations require an Enterprise contract. Contact us.",
+    whiteLabel: "White-label branding requires an Enterprise contract. Contact us.",
   };
   return {
     error: messages[feature] ?? `This feature requires a paid plan. Upgrade at /billing.`,

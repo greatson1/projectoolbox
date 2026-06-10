@@ -30,11 +30,62 @@ const STEPS = [
   { step: "03", title: "Artefacts, Plans, Reports — Handled", desc: "Risk registers, WBS, schedules, status reports. Your agent generates, tracks, and updates them. You approve.", icon: "🚀" },
 ];
 
+// Plan cards on the marketing page. Numbers come straight from PLAN_LIMITS
+// in src/lib/utils.ts — do NOT hardcode credits or project counts here.
+// Feature bullets are hand-curated to highlight the upgrade reason at each
+// tier; the BUSINESS bullets call out SSO / audit log / IP allowlist as
+// the actual enforced governance gates rather than soft "support" claims.
 const PLANS = [
-  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Advisor mode (L1)", "Community support"], cta: "Get Started", popular: false },
-  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–2", "Email support", "PDF export"], cta: "Start Free Trial", popular: false },
-  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–3", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Start Free Trial", popular: true },
-  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–3", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Start Free Trial", popular: false },
+  {
+    name: "Free", price: 0, credits: 50,
+    creditNote: "Trial-only credits — 14-day free trial",
+    features: [
+      "1 project · 1 agent",
+      "Advisor mode (L1 only)",
+      "Multi-methodology · DoD/DoR · phase gates",
+      "PDF export · Community support",
+    ],
+    cta: "Get Started", popular: false,
+  },
+  {
+    name: "Starter", price: 29, credits: 500,
+    creditNote: "Solo PM — 1-2 concurrent projects",
+    features: [
+      "2 projects · 2 agents",
+      "Autonomy L1-L2",
+      "Whisper transcription · Custom meeting bot",
+      "Perplexity research · Agent email inbox",
+      "PDF + Word + Excel export",
+      "Email support · Credit top-ups",
+    ],
+    cta: "Start Free Trial", popular: false,
+  },
+  {
+    name: "Professional", price: 79, credits: 2000,
+    creditNote: "Small PMO — multi-project",
+    features: [
+      "5 projects · 5 agents",
+      "Autonomy L1-L3 + autonomous cycle",
+      "Recall.ai live meeting bot",
+      "REST API + API keys · Webhooks",
+      "All export formats incl. PPT",
+      "Priority support",
+    ],
+    cta: "Start Free Trial", popular: true,
+  },
+  {
+    name: "Business", price: 199, credits: 10000,
+    creditNote: "Programme governance",
+    features: [
+      "15 projects · 15 agents",
+      "Everything in Professional",
+      "SSO / SAML (WorkOS)",
+      "Immutable audit log",
+      "Org-wide MFA enforcement · IP allowlist",
+      "Dedicated CSM + SLA",
+    ],
+    cta: "Start Free Trial", popular: false,
+  },
 ];
 
 const AUTONOMY_LEVELS = [
@@ -451,7 +502,7 @@ export default function LandingPage() {
                 <CardContent className="pt-5">
                   <h3 className="text-lg font-bold">{plan.name}</h3>
                   <div className="mb-1">
-                    <span className="text-3xl font-extrabold">{plan.price === 0 ? "Free" : `$${plan.price}`}</span>
+                    <span className="text-3xl font-extrabold">{plan.price === 0 ? "Free" : `£${plan.price}`}</span>
                     {plan.price > 0 && <span className="text-sm text-muted-foreground">/mo</span>}
                   </div>
                   <p className="text-xs text-primary font-semibold">{plan.credits.toLocaleString()} credits/month</p>

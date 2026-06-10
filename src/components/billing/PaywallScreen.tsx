@@ -85,8 +85,14 @@ export function PaywallScreen({ status }: { status: PaywallStatus }) {
             <PlanCard
               name="Starter"
               price="£29"
-              tagline="Solo PMs running a single live project."
-              features={["1 active project", "1 agent deployment", "500 monthly credits", "Email support"]}
+              tagline="Solo PM running one or two live projects."
+              features={[
+                "2 projects · 2 agents",
+                "500 credits / month",
+                "Autonomy L1-L2",
+                "Whisper + custom meeting bot",
+                "Email support",
+              ]}
               cta="Choose Starter"
               onClick={() => startCheckout("STARTER")}
               disabled={busy !== null}
@@ -94,8 +100,14 @@ export function PaywallScreen({ status }: { status: PaywallStatus }) {
             <PlanCard
               name="Professional"
               price="£79"
-              tagline="PMOs running multiple projects with the AI agent fleet."
-              features={["10 active projects", "5 agent deployments", "2,000 monthly credits", "Priority support"]}
+              tagline="Small PMO running multiple projects with the agent fleet."
+              features={[
+                "5 projects · 5 agents",
+                "2,000 credits / month",
+                "Autonomy L1-L3 + autonomous cycle",
+                "Recall.ai live meeting bot",
+                "REST API + webhooks",
+              ]}
               cta="Choose Professional"
               recommended
               onClick={() => startCheckout("PROFESSIONAL")}
@@ -104,8 +116,14 @@ export function PaywallScreen({ status }: { status: PaywallStatus }) {
             <PlanCard
               name="Business"
               price="£199"
-              tagline="Programme-level governance with SAFe / PMBOK / Hybrid."
-              features={["Unlimited projects", "25 agent deployments", "10,000 monthly credits", "SLA + onboarding call"]}
+              tagline="Programme-level governance with SSO and audit log."
+              features={[
+                "15 projects · 15 agents",
+                "10,000 credits / month",
+                "Everything in Professional",
+                "SSO / SAML · audit log · IP allowlist",
+                "Dedicated CSM + SLA",
+              ]}
               cta="Choose Business"
               onClick={() => startCheckout("BUSINESS")}
               disabled={busy !== null}

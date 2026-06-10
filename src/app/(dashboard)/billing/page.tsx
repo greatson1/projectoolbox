@@ -31,72 +31,51 @@ import {
 // PLAN & PRICE DATA
 // ═══════════════════════════════════════════════════════════════════
 
-const PLAN_PRICES: Record<string, number> = {
-  FREE: 0, STARTER: 29, PROFESSIONAL: 79, BUSINESS: 199, ENTERPRISE: 499,
+// Derived from PLAN_LIMITS so it can't drift from the canonical source.
+const PLAN_PRICES: Record<string, number> = Object.fromEntries(
+  Object.entries(PLAN_LIMITS).map(([id, lim]) => [id, lim.priceGbp]),
+);
+
+// Plan comparison cards. Numbers come straight from PLAN_LIMITS in
+// src/lib/utils.ts to prevent drift from the home page / PaywallScreen /
+// webhook credit grants. Don't hardcode credit / project / agent counts
+// here; tweak PLAN_LIMITS and they propagate.
+const FORMAT_LABEL: Record<string, string> = {
+  "pdf-only": "PDF only",
+  "standard": "PDF + Word + Excel",
+  "all":      "PDF + Word + Excel + PPT",
 };
 
-const ALL_PLANS = [
-  {
-    id: "FREE", name: "Free", price: 0, credits: 50,
+const AUTONOMY_LABEL: Record<number, string> = {
+  1: "L1 only",
+  2: "L1–L2",
+  3: "L1–L3",
+};
+
+const ALL_PLANS = (["FREE", "STARTER", "PROFESSIONAL", "BUSINESS", "ENTERPRISE"] as const).map(id => {
+  const lim = PLAN_LIMITS[id];
+  const popular = id === "PROFESSIONAL";
+  const name = id.charAt(0) + id.slice(1).toLowerCase();
+  return {
+    id,
+    name,
+    price: lim.priceGbp,
+    credits: lim.credits,
+    popular,
     features: [
-      { label: "Monthly Credits", value: "50" },
-      { label: "Projects", value: "1" },
-      { label: "Agents", value: "1" },
-      { label: "Autonomy Levels", value: "L1 only" },
-      { label: "Document Export", value: "PDF only" },
-      { label: "Support", value: "Community" },
-      { label: "SSO / SAML", value: "--" },
+      { label: "Monthly Credits", value: id === "ENTERPRISE" ? "Negotiated" : lim.credits.toLocaleString() },
+      { label: "Projects",        value: id === "ENTERPRISE" ? "Unlimited" : String(lim.projects) },
+      { label: "Agents",          value: id === "ENTERPRISE" ? "Unlimited" : String(lim.agents) },
+      { label: "Autonomy",        value: AUTONOMY_LABEL[lim.maxAutonomyLevel] },
+      { label: "Document Export", value: FORMAT_LABEL[lim.exportFormats] },
+      { label: "Meeting Bots",    value: lim.recallBot ? "Recall.ai + Whisper + custom" : lim.customBot ? "Whisper + custom Playwright" : "—" },
+      { label: "API + Webhooks",  value: lim.apiAccess ? "Included" : "—" },
+      { label: "SSO / SAML",      value: lim.ssoSaml ? "Included" : "—" },
+      { label: "Audit Log",       value: lim.auditLog ? "Included" : "—" },
+      { label: "Support",         value: lim.dedicatedCsm ? "Dedicated CSM + SLA" : id === "PROFESSIONAL" ? "Priority email" : id === "STARTER" ? "Email" : id === "ENTERPRISE" ? "Bespoke" : "Community" },
     ],
-  },
-  {
-    id: "STARTER", name: "Starter", price: 29, credits: 500,
-    features: [
-      { label: "Monthly Credits", value: "500" },
-      { label: "Projects", value: "3" },
-      { label: "Agents", value: "2" },
-      { label: "Autonomy Levels", value: "L1--L2" },
-      { label: "Document Export", value: "PDF only" },
-      { label: "Support", value: "Email" },
-      { label: "SSO / SAML", value: "--" },
-    ],
-  },
-  {
-    id: "PROFESSIONAL", name: "Professional", price: 79, credits: 2000, popular: true,
-    features: [
-      { label: "Monthly Credits", value: "2,000" },
-      { label: "Projects", value: "10" },
-      { label: "Agents", value: "5" },
-      { label: "Autonomy Levels", value: "L1--L3" },
-      { label: "Document Export", value: "PDF, Word, Excel, PPT" },
-      { label: "Support", value: "Priority email" },
-      { label: "SSO / SAML", value: "--" },
-    ],
-  },
-  {
-    id: "BUSINESS", name: "Business", price: 199, credits: 10000,
-    features: [
-      { label: "Monthly Credits", value: "10,000" },
-      { label: "Projects", value: "50" },
-      { label: "Agents", value: "15" },
-      { label: "Autonomy Levels", value: "L1--L3" },
-      { label: "Document Export", value: "All formats + API" },
-      { label: "Support", value: "Dedicated CSM + SLA" },
-      { label: "SSO / SAML", value: "Included" },
-    ],
-  },
-  {
-    id: "ENTERPRISE", name: "Enterprise", price: 499, credits: 999999,
-    features: [
-      { label: "Monthly Credits", value: "Unlimited" },
-      { label: "Projects", value: "Unlimited" },
-      { label: "Agents", value: "Unlimited" },
-      { label: "Autonomy Levels", value: "L1--L3" },
-      { label: "Document Export", value: "All formats + API" },
-      { label: "Support", value: "Dedicated CSM + SLA" },
-      { label: "SSO / SAML", value: "Included" },
-    ],
-  },
-];
+  };
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // TOP-UP BUNDLES
