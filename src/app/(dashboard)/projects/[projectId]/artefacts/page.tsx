@@ -215,30 +215,39 @@ export default function ArtefactsPage() {
       }
     } else {
       rollback();
-      // Parse the actual API error so the user knows what to fix
+      // Parse the actual API error so the user knows what to fix.
+      // overrideFlags is non-null when the user can "Approve anyway" from
+      // the toast — applies to both fabricated-name false positives and
+      // contradiction overrides. Without the inline action the user has
+      // to open the document editor and find a separately-placed
+      // override button, which they reported as un-findable.
       let errMsg = "Approval failed";
-      let fabricatedFalsePositives = false;
+      let overrideFlags: { confirmNotNames?: boolean; confirmIntentional?: boolean } | null = null;
       try {
         const body = await res.json();
         if (body.error === "Artefact contains fabricated names" && Array.isArray(body.fabricatedNames)) {
           const count = body.fabricatedNames.length;
           const samples = body.fabricatedNames.slice(0, 3).map((v: any) => v.name || v).join(", ");
           errMsg = `Can't approve — ${count} flagged token${count === 1 ? "" : "s"} (${samples}${count > 3 ? "…" : ""}). If these are real fabricated names, edit them out. If they're concept phrases mis-flagged by the heuristic, use "Approve anyway".`;
-          fabricatedFalsePositives = true;
+          overrideFlags = { confirmNotNames: true };
         } else if (body.error === "Artefact contradicts confirmed facts" && Array.isArray(body.contradictions)) {
-          errMsg = `${body.contradictions.length} contradiction${body.contradictions.length === 1 ? "" : "s"} with confirmed facts. Open the document and click "Approve anyway" if you're happy to proceed.`;
+          const c = body.contradictions.length;
+          const samples = body.contradictions.slice(0, 3).map((v: any) => v.field || v.drafted || "").filter(Boolean).join(", ");
+          errMsg = `${c} contradiction${c === 1 ? "" : "s"} with confirmed facts${samples ? ` (${samples}${c > 3 ? "…" : ""})` : ""}. Use "Approve anyway" if you're happy to proceed.`;
+          overrideFlags = { confirmIntentional: true };
         } else if (body.message) {
           errMsg = body.message.slice(0, 200);
         } else if (body.error) {
           errMsg = body.error.slice(0, 200);
         }
       } catch {}
-      if (fabricatedFalsePositives) {
-        // Toast with an inline override action — retries the same PATCH
-        // with confirmNotNames=true so the server stamps the audit-trail
-        // override and lets the approval through. This is the escape
-        // hatch for the validator's regex-based false positives on
-        // concept-heavy docs (Vision, Charter, Business Case).
+      if (overrideFlags) {
+        // Inline override action — retries the same PATCH with the
+        // appropriate confirm-* flag so the server lets the approval
+        // through and stamps the override on the audit trail. One toast
+        // covers both contradiction and fabricated-name overrides so the
+        // pattern is consistent.
+        const flags = overrideFlags;
         toast.error(errMsg, {
           duration: 12000,
           action: {
@@ -248,7 +257,7 @@ export default function ArtefactsPage() {
               const r2 = await fetch(`/api/agents/artefacts/${artId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: "APPROVED", confirmNotNames: true, confirmIntentional: true }),
+                body: JSON.stringify({ status: "APPROVED", ...flags }),
               });
               if (r2.ok) { refreshArtefacts(); toast.success("Artefact approved ✓ (override stamped on audit trail)"); }
               else { rb(); toast.error("Override failed — see console"); console.error(await r2.text()); }
