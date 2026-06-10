@@ -50,9 +50,11 @@ function SignupPageInner() {
   const searchParams = useSearchParams();
 
   // ── Invite gate ───────────────────────────────────────────────────────────
-  // During waitlist phase, signup requires a valid invite token.
-  // Set NEXT_PUBLIC_INVITE_ONLY=true in env to enable.
-  const inviteOnly = process.env.NEXT_PUBLIC_INVITE_ONLY === "true";
+  // Signup is open. Invite tokens are still honoured (waitlist → admin
+  // generates a token → user lands here with ?invite=…), but they're no
+  // longer required. NEXT_PUBLIC_INVITE_ONLY toggles back on if you ever
+  // want to close signups again.
+  const inviteOnly = (process.env.NEXT_PUBLIC_INVITE_ONLY ?? "").trim().toLowerCase() === "true";
   const inviteToken = searchParams.get("invite");
   const prefilledEmail = searchParams.get("email") || "";
   const missingInvite = inviteOnly && !inviteToken;

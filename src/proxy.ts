@@ -58,11 +58,15 @@ export function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // Invite-only mode: /signup without ?invite= → bounce to /waitlist
+  // Invite-only mode (off by default): /signup without ?invite= bounces
+  // to /waitlist. Kept here so an operator can re-enable the gate later
+  // by setting INVITE_ONLY=true on Vercel. Comparison uses trim+lower so
+  // an accidental "true\n" in the env value still matches.
+  const flag = (v: string | undefined) => (v ?? "").trim().toLowerCase() === "true";
   if (
     pathname === "/signup" &&
     !req.nextUrl.searchParams.get("invite") &&
-    (process.env.INVITE_ONLY === "true" || process.env.NEXT_PUBLIC_INVITE_ONLY === "true")
+    (flag(process.env.INVITE_ONLY) || flag(process.env.NEXT_PUBLIC_INVITE_ONLY))
   ) {
     return NextResponse.redirect(new URL("/waitlist", req.url));
   }

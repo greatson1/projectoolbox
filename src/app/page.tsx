@@ -31,10 +31,10 @@ const STEPS = [
 ];
 
 const PLANS = [
-  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Advisor mode (L1)", "Community support"], cta: "Join Waitlist", popular: false },
-  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–2", "Email support", "PDF export"], cta: "Join Waitlist", popular: false },
-  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–3", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Join Waitlist", popular: true },
-  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–3", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Join Waitlist", popular: false },
+  { name: "Free", price: 0, credits: 50, creditNote: "~5 documents/month", features: ["1 project", "1 agent", "Advisor mode (L1)", "Community support"], cta: "Get Started", popular: false },
+  { name: "Starter", price: 29, credits: 500, creditNote: "~50 documents/month", features: ["3 projects", "2 agents", "Levels 1–2", "Email support", "PDF export"], cta: "Start Free Trial", popular: false },
+  { name: "Professional", price: 79, credits: 2000, creditNote: "~200 documents/month", features: ["10 projects", "5 agents", "Levels 1–3", "Priority support", "All exports", "Meeting bots (Recall.ai)"], cta: "Start Free Trial", popular: true },
+  { name: "Business", price: 199, credits: 10000, creditNote: "~1,000 documents/month", features: ["50 projects", "15 agents", "Levels 1–3", "SSO + SLA", "Audit log", "Dedicated CSM"], cta: "Start Free Trial", popular: false },
 ];
 
 const AUTONOMY_LEVELS = [
@@ -68,8 +68,6 @@ export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [newsletterEmail, setNewsletterEmail] = useState("");
-  const [newsletterState, setNewsletterState] = useState<"idle" | "loading" | "done" | "error">("idle");
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -77,24 +75,6 @@ export default function LandingPage() {
     window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
-
-  async function handleNewsletterSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newsletterEmail.trim()) return;
-    setNewsletterState("loading");
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: newsletterEmail.trim(), sector: "newsletter" }),
-      });
-      if (!res.ok) { setNewsletterState("error"); return; }
-      setNewsletterState("done");
-      setNewsletterEmail("");
-    } catch {
-      setNewsletterState("error");
-    }
-  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -115,12 +95,11 @@ export default function LandingPage() {
             <Button variant="ghost" size="sm" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {!mounted || theme !== "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </Button>
-            {/* Waitlist phase — homepage does NOT expose a direct login path.
-                Both header CTAs route to /waitlist; existing-user sign-in is
-                still reachable from the waitlist page itself for invited
-                users. */}
-            <Link href="/waitlist"><Button variant="ghost" size="sm">Get Early Access</Button></Link>
-            <Link href="/waitlist"><Button size="sm">Join Waitlist</Button></Link>
+            {/* Open signup — every account starts on a 14-day free trial.
+                The paywall middleware gates FREE plans after that window;
+                see src/lib/paywall.ts. */}
+            <Link href="/login"><Button variant="ghost" size="sm">Log In</Button></Link>
+            <Link href="/signup"><Button size="sm">Start Free Trial</Button></Link>
             <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileMenu(!mobileMenu)}>
               {mobileMenu ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </Button>
@@ -145,7 +124,7 @@ export default function LandingPage() {
             <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
               <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                Early Access — Join 500+ PMs on the waitlist
+                14-day free trial · no credit card required
               </Badge>
               <Badge variant="outline" className="bg-cyan-500/5 border-cyan-500/20 text-cyan-400 gap-1.5 text-[11px]">
                 <span className="font-bold">SaaS 2.0</span>
@@ -174,9 +153,9 @@ export default function LandingPage() {
             </p>
 
             <div className="flex items-center justify-center gap-4 flex-wrap">
-              <Link href="/waitlist">
+              <Link href="/signup">
                 <Button size="lg" className="px-8 text-base shadow-lg shadow-primary/25">
-                  Join the Waitlist →
+                  Start Free Trial →
                 </Button>
               </Link>
               <a href="#how-it-works">
@@ -485,7 +464,9 @@ export default function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <Link href="/waitlist"><Button variant={plan.popular ? "default" : "outline"} className="w-full">Join Waitlist</Button></Link>
+                  <Link href={plan.price === 0 ? "/signup" : `/signup?plan=${plan.name.toLowerCase()}`}>
+                    <Button variant={plan.popular ? "default" : "outline"} className="w-full">{plan.cta}</Button>
+                  </Link>
                 </CardContent>
               </Card>
             ))}
@@ -528,8 +509,8 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold mb-4">Your projects. Delivered with AI. On your terms.</h2>
           <p className="text-base text-muted-foreground mb-2">Start free — no credit card required. Your first agent is live in under 5 minutes.</p>
           <p className="text-sm text-muted-foreground mb-8">You choose the autonomy level. You approve what matters. You stay in control.</p>
-          <Link href="/waitlist">
-            <Button size="lg" className="px-10 text-base shadow-lg shadow-primary/25">Join the Waitlist →</Button>
+          <Link href="/signup">
+            <Button size="lg" className="px-10 text-base shadow-lg shadow-primary/25">Start Free Trial →</Button>
           </Link>
           <p className="text-xs text-muted-foreground mt-4">
             Building a team? <Link href="/contact" className="text-primary font-semibold hover:underline">Talk to us about Enterprise</Link>
@@ -583,24 +564,14 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="flex items-center justify-between pt-8 border-t border-border flex-wrap gap-4">
-            <form onSubmit={handleNewsletterSubmit} className="flex flex-col gap-1">
-              <div className="flex items-center gap-3">
-                <input
-                  type="email"
-                  value={newsletterEmail}
-                  onChange={e => { setNewsletterEmail(e.target.value); setNewsletterState("idle"); }}
-                  disabled={newsletterState === "loading" || newsletterState === "done"}
-                  className="px-4 py-2 rounded-lg text-sm bg-background border border-input w-[220px] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-                  placeholder="Email for updates..."
-                />
-                <Button size="sm" type="submit" disabled={newsletterState === "loading" || newsletterState === "done"}>
-                  {newsletterState === "loading" ? "..." : newsletterState === "done" ? "Subscribed ✓" : "Subscribe"}
-                </Button>
-              </div>
-              {newsletterState === "error" && (
-                <p className="text-xs text-destructive">Something went wrong — please try again.</p>
-              )}
-            </form>
+            <div className="flex items-center gap-3">
+              <Link href="/signup">
+                <Button size="sm">Start Free Trial</Button>
+              </Link>
+              <Link href="/login">
+                <Button size="sm" variant="ghost">Log In</Button>
+              </Link>
+            </div>
             <p className="text-xs text-muted-foreground">© 2026 Projectoolbox by PMGT Solutions Ltd.</p>
           </div>
         </div>
