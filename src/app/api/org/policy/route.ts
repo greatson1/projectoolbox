@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { requirePlanFeature } from "@/lib/plan-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +41,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Only the organisation Owner can change security policy" }, { status: 403 });
   }
 
+  // BUSINESS+ gate: org-wide MFA enforcement is part of the enterprise
+  // governance bundle. Below BUSINESS the org can still use per-user TOTP
+  // (mfaEnabled on the User row); it's only the force-everyone toggle
+  // that's gated. canUseFeature returns true on FREE/STARTER/PROFESSIONAL
+  // when the user is TURNING IT OFF — we let downgrades pass so an org
+  // that dropped from BUSINESS isn't stuck with the policy on forever.
   const body = await req.json();
   const requireMfa = body?.requireMfa;
   if (typeof requireMfa !== "boolean") {
     return NextResponse.json({ error: "requireMfa must be boolean" }, { status: 400 });
+  }
+  if (requireMfa === true) {
+    const guard = await requirePlanFeature(session, "orgMfaEnforce");
+    if (!guard.ok) return guard.response;
   }
 
   const before = await db.organisation.findUnique({ where: { id: orgId }, select: { requireMfa: true } });

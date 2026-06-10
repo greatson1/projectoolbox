@@ -23,6 +23,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getWorkOS, normaliseDomain } from "@/lib/workos";
 import { GenerateLinkIntent } from "@workos-inc/node";
+import { requirePlanFeature } from "@/lib/plan-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const guard = await ownerGuard();
   if ("error" in guard) return guard.error;
+
+  // BUSINESS+ gate. SSO/SAML provisioning is the upgrade reason at that
+  // tier; STARTER and PROFESSIONAL get a clean 403 with the message from
+  // insufficientPlanResponse() pointing them at /billing.
+  const planGuard = await requirePlanFeature(guard.session, "ssoSaml");
+  if (!planGuard.ok) return planGuard.response;
 
   const workos = getWorkOS();
   if (!workos) {
@@ -134,6 +141,13 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   if (typeof body?.ssoRequired !== "boolean") {
     return NextResponse.json({ error: "ssoRequired must be boolean" }, { status: 400 });
+  }
+  // BUSINESS+ gate on TURNING IT ON. Same downgrade-tolerance as the
+  // org-MFA toggle — let an org that dropped from BUSINESS still turn the
+  // policy OFF without being blocked.
+  if (body.ssoRequired === true) {
+    const planGuard = await requirePlanFeature(guard.session, "ssoSaml");
+    if (!planGuard.ok) return planGuard.response;
   }
 
   const org = await db.organisation.findUnique({
