@@ -242,6 +242,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.orgId = dbUser?.orgId;
           token.onboardingComplete = dbUser?.onboardingComplete;
         }
+        // Stamp the org's plan + createdAt so middleware can evaluate the
+        // paywall verdict on every request without a DB round-trip. Re-fetched
+        // below in the throttled self-heal block when orgId is missing or
+        // becomes set later in the session.
+        if (token.orgId) {
+          const orgRow = await db.organisation.findUnique({
+            where: { id: token.orgId as string },
+            select: { plan: true, createdAt: true },
+          }).catch(() => null);
+          (token as any).orgPlan = orgRow?.plan ?? null;
+          (token as any).orgCreatedAt = orgRow?.createdAt?.toISOString() ?? null;
+        }
       }
       // Re-fetch orgId if it's missing from a stale token. Throttled to at
       // most once per 60s per token: previously this ran on EVERY API request
@@ -261,6 +273,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.orgId = dbUser.orgId;
             token.role = dbUser.role;
             token.onboardingComplete = dbUser.onboardingComplete;
+            // Same plan/createdAt stamp as the initial mint path.
+            const orgRow = await db.organisation.findUnique({
+              where: { id: dbUser.orgId },
+              select: { plan: true, createdAt: true },
+            }).catch(() => null);
+            (token as any).orgPlan = orgRow?.plan ?? null;
+            (token as any).orgCreatedAt = orgRow?.createdAt?.toISOString() ?? null;
+          }
+        }
+      }
+
+      // Refresh the cached plan periodically so a Stripe upgrade/downgrade
+      // takes effect within ~5 minutes without forcing the user to sign out
+      // and back in. Throttled per-token so we don't hit the DB on every
+      // request; same pattern as the orgId self-heal above.
+      if (token.orgId) {
+        const lastPlanCheck = (token as any).orgPlanCheckedAt as number | undefined;
+        if (!lastPlanCheck || Date.now() - lastPlanCheck > 5 * 60_000) {
+          const orgRow = await db.organisation.findUnique({
+            where: { id: token.orgId as string },
+            select: { plan: true, createdAt: true },
+          }).catch(() => null);
+          (token as any).orgPlanCheckedAt = Date.now();
+          if (orgRow) {
+            (token as any).orgPlan = orgRow.plan;
+            (token as any).orgCreatedAt = orgRow.createdAt?.toISOString() ?? null;
           }
         }
       }

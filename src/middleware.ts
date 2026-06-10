@@ -1,78 +1,99 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { isBypassed, evaluatePaywall, isBlocked } from "@/lib/paywall";
 
-// Public routes that do not require an authenticated session.
-const PUBLIC_ROUTES = [
-  "/",
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/invite",
-  "/sso-complete",
-  "/mfa-required",
-  "/api/auth",
-  "/api/onboarding",
-  "/api/invitations",
-  "/api/waitlist",
-  "/api/webhooks",
-  "/api/review",
-  "/about",
-  "/contact",
-  "/blog",
-  "/docs",
-  "/api-reference",
-  "/legal",
-  "/careers",
-  "/webinars",
-  "/community",
-  "/changelog",
-  "/integrations",
-  "/robots.txt",
-  "/sitemap.xml",
-];
+/**
+ * Edge middleware — paywall enforcement.
+ *
+ * The JWT carries `orgPlan` and `orgCreatedAt` (stamped in the
+ * NextAuth jwt callback). We decode the token in the edge, evaluate
+ * the paywall verdict, and redirect blocked users to /billing if they
+ * try to reach a non-bypass route. Adding `?paywall=1` so /billing can
+ * render the "trial expired" headline without re-fetching anything.
+ *
+ * Pure check — no DB call per request. The plan + createdAt only
+ * change on Stripe webhook (which re-mints the token on next sign-in)
+ * or on org creation, so the JWT staleness window is acceptable.
+ * Worst case: a user whose trial just expired might briefly still
+ * reach the dashboard until their token refreshes; the layout's
+ * existing checks catch them on the next interaction.
+ */
+export async function middleware(req: NextRequest) {
+  const pathname = req.nextUrl.pathname;
 
-function isPublic(path: string): boolean {
-  if (PUBLIC_ROUTES.some((r) => path === r || path.startsWith(r + "/"))) return true;
-  // Auth callback routes /api/auth/[...nextauth] etc.
-  if (path.startsWith("/api/auth/")) return true;
-  return false;
-}
-
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // Let static assets and Next internals pass through
+  // Skip Next.js internals, static assets, and any explicitly bypassed
+  // route. PAYWALL_BYPASS_PATHS covers /billing, /api/billing,
+  // /api/webhooks, /api/auth, /login, /signup, etc.
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
-    pathname.match(/\.(js|css|png|jpg|svg|ico|woff2|json|txt|xml|webp)$/)
+    pathname.startsWith("/logo") ||
+    pathname.startsWith("/icon") ||
+    pathname.startsWith("/manifest") ||
+    pathname.endsWith(".png") ||
+    pathname.endsWith(".jpg") ||
+    pathname.endsWith(".svg") ||
+    pathname.endsWith(".webp") ||
+    isBypassed(pathname)
   ) {
     return NextResponse.next();
   }
 
-  // Let public routes through
-  if (isPublic(pathname)) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!token) {
+    // No session — the route handler / page will run its own auth check.
     return NextResponse.next();
   }
 
-  // For all other routes, require the session cookie to be present.
-  // The per-route auth() call is the source of truth — middleware only
-  // gates the obvious unauthenticated traffic to reduce DB load.
-  const sessionToken = req.cookies.get("next-auth.session-token")?.value ||
-                       req.cookies.get("__Secure-next-auth.session-token")?.value;
+  // Anything other than the dashboard surface passes through. We only
+  // gate (dashboard) routes — public marketing pages, API endpoints
+  // outside /api/projects, /api/agents are unaffected.
+  const isDashboardRoute =
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/projects") ||
+    pathname.startsWith("/agents") ||
+    pathname.startsWith("/approvals") ||
+    pathname.startsWith("/portfolio") ||
+    pathname.startsWith("/meetings") ||
+    pathname.startsWith("/calendar") ||
+    pathname.startsWith("/reports") ||
+    pathname.startsWith("/people") ||
+    pathname.startsWith("/integrations") ||
+    pathname.startsWith("/settings") ||
+    pathname.startsWith("/knowledge") ||
+    pathname.startsWith("/risk") ||
+    pathname.startsWith("/cost") ||
+    pathname.startsWith("/api/projects") ||
+    pathname.startsWith("/api/agents") ||
+    pathname.startsWith("/api/approvals");
+  if (!isDashboardRoute) return NextResponse.next();
 
-  if (!sessionToken) {
-    const url = new URL("/login", req.url);
-    url.searchParams.set("from", pathname);
-    return NextResponse.redirect(url);
+  const plan = (token as any).orgPlan as string | undefined;
+  const orgCreatedAtRaw = (token as any).orgCreatedAt as string | undefined;
+  const orgCreatedAt = orgCreatedAtRaw ? new Date(orgCreatedAtRaw) : null;
+
+  const status = evaluatePaywall({
+    plan: plan ?? null,
+    createdAt: orgCreatedAt,
+  });
+  if (!isBlocked(status)) return NextResponse.next();
+
+  // Blocked — redirect to /billing with a state flag so the page can
+  // render the paywall headline. JSON API requests get 402 Payment
+  // Required so the client can surface a toast.
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { error: "Payment Required", reason: status.kind },
+      { status: 402 },
+    );
   }
-
-  return NextResponse.next();
+  const url = req.nextUrl.clone();
+  url.pathname = "/billing";
+  url.searchParams.set("paywall", status.kind);
+  return NextResponse.redirect(url);
 }
 
 export const config = {
-  matcher: [
-    // Match all paths except static files and the explicitly public ones
-    "/((?!_next/static|_next/image|public).*)",
-  ],
+  // Apply broadly; the function above short-circuits on bypass + assets.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|logo.png|manifest.json).*)"],
 };

@@ -2,6 +2,8 @@
 
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { Lock } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -130,6 +132,11 @@ export default function BillingPage() {
   const userEmail = (sessionResult as any)?.data?.user?.email ?? "";
   const orgName = (sessionResult as any)?.data?.user?.orgName ?? (sessionResult as any)?.data?.user?.name ?? "";
   const currency = useOrgCurrency();
+  // Middleware appends ?paywall=trial_expired (or =no_org) when redirecting
+  // a blocked user here. Renders an unmissable headline + lock icon at the
+  // top so the visit reads as enforced rather than voluntary.
+  const searchParams = useSearchParams();
+  const paywall = searchParams.get("paywall");
   const money = (n: number | null | undefined, opts?: { decimals?: 0 | 2 }) => formatMoney(n, currency, opts);
   usePageTitle("Billing");
   const [topupCustom, setTopupCustom] = useState(500);
@@ -195,6 +202,25 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-6 max-w-[1200px]">
+      {/* ═══ Paywall banner — shown when the middleware redirected here ═══ */}
+      {paywall && (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5 flex items-start gap-4">
+          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
+            <Lock className="w-5 h-5 text-red-500" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-bold text-foreground">
+              {paywall === "no_org" ? "Set up your organisation to continue" : "Your trial has ended"}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {paywall === "no_org"
+                ? "Finish onboarding so we can attach your account to an organisation. Your billing options will appear here once that's done."
+                : "Pick a plan below to keep using Projectoolbox. Your projects, agents, and artefacts are preserved — they'll come back the moment your subscription is active."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ═══ 1. CURRENT PLAN CARD WITH GRADIENT BANNER ═══ */}
       <div className="rounded-2xl p-5 relative overflow-hidden border border-primary/25 bg-gradient-to-br from-primary/10 via-purple-500/5 to-transparent">
         <div className="flex items-start justify-between flex-wrap gap-4">
