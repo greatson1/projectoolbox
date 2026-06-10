@@ -437,13 +437,14 @@ export default function BillingPage() {
             <CardTitle className="text-base flex items-center gap-2">
               <Receipt className="w-4 h-4" /> Invoice History
             </CardTitle>
-            <select className="px-2 py-1 rounded-md text-[11px] bg-card text-muted-foreground border border-border">
-              <option>All months</option>
-              <option>April 2026</option>
-              <option>March 2026</option>
-              <option>February 2026</option>
-              <option>January 2026</option>
-            </select>
+            {/* Dedicated history page covers full pagination, date-range
+                filtering, and CSV export — the hardcoded month picker
+                that used to sit here was decorative only. */}
+            <Link href="/billing/history">
+              <Button variant="outline" size="sm" className="h-7 text-[11px]">
+                Full history + CSV →
+              </Button>
+            </Link>
           </div>
         </CardHeader>
         <CardContent className="p-0">
