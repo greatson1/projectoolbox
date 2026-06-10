@@ -249,10 +249,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (token.orgId) {
           const orgRow = await db.organisation.findUnique({
             where: { id: token.orgId as string },
-            select: { plan: true, createdAt: true },
+            select: { plan: true, createdAt: true, ipAllowlist: true },
           }).catch(() => null);
           (token as any).orgPlan = orgRow?.plan ?? null;
           (token as any).orgCreatedAt = orgRow?.createdAt?.toISOString() ?? null;
+          (token as any).orgIpAllowlist = orgRow?.ipAllowlist ?? [];
         }
       }
       // Re-fetch orgId if it's missing from a stale token. Throttled to at
@@ -284,21 +285,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       }
 
-      // Refresh the cached plan periodically so a Stripe upgrade/downgrade
-      // takes effect within ~5 minutes without forcing the user to sign out
-      // and back in. Throttled per-token so we don't hit the DB on every
-      // request; same pattern as the orgId self-heal above.
+      // Refresh the cached plan + ipAllowlist periodically so a Stripe
+      // upgrade/downgrade or an IP allowlist edit takes effect within
+      // ~5 minutes without forcing the user to sign out. Throttled per-
+      // token to avoid hitting the DB on every request.
       if (token.orgId) {
         const lastPlanCheck = (token as any).orgPlanCheckedAt as number | undefined;
         if (!lastPlanCheck || Date.now() - lastPlanCheck > 5 * 60_000) {
           const orgRow = await db.organisation.findUnique({
             where: { id: token.orgId as string },
-            select: { plan: true, createdAt: true },
+            select: { plan: true, createdAt: true, ipAllowlist: true },
           }).catch(() => null);
           (token as any).orgPlanCheckedAt = Date.now();
           if (orgRow) {
             (token as any).orgPlan = orgRow.plan;
             (token as any).orgCreatedAt = orgRow.createdAt?.toISOString() ?? null;
+            (token as any).orgIpAllowlist = orgRow.ipAllowlist;
           }
         }
       }

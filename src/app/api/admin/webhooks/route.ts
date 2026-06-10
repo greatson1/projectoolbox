@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { randomBytes } from "crypto";
+import { requirePlanFeature } from "@/lib/plan-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,14 @@ export async function GET() {
 }
 
 // POST /api/admin/webhooks — Register a webhook endpoint
+// PROFESSIONAL+ feature. GET is open so a downgraded org can still
+// see + disable existing endpoints — registering new ones requires the
+// paid tier.
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const orgId = (session.user as any).orgId;
-  if (!orgId) return NextResponse.json({ error: "No organisation" }, { status: 400 });
+  const guard = await requirePlanFeature(session, "webhooks");
+  if (!guard.ok) return guard.response;
+  const orgId = (session as any).user.orgId as string;
 
   const body = await req.json();
   const { url, events } = body;
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
   });
 
   await db.auditLog.create({
-    data: { orgId, userId: session.user.id, action: "Webhook created", target: url },
+    data: { orgId, userId: (session as any).user.id, action: "Webhook created", target: url },
   });
 
   // Return the secret ONCE

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { requirePlanFeature } from "@/lib/plan-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +17,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // POST /api/agents/:id/email — Generate email address for agent
+// STARTER+ feature. FREE-plan orgs get the 403 with the upgrade hint;
+// existing rows stay readable on GET so a downgraded org still sees
+// inbound messages already in their inbox.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const guard = await requirePlanFeature(session, "emailInbox");
+  if (!guard.ok) return guard.response;
 
   const { id } = await params;
 

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { isBypassed, evaluatePaywall, isBlocked } from "@/lib/paywall";
+import { ipMatchesAllowlist } from "@/lib/ip-allowlist";
+import { canUseFeature } from "@/lib/utils";
 
 /**
  * Edge middleware — paywall enforcement.
@@ -71,6 +73,40 @@ export async function middleware(req: NextRequest) {
   const plan = (token as any).orgPlan as string | undefined;
   const orgCreatedAtRaw = (token as any).orgCreatedAt as string | undefined;
   const orgCreatedAt = orgCreatedAtRaw ? new Date(orgCreatedAtRaw) : null;
+  const orgIpAllowlist = (token as any).orgIpAllowlist as string[] | undefined;
+
+  // ── IP allowlist (BUSINESS+) ────────────────────────────────────────────
+  // The allowlist is JWT-cached so checking it is free per request.
+  // Enforce only when (a) the org has entries AND (b) the plan still
+  // unlocks the feature — a downgraded org keeps the rows on its
+  // Organisation row but middleware stops honouring them, so the
+  // org isn't locked out of its own dashboard until they pay again
+  // OR clear the list. Leaks the entry that matched is a privacy risk
+  // so the 403 body only confirms whether the IP was allowed.
+  if (orgIpAllowlist && orgIpAllowlist.length > 0 && canUseFeature(plan, "ipAllowlist")) {
+    // Vercel / standard proxies set x-forwarded-for to a comma-separated
+    // list; the leftmost entry is the client. NextRequest.ip falls back
+    // to the connecting socket which inside the edge is the proxy hop.
+    const xff = req.headers.get("x-forwarded-for") || "";
+    const clientIp = xff.split(",")[0]?.trim() || (req as any).ip || "";
+    if (!ipMatchesAllowlist(clientIp, orgIpAllowlist)) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Forbidden", reason: "ip_not_allowed" },
+          { status: 403 },
+        );
+      }
+      // Show a clear page rather than a generic 403 so the admin who
+      // misconfigured the allowlist knows exactly what's wrong.
+      return new NextResponse(
+        `<!doctype html><html><body style="font-family:Inter,sans-serif;padding:60px;max-width:560px;margin:0 auto;text-align:center;">
+          <h1 style="font-size:20px;margin-bottom:12px;">Access blocked by IP allowlist</h1>
+          <p style="color:#64748B;font-size:14px;line-height:1.6;">Your organisation restricts dashboard access by IP. Your current IP (<code>${clientIp || "unknown"}</code>) is not on the list. Ask your OWNER to add it from /settings/security or sign in from an allowed network.</p>
+        </body></html>`,
+        { status: 403, headers: { "Content-Type": "text/html" } },
+      );
+    }
+  }
 
   const status = evaluatePaywall({
     plan: plan ?? null,

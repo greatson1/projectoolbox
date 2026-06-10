@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { PLAN_LIMITS } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,24 @@ export async function POST(req: NextRequest) {
     const { name, description, startDate, endDate, budget, priority, category } = body;
 
     if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+
+    // ── Project cap ────────────────────────────────────────────────────────
+    // 1 agent = 1 active project. The cap that matters here is PROJECTS;
+    // ACTIVE/PAUSED/COMPLETED count, ARCHIVED doesn't (an archived project
+    // can be restored but doesn't consume the live quota). Lifting the cap
+    // is a tier upgrade — the error message tells the user exactly that.
+    const org = await db.organisation.findUnique({ where: { id: orgId }, select: { plan: true } });
+    const planLimit = PLAN_LIMITS[org?.plan ?? "FREE"]?.projects ?? PLAN_LIMITS.FREE.projects;
+    const activeProjects = await db.project.count({
+      where: { orgId, status: { not: "ARCHIVED" } },
+    });
+    if (activeProjects >= planLimit) {
+      return NextResponse.json({
+        error: `Project limit reached (${planLimit} for ${org?.plan ?? "FREE"} plan). Archive an existing project or upgrade your plan to add more.`,
+        code: "PLAN_LIMIT_PROJECTS",
+        upgradeUrl: "/billing",
+      }, { status: 403 });
+    }
 
     // Idempotency: if a project with this exact name was created in the same
     // org within the last 60s, return that one. Prevents duplicates from

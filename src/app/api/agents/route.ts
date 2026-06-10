@@ -107,6 +107,17 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { name, autonomyLevel, personality, gradient, title, avatarUrl, defaultGreeting, domainTags, monthlyBudget } = body;
 
+  // ── Autonomy ceiling ────────────────────────────────────────────────────
+  // FREE/STARTER can't deploy at L3 (autonomous cycle). Cap the requested
+  // level at the plan's ceiling rather than 403'ing — a deploy wizard
+  // doesn't need an error toast for picking the slider too high; just
+  // clamp and respond with the actual level the agent was created at.
+  // The autonomousCycle feature flag is independently enforced by the
+  // cron tick — this just controls what's saved on the row.
+  const requestedLevel = Number(autonomyLevel) || 2;
+  const planMax = PLAN_LIMITS[org.plan]?.maxAutonomyLevel ?? 1;
+  const cappedLevel = Math.min(Math.max(1, requestedLevel), planMax);
+
   // Idempotency: if an agent with this exact name was created in the same
   // org within the last 60s, return it instead of creating a duplicate.
   // Catches deploy-wizard double-fires before they cascade into duplicate
@@ -127,7 +138,7 @@ export async function POST(req: NextRequest) {
     data: {
       name: name || "Agent",
       codename: `${(name || "AGENT").toUpperCase()}-${Math.floor(Math.random() * 100)}`,
-      autonomyLevel: autonomyLevel || 2,
+      autonomyLevel: cappedLevel,
       personality,
       gradient,
       orgId,

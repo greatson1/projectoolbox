@@ -187,6 +187,16 @@ model Organisation {
   workosOrgId      String?             @unique
   emailDomains     String[]            @default([])
   ssoRequired      Boolean             @default(false)
+  // ── IP allowlist (BUSINESS+) ─────────────────────────────────────────────
+  // Each entry is a CIDR range ("203.0.113.0/24") or a single IP
+  // ("203.0.113.42"). When non-empty AND the org's plan unlocks
+  // `ipAllowlist`, edge middleware refuses requests whose client IP
+  // doesn't fall inside any range. Empty array (default) = no
+  // restriction. Stored as plain strings rather than an enum so any
+  // dotted-quad / CIDR users want to add lands without a schema change.
+  // Validation of new entries happens at the settings PATCH route
+  // before they hit this column.
+  ipAllowlist      String[]            @default([])
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 

@@ -435,6 +435,20 @@ export async function GET(req: NextRequest) {
           try {
             const orgId = dep.agent.org?.id || dep.agent.orgId;
 
+            // ── autonomousCycle plan gate ────────────────────────────────
+            // FREE-plan orgs don't get background runs. Their agents stay
+            // dormant between user-driven actions in chat. STARTER and up
+            // get the inline loop; without this check the cron would
+            // happily burn credits on FREE orgs that haven't paid for the
+            // feature. orgCanUseFeature is an async DB read but it's
+            // outside the request hot path (cron tick) so the latency
+            // doesn't matter; the alternative of caching the flag on the
+            // Deployment row would drift on plan change.
+            const { orgCanUseFeature } = await import("@/lib/credits/service");
+            if (!(await orgCanUseFeature(orgId, "autonomousCycle"))) {
+              continue;
+            }
+
             // 4a. Run monitoring loop (methodology playbook + interventions)
             try {
               const { runMonitoringLoop } = await import("@/lib/agents/monitoring-loop");
