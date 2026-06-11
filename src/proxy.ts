@@ -83,9 +83,22 @@ export async function proxy(req: NextRequest) {
   // changed AUTH_URL, etc.). Catch + treat as "no token" so a bad cookie
   // doesn't blow up the whole edge response. The user lands on /login;
   // /auth/error handles the cleanup on the actual auth handler side.
+  //
+  // Secret precedence: NextAuth v5 signs cookies with AUTH_SECRET by
+  // default and only falls back to NEXTAUTH_SECRET if AUTH_SECRET is
+  // unset. If we ONLY pass NEXTAUTH_SECRET here (the v4 name) and prod
+  // only has AUTH_SECRET set, getToken returns null silently — the cookie
+  // is signed with one secret and verified with another. That manifests
+  // as an OAuth login loop: sign-in succeeds, cookie is set, but every
+  // subsequent edge request fails to read it and bounces back to /login.
+  // Pass whichever is set so the verify step uses the same secret the
+  // handler signed with.
   let token: any = null;
   try {
-    token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    token = await getToken({
+      req,
+      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+    });
   } catch {
     token = null;
   }
