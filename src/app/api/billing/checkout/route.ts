@@ -36,13 +36,37 @@ export async function POST(req: NextRequest) {
     const priceId = planPriceId(planId, (org as any).currency);
     if (!priceId) return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
 
+    // 14-day card-required trial. Stripe collects the card during
+    // Checkout (`payment_method_collection: 'always'`), starts the
+    // subscription in `trialing` state, and auto-charges on day 15
+    // unless the user cancels. If their card fails when the trial
+    // ends we mark the sub `incomplete` (cancel-on-missing-payment)
+    // rather than letting them keep accessing the tier without
+    // having paid.
+    //
+    // First-time vs subsequent buyers: the trial only applies the
+    // first time an org subscribes to ANY plan. Stripe handles this
+    // automatically when we set `trial_period_days` — subsequent
+    // checkouts (e.g. switching from STARTER to PROFESSIONAL) just
+    // start the new sub immediately without a fresh trial because
+    // the customer already has a payment method on file.
+    const alreadyHadSub = !!org.stripeSubId;
     const checkoutSession = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
+      payment_method_collection: "always",
+      ...(alreadyHadSub ? {} : {
+        subscription_data: {
+          trial_period_days: 14,
+          trial_settings: {
+            end_behavior: { missing_payment_method: "cancel" },
+          },
+        },
+      }),
       success_url: `${process.env.NEXTAUTH_URL}/billing?upgraded=true`,
       cancel_url: `${process.env.NEXTAUTH_URL}/billing`,
-      metadata: { orgId, planId },
+      metadata: { orgId, planId, trial: alreadyHadSub ? "no" : "14-day" },
     });
 
     return NextResponse.json({ data: { checkoutUrl: checkoutSession.url } });

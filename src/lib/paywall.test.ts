@@ -1,79 +1,43 @@
 import { describe, it, expect } from "vitest";
-import { evaluatePaywall, computeTrialEnd, isBlocked, isBypassed, TRIAL_DAYS } from "./paywall";
+import { evaluatePaywall, isBlocked, isBypassed } from "./paywall";
 
-const day = (n: number) => n * 86_400_000;
-const now = new Date("2026-06-15T12:00:00Z");
-
-describe("evaluatePaywall — trial windows", () => {
-  it("returns trial_active for a 1-day-old FREE org", () => {
-    const status = evaluatePaywall({ plan: "FREE", createdAt: new Date(now.getTime() - day(1)) }, now);
-    expect(status.kind).toBe("trial_active");
-    if (status.kind === "trial_active") {
-      expect(status.daysRemaining).toBe(TRIAL_DAYS - 1);
-    }
+describe("evaluatePaywall — hybrid (post-2026-06-11)", () => {
+  it("active for FREE — FREE is a real always-free tier, not a trial", () => {
+    expect(evaluatePaywall({ plan: "FREE" })).toEqual({ kind: "active", plan: "FREE" });
+    // No createdAt needed and no createdAt-based expiry behaviour.
+    const oldCreatedAt = new Date("2025-01-01T00:00:00Z");
+    expect(evaluatePaywall({ plan: "FREE", createdAt: oldCreatedAt })).toEqual({ kind: "active", plan: "FREE" });
   });
 
-  it("returns trial_active on the last hour of day 14", () => {
-    // 13 days 23 hours ago = 1 hour of trial remaining
-    const createdAt = new Date(now.getTime() - (day(14) - 3600_000));
-    const status = evaluatePaywall({ plan: "FREE", createdAt }, now);
-    expect(status.kind).toBe("trial_active");
+  it.each(["STARTER", "PROFESSIONAL", "BUSINESS", "ENTERPRISE"])(
+    "active for paid tier %s regardless of org age",
+    (plan) => {
+      expect(evaluatePaywall({ plan })).toEqual({ kind: "active", plan });
+    },
+  );
+
+  it("uppercases lowercase plan", () => {
+    expect(evaluatePaywall({ plan: "professional" })).toEqual({ kind: "active", plan: "PROFESSIONAL" });
   });
 
-  it("returns trial_expired exactly at the boundary + 1ms", () => {
-    const createdAt = new Date(now.getTime() - day(14) - 1);
-    const status = evaluatePaywall({ plan: "FREE", createdAt }, now);
-    expect(status.kind).toBe("trial_expired");
-  });
-
-  it("returns trial_expired for orgs older than 14 days on FREE", () => {
-    const createdAt = new Date(now.getTime() - day(30));
-    const status = evaluatePaywall({ plan: "FREE", createdAt }, now);
-    expect(status.kind).toBe("trial_expired");
-  });
-});
-
-describe("evaluatePaywall — paid bypasses trial logic", () => {
-  it.each(["STARTER", "PROFESSIONAL", "BUSINESS", "ENTERPRISE"])("plan %s = paid even after trial window", (plan) => {
-    const status = evaluatePaywall({ plan, createdAt: new Date(now.getTime() - day(365)) }, now);
-    expect(status.kind).toBe("paid");
-    if (status.kind === "paid") expect(status.plan).toBe(plan);
-  });
-
-  it("uppercases lowercase plan values", () => {
-    const status = evaluatePaywall({ plan: "professional", createdAt: new Date(now.getTime() - day(1)) }, now);
-    expect(status.kind).toBe("paid");
-    if (status.kind === "paid") expect(status.plan).toBe("PROFESSIONAL");
-  });
-});
-
-describe("evaluatePaywall — no_org", () => {
-  it("returns no_org when both plan and createdAt are missing", () => {
-    const status = evaluatePaywall({ plan: null, createdAt: null }, now);
-    expect(status.kind).toBe("no_org");
-  });
-});
-
-describe("computeTrialEnd — override semantics", () => {
-  it("uses 14-day default when no override", () => {
-    const start = new Date("2026-01-01T00:00:00Z");
-    const end = computeTrialEnd(start, null);
-    expect(end.toISOString()).toBe("2026-01-15T00:00:00.000Z");
-  });
-
-  it("respects an extended trial override (sales-led pilot)", () => {
-    const start = new Date("2026-01-01T00:00:00Z");
-    const ext = new Date("2026-03-01T00:00:00Z");
-    expect(computeTrialEnd(start, ext)).toEqual(ext);
+  it("returns no_org when plan is missing", () => {
+    expect(evaluatePaywall({ plan: null })).toEqual({
+      kind: "no_org",
+      reason: "User has not yet created or joined an organisation.",
+    });
+    expect(evaluatePaywall({ plan: null, createdAt: new Date() })).toEqual({
+      kind: "no_org",
+      reason: "User has not yet created or joined an organisation.",
+    });
   });
 });
 
 describe("isBlocked", () => {
-  it("blocks only trial_expired and no_org", () => {
-    expect(isBlocked({ kind: "trial_expired", trialEndedAt: now, plan: "FREE" })).toBe(true);
+  it("blocks only no_org", () => {
     expect(isBlocked({ kind: "no_org", reason: "User has not yet created or joined an organisation." })).toBe(true);
-    expect(isBlocked({ kind: "trial_active", daysRemaining: 5, trialEndsAt: now })).toBe(false);
-    expect(isBlocked({ kind: "paid", plan: "PROFESSIONAL" })).toBe(false);
+    expect(isBlocked({ kind: "active", plan: "FREE" })).toBe(false);
+    expect(isBlocked({ kind: "active", plan: "PROFESSIONAL" })).toBe(false);
+    expect(isBlocked({ kind: "active", plan: "ENTERPRISE" })).toBe(false);
   });
 });
 
@@ -81,6 +45,7 @@ describe("isBypassed — paywall escape paths", () => {
   it("bypasses /billing and subpaths", () => {
     expect(isBypassed("/billing")).toBe(true);
     expect(isBypassed("/billing/credits")).toBe(true);
+    expect(isBypassed("/billing/history")).toBe(true);
   });
 
   it("bypasses auth + signup flows so users can't get locked out", () => {
@@ -99,7 +64,7 @@ describe("isBypassed — paywall escape paths", () => {
     expect(isBypassed("/admin/waitlist")).toBe(true);
   });
 
-  it("does NOT bypass core product routes", () => {
+  it("does NOT bypass core product routes (those need active orgs)", () => {
     expect(isBypassed("/dashboard")).toBe(false);
     expect(isBypassed("/projects/123/artefacts")).toBe(false);
     expect(isBypassed("/agents/chat")).toBe(false);

@@ -249,11 +249,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (token.orgId) {
           const orgRow = await db.organisation.findUnique({
             where: { id: token.orgId as string },
-            select: { plan: true, createdAt: true, ipAllowlist: true },
+            select: { plan: true, createdAt: true, ipAllowlist: true, trialEndsAt: true },
           }).catch(() => null);
           (token as any).orgPlan = orgRow?.plan ?? null;
           (token as any).orgCreatedAt = orgRow?.createdAt?.toISOString() ?? null;
           (token as any).orgIpAllowlist = orgRow?.ipAllowlist ?? [];
+          (token as any).orgTrialEndsAt = orgRow?.trialEndsAt?.toISOString() ?? null;
         }
       }
       // Re-fetch orgId if it's missing from a stale token. Throttled to at
@@ -274,13 +275,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.orgId = dbUser.orgId;
             token.role = dbUser.role;
             token.onboardingComplete = dbUser.onboardingComplete;
-            // Same plan/createdAt stamp as the initial mint path.
+            // Same plan/createdAt/trial stamp as the initial mint path.
             const orgRow = await db.organisation.findUnique({
               where: { id: dbUser.orgId },
-              select: { plan: true, createdAt: true },
+              select: { plan: true, createdAt: true, trialEndsAt: true },
             }).catch(() => null);
             (token as any).orgPlan = orgRow?.plan ?? null;
             (token as any).orgCreatedAt = orgRow?.createdAt?.toISOString() ?? null;
+            (token as any).orgTrialEndsAt = orgRow?.trialEndsAt?.toISOString() ?? null;
           }
         }
       }
@@ -294,13 +296,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!lastPlanCheck || Date.now() - lastPlanCheck > 5 * 60_000) {
           const orgRow = await db.organisation.findUnique({
             where: { id: token.orgId as string },
-            select: { plan: true, createdAt: true, ipAllowlist: true },
+            select: { plan: true, createdAt: true, ipAllowlist: true, trialEndsAt: true },
           }).catch(() => null);
           (token as any).orgPlanCheckedAt = Date.now();
           if (orgRow) {
             (token as any).orgPlan = orgRow.plan;
             (token as any).orgCreatedAt = orgRow.createdAt?.toISOString() ?? null;
             (token as any).orgIpAllowlist = orgRow.ipAllowlist;
+            (token as any).orgTrialEndsAt = orgRow.trialEndsAt?.toISOString() ?? null;
           }
         }
       }
@@ -318,6 +321,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // server still re-enforces every feature flag at the route
         // layer — this is for UI gating only.
         (session.user as any).orgPlan = (token as any).orgPlan ?? null;
+        (session.user as any).orgTrialEndsAt = (token as any).orgTrialEndsAt ?? null;
       }
       return session;
     },

@@ -62,12 +62,16 @@ export function PaywallScreen({ status }: { status: PaywallStatus }) {
     }
   }
 
+  // Only `no_org` reaches this screen now — paywall.ts no longer blocks
+  // FREE-plan orgs, so the previous "trial_expired" / "trial_active"
+  // copy is dead code. Keep the kind check so any future blocking state
+  // we add doesn't silently render the wrong header.
   const heading = status.kind === "no_org"
     ? "Set up your organisation"
-    : "Your trial has ended";
+    : "Choose a plan to continue";
   const subheading = status.kind === "no_org"
-    ? "Complete onboarding to pick a plan and start your first project."
-    : `Your free trial finished on ${("trialEndedAt" in status ? status.trialEndedAt : new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}. Pick a plan to keep going — your projects, agents, and history are preserved.`;
+    ? "Complete onboarding to start a project on the free tier — or pick a paid plan with a 14-day card-required trial."
+    : "Your projects, agents, and history are preserved when you pick a plan.";
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6 py-16 bg-gradient-to-b from-background to-muted/40">

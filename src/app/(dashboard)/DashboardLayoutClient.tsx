@@ -6,6 +6,7 @@ import { AgentStatusBar } from "@/components/layout/agent-status-bar";
 import { ProjectTabBar } from "@/components/layout/project-tab-bar";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { TrialBanner } from "@/components/billing/TrialBanner";
 import { useAppStore } from "@/stores/app";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,7 @@ export function DashboardLayoutClient({ children }: { children: React.ReactNode 
     <div className="min-h-screen">
       <Sidebar />
       <div className={cn("transition-all duration-200 ml-0", sidebarCollapsed ? "lg:ml-[60px]" : "lg:ml-[240px]")}>
+        <TrialBanner />
         <Header />
         <ProjectTabBar />
         {/* pb-14 so page content never hides behind the status bar */}

@@ -18,6 +18,10 @@ export async function POST(req: NextRequest) {
 
   switch (event.type) {
     // ── Subscription created or updated ──
+    // Both events flow into the same handler because Stripe sends an
+    // `updated` event when a trial converts to a paid subscription —
+    // we want to clear trialEndsAt on that transition. Trial start
+    // arrives as a `created` event with status='trialing'.
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const subscription = event.data.object as any;
@@ -26,31 +30,64 @@ export async function POST(req: NextRequest) {
       const org = await db.organisation.findFirst({ where: { stripeCustomerId: customerId } });
       if (!org) break;
 
-      // Determine plan from metadata or price
       const planId = subscription.metadata?.planId || "PROFESSIONAL";
       const plan = planId.toUpperCase();
+      const subStatus = subscription.status as string; // "trialing" | "active" | "past_due" | "incomplete" | "canceled" | ...
+
+      // trial_end is a Unix timestamp in seconds; convert when set. The
+      // column reflects what Stripe is doing now: trialing → fill,
+      // active/anything-else → clear. UI banners read this column for
+      // the countdown.
+      let trialEndsAt: Date | null = null;
+      if (subStatus === "trialing" && typeof subscription.trial_end === "number") {
+        trialEndsAt = new Date(subscription.trial_end * 1000);
+      }
 
       await db.organisation.update({
         where: { id: org.id },
         data: {
           plan: plan as any,
           stripeSubId: subscription.id,
+          trialEndsAt,
         },
       });
 
-      // Grant monthly credits on new subscription
-      if (event.type === "customer.subscription.created") {
+      // Credit grants. Two cases:
+      //   - First payment AFTER trial (status moves trialing→active):
+      //     grant monthly credits. Stripe will send an invoice.paid
+      //     event in parallel which ALSO grants — we guard against
+      //     double-granting by skipping the grant here when prior
+      //     plan was already this plan (i.e. this update is a noop
+      //     other than the status change).
+      //   - Fresh non-trial subscription (alreadyHadSub path, no
+      //     trial): grant on created.
+      const isTrialStart = event.type === "customer.subscription.created" && subStatus === "trialing";
+      const isFreshNonTrial = event.type === "customer.subscription.created" && subStatus === "active";
+      if (isFreshNonTrial) {
         const credits = PLAN_CREDIT_GRANTS[plan] || 0;
         if (credits > 0) {
           await CreditService.grant(org.id, credits, "SUBSCRIPTION_GRANT", `${plan} plan — monthly credit grant`);
         }
       }
+      // Trial-start grants are also reasonable so the user has credits
+      // to actually try the plan during the 14 days. Smaller pot than
+      // the monthly grant so we don't pay for full usage out of a
+      // trial that might cancel.
+      if (isTrialStart) {
+        const trialCredits = Math.round((PLAN_CREDIT_GRANTS[plan] || 0) / 2);
+        if (trialCredits > 0) {
+          await CreditService.grant(org.id, trialCredits, "TRIAL_GRANT" as any, `${plan} 14-day trial credit grant`);
+        }
+      }
 
-      console.log(`Subscription ${event.type}: org=${org.id} plan=${plan}`);
+      console.log(`Subscription ${event.type}: org=${org.id} plan=${plan} status=${subStatus}${trialEndsAt ? ` trialEndsAt=${trialEndsAt.toISOString()}` : ""}`);
       break;
     }
 
-    // ── Subscription cancelled ──
+    // ── Subscription cancelled or trial expired without payment ──
+    // Both routes (user-initiated cancel + Stripe auto-cancel on
+    // missing-payment-method at trial end) land here. We drop the org
+    // back to FREE — they keep using the product within FREE limits.
     case "customer.subscription.deleted": {
       const subscription = event.data.object as any;
       const customerId = subscription.customer as string;
@@ -60,10 +97,10 @@ export async function POST(req: NextRequest) {
 
       await db.organisation.update({
         where: { id: org.id },
-        data: { plan: "FREE", stripeSubId: null },
+        data: { plan: "FREE", stripeSubId: null, trialEndsAt: null },
       });
 
-      console.log(`Subscription cancelled: org=${org.id} -> FREE`);
+      console.log(`Subscription cancelled: org=${org.id} -> FREE (was ${subscription.status})`);
       break;
     }
 

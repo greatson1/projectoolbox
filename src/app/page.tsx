@@ -38,7 +38,7 @@ const STEPS = [
 const PLANS = [
   {
     name: "Free", price: 0, credits: 50,
-    creditNote: "Trial-only credits — 14-day free trial",
+    creditNote: "Free forever — no card required",
     features: [
       "1 project · 1 agent",
       "Advisor mode (L1 only)",
@@ -175,7 +175,7 @@ export default function LandingPage() {
             <div className="flex items-center justify-center gap-3 mb-6 flex-wrap">
               <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                14-day free trial · no credit card required
+                Free forever on the Free tier · 14-day card trial on paid plans
               </Badge>
               <Badge variant="outline" className="bg-cyan-500/5 border-cyan-500/20 text-cyan-400 gap-1.5 text-[11px]">
                 <span className="font-bold">SaaS 2.0</span>

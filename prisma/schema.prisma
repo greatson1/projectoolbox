@@ -143,6 +143,13 @@ model Organisation {
   plan             PlanTier            @default(FREE)
   stripeCustomerId String?             @unique
   stripeSubId      String?
+  // Trial countdown for the in-app banner. Set by the Stripe webhook when
+  // customer.subscription.created arrives with status='trialing'; cleared
+  // when the subscription transitions to status='active' (payment took)
+  // or 'canceled' (user cancelled before day 14 → webhook also flips
+  // plan back to FREE). Reading this column is the cheap path; the
+  // authoritative state is always Stripe.
+  trialEndsAt      DateTime?
   creditBalance    Int                 @default(0)
   autoTopUp        Json?
   users            User[]
