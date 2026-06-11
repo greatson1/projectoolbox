@@ -1,16 +1,16 @@
 "use client";
 
-// /login is interactive-only and reads searchParams (?reason=session_reset).
-// Next.js requires useSearchParams to live inside a Suspense boundary for
-// static prerendering; without that the build fails on
-// "Error occurred prerendering page /login". Opting out of prerendering
-// is the right move here — there's nothing to statically generate on a
-// login form, and force-dynamic is a one-line change that lets the
-// build through. (Commit 8548c92 added the useSearchParams hook for the
-// session-reset banner; the build started failing immediately after.)
-export const dynamic = "force-dynamic";
+// /login uses useSearchParams (?reason=session_reset for the post-session-
+// reset banner). Next.js refuses to prerender a client component that
+// reads searchParams unless it's inside a <Suspense> boundary; without
+// the boundary the build aborts with "Error occurred prerendering page
+// /login". force-dynamic alone doesn't help — that's a route-segment
+// flag and doesn't apply to client-component prerender behaviour. So we
+// extract the actual form into LoginForm and wrap it in <Suspense> at
+// the default export. Commit 8548c92 introduced the searchParams read;
+// without this split every deploy errored from then on.
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -21,6 +21,14 @@ import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Set by /auth/error when it nukes stale NextAuth cookies after a
