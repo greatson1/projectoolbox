@@ -79,7 +79,16 @@ export async function proxy(req: NextRequest) {
   // /api/projects, /api/agents, /api/approvals further down.
   const isApiRoute = pathname.startsWith("/api/");
 
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  // getToken throws on cookies it can't decrypt (stale NEXTAUTH_SECRET,
+  // changed AUTH_URL, etc.). Catch + treat as "no token" so a bad cookie
+  // doesn't blow up the whole edge response. The user lands on /login;
+  // /auth/error handles the cleanup on the actual auth handler side.
+  let token: any = null;
+  try {
+    token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  } catch {
+    token = null;
+  }
 
   // ── 1. Auth redirect ────────────────────────────────────────────────
   // Unauthenticated user hits a protected page → bounce to /login. API

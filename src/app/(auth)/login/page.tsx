@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,12 @@ import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Set by /auth/error when it nukes stale NextAuth cookies after a
+  // Configuration error. Tells the user why their old session is gone
+  // and avoids the silent "I clicked sign in and now I'm back at the
+  // login page" experience.
+  const sessionReset = searchParams?.get("reason") === "session_reset";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -119,6 +125,12 @@ export default function LoginPage() {
                 {mfaRequired ? "Enter the 6-digit code from your authenticator app" : "Sign in to your account"}
               </p>
             </div>
+
+            {sessionReset && !mfaRequired && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+                Your previous session was reset (sign-in config changed). Please sign in again — no data was lost.
+              </div>
+            )}
 
             {!mfaRequired && (
               <>

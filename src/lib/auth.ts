@@ -215,6 +215,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
     newUser: "/onboarding",
+    // Catch every NextAuth-thrown error (incl. Configuration from a stale
+    // JWT cookie that can't be decrypted under the current AUTH_SECRET /
+    // NEXTAUTH_URL) at our own /auth/error route. That route nukes the
+    // session cookies and bounces to /login so the user gets a fresh
+    // start instead of staring at "Server error" forever.
+    error: "/auth/error",
   },
   providers: [
     ...baseProviders,
