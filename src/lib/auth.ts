@@ -197,6 +197,18 @@ const e2eProvider = e2eBypassActive
     })
   : null;
 
+// Defensive env normalisation. Operators pasting values into the Vercel
+// dashboard sometimes copy a trailing newline; NextAuth v5 then tries to
+// parse "https://projectoolbox.com\n" as a URL and throws Configuration
+// (live incident on 2026-06-11 — login was broken for ~30min until the
+// env value was scrubbed). Strip whitespace around every URL/secret env
+// var we hand to NextAuth so the class of bug can't recur.
+const cleanEnv = (name: string) => (process.env[name] ?? "").trim();
+if (cleanEnv("NEXTAUTH_URL")) process.env.NEXTAUTH_URL = cleanEnv("NEXTAUTH_URL");
+if (cleanEnv("AUTH_URL")) process.env.AUTH_URL = cleanEnv("AUTH_URL");
+if (cleanEnv("NEXTAUTH_SECRET")) process.env.NEXTAUTH_SECRET = cleanEnv("NEXTAUTH_SECRET");
+if (cleanEnv("AUTH_SECRET")) process.env.AUTH_SECRET = cleanEnv("AUTH_SECRET");
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   trustHost: true,
