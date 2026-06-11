@@ -89,10 +89,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (status === "APPROVED") {
     const checkExisting = await db.agentArtefact.findUnique({
       where: { id },
-      select: { metadata: true },
+      select: { metadata: true, content: true, projectId: true },
     });
-    const meta = (checkExisting?.metadata as any) || {};
-    const fabricatedNames = Array.isArray(meta.fabricatedNames) ? meta.fabricatedNames : [];
+    let meta = (checkExisting?.metadata as any) || {};
+    let fabricatedNames: any[] = Array.isArray(meta.fabricatedNames) ? meta.fabricatedNames : [];
+
+    // ── Re-validate on approve ──────────────────────────────────────────
+    // The fabricatedNames list on metadata is a snapshot from generation
+    // (or the last content-edit re-validate). Between generation and
+    // approval the validator's deny-lists / project-name registry may have
+    // improved — most recently the concept-phrase prefix list and the
+    // auto-allow of the project's own name. Re-run the validator now so
+    // stale flags don't block approval. If the fresh count is lower (or
+    // zero) we persist it AND use the fresh list for the gate check
+    // below, so the user doesn't have to manually edit + save just to
+    // trigger a re-validate. Contradictions are similarly stale-prone but
+    // their fact-store dependency makes re-evaluation more involved — left
+    // for a follow-up.
+    if (fabricatedNames.length > 0 && checkExisting?.content && checkExisting.projectId) {
+      try {
+        const { getAllowedNamesRegistry } = await import("@/lib/agents/allowed-names");
+        const { validateArtefactNames } = await import("@/lib/agents/fabricated-names-validator");
+        const registry = await getAllowedNamesRegistry(checkExisting.projectId);
+        const fresh = validateArtefactNames({ content: checkExisting.content, registry });
+        if (fresh.length < fabricatedNames.length) {
+          const newMeta: any = { ...meta, fabricatedNamesCheckedAt: new Date().toISOString() };
+          if (fresh.length === 0) delete newMeta.fabricatedNames;
+          else newMeta.fabricatedNames = fresh;
+          await db.agentArtefact.update({ where: { id }, data: { metadata: newMeta } }).catch(() => {});
+          console.log(`[artefact PATCH] approve-time re-validate: ${fabricatedNames.length} → ${fresh.length} fabricated-name violations`);
+          meta = newMeta;
+          fabricatedNames = fresh;
+        }
+      } catch (e) {
+        console.error("[artefact PATCH] approve-time re-validation failed:", e);
+      }
+    }
     // confirmNotNames=true is the user explicitly acknowledging that the
     // flagged tokens are NOT real person/organisation names (concept
     // phrases, project terminology, table-cell concatenations the
