@@ -92,13 +92,30 @@ export async function proxy(req: NextRequest) {
   // as an OAuth login loop: sign-in succeeds, cookie is set, but every
   // subsequent edge request fails to read it and bounces back to /login.
   // Pass whichever is set so the verify step uses the same secret the
-  // handler signed with.
+  // handler signed with. Trimmed for the same reason auth.ts trims at
+  // boot — the edge bundle never loads auth.ts, so a pasted trailing
+  // newline would otherwise still break verification here.
+  //
+  // secureCookie: in v5, next-auth/jwt re-exports @auth/core/jwt whose
+  // getToken defaults secureCookie to FALSE when not passed (it does NOT
+  // sniff NEXTAUTH_URL/VERCEL like v4 did). The auth handler, however,
+  // picks the cookie name from the request protocol — on https it writes
+  // "__Secure-authjs.session-token" and derives the HKDF encryption key
+  // with that name as salt. So a bare getToken({req, secret}) on prod
+  // looks for the wrong cookie name AND the wrong salt, returns null on
+  // every request, and every signed-in user bounces back to /login —
+  // the OAuth login loop, round two (live incident 2026-06-12; Google
+  // sign-in succeeded, cookie was set, edge couldn't read it).
+  // Try the secure variant first, then the plain one, so the check works
+  // on prod (https), local dev (http), and any proxy/protocol oddity in
+  // between. Each attempt is self-consistent in cookieName + salt; the
+  // losing attempt is a cheap null.
+  const edgeSecret = (process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "").trim();
   let token: any = null;
   try {
-    token = await getToken({
-      req,
-      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
-    });
+    token =
+      (await getToken({ req, secret: edgeSecret, secureCookie: true })) ??
+      (await getToken({ req, secret: edgeSecret, secureCookie: false }));
   } catch {
     token = null;
   }
