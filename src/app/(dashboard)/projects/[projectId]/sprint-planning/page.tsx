@@ -67,6 +67,8 @@ export default function SprintPlanningPage() {
   const [replanLoading, setReplanLoading] = useState(false);
   const [newSprint, setNewSprint] = useState({ name: "", goal: "", startDate: "", endDate: "" });
   const [expandedSprint, setExpandedSprint] = useState<string | null>(null);
+  const [editingSprintId, setEditingSprintId] = useState<string | null>(null);
+  const [editSprintDates, setEditSprintDates] = useState<{ start: string; end: string }>({ start: "", end: "" });
 
   const allTasks = useMemo(() => (tasks || []).map((t: any) => ({
     id: t.id,
@@ -406,7 +408,23 @@ export default function SprintPlanningPage() {
                               <span className={`text-[10px] font-semibold ${PRIORITY_COLORS[task.priority] || "text-muted-foreground"}`}>
                                 {task.priority || "—"}
                               </span>
-                              <span className="text-[10px] text-muted-foreground">{task.storyPoints || 0} pts</span>
+                              {/* Story points — click to cycle the Fibonacci
+                                  scale (1·2·3·5·8·13·21), same interaction
+                                  pattern as the MoSCoW chip. PATCHes
+                                  Task.storyPoints; capacity/velocity totals
+                                  recalculate from the refreshed query. */}
+                              <button
+                                type="button"
+                                className="text-[10px] text-muted-foreground hover:text-foreground underline decoration-dotted underline-offset-2"
+                                title="Story points — click to cycle (1, 2, 3, 5, 8, 13, 21)"
+                                onClick={() => {
+                                  const FIB = [1, 2, 3, 5, 8, 13, 21];
+                                  const cur = task.storyPoints || 0;
+                                  const next = FIB[(FIB.indexOf(cur) + 1) % FIB.length] ?? 1;
+                                  updateTask.mutate({ taskId: task.id, storyPoints: next });
+                                }}>
+                                {task.storyPoints || 0} pts
+                              </button>
                               <span className="text-[10px] text-muted-foreground">{task.estimatedHours || 0}h</span>
                               <span className="text-[10px] text-muted-foreground truncate w-16">{task.assigneeName}</span>
                               <Badge variant="outline" className={`text-[8px] ${
@@ -435,11 +453,63 @@ export default function SprintPlanningPage() {
                               Complete Sprint
                             </Button>
                           )}
+                          <Button size="sm" variant="ghost" className="text-xs h-7"
+                            onClick={() => {
+                              if (editingSprintId === sprint.id) { setEditingSprintId(null); return; }
+                              setEditingSprintId(sprint.id);
+                              setEditSprintDates({
+                                start: new Date(sprint.startDate).toISOString().slice(0, 10),
+                                end: new Date(sprint.endDate).toISOString().slice(0, 10),
+                              });
+                            }}>
+                            {editingSprintId === sprint.id ? "Cancel" : "Edit dates"}
+                          </Button>
                           <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive"
-                            onClick={() => { deleteSprint.mutate(sprint.id); toast.success("Sprint deleted"); }}>
+                            onClick={() => {
+                              deleteSprint.mutate(sprint.id, {
+                                onSuccess: () => toast.success(`${sprint.name} deleted — its tasks moved back to the backlog`),
+                                onError: (err: any) => toast.error(err?.message || "Delete failed"),
+                              });
+                            }}>
                             Delete
                           </Button>
                         </div>
+
+                        {/* Inline per-sprint date editor — sprints don't have
+                            to be uniform; a hardening sprint can be 7 days
+                            while build sprints stay at 14. PATCHes this
+                            sprint only and resyncs the Sprint Plans artefact
+                            server-side. */}
+                        {editingSprintId === sprint.id && (
+                          <div className="flex items-end gap-2 pt-2">
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-semibold uppercase text-muted-foreground">Start</p>
+                              <input type="date" className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                                value={editSprintDates.start} onChange={e => setEditSprintDates(p => ({ ...p, start: e.target.value }))} />
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-semibold uppercase text-muted-foreground">End</p>
+                              <input type="date" className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                                value={editSprintDates.end} onChange={e => setEditSprintDates(p => ({ ...p, end: e.target.value }))} />
+                            </div>
+                            <Button size="sm" className="text-xs h-7"
+                              disabled={!editSprintDates.start || !editSprintDates.end || editSprintDates.end < editSprintDates.start || updateSprint.isPending}
+                              onClick={() => {
+                                updateSprint.mutate(
+                                  { sprintId: sprint.id, startDate: editSprintDates.start, endDate: editSprintDates.end },
+                                  {
+                                    onSuccess: () => { toast.success(`${sprint.name} dates updated`); setEditingSprintId(null); },
+                                    onError: (err: any) => toast.error(err?.message || "Failed to update dates"),
+                                  },
+                                );
+                              }}>
+                              {updateSprint.isPending ? "Saving…" : "Save dates"}
+                            </Button>
+                            {editSprintDates.end < editSprintDates.start && (
+                              <p className="text-[10px] text-destructive pb-1.5">End must be after start</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>
