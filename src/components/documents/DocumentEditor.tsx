@@ -36,7 +36,7 @@ interface DocumentEditorProps {
   status: string;
   type: string;
   projectName?: string;
-  versions?: { id: string; version: number; editedBy: string; createdAt: string; comment: string }[];
+  versions?: { id: string; version: number; editedBy: string; createdAt: string; comment: string; content?: string }[];
   /**
    * Optional artefact.metadata object — when present, surfaces the
    * `contradictions` array (drafted-vs-confirmed-fact disagreements) and
@@ -51,6 +51,9 @@ interface DocumentEditorProps {
    * approval even if metadata.contradictions is non-empty. */
   onApprove?: (confirmIntentional?: boolean) => Promise<void>;
   onReject?: (reason: string) => Promise<void>;
+  /** Restore a past version's content as a new save. The parent owns the
+   * PATCH + cache refresh; the editor just confirms and forwards. */
+  onRestore?: (version: { id: string; version: number; content?: string }) => Promise<void>;
   onExportPDF?: () => void;
   onExportDOCX?: () => void;
   onClose: () => void;
@@ -80,7 +83,7 @@ function ToolbarDivider() {
 
 export function DocumentEditor({
   reportId, title, content, status, type, projectName, metadata,
-  versions = [], onSave, onApprove, onReject, onExportPDF, onExportDOCX, onClose,
+  versions = [], onSave, onApprove, onReject, onRestore, onExportPDF, onExportDOCX, onClose,
 }: DocumentEditorProps) {
   const contradictions: Array<{ field: string; drafted: string; confirmed: string; source?: string }> =
     Array.isArray(metadata?.contradictions) ? metadata.contradictions : [];
@@ -421,7 +424,18 @@ export function DocumentEditor({
                     </div>
                     {v.editedBy && <p className="text-[10px] text-muted-foreground">By {v.editedBy}</p>}
                     {v.comment && <p className="text-[10px] text-muted-foreground italic mt-1">"{v.comment}"</p>}
-                    <Button variant="ghost" size="sm" className="mt-1 h-6 text-[10px] p-0">Restore this version</Button>
+                    {onRestore && v.content && (
+                      <Button
+                        variant="ghost" size="sm" className="mt-1 h-6 text-[10px] p-0"
+                        onClick={() => {
+                          if (confirm(`Restore version ${v.version}? The current content will be kept in the version history.`)) {
+                            void onRestore(v);
+                          }
+                        }}
+                      >
+                        Restore this version
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>

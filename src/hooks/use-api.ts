@@ -9,7 +9,13 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || "API error");
+    // Attach the full response body so callers can surface structured
+    // details (e.g. the artefact-approval 409 includes contradictions[] /
+    // fabricatedNames[] and a human-readable message) instead of just the
+    // bare error title.
+    const e = new Error(err.error || "API error") as Error & { body?: any };
+    e.body = err;
+    throw e;
   }
   const json = await res.json();
   return json.data ?? json;
@@ -770,6 +776,14 @@ export function useAgentArtefacts(agentId: string | null) {
     queryKey: ["artefacts", agentId],
     queryFn: () => api<any[]>(`/api/agents/${agentId}/artefacts`),
     enabled: !!agentId,
+  });
+}
+
+export function useArtefactVersions(artefactId: string | null) {
+  return useQuery({
+    queryKey: ["artefact-versions", artefactId],
+    queryFn: () => api<any[]>(`/api/agents/artefacts/${artefactId}/versions`),
+    enabled: !!artefactId,
   });
 }
 
