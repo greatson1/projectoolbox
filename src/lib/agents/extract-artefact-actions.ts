@@ -50,17 +50,37 @@ export function parseNextActionsTable(content: string): ParsedAction[] {
   if (htmlTableMatch) {
     const trMatches = htmlTableMatch[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
     let isHeader = true; // first row is the header
+    // Column indices resolved from the header row. Artefact tables don't
+    // always use the conventional Action|Owner|Due Date|Status order —
+    // positional pick-up was putting due-dates and notes fragments into
+    // owner, which then surfaced as Task.assigneeName in the Schedule UI.
+    let colIdx: { action: number; owner: number; due: number; status: number } | null = null;
     for (const tr of trMatches) {
       const cells = Array.from(tr[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map(m => stripHtml(m[1]).trim());
       if (cells.length < 2) continue;
-      if (isHeader && cells.some(c => /^action$/i.test(c))) { isHeader = false; continue; }
+      if (isHeader && cells.some(c => /^action/i.test(c))) {
+        colIdx = {
+          action: cells.findIndex(c => /action/i.test(c)),
+          owner: cells.findIndex(c => /owner|assigned|responsible/i.test(c)),
+          due: cells.findIndex(c => /due|date|deadline|timing/i.test(c)),
+          status: cells.findIndex(c => /status/i.test(c)),
+        };
+        isHeader = false;
+        continue;
+      }
       isHeader = false;
-      // Conventional column order: Action, Owner, Due Date, Status
-      const [action, owner, dueDate, status] = cells;
+      // With a mapped header, a missing column means "this table doesn't
+      // have it" — don't positional-guess. Without a header row, fall back
+      // to the conventional order.
+      const pick = (i: number) => (i >= 0 ? cells[i] : undefined);
+      const action  = colIdx ? pick(colIdx.action) : cells[0];
+      const owner   = colIdx ? pick(colIdx.owner)  : cells[1];
+      const dueDate = colIdx ? pick(colIdx.due)    : cells[2];
+      const status  = colIdx ? pick(colIdx.status) : cells[3];
       if (!action || action.length < 3) continue;
       rows.push({
         action: action.slice(0, 280),
-        owner: owner?.trim() || null,
+        owner: cleanOwner(owner),
         dueDate: dueDate?.trim() || null,
         status: status?.trim() || null,
       });
@@ -91,13 +111,33 @@ export function parseNextActionsTable(content: string): ParsedAction[] {
     if (!action || action.length < 3 || /^Action$/i.test(action)) continue;
     rows.push({
       action: action.slice(0, 280),
-      owner: owner?.trim() || null,
+      owner: cleanOwner(owner),
       dueDate: dueDate?.trim() || null,
       status: status?.trim() || null,
     });
   }
 
   return rows;
+}
+
+/**
+ * Plausibility guard for the Owner cell. Mis-aligned tables (or document-
+ * control header rows getting swept up) produce fragments like
+ * "Methodology Scrum Team Charter" or "Up to" in the owner column, which
+ * then surface as Task.assigneeName across the Schedule and Tracker UIs.
+ * A real owner is a short person/role label; anything else becomes null
+ * (rendered as "Unassigned"), which is honest where junk text is not.
+ */
+function cleanOwner(raw: string | null | undefined): string | null {
+  const owner = (raw || "").trim();
+  if (!owner) return null;
+  if (/^\[?\s*(TBC|TBD|N\/?A|—|-)\s*\]?$/i.test(owner) || /^\[TBC/i.test(owner)) return null;
+  if (owner.length > 50) return null;
+  if (owner.split(/\s+/).length > 5) return null;
+  // Document-control vocabulary — these words appear in the doc header
+  // table, never in a person/role name.
+  if (/\b(methodology|charter|version|document|draft|template|awaiting)\b/i.test(owner)) return null;
+  return owner;
 }
 
 function stripHtml(html: string): string {

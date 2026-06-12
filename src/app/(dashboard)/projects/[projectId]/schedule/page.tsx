@@ -78,7 +78,9 @@ function getMonths(start: Date, end: Date) {
     const visibleStart = cur < start ? start : cur;
     const visibleEnd = monthEnd > end ? end : monthEnd;
     months.push({
-      label: cur.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+      // "Jun 2026", not "Jun 26" — the 2-digit year read as a day-of-month
+      // next to the week ticks below it.
+      label: cur.toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
       start: visibleStart,
       days: diffDays(visibleStart, visibleEnd) + 1,
     });
@@ -237,6 +239,23 @@ export default function SchedulePage() {
   }, [zoom, TASKS_DATA]);
 
   const months = useMemo(() => getMonths(timelineStart, timelineEnd), [timelineStart, timelineEnd]);
+
+  // Week ticks — one per Monday across the window. These anchor the
+  // timeline at month/quarter zoom, where a single centred month label
+  // otherwise leaves the bars floating in unmarked space.
+  const weekTicks = useMemo(() => {
+    const ticks: { offsetDays: number; label: string }[] = [];
+    const d = new Date(timelineStart);
+    while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+    while (d <= timelineEnd) {
+      ticks.push({
+        offsetDays: diffDays(timelineStart, d),
+        label: d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+      });
+      d.setDate(d.getDate() + 7);
+    }
+    return ticks;
+  }, [timelineStart, timelineEnd]);
 
   // Sprint bands — pixel offsets + widths for every sprint that overlaps the
   // current timeline window. Skips sprints with missing dates and clips
@@ -511,23 +530,45 @@ export default function SchedulePage() {
 
             {/* ── Right: Timeline ── */}
             <div className="flex-1 overflow-x-auto overflow-y-auto" ref={timelineRef} onScroll={handleScroll}>
-              {/* Month headers */}
-              <div className="flex sticky top-0 z-10" style={{ height: 44, background: true ? "var(--card)" : "#FAFBFC", borderBottom: `1px solid ${"var(--border)"}` }}>
-                {months.map((m, i) => (
-                  <div key={i} className="flex-shrink-0 text-[11px] font-semibold flex items-center justify-center"
-                    style={{ width: m.days * dayWidth, color: "var(--muted-foreground)", borderRight: `1px solid ${"var(--border)"}33` }}>
-                    {m.label}
-                  </div>
-                ))}
+              {/* Time scale header — month labels on top, week-start dates below */}
+              <div className="sticky top-0 z-10" style={{ height: 44, background: true ? "var(--card)" : "#FAFBFC", borderBottom: `1px solid ${"var(--border)"}` }}>
+                <div className="flex" style={{ height: 24 }}>
+                  {months.map((m, i) => (
+                    <div key={i} className="flex-shrink-0 text-[11px] font-semibold flex items-center justify-center"
+                      style={{ width: m.days * dayWidth, color: "var(--foreground)", borderRight: `1px solid ${"var(--border)"}33` }}>
+                      {m.label}
+                    </div>
+                  ))}
+                </div>
+                <div className="relative" style={{ height: 20, width: totalDays * dayWidth }}>
+                  {weekTicks.map((w, i) => (
+                    <div key={i} className="absolute top-0 bottom-0 flex items-center" style={{ left: w.offsetDays * dayWidth }}>
+                      <div className="absolute top-0 bottom-0" style={{ width: 1, background: "rgba(148,163,184,0.25)" }} />
+                      {dayWidth >= 10 && (
+                        <span className="pl-1.5 text-[9px] whitespace-nowrap" style={{ color: "var(--muted-foreground)" }}>{w.label}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* Task bars area */}
-              <div className="relative" style={{ width: totalDays * dayWidth, minHeight: visibleTasks.length * ROW_HEIGHT }}>
-                {/* Sprint boundaries — vertical lines at sprint start/end
-                    plus a translucent fill between. Lines sit behind task
-                    bars (z-0), so the Gantt visually answers "which sprint
-                    does this task fall in?" without crowding the surface.
-                    Hover the line to see the sprint name + status. Only
+              {/* Task bars area — row stripes keep bars visually aligned
+                  with the task list on the left. */}
+              <div className="relative" style={{
+                width: totalDays * dayWidth,
+                minHeight: visibleTasks.length * ROW_HEIGHT,
+                backgroundImage: `repeating-linear-gradient(to bottom, transparent 0px, transparent ${ROW_HEIGHT - 1}px, rgba(148,163,184,0.08) ${ROW_HEIGHT - 1}px, rgba(148,163,184,0.08) ${ROW_HEIGHT}px)`,
+              }}>
+                {/* Week gridlines — align with the header's week ticks */}
+                {weekTicks.map((w, i) => (
+                  <div key={`wk-${i}`} className="absolute top-0 bottom-0 pointer-events-none"
+                    style={{ left: w.offsetDays * dayWidth, width: 1, background: "rgba(148,163,184,0.08)" }} />
+                ))}
+
+                {/* Sprint boundaries — a labelled left edge per sprint and a
+                    barely-there fill. Kept deliberately faint: the bands are
+                    context, not data, and anything stronger competes with
+                    the task bars (especially 0%-progress ones). Only
                     rendered when methodology has sprints (showSprintOverlay).
                   */}
                 {sprintBands.map((b) => (
@@ -537,12 +578,16 @@ export default function SchedulePage() {
                       width: b.width,
                       top: 0,
                       bottom: 0,
-                      background: `${b.colour}0a`,
-                      borderLeft: `1px dashed ${b.colour}80`,
-                      borderRight: `1px dashed ${b.colour}80`,
+                      background: `${b.colour}05`,
+                      borderLeft: `1px dashed ${b.colour}66`,
                     }}
                     title={`${b.name} · ${b.status}`}
-                  />
+                  >
+                    <span className="absolute left-1 text-[8px] font-semibold uppercase tracking-wide px-1 rounded-sm whitespace-nowrap"
+                      style={{ top: 3, color: b.colour, background: `${b.colour}1a` }}>
+                      {b.name}
+                    </span>
+                  </div>
                 ))}
 
                 {/* Today marker */}
@@ -614,9 +659,10 @@ export default function SchedulePage() {
                       <div className="relative rounded-[4px] overflow-hidden cursor-pointer transition-all"
                         style={{
                           width,
-                          height: 20,
-                          background: `${barColor}${true ? "33" : "22"}`,
-                          border: isCritical ? `1.5px solid #EF4444` : `1px solid ${barColor}44`,
+                          height: 22,
+                          background: `${barColor}30`,
+                          border: isCritical ? `1.5px solid #EF4444` : `1px solid ${barColor}aa`,
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
                         }}>
                         {/* MoSCoW stripe — 3px coloured edge on the left of
                             the bar, sits above the progress fill so it's
@@ -625,12 +671,15 @@ export default function SchedulePage() {
                           <div className="absolute left-0 top-0 bottom-0 z-20" style={{ width: 3, background: moscowColour }} />
                         )}
                         {/* Progress fill */}
-                        <div className="absolute inset-0 rounded-[3px]" style={{ width: `${t.progress}%`, background: barColor, opacity: 0.7 }} />
-                        {/* Label (only if bar wide enough) */}
+                        <div className="absolute inset-y-0 left-0 rounded-[3px]" style={{ width: `${t.progress}%`, background: barColor, opacity: 0.85 }} />
+                        {/* Label — task name when the bar is wide enough to
+                            carry it (the left list scrolls out of sync with
+                            wide windows, so an in-bar name keeps the bar
+                            identifiable), else just the progress %. */}
                         {width > 60 && (
-                          <span className="absolute inset-0 flex items-center px-2 text-[10px] font-medium text-white truncate z-10 mix-blend-normal"
-                            style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
-                            {t.progress > 0 ? `${t.progress}%` : ""}
+                          <span className="absolute inset-0 flex items-center px-2 text-[10px] font-medium text-white truncate z-10"
+                            style={{ textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>
+                            {width > 140 ? `${t.name}${t.progress > 0 ? ` · ${t.progress}%` : ""}` : (t.progress > 0 ? `${t.progress}%` : "")}
                           </span>
                         )}
                       </div>

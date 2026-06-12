@@ -537,7 +537,11 @@ export async function onPhaseAdvanced(
   newPhase: string,
 ): Promise<void> {
   try {
-    // Mark all incomplete tasks in completed phase as done
+    // Mark incomplete GOVERNANCE tasks in the completed phase as done. The
+    // gate passing means the bookkeeping work (generate artefacts, run
+    // clarification, submit gate) genuinely happened, so stamping those DONE
+    // is honest. Leaf-only: `[scaffolded:delivery]` children don't match the
+    // "[scaffolded]" substring so real delivery work is never auto-completed.
     await db.task.updateMany({
       where: {
         projectId,
@@ -545,9 +549,72 @@ export async function onPhaseAdvanced(
         phaseId: completedPhase,
         status: { not: "DONE" },
         description: { contains: "[scaffolded]" },
+        parentId: { not: null },
       },
       data: { progress: 100, status: "DONE" },
     });
+
+    // Category parent rows are NOT blanket-stamped — the "Delivery
+    // Activities" parent has [scaffolded:delivery] children that may be
+    // legitimately unfinished (the gate only needs 80% aggregate delivery
+    // progress). Stamping the parent DONE over incomplete children
+    // misrepresents the phase. Recompute each parent from its children
+    // instead.
+    const parents = await db.task.findMany({
+      where: {
+        projectId,
+        createdBy: `agent:${agentId}`,
+        phaseId: completedPhase,
+        parentId: null,
+        description: { contains: "[scaffolded]" },
+      },
+      select: { id: true },
+    });
+    for (const p of parents) {
+      await updateParentProgress(p.id).catch(() => {});
+    }
+
+    // Flag leftover delivery work instead of letting it disappear into a
+    // completed phase. Delivery tasks (schedule/WBS-seeded, scaffolded
+    // delivery activities, user-created) stay open on the Schedule page, but
+    // once the phase is no longer current nothing ever surfaces them again —
+    // the next phase's gate filters by its own phaseId. Surface the carry-
+    // over in the activity feed so the user knows the work is still open.
+    try {
+      // Schedule-seeded tasks store the Phase row CUID; scaffolded ones store
+      // the phase NAME. Match both forms.
+      const completedPhaseRow = await db.phase.findFirst({
+        where: { projectId, name: completedPhase },
+        select: { id: true },
+      });
+      const phaseIds = completedPhaseRow ? [completedPhase, completedPhaseRow.id] : [completedPhase];
+      const leftover = await db.task.findMany({
+        where: {
+          projectId,
+          phaseId: { in: phaseIds },
+          status: { notIn: ["DONE", "COMPLETE"] },
+          OR: [
+            { description: { contains: "[source:" } },
+            { description: { contains: "[scaffolded:delivery]" } },
+            { createdBy: { not: { startsWith: "agent:" } } },
+          ],
+        },
+        select: { id: true, title: true },
+        take: 50,
+      });
+      if (leftover.length > 0) {
+        const names = leftover.slice(0, 5).map(t => `"${t.title}"`).join(", ");
+        await db.agentActivity.create({
+          data: {
+            agentId,
+            type: "task",
+            summary: `⚠️ Advanced to ${newPhase} with ${leftover.length} delivery task${leftover.length === 1 ? "" : "s"} still incomplete in ${completedPhase} (${names}${leftover.length > 5 ? "…" : ""}). They remain open on the Schedule — complete or close them there.`,
+          },
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[task-scaffolding] leftover delivery-task flagging failed:", e);
+    }
 
     // Scaffold the NEW phase's PM tasks (just-in-time, not upfront)
     const phaseRow = await db.phase.findFirst({
