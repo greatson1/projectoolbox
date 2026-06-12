@@ -159,7 +159,10 @@ export default function SchedulePage() {
         status,
         dependsOn: Array.isArray(t.dependencies) ? t.dependencies : [],
         assignee: t.assigneeName || t.assignee || "",
-        isMilestone: false, // no isMilestone field in Task schema
+        // Task.type is a free string ("task | story | bug | spike |
+        // milestone") — milestones are tasks with type === "milestone",
+        // settable from the detail panel and the Add Task form.
+        isMilestone: t.type === "milestone",
         isCriticalPath: t.isCriticalPath || false,
         description: t.description || "",
         moscow: t.moscow ?? null,
@@ -183,6 +186,7 @@ export default function SchedulePage() {
   const [newTaskStart, setNewTaskStart] = useState("");
   const [newTaskEnd, setNewTaskEnd] = useState("");
   const [newTaskHours, setNewTaskHours] = useState(0);
+  const [newTaskMilestone, setNewTaskMilestone] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
 
@@ -293,6 +297,72 @@ export default function SchedulePage() {
       .filter(Boolean) as { id: string; name: string; status: string; left: number; width: number; colour: string }[];
   }, [showSprintOverlay, apiSprints, timelineStart, timelineEnd, dayWidth]);
 
+  // ── Critical path (CPM) ──
+  // Task.isCriticalPath is only ever copied from the artefact's "Critical
+  // Path" column — nothing computes it, so it's almost always all-false.
+  // When the dependency graph has edges, run a classic CPM pass (forward/
+  // backward over durations) and derive per-task slack: critical = zero
+  // slack, and the slack figure tells the user how far a task can slip
+  // before it moves the end date. Falls back to the stored flag when there
+  // are no dependency edges (CPM is meaningless on disconnected tasks).
+  const cpm = useMemo(() => {
+    if (TASKS_DATA.length === 0) return null;
+    const byKey = new Map<string, ScheduleTask>();
+    for (const t of TASKS_DATA) {
+      byKey.set(t.name.toLowerCase(), t);
+      byKey.set(t.id.toLowerCase(), t);
+    }
+    const preds = new Map<string, string[]>();
+    let edges = 0;
+    for (const t of TASKS_DATA) {
+      const ps: string[] = [];
+      for (const dep of t.dependsOn || []) {
+        const p = byKey.get((dep || "").trim().toLowerCase());
+        if (p && p.id !== t.id) { ps.push(p.id); edges++; }
+      }
+      preds.set(t.id, ps);
+    }
+    if (edges === 0) return null;
+    const succs = new Map<string, string[]>();
+    for (const [tid, ps] of preds) for (const p of ps) {
+      if (!succs.has(p)) succs.set(p, []);
+      succs.get(p)!.push(tid);
+    }
+    const dur = new Map<string, number>();
+    for (const t of TASKS_DATA) dur.set(t.id, Math.max(0, diffDays(parseDate(t.start), parseDate(t.end)) + 1));
+    // Topological order (Kahn) — bail on cycles rather than guess.
+    const indeg = new Map<string, number>();
+    for (const t of TASKS_DATA) indeg.set(t.id, (preds.get(t.id) || []).length);
+    const queue = TASKS_DATA.filter(t => indeg.get(t.id) === 0).map(t => t.id);
+    const order: string[] = [];
+    while (queue.length) {
+      const id = queue.shift()!;
+      order.push(id);
+      for (const s of succs.get(id) || []) {
+        indeg.set(s, (indeg.get(s) || 1) - 1);
+        if (indeg.get(s) === 0) queue.push(s);
+      }
+    }
+    if (order.length !== TASKS_DATA.length) return null;
+    const ES = new Map<string, number>(), EF = new Map<string, number>();
+    for (const id of order) {
+      const es = Math.max(0, ...(preds.get(id) || []).map(p => EF.get(p) || 0));
+      ES.set(id, es); EF.set(id, es + (dur.get(id) || 0));
+    }
+    const projectDur = Math.max(...order.map(id => EF.get(id) || 0));
+    const LS = new Map<string, number>(), LF = new Map<string, number>();
+    for (const id of [...order].reverse()) {
+      const lf = Math.min(projectDur, ...(succs.get(id) || []).map(s => LS.get(s) ?? projectDur));
+      LF.set(id, lf); LS.set(id, lf - (dur.get(id) || 0));
+    }
+    const slack = new Map<string, number>();
+    for (const id of order) slack.set(id, Math.max(0, (LS.get(id) || 0) - (ES.get(id) || 0)));
+    return { slack, critical: new Set(order.filter(id => (slack.get(id) || 0) === 0)) };
+  }, [TASKS_DATA]);
+
+  // Computed criticality wins when CPM ran; otherwise honour the stored flag.
+  const isCriticalTask = (t: ScheduleTask) => (cpm ? cpm.critical.has(t.id) : t.isCriticalPath);
+
   // Today marker
   const today = new Date();
   const todayOffset = diffDays(timelineStart, today);
@@ -364,7 +434,7 @@ export default function SchedulePage() {
   const completedTasks = TASKS_DATA.filter(t => t.status === "done").length;
   const milestonesHit = TASKS_DATA.filter(t => t.isMilestone && t.status === "done").length;
   const totalMilestones = TASKS_DATA.filter(t => t.isMilestone).length;
-  const criticalTasks = TASKS_DATA.filter(t => t.isCriticalPath).length;
+  const criticalTasks = TASKS_DATA.filter(t => isCriticalTask(t)).length;
   const overallProgress = totalTasks > 0 ? Math.round(TASKS_DATA.reduce((s, t) => s + t.progress, 0) / totalTasks) : 0;
 
   const ROW_HEIGHT = 36;
@@ -437,7 +507,7 @@ export default function SchedulePage() {
                       <td className="py-2 px-3 text-[11px] font-mono" style={{ color: "var(--muted-foreground)" }}>{wbs}</td>
                       <td className="py-2 px-3 font-medium flex items-center gap-2">
                         {t.isMilestone && <span className="text-[#F59E0B]">◆</span>}
-                        {t.isCriticalPath && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />}
+                        {isCriticalTask(t) && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />}
                         {t.name}
                       </td>
                       <td className="py-2 px-3"><Badge variant={t.phase === "Execution" ? "outline" : t.phase === "Planning" ? "secondary" : "outline"}>{t.phase}</Badge></td>
@@ -483,6 +553,40 @@ export default function SchedulePage() {
         stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }}
         onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} setShowAddTask={setShowAddTask} />
 
+      {/* Legend — the colour language was previously undocumented; users
+          had no way to know green bar ≠ green sprint band, or what the
+          red outline meant. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[11px]" style={{ color: "var(--muted-foreground)" }}>
+        {([["pending", "To Do"], ["active", "In Progress"], ["at-risk", "At Risk"], ["done", "Done"]] as [TaskStatus, string][]).map(([s, label]) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span className="inline-block w-[14px] h-[10px] rounded-[3px]" style={{ background: `${STATUS_COLORS[s]}30`, border: `1px solid ${STATUS_COLORS[s]}aa` }} />
+            {label}
+          </span>
+        ))}
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-[9px] h-[9px] rotate-45" style={{ background: "#F59E0B" }} />
+          Milestone
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-[14px] h-[10px] rounded-[3px]" style={{ border: "1.5px solid #EF4444" }} />
+          Critical path
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-[2px] h-[12px]" style={{ background: "#EF4444" }} />
+          Today
+        </span>
+        {sprintBands.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-[14px] h-[12px]" style={{ background: "rgba(16,185,129,0.08)", borderLeft: "1px dashed rgba(16,185,129,0.6)" }} />
+            Sprint window
+          </span>
+        )}
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-[3px] h-[12px] rounded-sm" style={{ background: MOSCOW_HEX.MUST }} />
+          MoSCoW stripe
+        </span>
+      </div>
+
       <div className="flex gap-4">
         {/* Main Gantt */}
         <Card className="flex-1 overflow-hidden">
@@ -519,7 +623,7 @@ export default function SchedulePage() {
                     <div key={t.id} className="flex items-center gap-2 px-3 text-[12px] truncate cursor-pointer"
                       style={{ height: ROW_HEIGHT, color: "var(--foreground)", borderBottom: `1px solid ${"var(--border)"}11`, background: selectedTask?.id === t.id ? "rgba(99,102,241,0.08)" : undefined }}
                       onClick={() => handleSelectTask(selectedTask?.id === t.id ? null : t)}>
-                      {t.isCriticalPath && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#EF4444" }} />}
+                      {isCriticalTask(t) && showCriticalPath && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#EF4444" }} />}
                       {t.isMilestone ? <span className="text-[#F59E0B] flex-shrink-0">◆</span> : <span className="w-3" />}
                       <span className="truncate">{t.name}</span>
                     </div>
@@ -636,7 +740,7 @@ export default function SchedulePage() {
                   const left = diffDays(timelineStart, tStart) * dayWidth;
                   const width = Math.max((diffDays(tStart, tEnd) + 1) * dayWidth, 8);
                   const barColor = STATUS_COLORS[t.status];
-                  const isCritical = t.isCriticalPath && showCriticalPath;
+                  const isCritical = isCriticalTask(t) && showCriticalPath;
 
                   if (t.isMilestone) {
                     return (
@@ -734,7 +838,7 @@ export default function SchedulePage() {
 
                         // Draw a right-angle connector: pred end → right → down/up → successor start
                         const midX = predRight + 8;
-                        const isCrit = pred.isCriticalPath && successor.isCriticalPath && showCriticalPath;
+                        const isCrit = isCriticalTask(pred) && isCriticalTask(successor) && showCriticalPath;
                         const color = isCrit ? "#EF4444" : "rgba(99,102,241,0.4)";
 
                         arrows.push(
@@ -810,6 +914,11 @@ export default function SchedulePage() {
               { label: "End", value: tMinusMode ? tMinusLabel(selectedTask.end, tMinusTarget) : formatDate(parseDate(selectedTask.end)) },
               { label: "Duration", value: selectedTask.isMilestone ? "Milestone" : `${diffDays(parseDate(selectedTask.start), parseDate(selectedTask.end)) + 1}d` },
               { label: "Assignee", value: selectedTask.assignee || "Unassigned" },
+              // Slack only renders when CPM ran (dependency edges exist).
+              // 0d = critical: any slip moves the project end date.
+              ...(cpm && cpm.slack.has(selectedTask.id)
+                ? [{ label: "Slack / Float", value: cpm.critical.has(selectedTask.id) ? "0d — critical" : `${cpm.slack.get(selectedTask.id)}d can slip` }]
+                : []),
             ].map(f => (
               <div key={f.label} className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted-foreground)" }}>{f.label}</p>
@@ -861,9 +970,42 @@ export default function SchedulePage() {
           )}
 
           {/* Flags */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             {selectedTask.isMilestone && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B" }}>◆ Milestone</span>}
-            {selectedTask.isCriticalPath && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}>Critical Path</span>}
+            {isCriticalTask(selectedTask) && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}>Critical Path</span>}
+            {/* Milestone toggle — PATCHes Task.type. Converting TO a
+                milestone collapses the bar to a single date (end = start);
+                converting back leaves dates as-is for the user to widen. */}
+            <button
+              disabled={updateTask.isPending}
+              onClick={() => {
+                const makeMilestone = !selectedTask.isMilestone;
+                const toastId = toast.loading(makeMilestone ? "Converting to milestone…" : "Converting to task…");
+                updateTask.mutate(
+                  {
+                    taskId: selectedTask.id,
+                    type: makeMilestone ? "milestone" : "task",
+                    ...(makeMilestone ? { endDate: selectedTask.start } : {}),
+                  },
+                  {
+                    onSuccess: () => {
+                      toast.success(makeMilestone ? "Marked as milestone ◆" : "Converted back to a task", { id: toastId });
+                      setSelectedTask(prev => prev ? { ...prev, isMilestone: makeMilestone, end: makeMilestone ? prev.start : prev.end } : null);
+                    },
+                    onError: (err: any) => toast.error(err?.body?.message?.slice(0, 200) || err?.message || "Failed to update", { id: toastId }),
+                  },
+                );
+              }}
+              className="px-2 py-1 rounded text-[10px] font-semibold transition-all"
+              style={{
+                background: "transparent",
+                color: "#F59E0B",
+                border: "1px dashed rgba(245,158,11,0.5)",
+                cursor: updateTask.isPending ? "default" : "pointer",
+                opacity: updateTask.isPending ? 0.5 : 1,
+              }}>
+              {selectedTask.isMilestone ? "Convert to task" : "◆ Mark as milestone"}
+            </button>
           </div>
 
           {/* Dependencies */}
@@ -910,6 +1052,12 @@ export default function SchedulePage() {
                 <Label className="text-xs">Est. Hours</Label>
                 <Input type="number" value={newTaskHours} onChange={e => setNewTaskHours(Number(e.target.value))} className="text-sm" />
               </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={newTaskMilestone} onChange={e => setNewTaskMilestone(e.target.checked)} />
+                <span className="text-xs">
+                  <span style={{ color: "#F59E0B" }}>◆</span> Milestone — a zero-duration marker (uses the Start date only)
+                </span>
+              </label>
             </div>
             <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowAddTask(false)}>Cancel</Button>
@@ -918,17 +1066,20 @@ export default function SchedulePage() {
                   await createTask.mutateAsync({
                     title: newTaskTitle.trim(),
                     startDate: newTaskStart || null,
-                    endDate: newTaskEnd || null,
+                    // Milestones are a point in time — end = start.
+                    endDate: newTaskMilestone ? (newTaskStart || null) : (newTaskEnd || null),
                     estimatedHours: newTaskHours || null,
                     status: "TODO",
                     progress: 0,
+                    ...(newTaskMilestone ? { type: "milestone" } : {}),
                   });
-                  toast.success(`Task "${newTaskTitle}" added`);
+                  toast.success(newTaskMilestone ? `Milestone "${newTaskTitle}" added ◆` : `Task "${newTaskTitle}" added`);
                   setShowAddTask(false);
                   setNewTaskTitle("");
                   setNewTaskStart("");
                   setNewTaskEnd("");
                   setNewTaskHours(0);
+                  setNewTaskMilestone(false);
                 } catch (e: any) {
                   toast.error(e.message || "Failed to add task");
                 }
