@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useProjectArtefacts, useProject } from "@/hooks/use-api";
+import { useProjectArtefacts, useProject, useArtefactVersions } from "@/hooks/use-api";
 import { getMethodology } from "@/lib/methodology-definitions";
 import Link from "next/link";
 import { MessageSquare } from "lucide-react";
@@ -59,6 +59,9 @@ export default function ArtefactsPage() {
   const [editorArt, setEditorArt] = useState<any>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
+  // Version history for whichever artefact is open in the editor —
+  // disabled (no fetch) while no editor is open.
+  const { data: editorVersions } = useArtefactVersions(editorArt?.id ?? null);
 
   /** Invalidate cache so next render fetches fresh data from server */
   const refreshArtefacts = () => {
@@ -142,9 +145,34 @@ export default function ArtefactsPage() {
     if (res.ok) {
       toast.success("Document saved");
       refreshArtefacts(); // background sync
+      qc.invalidateQueries({ queryKey: ["artefact-versions", editorArt.id] });
     } else {
       rollback();
       toast.error("Save failed");
+    }
+  };
+
+  /** Restore a past version's content as a new save (the replaced content
+   * is itself snapshotted server-side, so nothing is lost). TipTap only
+   * reads its content prop on mount, so close the editor afterwards —
+   * reopening shows the restored content. */
+  const handleRestore = async (v: { version: number; content?: string }) => {
+    if (!editorArt || !v.content) return;
+    const artId = editorArt.id;
+    const rollback = optimisticPatch(artId, { content: v.content });
+    setEditorArt(null);
+    const res = await fetch(`/api/agents/artefacts/${artId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: v.content, feedback: `Restored from version ${v.version}` }),
+    });
+    if (res.ok) {
+      toast.success(`Version ${v.version} restored`);
+      refreshArtefacts();
+      qc.invalidateQueries({ queryKey: ["artefact-versions", artId] });
+    } else {
+      rollback();
+      toast.error("Restore failed");
     }
   };
 
@@ -247,6 +275,15 @@ export default function ArtefactsPage() {
         // through and stamps the override on the audit trail. One toast
         // covers both contradiction and fabricated-name overrides so the
         // pattern is consistent.
+        //
+        // The retry must KEEP confirmNotNames=true (the baseline every
+        // first attempt sends, line ~195) on top of the override flags.
+        // Previously it sent only `flags`, so an artefact flagged with
+        // BOTH fabricated names and contradictions failed its retry on
+        // the names gate the first attempt had already passed — the user
+        // clicked "Approve anyway" and got a dead-end "Override failed".
+        // The agent-detail page (agents/[agentId]/page.tsx) always sent
+        // both flags together; this now matches it.
         const flags = overrideFlags;
         toast.error(errMsg, {
           duration: 12000,
@@ -257,10 +294,17 @@ export default function ArtefactsPage() {
               const r2 = await fetch(`/api/agents/artefacts/${artId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: "APPROVED", ...flags }),
+                body: JSON.stringify({ status: "APPROVED", confirmNotNames: true, ...flags }),
               });
               if (r2.ok) { refreshArtefacts(); toast.success("Artefact approved ✓ (override stamped on audit trail)"); }
-              else { rb(); toast.error("Override failed — see console"); console.error(await r2.text()); }
+              else {
+                rb();
+                // Surface the server's reason — "see console" was a dead end.
+                let why = "";
+                try { const b = await r2.clone().json(); why = (b.message || b.error || "").slice(0, 250); } catch {}
+                toast.error(why ? `Override failed — ${why}` : "Override failed — please retry or contact support", { duration: 12000 });
+                console.error(await r2.text());
+              }
             },
           },
         });
@@ -458,7 +502,9 @@ export default function ArtefactsPage() {
         type={editorArt.format || "markdown"}
         projectName={project?.name}
         metadata={editorArt.metadata}
+        versions={editorVersions || []}
         onSave={handleSave}
+        onRestore={handleRestore}
         onApprove={editorArt.status !== "APPROVED" ? (confirmIntentional) => handleApprove(confirmIntentional) : undefined}
         onReject={editorArt.status !== "APPROVED" ? (reason) => handleReject(reason) : undefined}
         onExportPDF={() => handleDownload(editorArt, "pdf")}
