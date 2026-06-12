@@ -144,7 +144,27 @@ export async function planSprints(
   const projectDays = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86_400_000);
   const sprintCount = Math.max(1, Math.ceil(projectDays / effectiveSprintDuration));
   const totalPoints = updatedTasks.reduce((s, t) => s + (t.storyPoints || 1), 0);
-  const velocity = velocityOverride ?? Math.max(10, Math.ceil(totalPoints / sprintCount));
+  // Velocity must never be smaller than the largest single task. The
+  // assignment loop caps each sprint at velocity*1.2; with the old
+  // `max(10, avg)` floor, a single 13-point story could exceed the cap and
+  // become permanently unplaceable — every planSprints call then walked all
+  // sprintCount slots, minted empty sprints (numbered after the existing
+  // ones), and assigned nothing. Live incident 2026-06-12: one project
+  // accumulated 168 sprints (12 of them ACTIVE) from three unplaceable
+  // 13-point integration tasks re-triggering on every artefact save.
+  const maxTaskPoints = updatedTasks.reduce((m, t) => Math.max(m, t.storyPoints || 1), 1);
+  const velocity = velocityOverride ?? Math.max(10, maxTaskPoints, Math.ceil(totalPoints / sprintCount));
+  // New sprints continue AFTER the last existing sprint rather than
+  // overlapping it — when a later artefact approval adds tasks, the extra
+  // sprints extend the timeline instead of stacking on the project start.
+  const lastExistingEnd = existingSprints.reduce<Date | null>(
+    (latest, s) => (!latest || s.endDate > latest ? s.endDate : latest),
+    null,
+  );
+  const planStart = lastExistingEnd && lastExistingEnd > new Date(startDate) ? lastExistingEnd : new Date(startDate);
+  // Only ONE sprint may be ACTIVE per project. If any existing sprint is
+  // already active, everything we create here stays PLANNING.
+  const hasActiveSprint = existingSprints.some(s => s.status === "ACTIVE");
 
   // ── Step 4: Create sprints and assign tasks ──
   const orgId = project.orgId;
@@ -161,9 +181,27 @@ export async function planSprints(
   });
 
   for (let i = 0; i < sprintCount && taskQueue.length > 0; i++) {
-    const sprintStart = new Date(new Date(startDate).getTime() + i * effectiveSprintDuration * 86_400_000);
+    const sprintStart = new Date(planStart.getTime() + i * effectiveSprintDuration * 86_400_000);
     const sprintEnd = new Date(sprintStart.getTime() + effectiveSprintDuration * 86_400_000);
     const sprintName = `Sprint ${existingSprints.length + i + 1}`;
+
+    // Work out what would fit BEFORE creating the sprint row, so an
+    // iteration that assigns nothing never mints an empty sprint.
+    let sprintPoints = 0;
+    const toAssign: typeof taskQueue = [];
+    for (const task of taskQueue) {
+      const pts = task.storyPoints || 1;
+      if (sprintPoints + pts > velocity * 1.2) continue; // allow 20% overflow
+      toAssign.push(task);
+      sprintPoints += pts;
+    }
+    if (toAssign.length === 0) {
+      // Defensive: velocity >= maxTaskPoints means this should be
+      // unreachable, but if it ever regresses we stop rather than walk
+      // the remaining slots creating empty sprints (the 168-sprint bug).
+      console.warn(`[sprint-planner] no tasks fit sprint ${sprintName} (velocity ${velocity}) — stopping plan loop`);
+      break;
+    }
 
     // Check if sprint with this name already exists
     const existing = await db.sprint.findFirst({ where: { projectId, name: sprintName } });
@@ -179,7 +217,9 @@ export async function planSprints(
           goal: `[auto-planned] Deliver priority items — ${velocity} story points target`,
           startDate: sprintStart,
           endDate: sprintEnd,
-          status: i === 0 ? "ACTIVE" : "PLANNING",
+          // First created sprint goes ACTIVE only when the project has no
+          // active sprint already — a project must never have two.
+          status: i === 0 && !hasActiveSprint ? "ACTIVE" : "PLANNING",
         },
       });
       sprintId = sprint.id;
@@ -189,17 +229,9 @@ export async function planSprints(
       await createSprintEvents(orgId, projectId, agentId, sprintName, sprintStart, sprintEnd);
     }
 
-    // Assign tasks up to velocity
-    let sprintPoints = 0;
-    const assigned: string[] = [];
+    // Assign the pre-computed set, round-robin across team members
     let memberIdx = 0;
-
-    for (let j = 0; j < taskQueue.length; j++) {
-      const task = taskQueue[j];
-      const pts = task.storyPoints || 1;
-      if (sprintPoints + pts > velocity * 1.2) continue; // allow 20% overflow
-
-      // Assign to a team member (round-robin)
+    for (const task of toAssign) {
       const assignee = teamMembers.length > 0 ? teamMembers[memberIdx % teamMembers.length] : null;
       memberIdx++;
 
@@ -213,13 +245,12 @@ export async function planSprints(
         },
       });
 
-      sprintPoints += pts;
       tasksAssigned++;
-      assigned.push(task.id);
     }
 
     pointsPlanned += sprintPoints;
-    taskQueue = taskQueue.filter(t => !assigned.includes(t.id));
+    const assignedIds = new Set(toAssign.map(t => t.id));
+    taskQueue = taskQueue.filter(t => !assignedIds.has(t.id));
   }
 
   // Log activity
