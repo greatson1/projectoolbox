@@ -482,8 +482,19 @@ export default function AgileBoardPage() {
   }
 
   async function handleCompleteSprint(sprintId: string) {
+    // Warn before completing: unfinished issues are swept back to the backlog
+    // by the server (sprints/[sprintId] PATCH). Surface the count first so the
+    // sweep isn't silent.
+    const inSprint = allIssues.filter(i => i.sprintId === sprintId);
+    const unfinished = inSprint.filter(i => i.column !== "done");
+    const msg = unfinished.length > 0
+      ? `Complete this sprint? ${unfinished.length} unfinished ${unfinished.length === 1 ? "issue" : "issues"} (of ${inSprint.length}) will be moved back to the backlog.`
+      : `Complete this sprint? All ${inSprint.length} issue${inSprint.length === 1 ? "" : "s"} are done.`;
+    if (!confirm(msg)) return;
     await updateSprint.mutateAsync({ sprintId, status: "COMPLETED" });
-    toast.success("Sprint completed");
+    toast.success(unfinished.length > 0
+      ? `Sprint completed — ${unfinished.length} issue${unfinished.length === 1 ? "" : "s"} returned to backlog`
+      : "Sprint completed");
   }
 
   async function saveIssue() {
