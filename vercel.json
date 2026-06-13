@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/oauth/:path*",
-      "destination": "http://187.77.182.159:3099/api/oauth/:path*"
+      "destination": "https://agent.projectoolbox.com/api/oauth/:path*"
     }
   ],
   "crons": [
