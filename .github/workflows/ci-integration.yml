@@ -82,8 +82,14 @@ jobs:
           # point the suite at TEST_DATABASE_URL — the documented local flow
           # (`TEST_DATABASE_URL=… npm run test:integration`). The schema was
           # already pushed to this same DB via the job-level DATABASE_URL above.
+          #
+          # The `?pgbouncer=true` suffix is required: src/lib/db.ts rewrites a
+          # bare `:5432/` URL to Supabase's pooler port `:6543/` (load-bearing
+          # in prod), but the CI Postgres service listens on 5432. The suffix
+          # makes db.ts skip that rewrite, so the client stays on 5432. The
+          # param is otherwise ignored by the pg driver against a real Postgres.
           DATABASE_URL: ""
-          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/projectoolbox_test
+          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/projectoolbox_test?pgbouncer=true
         run: npm run test:integration
 
   golden-path:
