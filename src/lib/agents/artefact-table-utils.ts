@@ -31,6 +31,9 @@ export function formatDate(d: Date | null | undefined | string): string {
 /** Header-column candidates that identify the task-title column in a table. */
 export const HTML_TITLE_COLUMNS = ["Activity", "Work Package", "Deliverable", "Task", "Task Name", "User Story", "Title", "Name"];
 
+/** Header-column candidates that identify the action column in a Next Actions table. */
+export const HTML_ACTION_COLUMNS = ["Action", "Action Item", "Next Action", "Task", "Activity", "Item"];
+
 export function stripTags(html: string): string {
   return html.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
 }
@@ -63,6 +66,7 @@ export function replaceRowCells(rowHtml: string, updates: Array<[number, string]
 export function editHtmlTaskTable(
   content: string,
   mutate: (table: { html: string; header: string[]; rowsHtml: string[]; titleIdx: number }) => string | null,
+  titleColumns: string[] = HTML_TITLE_COLUMNS,
 ): string | null {
   const tables = content.match(/<table[^>]*>[\s\S]*?<\/table>/gi);
   if (!tables) return null;
@@ -70,7 +74,7 @@ export function editHtmlTaskTable(
     const rowsHtml = tableHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi);
     if (!rowsHtml || rowsHtml.length < 2) continue;
     const header = htmlRowCells(rowsHtml[0]);
-    const titleIdx = findColIndex(header, HTML_TITLE_COLUMNS);
+    const titleIdx = findColIndex(header, titleColumns);
     if (titleIdx < 0) continue;
     const newTable = mutate({ html: tableHtml, header, rowsHtml, titleIdx });
     if (newTable && newTable !== tableHtml) return content.replace(tableHtml, newTable);

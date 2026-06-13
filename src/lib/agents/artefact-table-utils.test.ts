@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  normalise, findColIndex, htmlRowCells, replaceRowCells, editHtmlTaskTable, HTML_TITLE_COLUMNS,
+  normalise, findColIndex, htmlRowCells, replaceRowCells, editHtmlTaskTable,
+  HTML_TITLE_COLUMNS, HTML_ACTION_COLUMNS, escapeHtmlText,
 } from "./artefact-table-utils";
 
 // A realistic WBS document: a document-control header table (no title column,
@@ -86,6 +87,63 @@ describe("editHtmlTaskTable", () => {
 
   it("returns null when content has no tables at all", () => {
     expect(editHtmlTaskTable("<p>No tables here</p>", () => "x")).toBeNull();
+  });
+});
+
+// A "Next Actions" table — the key column is "Action", not "Task", so it
+// must be addressed via the titleColumns override (HTML_ACTION_COLUMNS).
+const ACTIONS_DOC = `
+<h3>Summary and Next Actions</h3>
+<table>
+  <thead><tr><th>Action</th><th>Owner</th><th>Due Date</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>Confirm venue booking</td><td>PM</td><td>TBC</td><td>Open</td></tr>
+    <tr><td>Sign off budget</td><td>Sponsor</td><td>TBC</td><td>Open</td></tr>
+  </tbody>
+</table>`;
+
+describe("editHtmlTaskTable with HTML_ACTION_COLUMNS", () => {
+  it("does NOT match an action table when using the default task columns", () => {
+    // Defends the WBS sync from accidentally editing a Next Actions table.
+    const out = editHtmlTaskTable(ACTIONS_DOC, ({ html }) => html + "<!--x-->");
+    expect(out).toBeNull();
+  });
+
+  it("updates an action's status via the action-column override", () => {
+    const out = editHtmlTaskTable(ACTIONS_DOC, ({ html, header, rowsHtml, titleIdx }) => {
+      const statusIdx = findColIndex(header, ["Status"]);
+      for (let r = 1; r < rowsHtml.length; r++) {
+        if (normalise(htmlRowCells(rowsHtml[r])[titleIdx]) === normalise("Confirm venue booking")) {
+          return html.replace(rowsHtml[r], replaceRowCells(rowsHtml[r], [[statusIdx, "Done"]]));
+        }
+      }
+      return null;
+    }, HTML_ACTION_COLUMNS);
+    expect(out).not.toBeNull();
+    expect(out).toContain("<td>Done</td>");
+    // Sibling action untouched (still Open).
+    expect((out!.match(/<td>Open<\/td>/g) || []).length).toBe(1);
+  });
+
+  it("appends a new action row mapped onto the table's columns", () => {
+    const action = { title: "Book caterer", owner: "PM", dueDate: "2026-07-01", priority: "HIGH", status: "Open" };
+    const out = editHtmlTaskTable(ACTIONS_DOC, ({ html, header }) => {
+      const cellFor = (col: string): string => {
+        const lc = col.toLowerCase();
+        if (findColIndex([col], HTML_ACTION_COLUMNS) >= 0) return action.title;
+        if (lc.includes("owner")) return action.owner;
+        if (lc.includes("due") || lc.includes("date")) return action.dueDate;
+        if (lc.includes("status")) return action.status;
+        return "";
+      };
+      const tr = `<tr>${header.map(col => `<td>${escapeHtmlText(cellFor(col))}</td>`).join("")}</tr>`;
+      return html.replace(/<\/tbody>/i, `${tr}</tbody>`);
+    }, HTML_ACTION_COLUMNS);
+    expect(out).not.toBeNull();
+    expect(out).toContain("<td>Book caterer</td>");
+    expect(out).toContain("<td>2026-07-01</td>");
+    // Appended after the existing rows, before </tbody>.
+    expect(out!.indexOf("Book caterer")).toBeGreaterThan(out!.indexOf("Sign off budget"));
   });
 });
 

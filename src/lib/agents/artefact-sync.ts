@@ -23,7 +23,7 @@ import { db } from "@/lib/db";
 import { updateArtefactContentVersioned } from "./artefact-versioning";
 import {
   normalise, findColIndex, formatDate, escapeHtmlText,
-  HTML_TITLE_COLUMNS, htmlRowCells, replaceRowCells, editHtmlTaskTable,
+  HTML_TITLE_COLUMNS, HTML_ACTION_COLUMNS, htmlRowCells, replaceRowCells, editHtmlTaskTable,
 } from "./artefact-table-utils";
 
 // ─── Artefact dependency graph ───────────────────────────────────────────────
@@ -1057,8 +1057,42 @@ export async function syncActionToSourceArtefact(
     });
     if (!artefact || !artefact.content) return;
 
-    // Find the "Next Actions" section in the prose content
     const content = artefact.content;
+
+    // ── HTML path ──
+    // Newer documents are pure HTML, so the markdown section/pipe-table logic
+    // below never matched them. Edit the <table> whose header carries an
+    // "Action" column: rename the action cell, and update Status / Owner.
+    if (/<table/i.test(content)) {
+      const fmtStatus = (s: string): string =>
+        s === "DONE" ? "Done" : s === "IN_PROGRESS" ? "In Progress" : s === "TODO" ? "Open" : s;
+      const newHtml = editHtmlTaskTable(content, ({ html, header, rowsHtml, titleIdx }) => {
+        const statusIdx = findColIndex(header, ["Status", "State"]);
+        const ownerIdx = findColIndex(header, ["Owner", "Assigned To", "Assignee", "Responsible"]);
+        for (let r = 1; r < rowsHtml.length; r++) {
+          const cells = htmlRowCells(rowsHtml[r]);
+          if (normalise(cells[titleIdx] || "") !== normalise(actionTitle)) continue;
+          const colUpdates: Array<[number, string]> = [];
+          if (changes.title && normalise(changes.title) !== normalise(actionTitle)) colUpdates.push([titleIdx, changes.title]);
+          if (changes.status && statusIdx >= 0) colUpdates.push([statusIdx, fmtStatus(changes.status)]);
+          if (changes.assigneeName !== undefined && ownerIdx >= 0) colUpdates.push([ownerIdx, changes.assigneeName || "TBD"]);
+          if (colUpdates.length === 0) return null;
+          return html.replace(rowsHtml[r], replaceRowCells(rowsHtml[r], colUpdates));
+        }
+        return null;
+      }, HTML_ACTION_COLUMNS);
+
+      if (newHtml) {
+        await updateArtefactContentVersioned(artefact.id, newHtml, {
+          comment: `Auto-sync: action "${actionTitle}" updated in Next Actions table`,
+        });
+        if (artefact.projectId) await flagDependentsStale(artefact.projectId, artefact.name);
+        console.log(`[artefact-sync] Updated action "${actionTitle}" in HTML artefact "${artefact.name}"`);
+      }
+      return;
+    }
+
+    // Find the "Next Actions" section in the prose content
     // [\s\S] instead of `.` + the `s` (dotAll) flag, which needs ES2018 —
     // the project's TS target is older, so the `s` flag fails to compile.
     const actionsMatch = content.match(/(##?\s*(?:Summary and )?Next Actions[\s\S]*?)(?=\n##?\s|\n---|$)/i);
@@ -1141,6 +1175,41 @@ export async function appendActionToLatestArtefact(
       take: 10,
       select: { id: true, name: true, content: true, projectId: true },
     });
+
+    // Prefer an HTML artefact whose table has an Action column; fall back to
+    // the markdown "Next Actions" heading match.
+    const hasActionTable = (html: string): boolean =>
+      (html.match(/<table[^>]*>[\s\S]*?<\/table>/gi) || []).some(t => {
+        const hdr = t.match(/<tr[^>]*>[\s\S]*?<\/tr>/i)?.[0] || "";
+        return findColIndex(htmlRowCells(hdr), HTML_ACTION_COLUMNS) >= 0;
+      });
+    const htmlTarget = artefacts.find(a => a.content && hasActionTable(a.content));
+
+    if (htmlTarget?.content) {
+      const newHtml = editHtmlTaskTable(htmlTarget.content, ({ html, header }) => {
+        const cellFor = (col: string): string => {
+          const lc = col.toLowerCase();
+          if (findColIndex([col], HTML_ACTION_COLUMNS) >= 0) return action.title;
+          if (lc.includes("owner") || lc.includes("assign") || lc.includes("responsible")) return action.owner;
+          if (lc.includes("due") || lc.includes("date") || lc.includes("deadline")) return action.dueDate;
+          if (lc.includes("priority")) return action.priority;
+          if (lc.includes("status") || lc.includes("state")) return action.status;
+          return "";
+        };
+        const tr = `<tr>${header.map(col => `<td>${escapeHtmlText(cellFor(col))}</td>`).join("")}</tr>`;
+        if (/<\/tbody>/i.test(html)) return html.replace(/<\/tbody>/i, `${tr}</tbody>`);
+        return html.replace(/<\/table>/i, `${tr}</table>`);
+      }, HTML_ACTION_COLUMNS);
+
+      if (newHtml) {
+        await updateArtefactContentVersioned(htmlTarget.id, newHtml, {
+          comment: `Auto-sync: action "${action.title}" appended to Next Actions table`,
+        });
+        await flagDependentsStale(projectId, htmlTarget.name);
+        console.log(`[artefact-sync] Appended manual action "${action.title}" to HTML artefact "${htmlTarget.name}"`);
+        return;
+      }
+    }
 
     const target = artefacts.find(a => a.content && /##?\s*(?:Summary and )?Next Actions/i.test(a.content));
     if (!target || !target.content) return;
