@@ -32,14 +32,14 @@ import { createTestOrg, createTestProject, cleanupTestOrg, type TestProjectConte
 import { getMethodology } from "@/lib/methodology-definitions";
 import { getPhaseCompletion } from "@/lib/agents/phase-completion";
 
-describe("artefact count consistency — Pre-Project (4 defined, 0 strictly required)", () => {
+describe("artefact count consistency — Pre-Project (4 defined, 1 strictly required)", () => {
   let orgId: string;
   let ctx: TestProjectContext;
 
   beforeAll(async () => {
     orgId = await createTestOrg("artefact_counts");
     ctx = await createTestProject(orgId, {
-      methodology: "WATERFALL",
+      methodology: "TRADITIONAL",
       primaryPhaseName: "Pre-Project",
       currentPhase: "Pre-Project",
       // 3 of the 4 methodology-defined artefacts generated and approved.
@@ -66,9 +66,11 @@ describe("artefact count consistency — Pre-Project (4 defined, 0 strictly requ
 
     const requiredTrue = phaseDef!.artefacts.filter(a => a.required);
     // The bug we're regressing on: this used to be the artefact total in
-    // multiple surfaces. For Pre-Project it's zero — and surfaces that
-    // filter on it collapse and fall back to the generated count.
-    expect(requiredTrue.length).toBe(0);
+    // multiple surfaces. For Pre-Project only Outline Business Case is
+    // required:true (gate prereq) — far fewer than the 4 aiGeneratable, so
+    // surfaces that filter on required:true still collapse and fall back to
+    // the generated count, which is exactly the divergence this guards.
+    expect(requiredTrue.length).toBe(1);
   });
 
   it("phase-completion reports artefacts.total = 3 (live count of generated artefacts)", async () => {
@@ -130,7 +132,7 @@ describe("artefact count consistency — Pre-Project (4 defined, 0 strictly requ
     const requiredCount = phaseDef.artefacts.filter(a => a.required).length;
 
     expect(aiGeneratableCount).toBe(4);
-    expect(requiredCount).toBe(0);
+    expect(requiredCount).toBe(1);
     expect(aiGeneratableCount).toBeGreaterThan(requiredCount);
   });
 });
