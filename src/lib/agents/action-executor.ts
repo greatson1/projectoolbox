@@ -393,8 +393,24 @@ async function performMutation(
       if (items.length > 0) {
         // Batch update all specified tasks — update each individually to handle missing IDs gracefully
         const updatedIds: string[] = [];
+        const sprintBlockedIds: string[] = [];
+        const { checkSprintStartGate } = await import("./sprint-start-gate");
         for (const item of items) {
           try {
+            // Don't mark a task in-progress if its sprint hasn't started.
+            const t = await db.task.findUnique({
+              where: { id: item.id },
+              select: { sprintId: true, description: true },
+            });
+            const violation = await checkSprintStartGate({
+              nextStatus: "IN_PROGRESS",
+              sprintId: t?.sprintId,
+              description: t?.description,
+            });
+            if (violation) {
+              sprintBlockedIds.push(item.id);
+              continue;
+            }
             await db.task.update({
               where: { id: item.id },
               data: { status: "IN_PROGRESS", lastEditedBy: `agent:${context.agentId}` },
@@ -404,6 +420,9 @@ async function performMutation(
             // Skip tasks that don't exist (LLM may fabricate IDs)
           }
         }
+        if (sprintBlockedIds.length > 0) {
+          console.log(`[action-executor] sprint-start gate held ${sprintBlockedIds.length} task(s) in not-yet-started sprints (left as-is): ${sprintBlockedIds.join(", ")}`);
+        }
         // Auto-log cost for any tasks that reached DONE
         for (const id of updatedIds) {
           try {
@@ -411,7 +430,7 @@ async function performMutation(
             await logTaskCompletion(id, context.projectId, context.agentId);
           } catch {}
         }
-        return { tasksUpdated: updatedIds.length, taskIds: updatedIds, action: "updated" };
+        return { tasksUpdated: updatedIds.length, taskIds: updatedIds, sprintBlocked: sprintBlockedIds.length, action: "updated" };
       } else {
         // No task IDs given — check if LLM is fabricating a bulk progress claim
         const isBulkClaim = /\d+\s+task/i.test(proposal.description);
