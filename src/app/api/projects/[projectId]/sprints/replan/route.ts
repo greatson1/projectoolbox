@@ -57,6 +57,18 @@ export async function POST(
     return NextResponse.json({ error: "No active agent for this project" }, { status: 400 });
   }
 
+  // Heal any junk assigneeNames before replanning — the same data mess that
+  // produced runaway sprints often left "Methodology Scrum Team Charter"-style
+  // owners on tasks. Cheap, idempotent, and the user is already here fixing
+  // the plan. Non-blocking on failure.
+  let assigneesCleared = 0;
+  try {
+    const { cleanupProjectAssignees } = await import("@/lib/agents/assignee-cleanup");
+    assigneesCleared = (await cleanupProjectAssignees(projectId)).cleared;
+  } catch (e) {
+    console.error(`[sprints/replan] assignee cleanup failed for project ${projectId}:`, e);
+  }
+
   // Run the planner with force=true
   const { planSprints } = await import("@/lib/agents/sprint-planner");
   const result = await planSprints(deployment.agentId, projectId, {
@@ -82,7 +94,8 @@ export async function POST(
       tasksAssigned:   result.tasksAssigned,
       pointsPlanned:   result.pointsPlanned,
       tasksCleared:    result.cleared,
+      assigneesCleared,
     },
-    message: `Replanned: ${result.sprints} sprint(s) created, ${result.tasksAssigned} task(s) assigned across ${result.pointsPlanned} story points.`,
+    message: `Replanned: ${result.sprints} sprint(s) created, ${result.tasksAssigned} task(s) assigned across ${result.pointsPlanned} story points${assigneesCleared > 0 ? `; cleared ${assigneesCleared} invalid assignee(s)` : ""}.`,
   });
 }

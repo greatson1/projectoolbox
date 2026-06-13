@@ -19,6 +19,7 @@
  */
 
 import { db } from "@/lib/db";
+import { cleanAssignee } from "./assignee-plausibility";
 
 interface ParsedAction {
   action: string;
@@ -120,25 +121,9 @@ export function parseNextActionsTable(content: string): ParsedAction[] {
   return rows;
 }
 
-/**
- * Plausibility guard for the Owner cell. Mis-aligned tables (or document-
- * control header rows getting swept up) produce fragments like
- * "Methodology Scrum Team Charter" or "Up to" in the owner column, which
- * then surface as Task.assigneeName across the Schedule and Tracker UIs.
- * A real owner is a short person/role label; anything else becomes null
- * (rendered as "Unassigned"), which is honest where junk text is not.
- */
-function cleanOwner(raw: string | null | undefined): string | null {
-  const owner = (raw || "").trim();
-  if (!owner) return null;
-  if (/^\[?\s*(TBC|TBD|N\/?A|—|-)\s*\]?$/i.test(owner) || /^\[TBC/i.test(owner)) return null;
-  if (owner.length > 50) return null;
-  if (owner.split(/\s+/).length > 5) return null;
-  // Document-control vocabulary — these words appear in the doc header
-  // table, never in a person/role name.
-  if (/\b(methodology|charter|version|document|draft|template|awaiting)\b/i.test(owner)) return null;
-  return owner;
-}
+// Owner-cell plausibility lives in a shared module so the cleanup pass and
+// the extractor reject the same junk. Aliased to keep the call sites below.
+const cleanOwner = cleanAssignee;
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
