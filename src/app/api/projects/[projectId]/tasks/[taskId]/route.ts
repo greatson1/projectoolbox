@@ -163,6 +163,40 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
   }
 
+  // ── Sprint-start gate ──────────────────────────────────────────────────
+  // A task may only enter an active-work status (IN_PROGRESS / IN_REVIEW /
+  // DONE) once its sprint has started. Blocks the "work underway in a sprint
+  // that hasn't started yet" inconsistency. Same delivery-only scope as the
+  // DoD/DoR gates. The effective sprint is the one being set in this request,
+  // falling back to the task's current sprint.
+  const movingToActiveWork = data.status &&
+    ["IN_PROGRESS", "IN_REVIEW", "DONE"].includes(data.status.toUpperCase());
+  if (movingToActiveWork) {
+    try {
+      const currentTask = await db.task.findUnique({
+        where: { id: taskId },
+        select: { sprintId: true, description: true },
+      });
+      const effectiveSprintId = data.sprintId !== undefined ? data.sprintId : (currentTask?.sprintId ?? null);
+      const { checkSprintStartGate } = await import("@/lib/agents/sprint-start-gate");
+      const violation = await checkSprintStartGate({
+        nextStatus: data.status,
+        sprintId: effectiveSprintId,
+        description: currentTask?.description,
+      });
+      if (violation) {
+        return NextResponse.json({
+          error: `Sprint "${violation.sprintName}" hasn't started — start it before moving work into ${violation.attemptedStatus.replace("_", " ").toLowerCase()}.`,
+          reason: violation.reason,
+          sprintName: violation.sprintName,
+          sprintStatus: violation.sprintStatus,
+        }, { status: 422 });
+      }
+    } catch (e) {
+      console.error("[task PATCH] sprint-start gate check failed (allowing through):", e);
+    }
+  }
+
   // Auto-sync status ↔ progress: DONE always means 100%, and setting 100% means DONE
   if (data.status && data.status.toUpperCase() === "DONE") {
     data.progress = 100;

@@ -203,6 +203,8 @@ export async function applyApprovedChanges(approvalId: string): Promise<{ applie
 
   const items = (approval.affectedItems as any[]) || [];
   let applied = 0;
+  let sprintBlocked = 0;
+  const { checkSprintStartGate } = await import("./sprint-start-gate");
 
   for (const item of items) {
     try {
@@ -225,6 +227,12 @@ export async function applyApprovedChanges(approvalId: string): Promise<{ applie
 
         if (Object.keys(updateData).length > 0) {
           updateData.lastEditedBy = `agent:${approval.requestedById}`;
+          // Hold status changes that would start work in a not-yet-started sprint.
+          if (updateData.status) {
+            const t = await db.task.findUnique({ where: { id: item.id }, select: { sprintId: true, description: true } });
+            const violation = await checkSprintStartGate({ nextStatus: updateData.status, sprintId: t?.sprintId, description: t?.description });
+            if (violation) { sprintBlocked++; continue; }
+          }
           await db.task.update({ where: { id: item.id }, data: updateData });
 
           // Trigger reverse sync to update artefact CSV
@@ -249,9 +257,13 @@ export async function applyApprovedChanges(approvalId: string): Promise<{ applie
       } else if (item.type === "milestone") {
         // Milestone changes are tracked as task updates (milestones are tasks with isMilestone flag)
         if (item.id) {
+          const nextStatus = item.to === "Completed" ? "DONE" : "IN_PROGRESS";
+          const t = await db.task.findUnique({ where: { id: item.id }, select: { sprintId: true, description: true } });
+          const violation = await checkSprintStartGate({ nextStatus, sprintId: t?.sprintId, description: t?.description });
+          if (violation) { sprintBlocked++; continue; }
           await db.task.update({
             where: { id: item.id },
-            data: { status: item.to === "Completed" ? "DONE" : "IN_PROGRESS", progress: item.to === "Completed" ? 100 : 50 },
+            data: { status: nextStatus, progress: item.to === "Completed" ? 100 : 50 },
           });
           applied++;
         }
@@ -259,6 +271,10 @@ export async function applyApprovedChanges(approvalId: string): Promise<{ applie
     } catch (e) {
       console.error(`[change-proposals] Failed to apply change to ${item.type} ${item.id}:`, e);
     }
+  }
+
+  if (sprintBlocked > 0) {
+    console.log(`[change-proposals] sprint-start gate held ${sprintBlocked} status change(s) targeting not-yet-started sprints.`);
   }
 
   // Log
