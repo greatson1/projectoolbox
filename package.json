@@ -12,8 +12,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:integration:watch": "vitest --config vitest.integration.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:integration:watch": "vitest --config vitest.integration.config.mts",
     "test:e2e": "E2E=1 playwright test"
   },
   "dependencies": {
