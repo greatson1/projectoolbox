@@ -20,6 +20,7 @@
  */
 
 import { db } from "@/lib/db";
+import { updateArtefactContentVersioned } from "./artefact-versioning";
 
 // ─── Artefact dependency graph ───────────────────────────────────────────────
 // If artefact A changes, artefacts B that depend on A may be stale.
@@ -134,13 +135,8 @@ export async function syncCostEntriesToArtefact(projectId: string): Promise<void
 
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
 
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: {
-        content: newCsv,
-        version: { increment: 1 },
-        updatedAt: new Date(),
-      },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from cost estimate records",
     });
 
     // Flag downstream artefacts as stale
@@ -171,7 +167,10 @@ export async function syncTaskToArtefact(
     const isScheduleTask = desc.includes("[source:schedule]");
     if (!isWbsTask && !isScheduleTask) return;
 
-    // Find the source artefact
+    // Find the source artefact — CSV first (legacy spreadsheets), then any
+    // prose artefact containing a task table. Newer documents are pure HTML
+    // (often labelled "markdown"), and restricting to CSV meant task edits
+    // never reached them.
     const artefactName = isWbsTask ? "Work Breakdown Structure" : "Schedule with Dependencies";
     const artefact = await db.agentArtefact.findFirst({
       where: {
@@ -181,7 +180,45 @@ export async function syncTaskToArtefact(
       },
       orderBy: { updatedAt: "desc" },
     });
-    if (!artefact || !artefact.content) return;
+
+    if (!artefact || !artefact.content) {
+      const proseArtefact = await db.agentArtefact.findFirst({
+        where: {
+          projectId,
+          name: { contains: artefactName.split(" ")[0] },
+          format: { in: ["html", "markdown"] },
+          content: { contains: "<table" },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (!proseArtefact?.content) return;
+
+      const fieldUpdates = buildFieldUpdates(task, changedFields);
+      if (fieldUpdates.length === 0) return;
+      const newContent = editHtmlTaskTable(proseArtefact.content, ({ html, header, rowsHtml, titleIdx }) => {
+        const colUpdates: Array<[number, string]> = [];
+        for (const u of fieldUpdates) {
+          const i = findColIndex(header, u.columns);
+          if (i >= 0) colUpdates.push([i, u.value]);
+        }
+        if (colUpdates.length === 0) return null;
+        for (let r = 1; r < rowsHtml.length; r++) {
+          const cells = htmlRowCells(rowsHtml[r]);
+          if (normalise(cells[titleIdx] || "") === normalise(task.title)) {
+            return html.replace(rowsHtml[r], replaceRowCells(rowsHtml[r], colUpdates));
+          }
+        }
+        return null;
+      });
+      if (!newContent) return;
+
+      await updateArtefactContentVersioned(proseArtefact.id, newContent, {
+        comment: `Auto-sync: task "${task.title}" edited`,
+      });
+      await flagDependentsStale(projectId, artefactName);
+      console.log(`[artefact-sync] Updated task "${task.title}" in HTML artefact "${proseArtefact.name}"`);
+      return;
+    }
 
     // Parse CSV, find matching row, update it
     const rows = parseCSV(artefact.content);
@@ -210,9 +247,8 @@ export async function syncTaskToArtefact(
 
     // Write updated CSV back to artefact
     const newCsv = updatedRows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: `Auto-sync: task "${task.title}" edited`,
     });
 
     // Flag downstream artefacts as stale
@@ -241,7 +277,39 @@ export async function removeTaskFromArtefact(
         orderBy: { updatedAt: "desc" },
       });
     }
-    if (!artefact || !artefact.content) return;
+
+    // HTML fallback — newer WBS/Schedule documents are prose HTML; delete
+    // the matching <tr> from the task table.
+    if (!artefact || !artefact.content) {
+      const proseArtefact = await db.agentArtefact.findFirst({
+        where: {
+          projectId,
+          OR: [{ name: { contains: "Work Breakdown" } }, { name: { contains: "Schedule" } }],
+          format: { in: ["html", "markdown"] },
+          content: { contains: "<table" },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (!proseArtefact?.content) return;
+
+      const newContent = editHtmlTaskTable(proseArtefact.content, ({ html, rowsHtml, titleIdx }) => {
+        for (let r = 1; r < rowsHtml.length; r++) {
+          const cells = htmlRowCells(rowsHtml[r]);
+          if (normalise(cells[titleIdx] || "") === normalise(taskTitle)) {
+            return html.replace(rowsHtml[r], "");
+          }
+        }
+        return null;
+      });
+      if (!newContent) return;
+
+      await updateArtefactContentVersioned(proseArtefact.id, newContent, {
+        comment: `Auto-sync: task "${taskTitle}" removed`,
+      });
+      await flagDependentsStale(projectId, proseArtefact.name);
+      console.log(`[artefact-sync] Removed task "${taskTitle}" from HTML artefact "${proseArtefact.name}"`);
+      return;
+    }
 
     const rows = parseCSV(artefact.content);
     if (rows.length < 2) return;
@@ -256,9 +324,8 @@ export async function removeTaskFromArtefact(
     if (filtered.length === before) return; // no row matched
 
     const newCsv = filtered.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: `Auto-sync: task "${taskTitle}" removed`,
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -288,7 +355,61 @@ export async function appendTaskToArtefact(
         orderBy: { updatedAt: "desc" },
       });
     }
-    if (!artefact || !artefact.content) return;
+
+    // HTML fallback — append a <tr> to the prose document's task table,
+    // mapping the new task's fields onto whatever columns the table has.
+    if (!artefact || !artefact.content) {
+      const proseArtefact = await db.agentArtefact.findFirst({
+        where: {
+          projectId,
+          OR: [{ name: { contains: "Work Breakdown" } }, { name: { contains: "Schedule" } }],
+          format: { in: ["html", "markdown"] },
+          content: { contains: "<table" },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (!proseArtefact?.content) return;
+
+      const cellValue = (col: string): string => {
+        const lc = col.toLowerCase();
+        if (lc.includes("activity") || lc.includes("work package") || lc.includes("deliverable") || lc.includes("task") || lc.includes("title") || lc.includes("user story") || lc === "name") return task.title;
+        if (lc.includes("status")) return task.status || "TODO";
+        if (lc.includes("% complete") || lc.includes("progress")) return String(task.progress ?? 0);
+        if (lc.includes("duration") || lc.includes("hours")) return task.estimatedHours ? String(task.estimatedHours) : "";
+        if (lc.includes("priority")) return task.priority || "MEDIUM";
+        if (lc.includes("start")) {
+          const d = task.startDate ? new Date(task.startDate) : null;
+          return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : "";
+        }
+        if (lc.includes("end")) {
+          const d = task.endDate ? new Date(task.endDate) : null;
+          return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : "";
+        }
+        if (lc.includes("owner") || lc.includes("assignee")) return "User-added";
+        if (lc.includes("notes")) return "Manually added";
+        return "";
+      };
+
+      const newContent = editHtmlTaskTable(proseArtefact.content, ({ html, header, rowsHtml, titleIdx }) => {
+        // Duplicate-title check
+        for (let r = 1; r < rowsHtml.length; r++) {
+          const cells = htmlRowCells(rowsHtml[r]);
+          if (normalise(cells[titleIdx] || "") === normalise(task.title)) return null;
+        }
+        const tr = `<tr>${header.map(col => `<td>${escapeHtmlText(cellValue(col))}</td>`).join("")}</tr>`;
+        // Insert before </tbody> when present, else before </table>.
+        if (/<\/tbody>/i.test(html)) return html.replace(/<\/tbody>/i, `${tr}</tbody>`);
+        return html.replace(/<\/table>/i, `${tr}</table>`);
+      });
+      if (!newContent) return;
+
+      await updateArtefactContentVersioned(proseArtefact.id, newContent, {
+        comment: `Auto-sync: task "${task.title}" added`,
+      });
+      await flagDependentsStale(projectId, proseArtefact.name);
+      console.log(`[artefact-sync] Appended task "${task.title}" to HTML artefact "${proseArtefact.name}"`);
+      return;
+    }
 
     const rows = parseCSV(artefact.content);
     if (rows.length === 0) return;
@@ -324,9 +445,8 @@ export async function appendTaskToArtefact(
 
     rows.push(newRow);
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: `Auto-sync: task "${task.title}" added`,
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -378,9 +498,8 @@ export async function updateArtefactRow(
     if (!updated) return false;
 
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefactId },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefactId, newCsv, {
+      comment: `Auto-sync: row "${matchValue}" updated`,
     });
 
     // Flag dependents
@@ -557,6 +676,83 @@ function applyChangesToRow(
   }
 }
 
+// ─── HTML-table editing helpers ──────────────────────────────────────────────
+// The artefact generator emits pure-HTML prose documents, so the CSV-only
+// sync paths silently no-op for every newer artefact — task edits never
+// reached the document. These helpers mirror the CSV row operations on the
+// first <table> whose header carries a recognisable task-title column
+// (the document-control and Sources & Assumptions tables don't, so they're
+// skipped naturally).
+
+const HTML_TITLE_COLUMNS = ["Activity", "Work Package", "Deliverable", "Task", "Task Name", "User Story", "Title", "Name"];
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
+}
+
+function escapeHtmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function htmlRowCells(rowHtml: string): string[] {
+  return Array.from(rowHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map(m => stripTags(m[1]));
+}
+
+/** Replace the inner text of specific cells (by index) in a <tr>, keeping attributes. */
+function replaceRowCells(rowHtml: string, updates: Array<[number, string]>): string {
+  let cellIdx = -1;
+  return rowHtml.replace(/(<t[dh][^>]*>)([\s\S]*?)(<\/t[dh]>)/gi, (m, open, _inner, close) => {
+    cellIdx++;
+    const upd = updates.find(([i]) => i === cellIdx);
+    return upd ? `${open}${escapeHtmlText(upd[1])}${close}` : m;
+  });
+}
+
+/**
+ * Find the first task table in HTML content and apply `mutate` to it.
+ * `mutate` returns the new table HTML or null for "no change". Returns the
+ * full new content, or null when nothing matched/changed.
+ */
+function editHtmlTaskTable(
+  content: string,
+  mutate: (table: { html: string; header: string[]; rowsHtml: string[]; titleIdx: number }) => string | null,
+): string | null {
+  const tables = content.match(/<table[^>]*>[\s\S]*?<\/table>/gi);
+  if (!tables) return null;
+  for (const tableHtml of tables) {
+    const rowsHtml = tableHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi);
+    if (!rowsHtml || rowsHtml.length < 2) continue;
+    const header = htmlRowCells(rowsHtml[0]);
+    const titleIdx = findColIndex(header, HTML_TITLE_COLUMNS);
+    if (titleIdx < 0) continue;
+    const newTable = mutate({ html: tableHtml, header, rowsHtml, titleIdx });
+    if (newTable && newTable !== tableHtml) return content.replace(tableHtml, newTable);
+  }
+  return null;
+}
+
+/**
+ * Field → column-candidates → formatted-value mapping shared by the HTML
+ * path. (The CSV path keeps its own applyChangesToRow for compatibility —
+ * same mappings, positional row writes.)
+ */
+function buildFieldUpdates(task: any, changedFields: Record<string, any>): Array<{ columns: string[]; value: string }> {
+  const updates: Array<{ columns: string[]; value: string }> = [];
+  if ("progress" in changedFields) updates.push({ columns: ["% Complete", "Progress", "Completion"], value: `${task.progress || 0}%` });
+  if ("status" in changedFields) {
+    updates.push({ columns: ["Status", "State"], value: String(task.status ?? "") });
+    const s = (task.status || "").toUpperCase();
+    updates.push({ columns: ["RAG"], value: s === "DONE" ? "🟢" : s === "BLOCKED" ? "🔴" : "🟡" });
+  }
+  if ("startDate" in changedFields) updates.push({ columns: ["Planned Start", "Start Date", "Start", "Actual Start"], value: formatDate(task.startDate) });
+  if ("endDate" in changedFields) updates.push({ columns: ["Planned End", "End Date", "End", "Actual End"], value: formatDate(task.endDate) });
+  if ("estimatedHours" in changedFields) updates.push({ columns: ["Est. Duration (days)", "Duration (days)", "Duration", "Hours"], value: task.estimatedHours ? `${(task.estimatedHours / 8).toFixed(1)}` : "" });
+  if ("assigneeName" in changedFields || "assigneeId" in changedFields) updates.push({ columns: ["Owner", "Assigned To", "Assignee"], value: String(task.assigneeName ?? "") });
+  if ("isCriticalPath" in changedFields) updates.push({ columns: ["Critical Path"], value: task.isCriticalPath ? "Yes" : "No" });
+  if ("storyPoints" in changedFields) updates.push({ columns: ["Points", "Story Points", "Pts", "Planned Points"], value: String(task.storyPoints ?? "") });
+  return updates;
+}
+
 // ─── 4. Sprint reverse sync: rebuild Sprint Plans artefact from Sprint + Task data ──
 
 /**
@@ -632,9 +828,8 @@ export async function syncSprintsToArtefact(projectId: string): Promise<void> {
 
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
 
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from sprint records",
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -687,9 +882,8 @@ export async function syncRisksToArtefact(projectId: string): Promise<void> {
     }
 
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from risk records",
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -739,9 +933,8 @@ export async function syncStakeholdersToArtefact(projectId: string): Promise<voi
     }
 
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from stakeholder records",
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -794,9 +987,8 @@ export async function syncBenefitsToArtefact(projectId: string): Promise<void> {
     }
 
     const newCsv = rows.map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from benefit records",
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -843,9 +1035,8 @@ export async function syncIssuesToArtefact(projectId: string): Promise<void> {
     ]);
 
     const newCsv = [header, ...rows].map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from issue records",
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -895,9 +1086,8 @@ export async function syncChangeRequestsToArtefact(projectId: string): Promise<v
     ]);
 
     const newCsv = [header, ...rows].map(r => r.map(c => csvEscape(c)).join(",")).join("\n");
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newCsv, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newCsv, {
+      comment: "Auto-sync: rebuilt from change request records",
     });
 
     await flagDependentsStale(projectId, artefact.name);
@@ -968,9 +1158,8 @@ export async function syncActionToSourceArtefact(
     if (updated === section) return; // no changes
 
     const newContent = content.replace(section, updated);
-    await db.agentArtefact.update({
-      where: { id: artefact.id },
-      data: { content: newContent, version: { increment: 1 } },
+    await updateArtefactContentVersioned(artefact.id, newContent, {
+      comment: `Auto-sync: action "${actionTitle}" updated in Next Actions table`,
     });
 
     if (artefact.projectId) {
@@ -1029,9 +1218,8 @@ export async function appendActionToLatestArtefact(
     lines.splice(lastTableRow + 1, 0, newRow);
 
     const newContent = lines.join("\n");
-    await db.agentArtefact.update({
-      where: { id: target.id },
-      data: { content: newContent, version: { increment: 1 } },
+    await updateArtefactContentVersioned(target.id, newContent, {
+      comment: `Auto-sync: action "${action.title}" appended to Next Actions table`,
     });
 
     await flagDependentsStale(projectId, target.name);
