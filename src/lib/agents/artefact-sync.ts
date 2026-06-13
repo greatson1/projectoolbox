@@ -156,10 +156,20 @@ export async function syncTaskToArtefact(
   projectId: string,
   taskId: string,
   changedFields: Record<string, any>,
+  // The title before this edit. Required to locate the document row when
+  // the title itself is what changed — matching on the NEW title (task.title)
+  // would never hit the document's still-old row, leaving the rename
+  // unpropagated AND desyncing the title, which is the join key for every
+  // future sync. The route captures and passes this when title ∈ changedFields.
+  oldTitle?: string,
 ): Promise<void> {
   try {
     const task = await db.task.findUnique({ where: { id: taskId } });
     if (!task) return;
+
+    // Locate rows by the pre-edit title; fall back to the current title for
+    // every non-rename edit (where they're identical).
+    const matchTitle = oldTitle ?? task.title;
 
     // Only sync tasks that came from a WBS or Schedule artefact
     const desc = task.description || "";
@@ -204,7 +214,7 @@ export async function syncTaskToArtefact(
         if (colUpdates.length === 0) return null;
         for (let r = 1; r < rowsHtml.length; r++) {
           const cells = htmlRowCells(rowsHtml[r]);
-          if (normalise(cells[titleIdx] || "") === normalise(task.title)) {
+          if (normalise(cells[titleIdx] || "") === normalise(matchTitle)) {
             return html.replace(rowsHtml[r], replaceRowCells(rowsHtml[r], colUpdates));
           }
         }
@@ -230,9 +240,9 @@ export async function syncTaskToArtefact(
 
     for (let i = 1; i < rows.length; i++) {
       const row = [...rows[i]];
-      // Match by task title (best we have — WBS ID may not be stored on the task)
+      // Match by pre-edit task title (best we have — WBS ID may not be stored on the task)
       const titleIdx = findColIndex(header, ["Activity", "Work Package", "Deliverable", "Task", "User Story"]);
-      if (titleIdx >= 0 && normalise(row[titleIdx]) === normalise(task.title)) {
+      if (titleIdx >= 0 && normalise(row[titleIdx]) === normalise(matchTitle)) {
         // Update the row with changed fields
         applyChangesToRow(header, row, task, changedFields);
         rowUpdated = true;
@@ -627,6 +637,7 @@ function applyChangesToRow(
 
   // Map task fields to CSV columns
   const mappings: Array<{ taskField: string; csvColumns: string[] }> = [
+    { taskField: "title", csvColumns: ["Activity", "Work Package", "Deliverable", "Task", "Task Name", "User Story", "Title", "Name"] },
     { taskField: "progress", csvColumns: ["% Complete", "Progress", "Completion"] },
     { taskField: "status", csvColumns: ["Status", "State"] },
     { taskField: "startDate", csvColumns: ["Planned Start", "Start Date", "Start", "Actual Start"] },
@@ -738,6 +749,9 @@ function editHtmlTaskTable(
  */
 function buildFieldUpdates(task: any, changedFields: Record<string, any>): Array<{ columns: string[]; value: string }> {
   const updates: Array<{ columns: string[]; value: string }> = [];
+  // Title first — a rename writes the new title into the title column (the
+  // same column the row was located by, via the pre-edit title).
+  if ("title" in changedFields) updates.push({ columns: HTML_TITLE_COLUMNS, value: String(task.title ?? "") });
   if ("progress" in changedFields) updates.push({ columns: ["% Complete", "Progress", "Completion"], value: `${task.progress || 0}%` });
   if ("status" in changedFields) {
     updates.push({ columns: ["Status", "State"], value: String(task.status ?? "") });
@@ -1132,6 +1146,14 @@ export async function syncActionToSourceArtefact(
       const cells = line.split("|").map(c => c.trim());
       const actionIdx = cells.findIndex(c => normalise(c) === normalise(actionTitle));
       if (actionIdx < 0) return line;
+
+      // Rename: write the new title into the action cell. `actionTitle` is
+      // the PRE-edit title (the match key), so without this a rename would
+      // leave the document showing the old wording — and break the join key
+      // for every later sync of this row.
+      if (changes.title && normalise(changes.title) !== normalise(actionTitle)) {
+        cells[actionIdx] = changes.title;
+      }
 
       // Update status cell if present
       if (changes.status) {

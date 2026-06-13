@@ -185,12 +185,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   }
 
   // Capture the prior status BEFORE the update so we can record a
-  // cycle-time transition with the right duration. Only read when status is
-  // actually changing (keeps the hot path lean for progress-only edits).
+  // cycle-time transition with the right duration. Also capture the prior
+  // title when the title is changing — the artefact reverse-sync needs the
+  // OLD title to locate the document row (the new one isn't there yet).
+  // Only read when something relevant is changing (keeps the hot path lean).
   let priorStatus: string | null = null;
-  if (data.status !== undefined) {
-    const prev = await db.task.findUnique({ where: { id: taskId }, select: { status: true } });
+  let priorTitle: string | null = null;
+  if (data.status !== undefined || data.title !== undefined) {
+    const prev = await db.task.findUnique({ where: { id: taskId }, select: { status: true, title: true } });
     priorStatus = prev?.status ?? null;
+    priorTitle = prev?.title ?? null;
   }
 
   const task = await db.task.update({ where: { id: taskId }, data });
@@ -251,13 +255,16 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   // Reverse sync: update the WBS/Schedule artefact CSV to reflect this task edit.
   // Logged on failure so silent drift surfaces in logs.
   import("@/lib/agents/artefact-sync")
-    .then(({ syncTaskToArtefact }) => syncTaskToArtefact(projectId, taskId, data))
+    .then(({ syncTaskToArtefact }) => syncTaskToArtefact(projectId, taskId, data, priorTitle ?? undefined))
     .catch((e) => console.error(`[artefact-sync] syncTaskToArtefact failed for project ${projectId} task ${taskId}:`, e));
 
   // Reverse sync action items back to source artefact's "Next Actions" table
   if (task.sourceArtefactId) {
+    // Match the Next Actions row by the PRE-edit title (priorTitle), falling
+    // back to the current title for non-rename edits — same join-key fix as
+    // the WBS/Schedule sync above.
     import("@/lib/agents/artefact-sync")
-      .then(({ syncActionToSourceArtefact }) => syncActionToSourceArtefact(task.sourceArtefactId!, task.title, data))
+      .then(({ syncActionToSourceArtefact }) => syncActionToSourceArtefact(task.sourceArtefactId!, priorTitle ?? task.title, data))
       .catch((e) => console.error(`[artefact-sync] syncActionToSourceArtefact failed:`, e));
   }
 
