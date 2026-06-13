@@ -41,7 +41,7 @@ function assertSafeDb(): void {
 }
 
 export interface TestProjectOptions {
-  methodology?: "WATERFALL" | "AGILE_SCRUM" | "AGILE_KANBAN" | "PRINCE2" | "HYBRID" | "SAFE";
+  methodology?: "TRADITIONAL" | "WATERFALL" | "AGILE_SCRUM" | "AGILE_KANBAN" | "PRINCE2" | "HYBRID" | "SAFE";
   /** Phase the deployment is currently on. */
   currentPhase?: string;
   /**

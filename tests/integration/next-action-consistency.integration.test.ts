@@ -34,7 +34,7 @@ describe("getNextRequiredStep — phase step resolver", () => {
 
   it("returns 'research' on a freshly-deployed phase with no audit timestamps", async () => {
     const ctx = await createTestProject(orgId, {
-      methodology: "WATERFALL",
+      methodology: "TRADITIONAL",
       primaryPhaseName: "Pre-Project",
     });
 
@@ -50,7 +50,7 @@ describe("getNextRequiredStep — phase step resolver", () => {
 
   it("returns 'clarification' once research is marked complete with no clarification timestamps", async () => {
     const ctx = await createTestProject(orgId, {
-      methodology: "WATERFALL",
+      methodology: "TRADITIONAL",
       primaryPhaseName: "Pre-Project",
     });
 
@@ -71,7 +71,7 @@ describe("getNextRequiredStep — phase step resolver", () => {
 
   it("returns 'generation' when research + clarification are both done but artefacts haven't been drafted", async () => {
     const ctx = await createTestProject(orgId, {
-      methodology: "WATERFALL",
+      methodology: "TRADITIONAL",
       primaryPhaseName: "Pre-Project",
     });
 
@@ -96,7 +96,7 @@ describe("getNextRequiredStep — phase step resolver", () => {
 
   it("returns 'review_artefacts' when artefacts exist but not all approved", async () => {
     const ctx = await createTestProject(orgId, {
-      methodology: "WATERFALL",
+      methodology: "TRADITIONAL",
       primaryPhaseName: "Pre-Project",
       artefacts: [
         { name: "Problem Statement", status: "APPROVED" },
@@ -136,7 +136,7 @@ describe("getNextRequiredStep — phase step resolver", () => {
       // the chat was clearly past artefact generation. Self-heal detects
       // downstream artefact evidence and backfills the timestamp.
       const ctx = await createTestProject(orgId, {
-        methodology: "WATERFALL",
+        methodology: "TRADITIONAL",
         primaryPhaseName: "Pre-Project",
         artefacts: [
           { name: "Outline Business Case", status: "DRAFT" },
@@ -158,7 +158,7 @@ describe("getNextRequiredStep — phase step resolver", () => {
 
     it("backfills researchCompletedAt as a side effect of the self-heal", async () => {
       const ctx = await createTestProject(orgId, {
-        methodology: "WATERFALL",
+        methodology: "TRADITIONAL",
         primaryPhaseName: "Pre-Project",
         artefacts: [{ name: "Problem Statement", status: "APPROVED" }],
       });
