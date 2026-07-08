@@ -220,7 +220,31 @@ export async function generatePhaseArtefacts(
           impact: { path: ["subtype"], equals: "research_finding" },
         },
       });
+      // Staleness rule — MUST mirror phase-next-action's
+      // phaseProgressedPastResearch. Research posts approval bundles
+      // progressively; one can land AFTER clarification completed. The
+      // resolver already treats such bundles as non-blocking ("the approvals
+      // still live in the queue; they just no longer dictate the step") but
+      // this gate used to block anyway → the banner said "Generate" while
+      // Generate returned "blocked by research approvals", an infinite
+      // stalemate (hit on the Kanban run's Setup phase).
+      let progressedPastResearch = false;
       if (pendingResearchApprovals > 0) {
+        const phaseRow = await db.phase.findFirst({
+          where: { projectId, name: targetPhaseName },
+          select: { clarificationCompletedAt: true, clarificationSkippedReason: true, gateApprovedAt: true },
+        }).catch(() => null);
+        progressedPastResearch = !!(
+          phaseRow?.clarificationCompletedAt ||
+          phaseRow?.clarificationSkippedReason === "no_questions_needed" ||
+          phaseRow?.clarificationSkippedReason === "user_skipped_explicit" ||
+          phaseRow?.gateApprovedAt
+        );
+        if (progressedPastResearch) {
+          console.warn(`[generatePhaseArtefacts] ${pendingResearchApprovals} pending research approval(s) treated as stale (clarification already complete) — not blocking generation`);
+        }
+      }
+      if (pendingResearchApprovals > 0 && !progressedPastResearch) {
         console.warn(`[generatePhaseArtefacts] Blocked by ${pendingResearchApprovals} pending research-finding approval(s) for project=${projectId} phase=${targetPhaseName}`);
         await db.agentActivity.create({
           data: {

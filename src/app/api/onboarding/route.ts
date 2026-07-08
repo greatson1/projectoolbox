@@ -18,6 +18,21 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { workspace, plan, agent } = body;
 
+    // A user finishing onboarding without an organisation is a dead-end
+    // account: every org-scoped API returns "No organisation" and the UI
+    // has no recovery path. Refuse loudly instead of returning
+    // "Onboarding complete" for a no-op (this used to 200 when the caller
+    // omitted workspace.orgName).
+    if (!workspace?.orgName) {
+      const existing = await db.user.findUnique({ where: { id: session.user.id }, select: { orgId: true } });
+      if (!existing?.orgId) {
+        return NextResponse.json(
+          { error: "workspace.orgName is required — an organisation name is needed to complete onboarding." },
+          { status: 400 },
+        );
+      }
+    }
+
     const updateData: Record<string, unknown> = { onboardingComplete: true };
     let orgId: string | undefined;
 

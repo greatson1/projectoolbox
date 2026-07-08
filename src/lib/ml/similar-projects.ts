@@ -55,13 +55,72 @@ async function embed(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
-/** Generate or refresh embedding for one project. */
-export async function upsertProjectEmbedding(projectId: string): Promise<void> {
+// ── Lexical fallback ─────────────────────────────────────────────────────────
+// The embedding provider can be unavailable (the OpenAI key spent weeks in
+// 429 insufficient_quota and every similarity feature silently returned []).
+// Token-overlap similarity over the same project text is a serviceable
+// stand-in: deterministic, free, and good enough to surface "you ran a
+// project like this before". Used automatically whenever embed() fails.
+
+const LEXICAL_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by",
+  "at", "is", "are", "was", "were", "be", "this", "that", "it", "its", "as",
+  "project", "description", "category", "methodology", "budget",
+]);
+
+function tokenise(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !LEXICAL_STOPWORDS.has(w)),
+  );
+}
+
+function lexicalSimilarity(a: string, b: string): number {
+  const ta = tokenise(a);
+  const tb = tokenise(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let overlap = 0;
+  for (const w of ta) if (tb.has(w)) overlap++;
+  return overlap / Math.min(ta.size, tb.size); // overlap coefficient — robust to length imbalance
+}
+
+async function findSimilarLexical(
+  orgId: string,
+  targetText: string,
+  excludeProjectId: string | null,
+  k: number,
+): Promise<SimilarProject[]> {
+  const projects = await db.project.findMany({
+    where: { orgId, ...(excludeProjectId ? { id: { not: excludeProjectId } } : {}) },
+    select: { id: true, name: true, description: true, category: true, methodology: true, budget: true, status: true },
+    take: 200,
+  }).catch(() => []);
+  const scored = projects
+    .map((p) => ({ p, similarity: lexicalSimilarity(targetText, buildProjectText(p)) }))
+    .filter((s) => s.similarity > 0.1)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, k);
+  return scored.map(({ p, similarity }) => ({
+    projectId: p.id,
+    name: p.name,
+    similarity: Math.round(similarity * 100) / 100,
+    category: p.category,
+    methodology: p.methodology,
+    status: p.status,
+    health: null,
+  }));
+}
+
+/**
+ * Generate or refresh embedding for one project.
+ * @returns true when an embedding was written; false when the provider is
+ *          unavailable (callers should use the lexical fallback).
+ */
+export async function upsertProjectEmbedding(projectId: string): Promise<boolean> {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: { id: true, orgId: true, name: true, description: true, category: true, methodology: true, budget: true },
   });
-  if (!project) return;
+  if (!project) return false;
 
   const text = buildProjectText(project);
 
@@ -69,8 +128,8 @@ export async function upsertProjectEmbedding(projectId: string): Promise<void> {
   try {
     embedding = await embed(text);
   } catch (e) {
-    console.error(`[similar-projects] embed failed for ${projectId}:`, e);
-    return;
+    console.warn(`[similar-projects] embeddings unavailable for ${projectId} (${(e as any)?.message?.slice(0, 120)}) — lexical fallback will be used`);
+    return false;
   }
 
   try {
@@ -94,7 +153,9 @@ export async function upsertProjectEmbedding(projectId: string): Promise<void> {
   } catch (e) {
     // ProjectEmbedding table may not exist yet — fail gracefully
     console.error(`[similar-projects] upsert failed for ${projectId}:`, e);
+    return false;
   }
+  return true;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -131,7 +192,16 @@ export async function findSimilarProjects(
 
   if (!target) {
     // No embedding yet — generate one synchronously then retry
-    await upsertProjectEmbedding(targetProjectId);
+    const written = await upsertProjectEmbedding(targetProjectId);
+    if (!written) {
+      // Embedding provider down/unfunded — lexical fallback instead of [].
+      const project = await db.project.findUnique({
+        where: { id: targetProjectId },
+        select: { orgId: true, name: true, description: true, category: true, methodology: true, budget: true },
+      });
+      if (!project?.orgId) return [];
+      return findSimilarLexical(project.orgId, buildProjectText(project), targetProjectId, k);
+    }
     const fresh = await db.projectEmbedding.findUnique({
       where: { projectId: targetProjectId },
       select: { embedding: true, orgId: true },
@@ -194,8 +264,9 @@ export async function findSimilarByText(
   let targetVec: number[];
   try {
     targetVec = await embed(text);
-  } catch {
-    return [];
+  } catch (e) {
+    console.warn(`[similar-projects] embeddings unavailable for text query (${(e as any)?.message?.slice(0, 120)}) — lexical fallback`);
+    return findSimilarLexical(orgId, text, null, k);
   }
 
   const candidates = await db.projectEmbedding.findMany({
@@ -203,7 +274,7 @@ export async function findSimilarByText(
     select: { projectId: true, embedding: true },
   }).catch(() => []);
 
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return findSimilarLexical(orgId, text, null, k);
 
   const scored = candidates.map((c) => ({
     projectId: c.projectId,

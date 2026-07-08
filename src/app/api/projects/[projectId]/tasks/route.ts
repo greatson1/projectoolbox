@@ -104,7 +104,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
         t.createdBy?.startsWith("agent:") &&
         !t.startDate && !t.endDate &&
         !t.sprintId &&
-        !t.description?.includes("[source:")
+        !t.description?.includes("[source:") &&
+        // Action items extracted from approved artefacts are real work too
+        // (metrics counts them — dropping them here made the board show 2
+        // tasks while the metrics tile said 4).
+        !t.description?.includes("[from-artefact:")
       )
     );
   }

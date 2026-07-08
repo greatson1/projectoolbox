@@ -29,5 +29,28 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
     select: { id: true, name: true, status: true, startDate: true, endDate: true },
   });
 
-  return NextResponse.json({ data: { tasks, phases } });
+  // Undated tasks render as invisible zero-width bars on the Gantt (Kanban
+  // projects seed work items with no dates by design). Fall back to the
+  // owning phase's window, then the project window, so every row draws.
+  // The fallback is presentation-only — the DB rows keep null dates.
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { startDate: true, endDate: true },
+  });
+  const defaultStart = project?.startDate ?? new Date();
+  const defaultEnd = project?.endDate ?? new Date(defaultStart.getTime() + 30 * 86_400_000);
+  const phaseById = new Map(phases.map((p) => [p.id, p]));
+  const phaseByName = new Map(phases.map((p) => [p.name, p]));
+  const withDates = tasks.map((t) => {
+    if (t.startDate || t.endDate) return t;
+    const phase = (t.phaseId && (phaseById.get(t.phaseId) || phaseByName.get(t.phaseId))) || null;
+    return {
+      ...t,
+      startDate: phase?.startDate ?? defaultStart,
+      endDate: phase?.endDate ?? defaultEnd,
+      datesInferred: true,
+    };
+  });
+
+  return NextResponse.json({ data: { tasks: withDates, phases } });
 }

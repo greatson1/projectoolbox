@@ -51,25 +51,35 @@ export async function POST(req: NextRequest) {
     // start the new sub immediately without a fresh trial because
     // the customer already has a payment method on file.
     const alreadyHadSub = !!org.stripeSubId;
-    const checkoutSession = await stripe.checkout.sessions.create({
-      customer: customerId,
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
-      payment_method_collection: "always",
-      ...(alreadyHadSub ? {} : {
-        subscription_data: {
-          trial_period_days: 14,
-          trial_settings: {
-            end_behavior: { missing_payment_method: "cancel" },
+    try {
+      const checkoutSession = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        payment_method_collection: "always",
+        ...(alreadyHadSub ? {} : {
+          subscription_data: {
+            trial_period_days: 14,
+            trial_settings: {
+              end_behavior: { missing_payment_method: "cancel" },
+            },
           },
-        },
-      }),
-      success_url: `${process.env.NEXTAUTH_URL}/billing?upgraded=true`,
-      cancel_url: `${process.env.NEXTAUTH_URL}/billing`,
-      metadata: { orgId, planId, trial: alreadyHadSub ? "no" : "14-day" },
-    });
-
-    return NextResponse.json({ data: { checkoutUrl: checkoutSession.url } });
+        }),
+        success_url: `${process.env.NEXTAUTH_URL}/billing?upgraded=true`,
+        cancel_url: `${process.env.NEXTAUTH_URL}/billing`,
+        metadata: { orgId, planId, trial: alreadyHadSub ? "no" : "14-day" },
+      });
+      return NextResponse.json({ data: { checkoutUrl: checkoutSession.url } });
+    } catch (e: any) {
+      // Surface Stripe's own message — "Your account cannot currently make
+      // live charges" (unactivated live account) used to reach the user as
+      // a naked 500 with no hint that the problem is on the Stripe side.
+      console.error("[billing/checkout] Stripe session create failed:", e?.message);
+      return NextResponse.json(
+        { error: `Payment provider error: ${e?.message ?? "unknown"}` },
+        { status: 502 },
+      );
+    }
   }
 
   if (type === "credits") {
