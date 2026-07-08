@@ -113,14 +113,60 @@ function stripHtml(s: string): string {
   // Remove <pre>, <code>, <script>, <style> blocks first (preserve their
   // content but don't validate fabricated tokens inside code samples)
   let out = s.replace(/<(pre|code|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  // Drop table-header cells entirely — column labels ("Mitigation Actions",
+  // "Residual Score") are document structure, not names. Only <th>; <td>
+  // content is real data and stays validated.
+  out = out.replace(/<th\b[^>]*>[\s\S]*?<\/th>/gi, " ");
   out = out.replace(/<[^>]+>/g, " ");
   return out;
+}
+
+// A comma-separated line of mostly-short cells with no sentence punctuation
+// is a CSV column-header row, not prose. ("Risk ID,Category,Title,…,
+// Mitigation Actions,Contingency Plan,Residual Score,Last Reviewed" — every
+// 2-word capitalised cell in that row used to be flagged as a fabricated
+// person name, which blocked approval of every CSV artefact.)
+function looksLikeCsvHeader(line: string): boolean {
+  const cells = line.split(",");
+  if (cells.length < 4) return false;
+  if (/[.!?]\s*$/.test(line)) return false;
+  const shortCells = cells.filter((c) => {
+    const t = c.trim();
+    return t.length > 0 && t.split(/\s+/).length <= 4;
+  });
+  return shortCells.length / cells.length >= 0.8;
+}
+
+/**
+ * Remove structural header rows before name-scanning:
+ *  - the first non-empty line when it reads as a CSV column-header row
+ *  - markdown table header rows (a `| … |` line directly above a `|---|`
+ *    separator)
+ * Content rows are untouched — real data stays validated.
+ */
+function stripStructuralHeaderRows(s: string): string {
+  const lines = s.split(/\r?\n/);
+  const kept: string[] = [];
+  let firstNonEmptySeen = false;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!firstNonEmptySeen && trimmed) {
+      firstNonEmptySeen = true;
+      if (looksLikeCsvHeader(trimmed)) continue;
+    }
+    const next = lines[i + 1]?.trim() ?? "";
+    if (trimmed.startsWith("|") && next.includes("-") && /^\|?[\s:|-]+\|?$/.test(next)) {
+      continue; // markdown table header row
+    }
+    kept.push(lines[i]);
+  }
+  return kept.join("\n");
 }
 
 export function validateArtefactNames({ content, registry }: ValidateInput): NameViolation[] {
   if (!content) return [];
 
-  const text = stripHtml(content);
+  const text = stripHtml(stripStructuralHeaderRows(content));
 
   // Build the allow-set as normalised forms for case/punctuation tolerance.
   const allowed = new Set<string>();

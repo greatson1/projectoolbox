@@ -1649,7 +1649,30 @@ function AgentChatPage() {
             gate_approval:             { label: "Approve", onClick: () => { window.location.href = "/approvals"; } },
             advance:                   null,
           };
-          const cta = ctaForStep[na.step] || null;
+          // Stalled-research override: the resolver only sets awaitingUser on
+          // the research step when the deployment has sat in "researching"
+          // with no progress for 30+ minutes (crashed mid-run). Give the user
+          // the restart action instead of the passive "Researching…" promise.
+          const cta = na.step === "research" && na.awaitingUser && activeAgentId
+            ? {
+                label: "Restart research",
+                onClick: async () => {
+                  toast.info("Restarting phase research — this can take a couple of minutes…");
+                  try {
+                    const res = await fetch(`/api/agents/${activeAgentId}/research/restart`, { method: "POST" });
+                    const json = await res.json().catch(() => ({}));
+                    if (res.ok && json?.data) {
+                      toast.success(`Research restarted — ${json.data.factsDiscovered} fact(s) found. ${json.data.pendingResearchApprovals > 0 ? "Review the findings on the Approvals page." : "You can generate artefacts now."}`);
+                      window.location.reload();
+                    } else {
+                      toast.error(json?.error || "Research restart failed");
+                    }
+                  } catch (e: any) {
+                    toast.error(e?.message || "Research restart failed");
+                  }
+                },
+              }
+            : ctaForStep[na.step] || null;
 
           // Stale-question hint: when we're on clarification, show *when*
           // the oldest open question was asked so the user has the context

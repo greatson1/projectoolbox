@@ -113,7 +113,7 @@ export async function getNextRequiredStep({
     }),
     db.agentDeployment.findFirst({
       where: { agentId, projectId, isActive: true },
-      select: { id: true, phaseStatus: true },
+      select: { id: true, phaseStatus: true, deployedAt: true, lastCycleAt: true },
     }),
   ]);
 
@@ -149,6 +149,34 @@ export async function getNextRequiredStep({
       await markResearchComplete(projectId, phaseName).catch(() => {});
       // Treat as completed for this resolution pass; carry on to step 1b.
     } else {
+      // Stall detection: research runs inline during phase advance/deploy —
+      // NOTHING re-runs it if that process died mid-run (server restart,
+      // crash, upstream API failure) or if the phase was advanced through a
+      // path that skipped research entirely. Either way the banner promises
+      // "Researching…" progress that will never come — Lagos and CRM were
+      // both stuck this way for weeks. A live research run writes activity
+      // rows constantly, so 30+ minutes of total agent silence on the
+      // research step means it's dead — hand the user a restart action.
+      const RESEARCH_STALL_MS = 30 * 60 * 1000;
+      const lastActivity = await db.agentActivity.findFirst({
+        where: { agentId },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }).catch(() => null);
+      const lastSignal = Math.max(
+        lastActivity ? new Date(lastActivity.createdAt).getTime() : 0,
+        deployment?.lastCycleAt ? new Date(deployment.lastCycleAt).getTime() : 0,
+        deployment?.deployedAt ? new Date(deployment.deployedAt).getTime() : 0,
+      );
+      if (lastSignal > 0 && Date.now() - lastSignal > RESEARCH_STALL_MS) {
+        return {
+          step: "research",
+          reason: `Research for ${phaseName} appears to have stalled (no agent activity since ${new Date(lastSignal).toLocaleString("en-GB")}).`,
+          blockedBy: ["research"],
+          bannerLabel: `Research stalled — restart ${phaseName} research`,
+          awaitingUser: true,
+        };
+      }
       return {
         step: "research",
         reason: `Phase research has not been completed for ${phaseName}.`,

@@ -83,6 +83,55 @@ describe("validateArtefactNames", () => {
     expect(out.some(v => v.name === "Robert Chen")).toBe(true);
   });
 
+  // ── Structural header exclusions (added 2026-07-08) ──────────────────────
+  // The exact Decom "Initial Risk Register" CSV header blocked approval of
+  // every CSV artefact: four column labels were flagged as fabricated names.
+
+  it("does not flag CSV column headers", () => {
+    const csv = [
+      "Risk ID,Category,Title,Description,Likelihood (1-5),Impact (1-5),Score,Risk Rating,Owner,Mitigation Actions,Contingency Plan,Residual Score,Status,Last Reviewed",
+      '"R001","Financial","Budget overrun","Costs exceed planned budget","3","4","12","HIGH","Project Manager","Weekly cost tracking","Descope lower priority work","6","Open","13/06/2026"',
+    ].join("\n");
+    const flagged = validateArtefactNames({ content: csv, registry: emptyRegistry }).map(v => v.name);
+    for (const header of ["Mitigation Actions", "Contingency Plan", "Residual Score", "Last Reviewed"]) {
+      expect(flagged, `CSV header "${header}" should not be flagged`).not.toContain(header);
+    }
+  });
+
+  it("does not flag markdown table header rows", () => {
+    const md = [
+      "| Mitigation Actions | Contingency Plan | Residual Score |",
+      "|---|---|---|",
+      "| Weekly tracking | Descope work | 6 |",
+    ].join("\n");
+    const flagged = validateArtefactNames({ content: md, registry: emptyRegistry }).map(v => v.name);
+    expect(flagged).toHaveLength(0);
+  });
+
+  it("does not flag HTML <th> cells", () => {
+    const html =
+      "<table><thead><tr><th>Mitigation Actions</th><th>Residual Score</th></tr></thead>" +
+      "<tbody><tr><td>Weekly tracking</td><td>6</td></tr></tbody></table>";
+    const flagged = validateArtefactNames({ content: html, registry: emptyRegistry }).map(v => v.name);
+    expect(flagged).toHaveLength(0);
+  });
+
+  it("still flags a fabricated person name in a CSV data row", () => {
+    const csv = [
+      "Risk ID,Category,Owner,Status",
+      '"R001","Financial","Sarah Mitchell","Open"',
+    ].join("\n");
+    const flagged = validateArtefactNames({ content: csv, registry: emptyRegistry }).map(v => v.name);
+    expect(flagged).toContain("Sarah Mitchell");
+  });
+
+  it("does not treat a prose first line with commas as a CSV header", () => {
+    const prose =
+      "This plan covers scope, schedule, cost, and quality, and was fully reviewed by Sarah Mitchell before submission to the board.";
+    const flagged = validateArtefactNames({ content: prose, registry: emptyRegistry }).map(v => v.name);
+    expect(flagged).toContain("Sarah Mitchell");
+  });
+
   it("respects the 25-violation cap so the UI never drowns", () => {
     // Generate 30 distinct plausible names and confirm we cap output at 25.
     const names = Array.from({ length: 30 }, (_, i) => `Person${String.fromCharCode(65 + i)} Smith${i}`);

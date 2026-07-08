@@ -88,6 +88,11 @@ const DEFAULT_CONFIG: PhaseCompletionConfig = {
   artefactThreshold: 1.0,
 };
 
+// Phases whose completion genuinely reflects sprint-execution work. Setup /
+// planning phases (Sprint Zero, Pre-Project, Initiation, Planning, …) must
+// NOT gate on `[source:sprint]` backlog items — that work belongs to sprints.
+const SPRINT_EXECUTION_PHASE = /cadence|release|execution|delivery|closing/i;
+
 // ─── Core Function ──────────────────────────────────────────────────────────
 
 export async function getPhaseCompletion(
@@ -314,6 +319,17 @@ export async function getPhaseCompletion(
     db.task.findMany({
       where: {
         projectId,
+        // Sprint-execution work items (`[source:sprint]` — seeded from Sprint
+        // Plans / Product Backlog artefacts and assigned to Sprint 1..N) are
+        // tracked by the sprint board, NOT by phase gates. Counting them here
+        // deadlocked every Scrum project in Sprint Zero: the setup phase's
+        // "delivery tasks ≥80%" gate demanded the entire project backlog be
+        // complete before the team could even enter Sprint Cadence. They only
+        // count toward phases that own sprint execution (Cadence/Release/
+        // Execution/Delivery).
+        ...(SPRINT_EXECUTION_PHASE.test(phaseName)
+          ? {}
+          : { NOT: { description: { contains: "[source:sprint]" } } }),
         OR: [
           ...phaseIdMatch.map((p) => ({
             phaseId: p.phaseId,

@@ -139,6 +139,27 @@ export async function generatePhaseArtefacts(
   if (!force && deployment) {
     const blockingStatuses = ["researching", "awaiting_clarification"];
     if (deployment.phaseStatus && blockingStatuses.includes(deployment.phaseStatus)) {
+      // Self-heal: if the Phase row says research verifiably completed, the
+      // deployment's phaseStatus is stale (the inline research runner died
+      // AFTER finishing, before writing the status back — or the resolver's
+      // evidence-based backfill marked research done). Clear the stale gate
+      // and continue instead of blocking generation forever.
+      if (deployment.phaseStatus === "researching") {
+        const phaseRow = await db.phase.findFirst({
+          where: { projectId, name: targetPhaseName },
+          select: { researchCompletedAt: true },
+        }).catch(() => null);
+        if (phaseRow?.researchCompletedAt) {
+          console.warn(`[generatePhaseArtefacts] phaseStatus=researching but research completed ${phaseRow.researchCompletedAt.toISOString()} — repairing stale status for agent=${agentId}`);
+          await db.agentDeployment.update({
+            where: { id: deployment.id },
+            data: { phaseStatus: "active" },
+          }).catch(() => {});
+          deployment.phaseStatus = "active";
+        }
+      }
+    }
+    if (deployment.phaseStatus && blockingStatuses.includes(deployment.phaseStatus)) {
       // Loud-failure: don't return 0 silently — log it so the missing artefacts
       // are visible in the activity feed instead of vanishing into a 0-count toast.
       console.warn(`[generatePhaseArtefacts] Blocked by phaseStatus=${deployment.phaseStatus} for agent=${agentId} phase=${targetPhaseName}, missing=${toGenerate.join(", ")}`);
