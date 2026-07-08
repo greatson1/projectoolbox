@@ -72,7 +72,30 @@ function splitRiskBlob(content: string): string[] {
     .map(c => c.split(/[.—:]/)[0].trim())
     .map(c => c.replace(/^(and|or|plus|also|including|such as|like)\s+/i, "").trim())
     .map(c => c.length > 0 ? c[0].toUpperCase() + c.slice(1) : c)
-    .filter(c => c.length >= 6 && c.length <= 200);
+    .filter(c => c.length >= 6 && c.length <= 120)
+    .filter(c => !looksLikeNonRiskLine(c));
+}
+
+/**
+ * Reject candidates that are document structure or tool noise, not risks.
+ * This promoter once shredded a whole markdown risk document — and a Prisma
+ * error message stored in a KB item — into 100+ "risks" titled things like
+ * "## Medium Priority Risks", "The column `Project" and "Invalid `prisma"
+ * (all at the default 3×3 score, so the dashboard read 131 HIGH risks).
+ */
+function looksLikeNonRiskLine(s: string): boolean {
+  // Markdown/HTML structure: headings, table rows, code fences, tags
+  if (/^#{1,6}\s|^\||^```|^<|^-{3,}$|^={3,}$/.test(s)) return true;
+  if (s.includes("`")) return true; // backticks = code/error text, never a risk title
+  // Error/log fingerprints (narrow on purpose — "error rates" is a real risk)
+  if (/\b(prisma|traceback|stack ?trace|typeerror|referenceerror|syntaxerror|econnrefused|enotfound)\b/i.test(s)) return true;
+  if (/^(error|warning|fatal|exception)\b[:\s]/i.test(s)) return true;
+  // Section-heading phrases ("Medium Priority Risks", "Risk Register", "High Priority Risks")
+  if (/^(low|medium|high|critical)?\s*priority risks?$/i.test(s)) return true;
+  if (/^risks?( register| log| summary| overview)?$/i.test(s)) return true;
+  // Sentence fragments that start mid-clause ("to understand impact", "for solution architecture")
+  if (/^(to|for|of|with|from|by|as|in|on|at|the|a|an|this|that|these|those|it|is|are|was|were|will|must|should)\s/i.test(s)) return true;
+  return false;
 }
 
 /**
@@ -152,7 +175,15 @@ export async function promoteKBRisksToCanonical(projectId: string): Promise<Prom
   let skipped = 0;
 
   for (const item of items) {
-    const titles = splitRiskBlob(item.content);
+    // A KB item that explodes into dozens of candidates is a DOCUMENT that
+    // happened to have "risk" in its title, not a risk list. Promote at most
+    // 15 per item; a genuine research risk-list never exceeds that.
+    const MAX_RISKS_PER_ITEM = 15;
+    const allTitles = splitRiskBlob(item.content);
+    const titles = allTitles.slice(0, MAX_RISKS_PER_ITEM);
+    if (allTitles.length > MAX_RISKS_PER_ITEM) {
+      console.warn(`[risk-extractor] KB item "${item.title}" produced ${allTitles.length} candidates — capping at ${MAX_RISKS_PER_ITEM} (document, not a list?)`);
+    }
     if (titles.length === 0) {
       skipped++;
       continue;

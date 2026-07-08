@@ -224,6 +224,28 @@ async function seedStakeholders(artefact: ArtefactInput, agentId: string): Promi
   }).catch(() => []);
   const userConfirmedText = confirmedFactsRaw.map(i => `${i.title}\n${i.content}`).join("\n").toLowerCase();
 
+  /**
+   * True if the "name" is a shredded sentence fragment, not a name/role.
+   * Malformed CSVs (unquoted commas inside prose cells) shift columns, so
+   * the Name cell ends up holding fragments like "Up to", "to understand
+   * impact", "must formally document the", "Methodology Scrum Purpose and"
+   * — DTI accumulated 40+ of these. Names and role titles never start or
+   * end with function words.
+   */
+  function looksLikeShreddedFragment(s: string): boolean {
+    const t = s.trim();
+    if (!t || t.length < 2) return true;
+    if (!/[a-zA-Z]/.test(t)) return true;                       // punctuation/number soup
+    if (/[`<>|#]/.test(t)) return true;                          // code/markup leakage
+    const words = t.split(/\s+/);
+    if (words.length > 6) return true;                           // sentences, not names
+    const FUNCTION_WORDS = /^(to|for|of|with|from|by|as|in|on|at|the|a|an|and|or|is|are|was|were|will|must|should|it|this|that|these|those|up|down|not|be|has|have|had)$/i;
+    if (FUNCTION_WORDS.test(words[0])) return true;              // starts mid-clause
+    if (words.length > 1 && FUNCTION_WORDS.test(words[words.length - 1])) return true; // ends mid-clause
+    if (/^[a-z]/.test(words[0])) return true;                    // names/roles are capitalised
+    return false;
+  }
+
   /** True if a string looks like an invented personal name (FirstName LastName pattern) */
   function isLikelyFabricatedPersonName(s: string): boolean {
     const trimmed = s.trim();
@@ -258,6 +280,13 @@ async function seedStakeholders(artefact: ArtefactInput, agentId: string): Promi
     const parts    = nameRaw.split(/[\/\-–]/).map(s => s.trim());
     const name     = parts[0] || nameRaw;
     const roleHint = parts[1] || col(row, ["Role", "Title", "Position"]);
+
+    // ⚠️ Drop shredded sentence fragments from malformed CSV rows first.
+    if (looksLikeShreddedFragment(name)) {
+      filtered++;
+      console.warn(`[stakeholder-seeder] Filtering shredded fragment: "${name}"`);
+      continue;
+    }
 
     // ⚠️ Filter out fabricated personal names — agent must use role titles
     //    unless the user explicitly provided the real name during clarification.
@@ -401,6 +430,11 @@ async function seedRisks(artefact: ArtefactInput, agentId: string): Promise<void
     const title = col(row, ["Title", "Risk", "Risk Title", "Risk Description", "Name"]);
     if (!title) continue;
     const trimmedTitle = title.slice(0, 255).trim();
+    // Code/markup leakage or column-shifted fragments are never risk titles.
+    if (/[`<>|]/.test(trimmedTitle) || /^#{1,6}\s/.test(trimmedTitle) || /^(to|for|of|with|and|or|the|a|an)\s/i.test(trimmedTitle)) {
+      console.warn(`[risk-seeder] Skipping malformed title: "${trimmedTitle.slice(0, 60)}"`);
+      continue;
+    }
 
     const description  = col(row, ["Description", "Details", "Risk Description"]);
     const category     = col(row, ["Category", "Type", "Risk Category", "Risk Type"]);
@@ -627,10 +661,14 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
     entry.tasks.push(row);
   }
 
-  // Delete existing agent-seeded sprints (avoid duplicates on re-approval)
-  await db.sprint.deleteMany({
-    where: { projectId: artefact.projectId, goal: { contains: "[source:artefact]" } },
-  }).catch(() => {});
+  // NOTE — deliberately NO deleteMany here. This seeder used to wipe every
+  // `[source:artefact]` sprint before re-creating, which caused the runaway-
+  // sprint incident (2026-07-08): two artefact approvals minutes apart each
+  // deleted the other's sprints and re-created their own, leaving the project
+  // with two overlapping generations (Sprint 6–9, then Sprint 1–5) and tasks
+  // whose sprintId pointed at deleted rows. Sprints are now matched by name
+  // and REUSED (dates refreshed from the CSV when provided); restructuring is
+  // the replan endpoint's job, not a side effect of approving a document.
 
   // Create Sprint records and build sprintId lookup
   const sprintIdMap = new Map<string, string>();
@@ -641,21 +679,38 @@ async function seedSprintTasks(artefact: ArtefactInput, agentId: string): Promis
     ? !!(await db.agent.findUnique({ where: { id: agentId }, select: { id: true } }).catch(() => null))
     : false;
 
-  // Track position to set first sprint ACTIVE, rest PLANNING
+  // Track position so undated sprints stagger across the timeline instead of
+  // all landing on the project start date.
   let sprintIndex = 0;
 
   for (const [name, info] of sprintMap) {
-    // Default dates: distribute evenly across project timeline if not in CSV
-    const defaultStart = info.startDate || project?.startDate || new Date();
+    // Default dates: back-to-back 2-week windows from the project start when
+    // the CSV carries no dates. (Previously every undated sprint defaulted to
+    // the SAME start date — five "parallel" sprints with identical windows.)
+    const timelineBase = project?.startDate || new Date();
+    const defaultStart = info.startDate || new Date(timelineBase.getTime() + sprintIndex * 14 * 86_400_000);
     const defaultEnd = info.endDate || new Date(defaultStart.getTime() + 14 * 86_400_000); // 2 weeks
 
-    // Check if a sprint with this name already exists — reuse it (preserves ACTIVE status)
+    // Check if a sprint with this name already exists — reuse it (preserves
+    // ACTIVE/COMPLETED status and every task already assigned to it), and
+    // refresh its dates when the artefact explicitly provides them.
     const existing = await db.sprint.findFirst({ where: { projectId: artefact.projectId, name } });
     if (existing) {
       sprintIdMap.set(name, existing.id);
+      if (info.startDate || info.endDate) {
+        await db.sprint.update({
+          where: { id: existing.id },
+          data: {
+            ...(info.startDate ? { startDate: info.startDate } : {}),
+            ...(info.endDate ? { endDate: info.endDate } : {}),
+          },
+        }).catch(() => {});
+      }
     } else {
-      // First sprint in the artefact = ACTIVE (current), rest = PLANNING (future)
-      const sprintStatus = sprintIndex === 0 ? "ACTIVE" : "PLANNING";
+      // Every seeded sprint starts in PLANNING — starting a sprint is an
+      // explicit user action (see sprint-start-gate), never a side effect
+      // of approving an artefact.
+      const sprintStatus = "PLANNING";
       const sprint = await db.sprint.create({
         data: {
           projectId: artefact.projectId,
