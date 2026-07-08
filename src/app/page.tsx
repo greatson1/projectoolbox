@@ -98,7 +98,7 @@ const FAQS = [
   { q: "How does the AI agent actually manage a project?", a: "Your agent uses Claude AI to generate artefacts, process meeting transcripts, track tasks, monitor budgets, and communicate with stakeholders. It follows your chosen methodology and escalates to you when human judgement is needed." },
   { q: "What's the difference between autonomy levels?", a: "Levels 1–3 control how independently the agent operates. L1 (Advisor) only suggests — you approve everything. L2 (Co-pilot) handles routine tasks and escalates decisions. L3 (Autonomous) runs the project end-to-end and alerts you on exceptions. You choose your level, and you can change it at any time." },
   { q: "What does 1 credit equal?", a: "Roughly 1 document or artefact generated (e.g. a risk register, status report, or WBS). Meeting transcriptions cost 1 credit per session. You can see your credit usage in real time on your dashboard." },
-  { q: "Is my project data secure?", a: "All data is encrypted at rest and in transit. We're SOC 2 compliant, GDPR-ready, and offer single-tenant deployment for Enterprise customers. Your data is never used to train AI models." },
+  { q: "Is my project data secure?", a: "All data is encrypted at rest and in transit, and we're GDPR-ready. Governance controls — SSO/SAML, org-wide MFA enforcement, IP allowlists, and an immutable audit log — are built into the Business tier. Your data is never used to train AI models." },
   { q: "Can agents join my actual meetings?", a: "Yes. Using Recall.ai (included from Professional), your agent joins Google Meet, Zoom, or Teams as a participant. It transcribes, extracts actions, logs decisions, and updates your project plan automatically." },
   { q: "Do I need to change my existing tools?", a: "No. Projectoolbox connects to Jira, GitHub, Slack, Teams, MS Project, and more. Your agent works alongside your existing stack — no migration, no disruption." },
   { q: "What sectors and methodologies are supported?", a: "Agents are tailored for construction, pharma, IT, defence, infrastructure, consulting, and finance. Supported methodologies include Traditional, Scrum, Kanban, SAFe, Waterfall, and Hybrid." },
@@ -146,9 +146,9 @@ export default function LandingPage() {
             <Button variant="ghost" size="sm" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {!mounted || theme !== "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </Button>
-            {/* Open signup — every account starts on a 14-day free trial.
-                The paywall middleware gates FREE plans after that window;
-                see src/lib/paywall.ts. */}
+            {/* Open signup — FREE is a genuine always-free tier (no card,
+                no expiry). Paid tiers get a 14-day card trial via Stripe
+                Checkout; see src/lib/paywall.ts. */}
             <Link href="/login"><Button variant="ghost" size="sm">Log In</Button></Link>
             <Link href="/signup"><Button size="sm">Start Free Trial</Button></Link>
             <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileMenu(!mobileMenu)}>
@@ -216,7 +216,7 @@ export default function LandingPage() {
                 </Button>
               </a>
             </div>
-            <p className="text-xs text-muted-foreground mt-4">Free plan included. No credit card required when you get access.</p>
+            <p className="text-xs text-muted-foreground mt-4">Free plan is free forever — no card needed. Paid plans start with a 14-day trial.</p>
           </div>
 
           {/* Dashboard preview */}
