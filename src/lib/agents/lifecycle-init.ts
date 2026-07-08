@@ -406,6 +406,25 @@ export async function generatePhaseArtefacts(
             mergedMetadata.depthCheckedAt = new Date().toISOString();
           }
 
+          // Create-time duplicate guard. Two generation runs can overlap —
+          // the clarification-complete handler auto-triggers generation while
+          // the user clicks Generate (or the cron self-heals) — and both
+          // computed `existingNames` before either had written a row. The
+          // 30-90s LLM calls make that window huge: Decom got a full second
+          // copy of all 7 Sprint Cadence artefacts. Re-check NOW, just
+          // before insert, so the loser of the race skips instead of
+          // duplicating.
+          const dupe = await db.agentArtefact.findFirst({
+            where: { projectId, name: { equals: artName, mode: "insensitive" }, status: { not: "REJECTED" } },
+            select: { id: true },
+          }).catch(() => null);
+          if (dupe) {
+            console.warn(`[generatePhaseArtefacts] "${artName}" was created by a concurrent run — skipping duplicate`);
+            existingNames.add(artName.toLowerCase());
+            generatedNormNames.add(normalizeName(artName));
+            continue;
+          }
+
           const created = await db.agentArtefact.create({
             data: {
               agentId,
@@ -553,6 +572,20 @@ export async function generatePhaseArtefacts(
               const registry = await getAllowedNamesRegistry(projectId);
               fabricatedNameViolationsRetry = validateArtefactNames({ content: resolvedRetry, registry });
             } catch {}
+            // Same create-time duplicate guard as the batch path — a
+            // concurrent run may have produced this artefact while the
+            // retry's LLM call was in flight.
+            const dupeRetry = await db.agentArtefact.findFirst({
+              where: { projectId, name: { equals: name, mode: "insensitive" }, status: { not: "REJECTED" } },
+              select: { id: true },
+            }).catch(() => null);
+            if (dupeRetry) {
+              console.warn(`[generatePhaseArtefacts] retry: "${name}" was created by a concurrent run — skipping duplicate`);
+              existingNames.add(name.toLowerCase());
+              generatedNormNames.add(normalizeName(name));
+              failureReason = null;
+              continue;
+            }
             const createdRetry = await db.agentArtefact.create({
               data: {
                 agentId,

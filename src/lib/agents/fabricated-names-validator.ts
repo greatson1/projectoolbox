@@ -33,6 +33,14 @@ const ROLE_KEYWORDS = /\b(managers?|leads?|directors?|sponsors?|owners?|teams?|m
 
 const ORG_KEYWORDS = /\b(ltd|inc|corp|llc|plc|gmbh|airlines?|hotel|resort|clinic|hospital|bank|airways|ventures?|group|services?|solutions?|systems?|consultancy|consulting|agency|centre|center|commission|embassy|high commission|authority|department|ministry|international)\b/i;
 
+// PM-domain vocabulary — a capitalised phrase containing ANY of these words
+// is project terminology, never a person's name ("Approve Sprint Backlog",
+// "Due Date", "Story Points", "Exception Report", "Items Awaiting
+// Confirmation"). This is the systemic answer to the per-word STOP_PREFIXES
+// whack-a-mole: real names contain none of these tokens, so recall on actual
+// fabrications ("Sarah Mitchell") is unaffected.
+const DOMAIN_KEYWORDS = /\b(sprints?|backlogs?|retrospectives?|reviews?|goals?|charts?|logs?|reports?|confirmations?|scope|points?|structures?|plans?|registers?|burndown|scrum|kanban|stor(?:y|ies)|tasks?|phases?|gates?|milestones?|artefacts?|artifacts?|documents?|items?|dates?|status|exceptions?|actions?|checklists?|criteria|metrics?|dashboards?|standups?|velocity|increments?|decommissioning|migrations?|inventor(?:y|ies)|requirements?|deliverables?|dependenc(?:y|ies)|assumptions?|budgets?|costs?|risks?|issues?|approvals?|baselines?|workshops?|meetings?|agendas?|charters?|registers?|matri(?:x|ces)|frameworks?|templates?|guidelines?|procedures?|processes?|workflows?|progress|periods?|controls?|cases?|packages?|knowledge|schedules?|escalations?|paths?|decisions?|recommendations?|summar(?:y|ies)|options?|outlines?|stages?|records?|highlights?|qualit(?:y|ies)|unresolved|raised|required|planned|approved|considered|outstanding|pending|completed?|remaining|assets?|retirement|purchase|orders?|benefits?|handover|closures?|statements?|lessons?|went|worked|improved?|releases?|formal|what|roots?|causes?|analysis|findings?|outcomes?|impacts?|recommendations?|requested|implemented|important|notes?|facts?|handed|over|proceed|certificates?|acceptance|documentation|no|by)\b/i;
+
 // First-word allowlist — any 2-4 word candidate starting with one of these
 // is treated as concept/sectioning, not a person name. Extended with
 // concept-prefix terms commonly used in Vision / Charter / Business-Case
@@ -65,6 +73,15 @@ const STOP_PREFIXES = new Set([
   "Development", "Production", "Staging", "Release", "Migration",
   "Cloud", "On", "Multi", "Cross", "Non", "Scrum", "Kanban", "Agile",
   "Waterfall", "Hybrid", "SAFe",
+  // Determiner/label prefixes — added 2026-07-08 after the Decom Sprint
+  // Cadence batch flagged phrases like "This Retrospectives", "Current
+  // Status", "Upstream Dependency", "Days Elapsed", "Proposed Sprint Goal".
+  // None of these words ever starts a real person/organisation name.
+  "This", "The", "Current", "Each", "Next", "Main", "Upstream", "Downstream",
+  "Standard", "Proposed", "Extend", "Days", "Review", "Increment", "Backlog",
+  "Sprints", "Retrospective", "Retrospectives", "Data", "Mitigation",
+  "Contingency", "Residual", "Last", "Focus", "Overall", "Purpose",
+  "Background", "Summary", "Overview", "Approach", "Objective", "Objectives",
 ]);
 
 // Whole-phrase allowlist. STOP_PREFIXES catches anything starting with the
@@ -205,10 +222,11 @@ export function validateArtefactNames({ content, registry }: ValidateInput): Nam
     const firstWord = candidate.split(/\s+/)[0];
     if (STOP_PREFIXES.has(firstWord)) continue;
 
-    // Skip if the candidate matches role / org keywords (those are
-    // generic terms, not fabricated names).
+    // Skip if the candidate matches role / org / PM-domain keywords (those
+    // are generic terms, not fabricated names).
     if (ROLE_KEYWORDS.test(candidate)) continue;
     if (ORG_KEYWORDS.test(candidate)) continue;
+    if (DOMAIN_KEYWORDS.test(candidate)) continue;
 
     // Skip if the candidate is in the allow-list.
     if (allowed.has(normalise(candidate))) continue;

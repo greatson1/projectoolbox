@@ -113,6 +113,48 @@ export default function ProjectOverviewPage() {
               <Button
                 variant="outline"
                 size="sm"
+                className="border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
+                onClick={async () => {
+                  const reason = window.prompt(
+                    `Close "${project.name}"?\n\nThis generates a closure report, consolidates the audit trail, and archives the project + agent.\nUse this when the work is genuinely finished (or cancelled) — even if the platform lifecycle isn't.\n\nReason:`,
+                    "Delivered — closing project",
+                  );
+                  if (reason === null) return;
+                  const call = async (resolveOpenItems: boolean) => {
+                    const res = await fetch(`/api/projects/${projectId}/close`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ reason, resolveOpenItems }),
+                    });
+                    return { ok: res.ok, json: await res.json().catch(() => ({})) };
+                  };
+                  try {
+                    toast.info("Closing project — generating closure report…", { duration: 8000 });
+                    let { ok, json } = await call(false);
+                    if (!ok && json?.data?.blockers?.length) {
+                      const proceed = window.confirm(
+                        `Still open:\n${json.data.blockers.map((b: string) => `• ${b}`).join("\n")}\n\nResolve everything automatically (cancel open tasks, close risks/issues, reject pending items) and close anyway?`,
+                      );
+                      if (!proceed) return;
+                      ({ ok, json } = await call(true));
+                    }
+                    if (ok && json?.data?.success) {
+                      toast.success("Project closed — closure report generated and project archived.");
+                      window.location.reload();
+                    } else {
+                      toast.error(json?.data?.blockers?.join("; ") || json?.error || "Closure failed");
+                    }
+                  } catch { toast.error("Closure failed"); }
+                }}
+              >
+                <FileCheck2 className="w-3.5 h-3.5 mr-1" />
+                Close Project
+              </Button>
+            )}
+            {project.status !== "ARCHIVED" && (
+              <Button
+                variant="outline"
+                size="sm"
                 className="border-slate-500/40 text-slate-300 hover:bg-slate-500/10"
                 onClick={async () => {
                   const reason = window.prompt(

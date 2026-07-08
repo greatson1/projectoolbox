@@ -158,7 +158,16 @@ const SETUP_PHASE_STATUSES = new Set([
   "awaiting_research_approval",
   "awaiting_clarification",
   "waiting_approval",
+  // "pending_approval" was MISSING here — the codebase writes two spellings
+  // of the artefact-review state ("waiting_approval" from phase-advance,
+  // "pending_approval" from artefact PATCH) and only one was covered.
+  // Deployments parked on artefact review therefore cycled at the 10-min
+  // execution cadence: Nova burned ~200 credits/day for weeks while DTI sat
+  // in pending_approval waiting for the user to review drafts.
+  "pending_approval",
   "blocked_tasks_incomplete",
+  // Phase finished, waiting on the advance action — nothing to monitor.
+  "complete",
 ]);
 
 /** Effective interval in minutes for a deployment, given its current phase status. */

@@ -354,6 +354,41 @@ export async function getNextRequiredStep({
   // Step 6 — gate approval. canAdvance can be true even if no gate has been
   // approved (the gate row might not exist yet or might be PENDING).
   if (!phase.gateApprovedAt) {
+    // Self-heal: submit the gate if nobody has. Gate submission normally
+    // happens via the agent's cycle or lifecycle-init, but a user who
+    // completes the last prereq TICK reaches this step with NO pending
+    // approval row — the banner said "Approve the Release phase gate" while
+    // the Approvals page was empty (a dead end, hit on Decom's final phase).
+    // createPhaseGateApprovalIfReady re-verifies readiness and dedupes, so
+    // this is safe to call on every resolve.
+    try {
+      const pendingGate = await db.approval.findFirst({
+        where: { projectId, type: "PHASE_GATE", status: "PENDING" },
+        select: { id: true },
+      });
+      if (!pendingGate) {
+        const { createPhaseGateApprovalIfReady } = await import("@/lib/agents/phase-gate-guard");
+        const { getMethodology } = await import("@/lib/methodology-definitions");
+        const project = await db.project.findUnique({ where: { id: projectId }, select: { methodology: true } });
+        const methodology = getMethodology(project?.methodology || "traditional");
+        const idx = methodology.phases.findIndex((p) => p.name === phaseName);
+        const nextName = idx >= 0 && idx < methodology.phases.length - 1
+          ? methodology.phases[idx + 1].name
+          : "Project Closure";
+        const outcome = await createPhaseGateApprovalIfReady({
+          projectId,
+          phaseName,
+          nextPhaseName: nextName,
+          agentId,
+          urgency: "MEDIUM",
+        });
+        if (!outcome.skipped) {
+          console.log(`[phase-next-action] self-submitted ${phaseName} gate (→ ${nextName})`);
+        }
+      }
+    } catch (e) {
+      console.error("[phase-next-action] gate self-submission failed:", e);
+    }
     return {
       step: "gate_approval",
       reason: `${phaseName} gate awaiting approval.`,
