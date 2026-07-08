@@ -108,6 +108,26 @@ describe("validateArtefactNames", () => {
     expect(flagged).toHaveLength(0);
   });
 
+  it("does not join adjacent HTML table cells into a fake name", () => {
+    // <td>Methodology</td><td>Waterfall</td> used to collapse to
+    // "Methodology Waterfall" and be flagged on every HTML Brief draft.
+    const html =
+      "<table><tbody>" +
+      "<tr><td>Methodology</td><td>Waterfall</td></tr>" +
+      "<tr><td>Decision</td><td>Required</td></tr>" +
+      "<tr><td>Contrast</td><td>Ratio</td></tr>" +
+      "</tbody></table>";
+    expect(validateArtefactNames({ content: html, registry: emptyRegistry })).toHaveLength(0);
+  });
+
+  it("does not flag plural role/org phrases like External Suppliers", () => {
+    const out = validateArtefactNames({
+      content: "Engage External Suppliers and Delivery Partners early.",
+      registry: emptyRegistry,
+    });
+    expect(out.map(v => v.name)).toHaveLength(0);
+  });
+
   it("does not flag HTML <th> cells", () => {
     const html =
       "<table><thead><tr><th>Mitigation Actions</th><th>Residual Score</th></tr></thead>" +

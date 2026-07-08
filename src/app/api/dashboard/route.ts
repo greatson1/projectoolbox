@@ -44,10 +44,15 @@ export async function GET() {
     }),
   ]);
 
-  // Count tasks completed across all projects (excluding PM-overhead pseudo-tasks)
-  const completedTasks = await db.task.count({ where: { project: { orgId }, status: "DONE", ...EXCLUDE_PM_OVERHEAD } });
-  const totalTasks = await db.task.count({ where: { project: { orgId }, ...EXCLUDE_PM_OVERHEAD } });
-  const openRisks = await db.risk.count({ where: { project: { orgId }, status: "OPEN" } });
+  // Count tasks completed across ACTIVE projects (excluding PM-overhead
+  // pseudo-tasks). Archived projects are excluded — the header says "N
+  // active projects", so counting archived projects' tasks and risks in the
+  // same tiles produced totals the visible project list couldn't explain
+  // (89 "open risks" when the four active projects held 17).
+  const liveProject = { orgId, status: { not: "ARCHIVED" as any } };
+  const completedTasks = await db.task.count({ where: { project: liveProject, status: "DONE", ...EXCLUDE_PM_OVERHEAD } });
+  const totalTasks = await db.task.count({ where: { project: liveProject, ...EXCLUDE_PM_OVERHEAD } });
+  const openRisks = await db.risk.count({ where: { project: liveProject, status: "OPEN" } });
 
   // ── Stuck conversations ────────────────────────────────────────────────────
   // Find agent_question / clarification_question chat messages older than 4

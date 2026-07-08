@@ -29,7 +29,7 @@ import type { AllowedNamesRegistry } from "@/lib/agents/allowed-names";
 // on every Charter / Vision / Business-Case draft. New entries: architect,
 // engineer, developer, designer, tester, master (scrum master), specialist,
 // principal, senior, junior, expert, consultant, advisor, secretary.
-const ROLE_KEYWORDS = /\b(manager|lead|director|sponsor|owner|team|member|representative|analyst|head|officer|coordinator|chair|agent|provider|supplier|contractor|partner|client|user|stakeholder|body|department|commission|authority|board|council|ministry|traveller|family|spouse|child|parent|guardian|companion|host|contact|emergency|insurance|airline|hotel|agency|primary|secondary|self|tbd|unassigned|tbc|architect|engineer|developer|designer|tester|master|specialist|principal|senior|junior|expert|consultant|advisor|adviser|secretary)\b/i;
+const ROLE_KEYWORDS = /\b(managers?|leads?|directors?|sponsors?|owners?|teams?|members?|representatives?|analysts?|heads?|officers?|coordinators?|chairs?|agents?|providers?|suppliers?|contractors?|partners?|clients?|users?|stakeholders?|body|department|commission|authority|board|council|ministry|travellers?|family|spouse|child|parent|guardian|companions?|hosts?|contacts?|emergency|insurance|airline|hotel|agency|primary|secondary|self|tbd|unassigned|tbc|architects?|engineers?|developers?|designers?|testers?|masters?|specialists?|principals?|senior|junior|experts?|consultants?|advisors?|advisers?|secretary)\b/i;
 
 const ORG_KEYWORDS = /\b(ltd|inc|corp|llc|plc|gmbh|airlines?|hotel|resort|clinic|hospital|bank|airways|ventures?|group|services?|solutions?|systems?|consultancy|consulting|agency|centre|center|commission|embassy|high commission|authority|department|ministry|international)\b/i;
 
@@ -117,6 +117,12 @@ function stripHtml(s: string): string {
   // "Residual Score") are document structure, not names. Only <th>; <td>
   // content is real data and stays validated.
   out = out.replace(/<th\b[^>]*>[\s\S]*?<\/th>/gi, " ");
+  // Closing tags of cells / rows / list items / paragraphs / headings end a
+  // text unit. Replace them with ". " so words from ADJACENT units can't be
+  // read as one capitalised phrase — `<td>Methodology</td><td>Waterfall</td>`
+  // used to collapse to "Methodology Waterfall" and get flagged as a
+  // fabricated person name on every HTML Brief/Business-Case draft.
+  out = out.replace(/<\/(td|tr|li|p|h[1-6]|div|section)\s*>|<br\s*\/?>/gi, ". ");
   out = out.replace(/<[^>]+>/g, " ");
   return out;
 }
@@ -177,7 +183,13 @@ export function validateArtefactNames({ content, registry }: ValidateInput): Nam
   // Walk the text capturing capitalised 2-4 word sequences. We use a
   // greedy match and then trim role/org words at the boundaries so
   // "Manager Sarah Mitchell" yields just "Sarah Mitchell".
-  const PROPER_NAME = /\b([A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]\.))){1,3}\b/g;
+  // NOTE the quantifier placement: `(?:…){1,3}` INSIDE the capture group.
+  // The old form `(word(?:\s+word)){1,3}` repeated the capture group itself,
+  // so m[1] held only the LAST word-pair — "Engage External Suppliers" was
+  // captured as "Engage External", which dodged the role/org keyword filter
+  // ("Suppliers" never made it into the candidate) and produced phantom
+  // two-word "names" from the tail ends of longer phrases.
+  const PROPER_NAME = /\b([A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|[A-Z]\.)){1,3})\b/g;
 
   const violations = new Map<string, { name: string; context: string; occurrences: number }>();
 
