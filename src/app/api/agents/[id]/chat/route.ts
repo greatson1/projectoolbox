@@ -61,7 +61,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     responseContent = await AgentLLM.chat(agentId, message);
   } catch (e: any) {
     console.error("LLM error:", e.message);
-    responseContent = `I encountered an error processing your request. Please try again. (${e.message})`;
+    // Transient failure — return an error the UI can toast + retry. Do NOT
+    // persist an "I encountered an error" row as the agent's reply: during
+    // the June model outage those rows piled up in chat history and read as
+    // the agent's actual answers long after the incident.
+    return NextResponse.json(
+      {
+        error: "The agent couldn't respond just now — please try again.",
+        detail: String(e?.message ?? e).slice(0, 200),
+        userMessage: userMsg,
+        transient: true,
+      },
+      { status: 502 },
+    );
   }
 
   // Detect if the response contains an action proposal

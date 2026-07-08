@@ -50,12 +50,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     _count: true,
   });
 
+  // "Tasks Completed" tile — REAL completed task rows on the agent's project.
+  // This used to be creditUsage._count (number of credit transactions), which
+  // inflated with every API charge — a 25-day agent on a 37-task project
+  // showed "906 tasks completed". Count actual DONE tasks instead.
+  const tasksCompleted = projectId
+    ? await db.task.count({
+        where: { projectId, status: "DONE" },
+      }).catch(() => 0)
+    : 0;
+
   return NextResponse.json({
     data: {
       ...agent,
       artefactCount,
       creditsUsed: Math.abs(creditUsage._sum.amount || 0),
-      actionCount: creditUsage._count,
+      actionCount: tasksCompleted,
     },
   });
 }

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 
 import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 export interface ReportContext {
   projectId: string;
@@ -20,7 +21,10 @@ export async function gatherProjectData(projectId: string) {
         agents: { where: { isActive: true }, include: { agent: true } },
       },
     }),
-    db.task.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
+    // Same delivery-task definition as the dashboard/metrics (PM-overhead
+    // scaffolds excluded) — a status report saying "14 of 37 tasks" while
+    // the dashboard says "0 of 12" destroys trust in both numbers.
+    db.task.findMany({ where: { projectId, ...EXCLUDE_PM_OVERHEAD }, orderBy: { createdAt: "desc" } }),
     db.risk.findMany({ where: { projectId }, orderBy: { score: "desc" } }),
     db.issue.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
     db.stakeholder.findMany({ where: { projectId } }),

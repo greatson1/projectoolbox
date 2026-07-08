@@ -93,9 +93,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ proj
 
   // Second pass: also remove agent-created overhead that slipped through without [scaffolded] tag.
   // Agent overhead tasks have no real dates — delivery tasks always have dates from WBS/Schedule.
+  // BUT: a task assigned to a sprint, or seeded from an artefact/backlog
+  // ([source:…] marker), is real delivery work even when the source CSV
+  // carried no dates. This filter used to drop every dateless [source:sprint]
+  // work item, which is why the Agile Board rendered "No issues" in every
+  // column while the sprint header counted 11 tasks.
   if (!includeAll) {
     tasks = tasks.filter((t) =>
-      !(t.createdBy?.startsWith("agent:") && !t.startDate && !t.endDate)
+      !(
+        t.createdBy?.startsWith("agent:") &&
+        !t.startDate && !t.endDate &&
+        !t.sprintId &&
+        !t.description?.includes("[source:")
+      )
     );
   }
 
