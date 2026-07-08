@@ -22,6 +22,8 @@ import { db } from "@/lib/db";
 import { looksLikeFabricatedName } from "./fabricated-names";
 import { createKbItem } from "./kb-writer";
 
+import { MODELS } from "@/lib/ai-models";
+
 // ─── Public dispatcher ────────────────────────────────────────────────────────
 
 interface ArtefactInput {
@@ -1274,7 +1276,7 @@ async function seedProseToKB(artefact: ArtefactInput, agentId: string): Promise<
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 2048,
         messages: [{
           role: "user",

@@ -283,7 +283,7 @@ Return ONLY a JSON array in this exact format — no preamble, no explanation:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -393,6 +393,8 @@ function capByArtefactAndShape(qs: ClarificationQuestion[]): ClarificationQuesti
 export { phraseTBCQuestionFallback } from "./phrase-tbc-question";
 import { phraseTBCQuestionFallback, normalisePersonHintQuestion } from "./phrase-tbc-question";
 
+import { MODELS } from "@/lib/ai-models";
+
 /**
  * Phrases a batch of unresolved [TBC] items as proper clarification questions
  * (right interrogative + right input widget type), using Claude Haiku in one
@@ -465,7 +467,7 @@ Return ONLY a JSON array, no preamble. Exact shape:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -585,7 +587,7 @@ Be strict: only mark as answered if the confirmed facts clearly contain the spec
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 256,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -1194,7 +1196,7 @@ If the user's message doesn't answer any questions, return [].`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 1024,
         messages: [{ role: "user", content: extractPrompt }],
       }),

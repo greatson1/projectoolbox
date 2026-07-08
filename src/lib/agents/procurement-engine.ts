@@ -9,6 +9,8 @@
 
 import { db } from "@/lib/db";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 const PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions";
 
 // ─── Types ───
@@ -168,7 +170,7 @@ export async function buildEvaluationMatrix(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        ...HEAVY_MODEL_REQUEST,
         max_tokens: 1500,
         messages: [{
           role: "user",
@@ -336,7 +338,7 @@ export async function processVendorQuote(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        ...HEAVY_MODEL_REQUEST,
         max_tokens: 800,
         messages: [{
           role: "user",

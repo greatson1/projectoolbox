@@ -1,3 +1,4 @@
+import { MODELS } from "@/lib/ai-models";
 /**
  * Pull atomic project facts out of an inbound email body via Claude Haiku.
  *
@@ -57,7 +58,7 @@ const liveFetcher: ChatCompletionFetcher = async (prompt, system) => {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: MODELS.light,
       max_tokens: 1024,
       system,
       messages: [{ role: "user", content: prompt }],

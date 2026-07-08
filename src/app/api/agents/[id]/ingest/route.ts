@@ -23,6 +23,8 @@ import { CreditService, orgCanUseFeature, getOrgPlan } from "@/lib/credits/servi
 import { CREDIT_COSTS, insufficientPlanResponse } from "@/lib/utils";
 import { checkRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 
+import { MODELS, HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 export const dynamic = "force-dynamic";
 
 export const maxDuration = 300; // 5 min — Whisper on large files needs time
@@ -383,7 +385,7 @@ Rules:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        ...HEAVY_MODEL_REQUEST,
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -463,7 +465,7 @@ async function summariseContent(content: string, title: string, url?: string): P
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 1024,
         messages: [{
           role: "user",

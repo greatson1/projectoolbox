@@ -15,6 +15,8 @@ import { cleanMarkdownLeakage } from "./markdown-cleanup";
 import { sanitiseArtefactContent } from "./sanitise-artefact-content";
 import { filterTBCItemsByArtefactPurpose } from "./tbc-topic-filter";
 
+import { MODELS, HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 /**
  * Generate artefacts for the current (or specified) phase of a project.
  * Safe to call on existing deployments — skips artefacts already in DB.
@@ -42,7 +44,16 @@ export async function generatePhaseArtefacts(
    * `force?: boolean` which had no audit trail and was easy to mis-call.
    */
   bypassReason?: "user_regenerate" | "post_clarification",
-): Promise<{ generated: number; skipped: number; phase: string; missing?: string[] }> {
+): Promise<{
+  generated: number;
+  skipped: number;
+  phase: string;
+  missing?: string[];
+  /** Set when a lifecycle gate stopped generation before any API call — tells the user WHY and how to unblock. */
+  blockedReason?: string;
+  /** Per-artefact failure reasons (API errors, empty responses) so a 0-generated result is never silent. */
+  failures?: Array<{ name: string; reason: string }>;
+}> {
   const force = bypassReason === "user_regenerate" || bypassReason === "post_clarification";
   const [agent, project] = await Promise.all([
     db.agent.findUnique({ where: { id: agentId } }),
@@ -138,7 +149,10 @@ export async function generatePhaseArtefacts(
           summary: `${targetPhaseName}: generation blocked — phase is ${deployment.phaseStatus}. ${toGenerate.length} artefact(s) still pending: ${toGenerate.join(", ")}. Answer clarifications to unblock, or use Regenerate (Fresh) to override.`,
         },
       }).catch(() => {});
-      return { generated: 0, skipped, phase: targetPhaseName, missing: toGenerate };
+      return {
+        generated: 0, skipped, phase: targetPhaseName, missing: toGenerate,
+        blockedReason: `Generation is blocked — the phase is still in "${deployment.phaseStatus}". Complete the Research → Review → Clarification flow to unblock, or use Regenerate (Fresh) to override.`,
+      };
     }
   }
 
@@ -156,7 +170,10 @@ export async function generatePhaseArtefacts(
             summary: `${targetPhaseName}: generation blocked — active clarification session pending. ${toGenerate.length} artefact(s) waiting: ${toGenerate.join(", ")}. Finish answering questions, or use Regenerate (Fresh) to override.`,
           },
         }).catch(() => {});
-        return { generated: 0, skipped, phase: targetPhaseName, missing: toGenerate };
+        return {
+          generated: 0, skipped, phase: targetPhaseName, missing: toGenerate,
+          blockedReason: "Generation is blocked — a clarification session is still open. Finish answering the agent's questions to unblock, or use Regenerate (Fresh) to override.",
+        };
       }
     } catch (e) {
       console.error("[generatePhaseArtefacts] clarification import failed:", e);
@@ -191,7 +208,10 @@ export async function generatePhaseArtefacts(
             summary: `${targetPhaseName}: generation blocked — ${pendingResearchApprovals} research-finding approval${pendingResearchApprovals === 1 ? "" : "s"} awaiting your review. Approve or reject the research findings on the Approvals page before any artefacts can be drafted. ${toGenerate.length} artefact(s) waiting: ${toGenerate.join(", ")}.`,
           },
         }).catch(() => {});
-        return { generated: 0, skipped, phase: targetPhaseName, missing: toGenerate };
+        return {
+          generated: 0, skipped, phase: targetPhaseName, missing: toGenerate,
+          blockedReason: "Generation is blocked — research findings are awaiting your approval. Review them on the Approvals page to unblock.",
+        };
       }
     } catch (e) {
       console.error("[generatePhaseArtefacts] research-approval gate check failed:", e);
@@ -262,7 +282,7 @@ export async function generatePhaseArtefacts(
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          ...HEAVY_MODEL_REQUEST,
           max_tokens: phaseDepth.maxTokens,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -449,6 +469,9 @@ export async function generatePhaseArtefacts(
   // missing — that was the old behaviour and it caused users to think the
   // phase was complete when it wasn't.
   const missingAfterBatches = toGenerate.filter(n => !generatedNormNames.has(normalizeName(n)));
+  // Per-artefact failure reasons, returned to the caller so the API response
+  // (and UI toast) can say WHY nothing was generated instead of a silent 0.
+  const failures: Array<{ name: string; reason: string }> = [];
   for (const name of missingAfterBatches) {
     const isSheet = isSpreadsheetArtefact(name);
     const retryFeedback = feedbackBlockFor([name]);
@@ -470,7 +493,7 @@ export async function generatePhaseArtefacts(
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          ...HEAVY_MODEL_REQUEST,
           max_tokens: phaseDepth.maxTokens,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -554,6 +577,9 @@ export async function generatePhaseArtefacts(
     // user actually sees the missing artefact in the UI and can take action.
     // Skip if (a) generation eventually succeeded above or (b) something
     // with this name already exists in the DB (avoid duplicates).
+    if (failureReason && !generatedNormNames.has(normalizeName(name))) {
+      failures.push({ name, reason: failureReason });
+    }
     if (failureReason && !generatedNormNames.has(normalizeName(name)) && !existingNames.has(name.toLowerCase())) {
       try {
         await db.agentArtefact.create({
@@ -632,7 +658,7 @@ export async function generatePhaseArtefacts(
     })();
   }
 
-  return { generated: totalGenerated, skipped, phase: targetPhaseName, missing: stillMissing };
+  return { generated: totalGenerated, skipped, phase: targetPhaseName, missing: stillMissing, failures };
 }
 
 /**
@@ -748,7 +774,7 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: MODELS.light,
             max_tokens: 1024,
             messages: [{ role: "user", content: `You are a project setup assistant. Scan this project data for critical ambiguities that MUST be resolved before any research can begin. Only flag genuinely ambiguous items — not missing details that research will uncover.\n\nExamples of ambiguities:\n- "Lagos" could mean Lagos Nigeria or Lagos Portugal\n- "Sprint" could mean Agile sprint or Sprint (telecom company)\n- Budget without currency could be GBP, USD, EUR, etc.\n- "Q3" without year is ambiguous\n- A city name that exists in multiple countries\n\nDo NOT flag:\n- Missing stakeholder names (research will find these)\n- Unclear scope details (clarification session handles this)\n- Risk items (research handles this)\n\n${projectData}\n\nReturn a JSON array of objects with {question: string, context: string} for each ambiguity. Return [] if no critical ambiguities exist. JSON only, no markdown.` }],
           }),

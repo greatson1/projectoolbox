@@ -16,6 +16,8 @@
 import { db } from "@/lib/db";
 import { looksLikeFabricatedName } from "./fabricated-names";
 
+import { MODELS } from "@/lib/ai-models";
+
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const DEFAULT_SPRINT_DURATION_DAYS = 14;
@@ -312,7 +314,7 @@ async function estimateStoryPoints(tasks: any[], project: any): Promise<void> {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 512,
         messages: [{
           role: "user",

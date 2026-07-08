@@ -18,6 +18,8 @@ import {
   type DeploymentConfig,
 } from "./decision-classifier";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 interface ExecutionContext {
   agentId: string;
   deploymentId: string;
@@ -660,7 +662,7 @@ async function performMutation(
               "anthropic-version": "2023-06-01",
             },
             body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
+              ...HEAVY_MODEL_REQUEST,
               max_tokens: 4096,
               messages: [{
                 role: "user",

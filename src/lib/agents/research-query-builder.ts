@@ -28,6 +28,8 @@
 
 import type { ProjectContext } from "./feasibility-research-types";
 
+import { MODELS } from "@/lib/ai-models";
+
 export interface TargetedQuery {
   artefact: string;     // The artefact this query targets
   query: string;        // The web search query string
@@ -122,7 +124,7 @@ Return ONLY a JSON array, no preamble:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 1024,
         messages: [{ role: "user", content: prompt }],
       }),

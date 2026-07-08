@@ -15,6 +15,8 @@
 
 import { db } from "@/lib/db";
 
+import { MODELS } from "@/lib/ai-models";
+
 export interface ConsistencyIssue {
   severity: "error" | "warning";
   artefact1: string;
@@ -66,7 +68,7 @@ export async function validateCrossArtefactConsistency(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 2048,
         messages: [{
           role: "user",

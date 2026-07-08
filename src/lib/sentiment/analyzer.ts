@@ -1,3 +1,4 @@
+import { MODELS } from "@/lib/ai-models";
 /**
  * Sentiment Analyzer — Claude Haiku-powered sentiment extraction.
  *
@@ -72,7 +73,7 @@ Return ONLY the JSON object, no other text.`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 200,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -124,7 +125,7 @@ Return ONLY a JSON array of ${texts.length} objects, no other text.`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 1500,
         messages: [{ role: "user", content: prompt }],
       }),

@@ -348,14 +348,28 @@ export default function ArtefactsPage() {
       let json: any = null;
       try { json = JSON.parse(text); } catch { /* not JSON */ }
       if (res.ok && json?.data) {
-        const { generated, skipped, phase } = json.data;
-        if (generated > 0) {
+        const { generated, skipped, phase, blockedReason, failures } = json.data;
+        if (generated > 0 && (!failures || failures.length === 0)) {
           toast.success(`Generated ${generated} artefact(s) for ${phase} phase`);
           refreshArtefacts();
+        } else if (generated > 0) {
+          toast.warning(
+            `Generated ${generated} artefact(s) for ${phase}, but ${failures.length} failed: ${failures.map((f: any) => f.name).join(", ")}. ${failures[0].reason}`,
+            { duration: 10000 },
+          );
+          refreshArtefacts();
+        } else if (blockedReason) {
+          toast.error(blockedReason, { duration: 10000 });
+        } else if (failures?.length > 0) {
+          toast.error(
+            `Generation failed for all ${failures.length} artefact(s). ${failures[0].reason}`,
+            { duration: 10000 },
+          );
+          refreshArtefacts(); // failed placeholders appear as REJECTED with a Regenerate action
         } else if (skipped > 0) {
           toast.info(`All ${phase} artefacts already exist (${skipped} found)`);
         } else {
-          toast.info(`Generation deferred — your agent has questions to answer first. Open Chat to respond.`);
+          toast.info(`Nothing to generate for ${phase}.`);
         }
       } else {
         toast.error(json?.error || `Error ${res.status}: ${text.slice(0, 80)}`);

@@ -6,6 +6,8 @@ import { resolveApiCaller } from "@/lib/api-auth";
 import { checkRateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 import { getMethodologyLabel } from "@/lib/methodology-definitions";
 
+import { MODELS, HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
@@ -2214,7 +2216,7 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+            model: process.env.CLAUDE_MODEL || MODELS.heavy,
             max_tokens: 4096,
             // Anthropic prompt cache. Block form lets the API return
             // `cache_creation_input_tokens` / `cache_read_input_tokens` in the
@@ -2755,7 +2757,7 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                 "anthropic-version": "2023-06-01",
               },
               body: JSON.stringify({
-                model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+                model: process.env.CLAUDE_MODEL || MODELS.heavy,
                 max_tokens: 2048,
                 // Same cache_control breakpoint as Phase 1 — this is the call
                 // that benefits MOST from caching. Phase 1 just wrote the cache
@@ -3184,7 +3186,7 @@ RULES:
                     "anthropic-version": "2023-06-01",
                   },
                   body: JSON.stringify({
-                    model: "claude-sonnet-4-20250514",
+                    ...HEAVY_MODEL_REQUEST,
                     max_tokens: 8192,
                     messages: [{ role: "user", content: editPrompt }],
                   }),

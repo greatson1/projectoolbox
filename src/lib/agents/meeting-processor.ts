@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { embedTexts, cosineSimilarity, isEmbeddingsAvailable } from "@/lib/ml/text-embedding";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 /**
  * Processes a meeting transcript (text) with AI to extract:
  * - Summary
@@ -33,7 +35,7 @@ export async function processMeetingTranscript(meetingId: string): Promise<void>
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          ...HEAVY_MODEL_REQUEST,
           max_tokens: 4096,
           messages: [{ role: "user", content: prompt }],
         }),
@@ -582,7 +584,7 @@ export async function generatePreMeetingBrief(eventId: string): Promise<string> 
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          ...HEAVY_MODEL_REQUEST,
           max_tokens: 1500,
           messages: [{
             role: "user",

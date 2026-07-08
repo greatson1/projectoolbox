@@ -14,6 +14,8 @@
 import { db } from "@/lib/db";
 import { isN8nEnabled, forwardToN8n } from "@/lib/n8n";
 
+import { MODELS } from "@/lib/ai-models";
+
 /**
  * Pull the user-confirmed facts that should anchor research-query
  * generation. Without these, Haiku defaults to conventional values
@@ -320,7 +322,7 @@ async function extractAndStoreFacts(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: MODELS.light,
       max_tokens: 2000,
       messages: [{
         role: "user",
@@ -395,7 +397,7 @@ Return ONLY a JSON array of the 1-based indices to flag, e.g. [2, 5, 7]. If none
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: MODELS.light,
           max_tokens: 200,
           messages: [{ role: "user", content: validationPrompt }],
         }),

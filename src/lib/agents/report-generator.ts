@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 export interface ReportContext {
   projectId: string;
   type: string;
@@ -258,7 +260,7 @@ export async function generateReportContent(type: string, sections: string[], da
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          ...HEAVY_MODEL_REQUEST,
           max_tokens: 4096,
           messages: [{ role: "user", content: prompt }],
         }),

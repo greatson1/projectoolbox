@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import type { ActionProposal } from "./decision-classifier";
 import { currencySymbol } from "@/lib/currency";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 // Agent LLM service — abstracted to support OpenAI or Anthropic
 export class AgentLLM {
   /**
@@ -154,7 +156,7 @@ Output ONLY the JSON array, no markdown fences.`;
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          ...HEAVY_MODEL_REQUEST,
           max_tokens: 2048,
           messages: [{ role: "user", content: cyclePrompt }],
         }),
@@ -242,7 +244,7 @@ async function callAnthropic(messages: any[], systemPrompt: string): Promise<str
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      ...HEAVY_MODEL_REQUEST,
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages.filter(m => m.role !== "system").map(m => ({

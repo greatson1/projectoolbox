@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { ensureProjectMutable } from "@/lib/archive-guard";
 
+import { MODELS } from "@/lib/ai-models";
+
 export const dynamic = "force-dynamic";
 
 // ─── GET — list all risks ────────────────────────────────────────────────────
@@ -225,7 +227,8 @@ BODY:
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
+            model: process.env.CLAUDE_MODEL || MODELS.heavy,
+            thinking: { type: "disabled" },
             max_tokens: 600,
             messages: [{ role: "user", content: prompt }],
           }),

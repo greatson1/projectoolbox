@@ -14,6 +14,8 @@
 
 import { db } from "@/lib/db";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 const DEFAULT_RATES: Record<string, number> = {
   OWNER: 150, ADMIN: 120, MANAGER: 100, MEMBER: 75, SENIOR: 120, JUNIOR: 50, CONTRACTOR: 100,
 };
@@ -222,7 +224,7 @@ async function inferNonLabourCosts(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        ...HEAVY_MODEL_REQUEST,
         max_tokens: 1000,
         messages: [{
           role: "user",

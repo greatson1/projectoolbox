@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { resolveApiCaller } from "@/lib/api-auth";
 
+import { MODELS } from "@/lib/ai-models";
+
 export const dynamic = "force-dynamic";
 
 export const maxDuration = 60;
@@ -178,7 +180,7 @@ Rules:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),

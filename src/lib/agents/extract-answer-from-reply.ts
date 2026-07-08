@@ -1,3 +1,4 @@
+import { MODELS } from "@/lib/ai-models";
 /**
  * Backstop fact extraction for the chat agent.
  *
@@ -125,7 +126,7 @@ Rules:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 256,
         messages: [{ role: "user", content: prompt }],
       }),

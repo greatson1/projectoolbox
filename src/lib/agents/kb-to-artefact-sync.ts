@@ -20,6 +20,8 @@
 
 import { db } from "@/lib/db";
 
+import { MODELS } from "@/lib/ai-models";
+
 interface KBFact {
   title: string;
   content: string;
@@ -84,7 +86,7 @@ If nothing matches, return []. Be strict — only propose replacements when the 
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5",
+          model: MODELS.light,
           max_tokens: 512,
           messages: [{ role: "user", content: prompt }],
         }),

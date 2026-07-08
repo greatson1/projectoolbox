@@ -16,6 +16,8 @@
 
 import { db } from "@/lib/db";
 
+import { MODELS } from "@/lib/ai-models";
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ProposedChange {
@@ -384,7 +386,7 @@ Return ONLY a JSON array — no explanation:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        model: MODELS.light,
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),

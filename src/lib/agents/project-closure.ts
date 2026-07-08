@@ -14,6 +14,8 @@
 
 import { db } from "@/lib/db";
 
+import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
+
 export interface ClosureResult {
   success: boolean;
   blockers: string[];
@@ -105,7 +107,7 @@ export async function runProjectClosure(
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
+            ...HEAVY_MODEL_REQUEST,
             max_tokens: 8192,
             messages: [{
               role: "user",

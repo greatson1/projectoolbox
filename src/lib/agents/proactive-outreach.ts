@@ -15,6 +15,8 @@
 
 import { db } from "@/lib/db";
 
+import { MODELS } from "@/lib/ai-models";
+
 /**
  * Declarative description of what state would resolve a question. When a
  * caller sets this on their ProactiveQuestion, askUser can decide
@@ -404,7 +406,7 @@ Rules:
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: MODELS.light,
         max_tokens: 200,
         messages: [{ role: "user", content: prompt }],
       }),
