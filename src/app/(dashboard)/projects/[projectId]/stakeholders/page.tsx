@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Users, Plus, ShieldAlert, Heart, Eye, Download, Pencil, Trash2 } from "lucide-react";
+import { Users, Plus, ShieldAlert, Heart, Eye, Download, Pencil, Trash2, MessageSquareText } from "lucide-react";
 import { downloadCSV } from "@/lib/export-csv";
 import { toast } from "sonner";
 
@@ -133,6 +133,7 @@ export default function StakeholdersPage() {
   const deleteStakeholder = useDeleteStakeholder(projectId);
 
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [commsGenerating, setCommsGenerating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -390,6 +391,27 @@ export default function StakeholdersPage() {
           >
             <Download className="w-3.5 h-3.5 mr-1" />
             Download CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={commsGenerating}
+            title="Draft a Communications Plan from the live register — names, quadrants and sentiment as they are today. Lands in Documents as a draft for review."
+            onClick={() => {
+              setCommsGenerating(true);
+              const toastId = toast.loading("Drafting Communications Plan from the live register…");
+              fetch(`/api/projects/${projectId}/stakeholders/comms-plan`, { method: "POST" })
+                .then(async (r) => {
+                  const j = await r.json().catch(() => ({}));
+                  if (!r.ok) throw new Error(j.error || "Generation failed");
+                  toast.success(`"${j.data?.name || "Communications Plan"}" drafted — review it in Documents`, { id: toastId, duration: 8000 });
+                })
+                .catch((e) => toast.error(e.message || "Generation failed", { id: toastId }))
+                .finally(() => setCommsGenerating(false));
+            }}
+          >
+            <MessageSquareText className="w-3.5 h-3.5 mr-1" />
+            {commsGenerating ? "Drafting…" : "Generate Comms Plan"}
           </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4 mr-1" /> Add Stakeholder
