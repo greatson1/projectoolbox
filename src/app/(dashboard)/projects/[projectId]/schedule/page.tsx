@@ -6,7 +6,8 @@ import { parseSource, SourceBadge, RowReasoning } from "@/components/artefacts/s
 
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useProjectTasks, useProject, useProjectSprints, useUpdateTask, useCreateTask } from "@/hooks/use-api";
+import { useProjectTasks, useProject, useProjectSprints, useProjectGantt, useUpdateTask, useCreateTask } from "@/hooks/use-api";
+import { NetworkView } from "@/components/schedule/network-view";
 import { getMethodologyLabel, methodologyFeatures } from "@/lib/methodology-definitions";
 import { MOSCOW_HEX, type Moscow } from "@/lib/moscow";
 import { toast } from "sonner";
@@ -53,7 +54,7 @@ interface ScheduleTask {
 // No mock data — everything is derived from API tasks
 
 type ZoomLevel = "week" | "month" | "quarter";
-type ViewMode = "gantt" | "list";
+type ViewMode = "gantt" | "list" | "network";
 
 // ── Helpers ──
 function parseDate(s: string) { return new Date(s + "T00:00:00"); }
@@ -102,6 +103,19 @@ export default function SchedulePage() {
   const { data: project } = useProject(projectId);
   const { data: apiTasks, isPending: tasksPending, isError: tasksError } = useProjectTasks(projectId);
   const { data: apiSprints } = useProjectSprints(projectId);
+  // Server-computed CPM layer (critical path, float, forecast, Monte Carlo).
+  // The /gantt route computes this from live tasks + resolved dependencies —
+  // it is the authority on criticality; the inline fallback below only
+  // applies while this query is loading.
+  const { data: ganttData } = useProjectGantt(projectId);
+  const serverCpm = ganttData?.cpm ?? null;
+  const floatByTask = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of ganttData?.tasks ?? []) {
+      if (t.floatDays !== null && t.floatDays !== undefined) m.set(t.id, t.floatDays);
+    }
+    return m;
+  }, [ganttData]);
   // The tasks GET runs lazy artefact backfills server-side and can take
   // seconds — while it's in flight the page must say "loading", never
   // "No tasks yet" (users saw the empty state + Sync button on an active
@@ -365,8 +379,19 @@ export default function SchedulePage() {
     return { slack, critical: new Set(order.filter(id => (slack.get(id) || 0) === 0)) };
   }, [TASKS_DATA]);
 
-  // Computed criticality wins when CPM ran; otherwise honour the stored flag.
-  const isCriticalTask = (t: ScheduleTask) => (cpm ? cpm.critical.has(t.id) : t.isCriticalPath);
+  // Computed criticality wins: server CPM first (handles SNET dates, phase
+  // ordering, forecast), then the inline fallback, then the stored flag.
+  // Per-task flags, not cpm.criticalIds — the latter is one traced CHAIN,
+  // but parallel tasks can all be critical.
+  const serverCriticalSet = useMemo(
+    () =>
+      ganttData?.tasks
+        ? new Set<string>(ganttData.tasks.filter((t: any) => t.isCriticalPath).map((t: any) => t.id))
+        : null,
+    [ganttData],
+  );
+  const isCriticalTask = (t: ScheduleTask) =>
+    serverCriticalSet ? serverCriticalSet.has(t.id) : cpm ? cpm.critical.has(t.id) : t.isCriticalPath;
 
   // Today marker
   const today = new Date();
@@ -479,6 +504,23 @@ export default function SchedulePage() {
     downloadCSV(rows, `schedule-${projectId}.csv`);
   }
 
+  // ── Network View ──
+  if (view === "network") {
+    return (
+      <div className="space-y-6 max-w-[1600px]">
+        <Header view={view} setView={setView} zoom={zoom} setZoom={setZoom}
+          showCriticalPath={showCriticalPath} setShowCriticalPath={setShowCriticalPath}
+          tMinusMode={tMinusMode} setTMinusMode={setTMinusMode} daysToTarget={daysToTarget} tMinusTarget={tMinusTarget}
+          stats={{ totalTasks, completedTasks, milestonesHit, totalMilestones, criticalTasks, overallProgress }} project={project}
+          onDownloadCSV={TASKS_DATA.length > 0 ? handleDownloadScheduleCSV : undefined} setShowAddTask={setShowAddTask} />
+
+        <NetworkView tasks={ganttData?.tasks ?? []} phases={ganttData?.phases ?? []} cpm={serverCpm} />
+
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} forecast={serverCpm} />
+      </div>
+    );
+  }
+
   // ── List View ──
   if (view === "list") {
     return (
@@ -544,7 +586,7 @@ export default function SchedulePage() {
           </div>
         </Card>
 
-        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} />
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} forecast={serverCpm} />
       </div>
     );
   }
@@ -878,7 +920,7 @@ export default function SchedulePage() {
         </Card>
 
         {/* ── Phase Gates Sidebar ── */}
-        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} />
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} forecast={serverCpm} />
       </div>
 
       {/* ── Task Detail Panel ── */}
@@ -983,6 +1025,12 @@ export default function SchedulePage() {
           <div className="flex flex-wrap gap-2 items-center">
             {selectedTask.isMilestone && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#F59E0B" }}>◆ Milestone</span>}
             {isCriticalTask(selectedTask) && <span className="px-2 py-1 rounded text-[10px] font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#EF4444" }}>Critical Path</span>}
+            {!isCriticalTask(selectedTask) && floatByTask.has(selectedTask.id) && (
+              <span className="px-2 py-1 rounded text-[10px] font-semibold" title="Total float — how far this task can slip before the project finish moves"
+                style={{ background: "rgba(16,185,129,0.12)", color: "#10B981" }}>
+                Float {floatByTask.get(selectedTask.id)}d
+              </span>
+            )}
             {/* Milestone toggle — PATCHes Task.type. Converting TO a
                 milestone collapses the bar to a single date (end = start);
                 converting back leaves dates as-is for the user to widen. */}
@@ -1169,14 +1217,14 @@ function Header({ view, setView, zoom, setZoom, showCriticalPath, setShowCritica
           )}
           {/* View toggle */}
           <div className="flex rounded-[8px] overflow-hidden" style={{ border: `1px solid ${"var(--border)"}` }}>
-            {(["gantt", "list"] as ViewMode[]).map(v => (
+            {(["gantt", "list", "network"] as ViewMode[]).map(v => (
               <button key={v} className="px-3 py-1.5 text-[12px] font-semibold capitalize transition-colors"
                 style={{
                   background: view === v ? "var(--primary)" : "transparent",
                   color: view === v ? "#FFF" : "var(--muted-foreground)",
                 }}
                 onClick={() => setView(v)}>
-                {v === "gantt" ? "⧫ Gantt" : "☰ List"}
+                {v === "gantt" ? "⧫ Gantt" : v === "list" ? "☰ List" : "⌥ Network"}
               </button>
             ))}
           </div>
@@ -1228,7 +1276,9 @@ function StatPill({ label, value, color,  }: { label: string; value: string; col
 }
 
 // ── Phase Gates Sidebar ──
-function PhaseGatesSidebar({ phases, projectId, tasksState = "ready" }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[]; projectId: string; tasksState?: "loading" | "error" | "ready" }) {
+function PhaseGatesSidebar({ phases, projectId, tasksState = "ready", forecast = null }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[]; projectId: string; tasksState?: "loading" | "error" | "ready"; forecast?: any }) {
+  const fmtD = (iso: string | null | undefined) =>
+    iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
   const gateStyle = (s: string) => {
     if (s === "Approved")    return { color: "#10B981", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)", Icon: CheckCircle2 };
     if (s === "Pending")     return { color: "#F59E0B", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)", Icon: Clock };
@@ -1327,6 +1377,65 @@ function PhaseGatesSidebar({ phases, projectId, tasksState = "ready" }: { phases
           </div>
         )}
       </Card>
+
+      {/* ── Schedule forecast (computed CPM + Monte Carlo) ───────────── */}
+      {forecast && phases.length > 0 && (
+        <Card className="px-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(239,68,68,0.12)" }}>
+              <CalendarDays className="w-3.5 h-3.5" style={{ color: "#EF4444" }} />
+            </div>
+            <h3 className="text-[13px] font-bold tracking-tight" style={{ color: "var(--foreground)" }}>Schedule Forecast</h3>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span style={{ color: "var(--muted-foreground)" }}>Forecast finish</span>
+              <span className="font-semibold" style={{ color: "var(--foreground)" }}>{fmtD(forecast.forecastFinishDate) ?? "—"}</span>
+            </div>
+            {forecast.targetDate && (
+              <div className="flex items-center justify-between text-[11px]">
+                <span style={{ color: "var(--muted-foreground)" }}>Target</span>
+                <span className="font-semibold" style={{ color: "var(--foreground)" }}>{fmtD(forecast.targetDate)}</span>
+              </div>
+            )}
+            {forecast.slipDays !== null && (
+              <div className="flex items-center justify-between text-[11px]">
+                <span style={{ color: "var(--muted-foreground)" }}>Variance</span>
+                <span className="font-bold" style={{ color: forecast.slipDays > 0 ? "#EF4444" : "#10B981" }}>
+                  {forecast.slipDays > 0 ? `${forecast.slipDays}d late` : forecast.slipDays < 0 ? `${-forecast.slipDays}d early` : "on target"}
+                </span>
+              </div>
+            )}
+            {forecast.monteCarlo && (
+              <div className="rounded-[10px] p-2.5 mt-1" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)" }}>
+                <p className="text-[9.5px] font-bold uppercase tracking-wider mb-1.5" style={{ color: "var(--muted-foreground)" }}>
+                  Monte Carlo · {forecast.monteCarlo.runs} runs
+                </p>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span style={{ color: "var(--muted-foreground)" }}>P50 finish</span>
+                  <span className="font-semibold" style={{ color: "var(--foreground)" }}>{fmtD(forecast.monteCarlo.p50Date)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] mt-0.5">
+                  <span style={{ color: "var(--muted-foreground)" }}>P85 finish</span>
+                  <span className="font-semibold" style={{ color: "var(--foreground)" }}>{fmtD(forecast.monteCarlo.p85Date)}</span>
+                </div>
+                {forecast.monteCarlo.onTargetProb !== null && (
+                  <div className="flex items-center justify-between text-[11px] mt-0.5">
+                    <span style={{ color: "var(--muted-foreground)" }}>Hit-target odds</span>
+                    <span className="font-bold" style={{ color: forecast.monteCarlo.onTargetProb >= 0.7 ? "#10B981" : forecast.monteCarlo.onTargetProb >= 0.4 ? "#F59E0B" : "#EF4444" }}>
+                      {Math.round(forecast.monteCarlo.onTargetProb * 100)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+            <p className="text-[9.5px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+              [CALCULATED] Critical-path method over live tasks
+              {forecast.resolvedDependencies > 0 ? ` (${forecast.resolvedDependencies} dependency links)` : " (no dependency links yet — sequence inferred from dates and phases)"}.
+            </p>
+          </div>
+        </Card>
+      )}
 
       {/* ── Insights ────────────────────────────────────────────────── */}
       <Card className="px-4">

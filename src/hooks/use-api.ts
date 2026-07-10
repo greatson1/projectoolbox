@@ -241,6 +241,18 @@ export function useProjectTasks(projectId: string | null) {
   });
 }
 
+/** Tasks + phases + the computed CPM layer (critical path, float, forecast
+ *  finish, Monte Carlo). Backed by /gantt, which computes everything from
+ *  live tasks — use this for schedule analytics instead of Task.isCriticalPath. */
+export function useProjectGantt(projectId: string | null) {
+  return useQuery({
+    queryKey: ["gantt", projectId],
+    queryFn: () => api<any>(`/api/projects/${projectId}/gantt`),
+    enabled: !!projectId,
+    // no polling — uses staleTime from QueryClient defaults
+  });
+}
+
 /** PM overhead tasks only (scaffolded) — used by the agent progress tracker */
 export function usePMTasks(projectId: string | null) {
   return useQuery({

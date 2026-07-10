@@ -149,9 +149,37 @@ export async function parseScheduleArtefactIntoTasks(
     }
   }
 
+  // Pass 3: remap dependencies from raw CSV references (WBS ids, titles) to
+  // DB task ids so the CPM engine can resolve edges. Without this the stored
+  // dependencies pointed at source ids that exist nowhere in the DB — every
+  // dependency edge was dead on arrival. Unresolvable entries are kept
+  // verbatim (cpm.ts still tries a title match at read time).
+  const titleToDbId = new Map<string, string>();
+  for (const t of tasks) {
+    const dbId = t.sourceId ? sourceIdToDbId.get(t.sourceId) : undefined;
+    if (dbId) titleToDbId.set(t.title.trim().toLowerCase(), dbId);
+  }
+  let depsRemapped = 0;
+  for (const t of tasks) {
+    if (!t.sourceId || t.dependencies.length === 0) continue;
+    const dbId = sourceIdToDbId.get(t.sourceId);
+    if (!dbId) continue;
+    const remapped = t.dependencies.map(
+      (raw) => sourceIdToDbId.get(raw) ?? titleToDbId.get(raw.trim().toLowerCase()) ?? raw,
+    ).filter((dep) => dep !== dbId); // no self-dependencies
+    if (remapped.some((dep, i) => dep !== t.dependencies[i]) || remapped.length !== t.dependencies.length) {
+      try {
+        await db.task.update({ where: { id: dbId }, data: { dependencies: remapped } });
+        depsRemapped++;
+      } catch (e) {
+        console.error("[schedule-parser] Failed to remap dependencies:", t.title, e);
+      }
+    }
+  }
+
   console.log(
     `[schedule-parser] "${artefact.name}": ${deleted.count} old tasks removed, ` +
-    `${created} created, ${linked} parent links set`,
+    `${created} created, ${linked} parent links set, ${depsRemapped} dependency lists remapped to db ids`,
   );
   return { created, replaced: deleted.count };
 }
