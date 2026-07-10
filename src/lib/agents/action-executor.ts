@@ -933,7 +933,10 @@ export async function resumeBlockedProposals(agentId: string): Promise<{ resumed
       });
 
       if (result.action !== "blocked") {
-        await db.agentJob.update({ where: { id: job.id }, data: { status: "COMPLETED", completedAt: new Date(), result: result as any } });
+        // Route through completeJob so the output-evidence contract applies
+        // (the execution result IS the evidence here).
+        const { completeJob } = await import("@/lib/agents/job-queue");
+        await completeJob(job.id, result as any);
         resumed++;
       } else {
         // Still blocked (e.g. credits ran out mid-resume)

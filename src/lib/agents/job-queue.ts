@@ -77,8 +77,45 @@ export async function markRunning(jobId: string) {
   });
 }
 
-/** Mark a job as completed with optional result */
+/**
+ * Output-evidence contract per job type (review P2): a job may only be
+ * COMPLETED when its result carries proof the work actually happened. The
+ * 3-week billed-while-broken incident was jobs flipping COMPLETED with no
+ * output and nothing noticing.
+ *   - lifecycle_init:   artefacts must have been produced
+ *   - report_generate:  a report row must exist
+ *   - everything else:  a non-empty result object (cycles legitimately
+ *                       conclude "no action needed", but must SAY so)
+ */
+export function jobEvidenceError(type: string, result?: Record<string, unknown> | null): string | null {
+  const r = result ?? {};
+  if (type === "lifecycle_init") {
+    const created = (r as any).artefactsCreated;
+    const ids = (r as any).artefactIds;
+    if ((typeof created === "number" && created > 0) || (Array.isArray(ids) && ids.length > 0)) return null;
+    return "completed without output evidence: lifecycle_init must report artefactsCreated > 0 or artefactIds";
+  }
+  if (type === "report_generate") {
+    if ((r as any).reportId) return null;
+    return "completed without output evidence: report_generate must report a reportId";
+  }
+  if (Object.keys(r).length === 0) {
+    return "completed without output evidence: result must describe what the job did (or state that no action was needed)";
+  }
+  return null;
+}
+
+/** Mark a job as completed — refuses (marks FAILED) without output evidence. */
 export async function completeJob(jobId: string, result?: Record<string, unknown>) {
+  const job = await db.agentJob.findUnique({ where: { id: jobId }, select: { type: true } });
+  const evidenceError = job ? jobEvidenceError(job.type, result) : null;
+  if (evidenceError) {
+    console.error(`[job-queue] refusing COMPLETED for ${jobId} (${job?.type}): ${evidenceError}`);
+    return db.agentJob.update({
+      where: { id: jobId },
+      data: { status: "FAILED", error: evidenceError, completedAt: new Date(), result: (result ?? undefined) as any },
+    });
+  }
   return db.agentJob.update({
     where: { id: jobId },
     data: { status: "COMPLETED", completedAt: new Date(), result: (result ?? undefined) as any },

@@ -54,16 +54,20 @@ export async function GET(req: NextRequest) {
     //       this sweep catches anything historical or from other writers.
     //       Relinks to the active deployment for the same agentId.
     try {
-      const healed: number = await db.$executeRawUnsafe(`
+      const healedRows: { id: string; projectId: string }[] = await db.$queryRawUnsafe(`
         UPDATE "AgentArtefact" a
         SET "projectId" = d."projectId", "updatedAt" = NOW()
         FROM "AgentDeployment" d
         WHERE (a."projectId" IS NULL OR a."projectId" = '')
           AND d."agentId" = a."agentId"
           AND d."isActive" = true
+        RETURNING a."id", a."projectId"
       `);
-      if (typeof healed === "number" && healed > 0) {
-        console.log(`[agent-tick] Self-healed ${healed} orphan artefact(s) by relinking projectId.`);
+      if (healedRows.length > 0) {
+        console.log(`[agent-tick] Self-healed ${healedRows.length} orphan artefact(s) by relinking projectId.`);
+        const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+        await recordDrift("DRIFT_ORPHAN_ARTEFACT_PROJECT", "artefact", healedRows.map(r => ({ entityId: r.id, projectId: r.projectId })),
+          "Artefact rows existed with no projectId (invisible to the artefacts page) — relinked to the agent's active deployment. A create path is leaking empty projectId.");
       }
     } catch (e) {
       console.error("[agent-tick] orphan-projectId artefact self-heal failed:", e);
@@ -80,7 +84,7 @@ export async function GET(req: NextRequest) {
     //      currentPhase NAME if no matching Phase row exists yet — the
     //      phase-tracker accepts both forms for compatibility.
     try {
-      const healed: number = await db.$executeRawUnsafe(`
+      const healedRows: { id: string; projectId: string }[] = await db.$queryRawUnsafe(`
         UPDATE "AgentArtefact" a
         SET "phaseId" = COALESCE(p."id", d."currentPhase"), "updatedAt" = NOW()
         FROM "AgentDeployment" d
@@ -91,9 +95,13 @@ export async function GET(req: NextRequest) {
           AND d."projectId" = a."projectId"
           AND d."isActive" = true
           AND d."currentPhase" IS NOT NULL
+        RETURNING a."id", a."projectId"
       `);
-      if (typeof healed === "number" && healed > 0) {
-        console.log(`[agent-tick] Self-healed ${healed} orphan artefact(s) by relinking phaseId.`);
+      if (healedRows.length > 0) {
+        console.log(`[agent-tick] Self-healed ${healedRows.length} orphan artefact(s) by relinking phaseId.`);
+        const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+        await recordDrift("DRIFT_ORPHAN_ARTEFACT_PHASE", "artefact", healedRows.map(r => ({ entityId: r.id, projectId: r.projectId })),
+          "Artefact rows had phaseId NULL (phase-tracker undercounts) — relinked to the deployment's current phase. A create path is omitting phaseId.");
       }
     } catch (e) {
       console.error("[agent-tick] orphan artefact self-heal failed:", e);
@@ -104,7 +112,7 @@ export async function GET(req: NextRequest) {
     //       back to the name when the Phase row hasn't been created yet.
     //       The Gantt groups by phase; NULL tasks bunch under "Unassigned".
     try {
-      const healed: number = await db.$executeRawUnsafe(`
+      const healedRows: { id: string; projectId: string }[] = await db.$queryRawUnsafe(`
         UPDATE "Task" t
         SET "phaseId" = COALESCE(p."id", d."currentPhase"), "updatedAt" = NOW()
         FROM "AgentDeployment" d
@@ -115,9 +123,13 @@ export async function GET(req: NextRequest) {
           AND d."projectId" = t."projectId"
           AND d."isActive" = true
           AND d."currentPhase" IS NOT NULL
+        RETURNING t."id", t."projectId"
       `);
-      if (typeof healed === "number" && healed > 0) {
-        console.log(`[agent-tick] Self-healed ${healed} orphan task(s) by relinking phaseId.`);
+      if (healedRows.length > 0) {
+        console.log(`[agent-tick] Self-healed ${healedRows.length} orphan task(s) by relinking phaseId.`);
+        const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+        await recordDrift("DRIFT_ORPHAN_TASK_PHASE", "task", healedRows.map(r => ({ entityId: r.id, projectId: r.projectId })),
+          "Task rows had phaseId NULL (bunched under 'Unassigned' on the Gantt) — relinked to the deployment's current phase. A task-creation path is omitting phaseId.");
       }
     } catch (e) {
       console.error("[agent-tick] orphan task self-heal failed:", e);
@@ -140,7 +152,7 @@ export async function GET(req: NextRequest) {
     //       the inconsistency. Idempotent: only flips COMPLETED → STALE,
     //       never the other way.
     try {
-      const healed: number = await db.$executeRawUnsafe(`
+      const healedRows: { id: string; projectId: string }[] = await db.$queryRawUnsafe(`
         UPDATE "Phase" p
         SET "status" = 'STALE', "updatedAt" = NOW()
         WHERE p."status" = 'COMPLETED'
@@ -150,9 +162,13 @@ export async function GET(req: NextRequest) {
             WHERE d."projectId" = p."projectId"
               AND d."isActive" = true
           )
+        RETURNING p."id", p."projectId"
       `);
-      if (typeof healed === "number" && healed > 0) {
-        console.log(`[agent-tick] Downgraded ${healed} stale COMPLETED phase row(s) → STALE (missing researchCompletedAt).`);
+      if (healedRows.length > 0) {
+        console.log(`[agent-tick] Downgraded ${healedRows.length} stale COMPLETED phase row(s) → STALE (missing researchCompletedAt).`);
+        const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+        await recordDrift("DRIFT_STALE_PHASE_DOWNGRADE", "phase", healedRows.map(r => ({ entityId: r.id, projectId: r.projectId })),
+          "Phase rows were COMPLETED without a research audit trail — downgraded to STALE. A legacy writer is still fast-pathing phases to COMPLETED.");
       }
     } catch (e) {
       console.error("[agent-tick] stale-phase self-heal failed:", e);
@@ -228,6 +244,9 @@ export async function GET(req: NextRequest) {
           await db.agentActivity.create({
             data: { agentId: dep.agentId, type: "system", summary: `Self-heal: ${reason} Reset to active.` },
           }).catch(() => {});
+          const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+          await recordDrift("DRIFT_DEPLOYMENT_UNSTUCK", "deployment", [{ entityId: dep.id, projectId: dep.projectId }],
+            `Deployment stuck in "${dep.phaseStatus}" for over an hour — ${reason} The transition out of that status failed silently somewhere.`);
         }
       }
     } catch (e) {
@@ -277,6 +296,9 @@ export async function GET(req: NextRequest) {
               data: { agentId: gate.requestedById, type: "system", summary: `Cleanup: cancelled premature phase gate "${gate.title}" — 0 artefacts existed.` },
             }).catch(() => {});
           }
+          const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+          await recordDrift("DRIFT_PREMATURE_GATE_REJECTED", "approval", [{ entityId: gate.id, projectId: gate.projectId }],
+            `Phase gate "${gate.title}" was raised before any artefacts existed — the gate-raising path is not checking advance-readiness.`);
         } else {
           survivors.push(gate);
         }
@@ -301,7 +323,13 @@ export async function GET(req: NextRequest) {
         if (dep) agentId = dep.agentId;
         if (!agentId) continue;
         try {
-          await sweepStalePhaseGateApprovals(projectId, agentId);
+          const swept = await sweepStalePhaseGateApprovals(projectId, agentId);
+          if (swept?.deferred > 0) {
+            const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+            await recordDrift("DRIFT_STALE_GATE_DEFERRED", "approval",
+              (swept.deferredIds ?? []).map((id: string) => ({ entityId: id, projectId })),
+              "Pending phase gates were no longer advance-ready (an artefact rejection or task change invalidated them after they were raised) — deferred until the phase re-qualifies.");
+          }
         } catch (e) {
           console.error(`[gate-sweep] project=${projectId} gates=${gates.length} failed:`, e);
         }
@@ -342,6 +370,9 @@ export async function GET(req: NextRequest) {
           } catch {}
           generatePhaseArtefacts(dep.agentId, dep.projectId, dep.currentPhase ?? undefined)
             .catch(e => console.error(`[self-heal] artefact generation failed for ${dep.agentId}:`, e));
+          const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+          await recordDrift("DRIFT_MISSING_ARTEFACTS_BACKFILL", "deployment", [{ entityId: dep.id, projectId: dep.projectId }],
+            `Active deployment on phase "${dep.currentPhase}" had zero artefacts past onboarding — fired regeneration. The original generation run failed or never happened.`);
         }
       }
     } catch (e) {
@@ -412,17 +443,66 @@ export async function GET(req: NextRequest) {
         const payload = job.payload as any;
         const projectId = payload?.projectId;
         if (!projectId) continue;
-        await db.agentJob.update({ where: { id: job.id }, data: { status: "CLAIMED", startedAt: new Date() } });
+        const claimedAt = new Date();
+        await db.agentJob.update({ where: { id: job.id }, data: { status: "CLAIMED", startedAt: claimedAt } });
         try {
           const { runLifecycleInit } = await import("@/lib/agents/lifecycle-init");
           await runLifecycleInit(job.agentId, job.deploymentId!);
-          await db.agentJob.update({ where: { id: job.id }, data: { status: "COMPLETED", completedAt: new Date(), result: { processedAt: new Date().toISOString(), source: "vercel-inline" } as any } });
+          // Evidence for the completion contract: artefacts that actually
+          // appeared during this run. completeJob refuses COMPLETED without it.
+          const artefactsCreated = await db.agentArtefact.count({
+            where: { projectId, createdAt: { gte: claimedAt } },
+          });
+          const { completeJob } = await import("@/lib/agents/job-queue");
+          await completeJob(job.id, { processedAt: new Date().toISOString(), source: "vercel-inline", artefactsCreated });
+          const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+          await recordDrift("DRIFT_VPS_INIT_FALLBACK", "job", [{ entityId: job.id, projectId }],
+            "A lifecycle_init job was never processed by the VPS backend — ran inline on Vercel instead. Check the VPS job processor.");
         } catch (e: any) {
           await db.agentJob.update({ where: { id: job.id }, data: { status: "FAILED", error: e.message, completedAt: new Date() } });
         }
       }
     } catch (e) {
       console.error("Inline lifecycle_init processing failed:", e);
+    }
+
+    // 3c. Output-evidence verification for VPS-completed jobs. The VPS
+    //     backend completes jobs by writing the shared AgentJob table
+    //     directly — it never passes through completeJob's evidence
+    //     contract. Verify recent completions post-hoc:
+    //       - lifecycle_init COMPLETED but the project has no artefacts →
+    //         send back through the retry path (failJob backs off and
+    //         eventually FAILs) + drift event. This was the exact shape of
+    //         the billed-while-broken incident.
+    //       - any job COMPLETED with an empty result → drift telemetry only
+    //         (a no-op cycle is legitimate, but it must SAY it was a no-op).
+    try {
+      const windowStart = new Date(Date.now() - 11 * 60_000); // one 10-min tick + overlap
+      const recentCompleted = await db.agentJob.findMany({
+        where: { status: "COMPLETED", completedAt: { gte: windowStart } },
+        select: { id: true, type: true, payload: true, result: true },
+        take: 50,
+      });
+      const { recordDrift } = await import("@/lib/agents/drift-telemetry");
+      for (const job of recentCompleted) {
+        const payload = job.payload as any;
+        const result = (job.result as any) ?? null;
+        const projectId: string | null = payload?.projectId ?? null;
+        if (job.type === "lifecycle_init" && projectId) {
+          const artCount = await db.agentArtefact.count({ where: { projectId } });
+          if (artCount === 0) {
+            const { failJob } = await import("@/lib/agents/job-queue");
+            await failJob(job.id, "evidence check: COMPLETED but the project has no artefacts — sent back for retry");
+            await recordDrift("DRIFT_JOB_EVIDENCE_MISSING", "job", [{ entityId: job.id, projectId }],
+              "A lifecycle_init job was marked COMPLETED (by the VPS backend) but the project has zero artefacts — no work product exists. Job returned to the retry path.");
+          }
+        } else if (!result || Object.keys(result).length === 0) {
+          await recordDrift("DRIFT_JOB_EVIDENCE_MISSING", "job", [{ entityId: job.id, projectId }],
+            `A ${job.type} job was marked COMPLETED with an empty result — the completer (likely the VPS backend) is not recording what the job did.`);
+        }
+      }
+    } catch (e) {
+      console.error("[agent-tick] job evidence verification failed:", e);
     }
 
     let inlineProcessed = 0;
