@@ -17,6 +17,8 @@
 import { db } from "@/lib/db";
 
 import { MODELS } from "@/lib/ai-models";
+import { buildCpmInput, baselineCpm } from "@/lib/cpm";
+import { EXCLUDE_PM_OVERHEAD } from "@/lib/agents/task-filters";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,103 @@ export interface ChangeProposal {
   impact: { schedule: number; cost: number; scope: number; stakeholder: number };
 }
 
+// ─── Computed impact ─────────────────────────────────────────────────────────
+
+export interface ComputedImpact {
+  /** Change to the CPM baseline finish, in days (positive = later finish) */
+  deltaDays: number;
+  /** Sum of estimatedHours deltas across proposed task changes */
+  deltaHours: number;
+  /** Number of proposed changes touching computed critical-path tasks */
+  criticalTasksAffected: number;
+  tasksAffected: number;
+}
+
+const num = (v: unknown): number | null => {
+  const n = typeof v === "string" ? parseFloat(v.replace(/[^0-9.\-]/g, "")) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * CODE computes the impact of a change proposal; the LLM only proposes the
+ * changes. Re-runs the CPM baseline with the proposed task changes applied
+ * in-memory and diffs the project finish — replacing the old heuristic
+ * (`schedule: hasDateChanges ? 3 : 1`) with an actual number of days.
+ * Returns null when nothing measurable is proposed (non-task changes).
+ */
+export async function computeChangeImpact(
+  projectId: string,
+  changes: ProposedChange[],
+): Promise<ComputedImpact | null> {
+  const taskChanges = changes.filter((c) => c.entityType === "task" && c.entityId);
+  if (taskChanges.length === 0) return null;
+
+  const tasks = await db.task.findMany({
+    where: { projectId, ...EXCLUDE_PM_OVERHEAD },
+    select: {
+      id: true, title: true, status: true, startDate: true, endDate: true,
+      progress: true, parentId: true, phaseId: true, dependencies: true,
+      estimatedHours: true,
+    },
+  });
+  const phases = await db.phase.findMany({
+    where: { projectId },
+    orderBy: { order: "asc" },
+    select: { id: true, name: true },
+  });
+  if (tasks.length === 0) return null;
+
+  const before = buildCpmInput(tasks, phases);
+  const baselineBefore = baselineCpm(before.input);
+  const criticalBefore = new Set(
+    [...baselineBefore.tasks.values()].filter((t) => t.critical).map((t) => t.id),
+  );
+
+  // Apply the proposed changes to an in-memory copy.
+  let deltaHours = 0;
+  const modified = tasks.map((t) => ({ ...t }));
+  const byId = new Map(modified.map((t) => [t.id, t]));
+  for (const c of taskChanges) {
+    const t = byId.get(c.entityId!);
+    if (!t) continue;
+    if (c.field === "startDate" || c.field === "endDate") {
+      const ms = Date.parse(c.proposedValue);
+      if (Number.isFinite(ms)) (t as any)[c.field] = new Date(ms);
+    } else if (c.field === "status") {
+      t.status = c.proposedValue;
+    } else if (c.field === "progress") {
+      const p = num(c.proposedValue);
+      if (p !== null) t.progress = Math.round(p);
+    } else if (c.field === "estimatedHours") {
+      const to = num(c.proposedValue);
+      const from = num(c.currentValue) ?? t.estimatedHours ?? 0;
+      if (to !== null) {
+        deltaHours += to - (from ?? 0);
+        t.estimatedHours = to;
+      }
+    }
+  }
+
+  // Same anchor for both runs so the finishes are comparable.
+  const after = buildCpmInput(modified, phases, { anchorMs: before.anchorMs });
+  const baselineAfter = baselineCpm(after.input);
+
+  return {
+    deltaDays: Math.round((baselineAfter.finishDays - baselineBefore.finishDays) * 10) / 10,
+    deltaHours: Math.round(deltaHours * 10) / 10,
+    criticalTasksAffected: taskChanges.filter((c) => criticalBefore.has(c.entityId!)).length,
+    tasksAffected: taskChanges.length,
+  };
+}
+
+/** Map computed numbers onto the legacy 1–4 impact scale. */
+function scoresFromComputed(ci: ComputedImpact): { schedule: number; cost: number } {
+  const schedule = ci.deltaDays <= 0 ? 1 : ci.deltaDays <= 3 ? 2 : ci.deltaDays <= 10 ? 3 : 4;
+  const absH = Math.abs(ci.deltaHours);
+  const cost = absH === 0 ? 1 : absH <= 8 ? 2 : absH <= 40 ? 3 : 4;
+  return { schedule, cost };
+}
+
 // ─── Create a change proposal ────────────────────────────────────────────────
 
 /**
@@ -68,6 +167,20 @@ export async function createChangeProposal(
   orgId: string,
   proposal: ChangeProposal,
 ): Promise<{ decisionId: string; approvalId: string }> {
+  // Computed impact overrides the caller's heuristic scores where we can
+  // actually measure: CPM re-run for schedule days, hour deltas for cost.
+  // Falls back to the caller's estimate if the computation fails.
+  let computed: ComputedImpact | null = null;
+  try {
+    computed = await computeChangeImpact(projectId, proposal.changes);
+    if (computed) {
+      const scores = scoresFromComputed(computed);
+      proposal.impact = { ...proposal.impact, schedule: scores.schedule, cost: scores.cost };
+    }
+  } catch (e) {
+    console.error("[change-proposals] computed impact failed (using heuristic):", e);
+  }
+
   // Build affected items list for the approval
   const affectedItems = proposal.changes.map(c => ({
     type: c.entityType,
@@ -97,7 +210,7 @@ export async function createChangeProposal(
       requestedById: agentId,
       type: "CHANGE_REQUEST",
       title: proposal.title,
-      description: buildApprovalDescription(proposal),
+      description: buildApprovalDescription(proposal, computed),
       status: "PENDING",
       urgency: proposal.impact.schedule >= 3 || proposal.impact.cost >= 3 ? "HIGH" : "MEDIUM",
       impactScores: proposal.impact as any,
@@ -107,6 +220,7 @@ export async function createChangeProposal(
         trigger: proposal.trigger,
         source: proposal.source,
         changeCount: proposal.changes.length,
+        ...(computed ? { computed } : {}),
       } as any,
     },
   });
@@ -451,7 +565,7 @@ Return ONLY a JSON array — no explanation:
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buildApprovalDescription(proposal: ChangeProposal): string {
+function buildApprovalDescription(proposal: ChangeProposal, computed: ComputedImpact | null = null): string {
   const lines = [
     `**Trigger:** ${proposal.trigger.replace(/_/g, " ")} — ${proposal.source}`,
     `**Confidence:** ${Math.round(proposal.confidence * 100)}%`,
@@ -462,7 +576,18 @@ function buildApprovalDescription(proposal: ChangeProposal): string {
       `- **${c.title}** → ${c.field}: \`${c.currentValue}\` → \`${c.proposedValue}\`\n  _${c.reason}_`
     ),
     "",
-    `**Impact:** Schedule: ${proposal.impact.schedule}/4, Cost: ${proposal.impact.cost}/4, Scope: ${proposal.impact.scope}/4, Stakeholder: ${proposal.impact.stakeholder}/4`,
   ];
+  if (computed) {
+    const dd = computed.deltaDays;
+    lines.push(
+      `**Computed impact [CALCULATED]:** forecast finish ${dd > 0 ? `+${dd}d later` : dd < 0 ? `${-dd}d earlier` : "unchanged"} (CPM re-run with these changes applied)` +
+        (computed.criticalTasksAffected > 0 ? ` · ${computed.criticalTasksAffected} critical-path task(s) affected` : "") +
+        (computed.deltaHours !== 0 ? ` · ${computed.deltaHours > 0 ? "+" : ""}${computed.deltaHours} estimated hours` : ""),
+      "",
+    );
+  }
+  lines.push(
+    `**Impact${computed ? " (schedule/cost computed, scope/stakeholder assessed)" : ""}:** Schedule: ${proposal.impact.schedule}/4, Cost: ${proposal.impact.cost}/4, Scope: ${proposal.impact.scope}/4, Stakeholder: ${proposal.impact.stakeholder}/4`,
+  );
   return lines.join("\n");
 }
