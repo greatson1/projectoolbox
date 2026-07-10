@@ -363,6 +363,49 @@ export default function EVMDashboardPage() {
   // ─── Early returns (placed AFTER all hooks per rules-of-hooks) ────────────
   if (loading) return <LoadingSkeleton />;
 
+  // A null payload with no fetch error is a normal state, not a failure —
+  // the EVM route returns { data: null } when the project has no budget
+  // (common on agile projects). Rendering it as "Unable to load" made a
+  // healthy page look broken.
+  if (!error && !data) {
+    return (
+      <div
+        style={{
+          backgroundColor: T.bg,
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          color: T.text,
+          gap: 12,
+          padding: 24,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            backgroundColor: `${T.primary}22`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 22,
+          }}
+        >
+          £
+        </div>
+        <p style={{ fontSize: 16, fontWeight: 600 }}>EVM needs a project budget</p>
+        <p style={{ color: T.muted, fontSize: 13, maxWidth: 420 }}>
+          Earned Value metrics are computed against a Budget at Completion. Set a
+          budget on the project overview and this page will populate automatically.
+        </p>
+      </div>
+    );
+  }
+
   if (error || !data) {
     return (
       <div

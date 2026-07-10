@@ -236,6 +236,21 @@ Be specific to this project's actual data. Reference real artefact names, task c
 
         result.archivedAt = now.toISOString();
 
+        // Notification hygiene: clear unread notifications pointing at the
+        // archived project/agent so they stop inflating the bell count
+        // (Notification has no projectId column — match on actionUrl).
+        await db.notification.updateMany({
+          where: {
+            isRead: false,
+            user: { orgId: project.orgId },
+            OR: [
+              { actionUrl: { contains: `/projects/${projectId}` } },
+              { actionUrl: { contains: `/agents/${agentId}` } },
+            ],
+          },
+          data: { isRead: true },
+        }).catch(() => {});
+
         // Final audit log entry
         await db.auditLog.create({
           data: {

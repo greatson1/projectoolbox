@@ -28,13 +28,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "No active deployment found" }, { status: 404 });
   }
 
-  // Credit check — generation costs 10 credits
+  // Credit pre-flight only — do NOT deduct here. generatePhaseArtefacts
+  // bills for itself (max(5, generated×2)) and only when at least one
+  // artefact was actually produced. Deducting a flat 10 up front meant
+  // (a) a failed generation still cost the user 10 credits with no refund,
+  // and (b) a successful one was billed twice (10 here + N×2 inside).
   const hasCredits = await CreditService.checkBalance(orgId, 10);
   if (!hasCredits) {
     return NextResponse.json({ error: "Insufficient credits. 10 credits required for document generation." }, { status: 402 });
   }
-
-  await CreditService.deduct(orgId, 10, "Artefact generation (post-clarification)", agentId);
 
   // Fire generation in background so response is instant
   (async () => {

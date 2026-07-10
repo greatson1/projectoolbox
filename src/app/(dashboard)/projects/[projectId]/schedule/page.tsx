@@ -100,8 +100,13 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 export default function SchedulePage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data: project } = useProject(projectId);
-  const { data: apiTasks } = useProjectTasks(projectId);
+  const { data: apiTasks, isPending: tasksPending, isError: tasksError } = useProjectTasks(projectId);
   const { data: apiSprints } = useProjectSprints(projectId);
+  // The tasks GET runs lazy artefact backfills server-side and can take
+  // seconds — while it's in flight the page must say "loading", never
+  // "No tasks yet" (users saw the empty state + Sync button on an active
+  // project and reasonably concluded the schedule was broken).
+  const tasksSettled = !tasksPending && !tasksError;
 
   // Gate sprint overlays on the Gantt by methodology — only render sprint
   // bands when the project's methodology has sprints (Scrum, Hybrid, SAFe).
@@ -539,7 +544,7 @@ export default function SchedulePage() {
           </div>
         </Card>
 
-        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} />
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} />
       </div>
     );
   }
@@ -600,6 +605,11 @@ export default function SchedulePage() {
               </div>
               {/* Scrollable task rows */}
               <div ref={taskListRef} className="overflow-y-auto" style={{ height: "calc(100% - 44px)" }}>
+                {visibleTasks.length === 0 && !tasksSettled && (
+                  <div className="px-3 py-4 text-[12px] animate-pulse" style={{ color: "var(--muted-foreground)" }}>
+                    {tasksPending ? "Loading tasks…" : "Couldn't load tasks — refresh to try again."}
+                  </div>
+                )}
                 {visibleTasks.map((item, i) => {
                   if (item.type === "phase") {
                     return (
@@ -868,7 +878,7 @@ export default function SchedulePage() {
         </Card>
 
         {/* ── Phase Gates Sidebar ── */}
-        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} />
+        <PhaseGatesSidebar phases={phasesSummary} projectId={projectId} tasksState={tasksError ? "error" : tasksPending ? "loading" : "ready"} />
       </div>
 
       {/* ── Task Detail Panel ── */}
@@ -1218,7 +1228,7 @@ function StatPill({ label, value, color,  }: { label: string; value: string; col
 }
 
 // ── Phase Gates Sidebar ──
-function PhaseGatesSidebar({ phases, projectId }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[]; projectId: string }) {
+function PhaseGatesSidebar({ phases, projectId, tasksState = "ready" }: { phases: { name: string; status: string; tasks: number; complete: number; gate: string; progress?: number }[]; projectId: string; tasksState?: "loading" | "error" | "ready" }) {
   const gateStyle = (s: string) => {
     if (s === "Approved")    return { color: "#10B981", bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.3)", Icon: CheckCircle2 };
     if (s === "Pending")     return { color: "#F59E0B", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)", Icon: Clock };
@@ -1263,11 +1273,31 @@ function PhaseGatesSidebar({ phases, projectId }: { phases: { name: string; stat
         {phases.length === 0 ? (
           <div className="rounded-[10px] py-6 px-3 text-center"
             style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed var(--border)" }}>
-            <Flag className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
-            <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No phases yet</p>
-            <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
-              Phases appear here as your agent generates the project schedule.
-            </p>
+            {tasksState === "loading" ? (
+              <>
+                <Clock className="w-5 h-5 mx-auto mb-2 animate-pulse" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>Loading schedule…</p>
+                <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+                  Fetching tasks and phase progress.
+                </p>
+              </>
+            ) : tasksState === "error" ? (
+              <>
+                <Flag className="w-5 h-5 mx-auto mb-2" style={{ color: "#F59E0B", opacity: 0.7 }} />
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>Couldn&apos;t load tasks</p>
+                <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+                  Refresh the page to try again.
+                </p>
+              </>
+            ) : (
+              <>
+                <Flag className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No phases yet</p>
+                <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+                  Phases appear here as your agent generates the project schedule.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
@@ -1310,12 +1340,26 @@ function PhaseGatesSidebar({ phases, projectId }: { phases: { name: string; stat
         {phases.length === 0 ? (
           <div className="rounded-[10px] py-6 px-3 text-center"
             style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed var(--border)" }}>
-            <ListChecks className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
-            <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No tasks yet</p>
-            <p className="text-[10px] leading-relaxed mb-3" style={{ color: "var(--muted-foreground)" }}>
-              Add tasks manually, or sync from an approved Schedule / WBS artefact.
-            </p>
-            <SyncFromArtefactsButton projectId={projectId} />
+            {tasksState !== "ready" ? (
+              <>
+                <ListChecks className="w-5 h-5 mx-auto mb-2 animate-pulse" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>
+                  {tasksState === "loading" ? "Loading tasks…" : "Couldn't load tasks"}
+                </p>
+                <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+                  {tasksState === "loading" ? "Insights appear once the schedule loads." : "Refresh the page to try again."}
+                </p>
+              </>
+            ) : (
+              <>
+                <ListChecks className="w-5 h-5 mx-auto mb-2" style={{ color: "var(--muted-foreground)", opacity: 0.5 }} />
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--foreground)" }}>No tasks yet</p>
+                <p className="text-[10px] leading-relaxed mb-3" style={{ color: "var(--muted-foreground)" }}>
+                  Add tasks manually, or sync from an approved Schedule / WBS artefact.
+                </p>
+                <SyncFromArtefactsButton projectId={projectId} />
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-2.5">

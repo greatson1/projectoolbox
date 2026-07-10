@@ -64,5 +64,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     data: { isActive: false },
   });
 
-  return NextResponse.json({ data: updated, archivedAgents: deployments.length });
+  // Notification hygiene: unread notifications pointing at this project or
+  // its agents are moot once it's archived — without this they inflate the
+  // bell count forever (Notification has no projectId column, so match on
+  // actionUrl). Best-effort: a failure here must not fail the archive.
+  let notificationsCleared = 0;
+  try {
+    const urlNeedles = [
+      `/projects/${projectId}`,
+      ...deployments.map((d) => `/agents/${d.agentId}`),
+    ];
+    const cleared = await db.notification.updateMany({
+      where: {
+        isRead: false,
+        user: { orgId },
+        OR: urlNeedles.map((needle) => ({ actionUrl: { contains: needle } })),
+      },
+      data: { isRead: true },
+    });
+    notificationsCleared = cleared.count;
+  } catch (e) {
+    console.error("[archive] notification cleanup failed (non-blocking):", e);
+  }
+
+  return NextResponse.json({ data: updated, archivedAgents: deployments.length, notificationsCleared });
 }

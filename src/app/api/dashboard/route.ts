@@ -28,7 +28,10 @@ export async function GET() {
       take: 10,
     }),
     db.agent.findMany({
-      where: { orgId, status: { not: "DECOMMISSIONED" } },
+      // archivedAt is the canonical archive signal (project archive cascades
+      // to its agents with status "ARCHIVED", not "DECOMMISSIONED") — without
+      // it, archived-project agents keep surfacing stuck questions forever.
+      where: { orgId, status: { notIn: ["DECOMMISSIONED", "ARCHIVED"] }, archivedAt: null },
       select: { id: true, name: true, status: true, gradient: true, autonomyLevel: true },
     }),
     // Mirrors the client-side filter on /approvals so the sidebar badge
