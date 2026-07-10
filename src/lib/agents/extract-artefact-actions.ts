@@ -20,6 +20,7 @@
 
 import { db } from "@/lib/db";
 import { cleanAssignee } from "./assignee-plausibility";
+import { classifyExecutor } from "./executor-classify";
 
 interface ParsedAction {
   action: string;
@@ -246,6 +247,7 @@ export async function extractAndPersistArtefactActions(artefactId: string): Prom
           sourceArtefactId: artefact.id,
           sourceRowKey: key,
           labels: ["from_artefact", "action_item"] as any,
+          executor: classifyExecutor(p.action, desc),
         },
       });
       created++;

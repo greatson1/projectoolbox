@@ -25,6 +25,10 @@
     {
       "path": "/api/cron/sprint-snapshot",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/field-checkins",
+      "schedule": "0 7 * * *"
     }
   ]
 }

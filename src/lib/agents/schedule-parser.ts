@@ -19,6 +19,7 @@
  */
 
 import { db } from "@/lib/db";
+import { classifyExecutor } from "./executor-classify";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,6 +126,8 @@ export async function parseScheduleArtefactIntoTasks(
           parentId: null,   // set in pass 2
           createdBy: `agent:${agentId}`,
           lastEditedBy: `agent:${agentId}`,
+          // Synthetic parents are containers, not work — leave unclassified.
+          executor: t.isSyntheticParent ? null : classifyExecutor(t.title),
         },
       });
       if (t.sourceId) sourceIdToDbId.set(t.sourceId, record.id);

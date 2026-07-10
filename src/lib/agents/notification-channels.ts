@@ -14,8 +14,11 @@
 import { db } from "@/lib/db";
 
 interface NotificationPayload {
-  agentId: string;
-  agentName: string;
+  // Optional: system-level alerts (cron chases, gate escalations) have no
+  // originating agent. Without an agentId only the in-app notification and
+  // automation rules fire — agent channel config can't be resolved.
+  agentId?: string;
+  agentName?: string;
   projectName?: string;
   title: string;
   body: string;
@@ -47,17 +50,19 @@ export async function dispatchNotification(
           type: "AGENT_ALERT",
           title: payload.title,
           body: payload.body,
-          actionUrl: payload.actionUrl || `/agents/${payload.agentId}`,
+          actionUrl: payload.actionUrl || (payload.agentId ? `/agents/${payload.agentId}` : "/dashboard"),
           metadata: { agentId: payload.agentId, urgency: payload.urgency } as any,
         },
       }).catch(() => {});
     }
 
-    // 2. Get deployment config for channel settings
-    const deployment = await db.agentDeployment.findFirst({
-      where: { agentId: payload.agentId, isActive: true },
-      select: { config: true },
-    });
+    // 2. Get deployment config for channel settings (agent-originated only)
+    const deployment = payload.agentId
+      ? await db.agentDeployment.findFirst({
+          where: { agentId: payload.agentId, isActive: true },
+          select: { config: true },
+        })
+      : null;
     const config = (deployment?.config as any) || {};
 
     // 3. Email — send to all org admins if enabled

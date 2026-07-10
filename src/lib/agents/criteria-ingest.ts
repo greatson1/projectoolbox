@@ -19,6 +19,7 @@
 
 import { db } from "@/lib/db";
 import { parseCriteria, parseBacklogItems } from "./criteria-parser";
+import { classifyExecutor } from "./executor-classify";
 
 export async function ingestCriteriaArtefact(
   artefact: { id: string; name: string; content: string; projectId: string },
@@ -133,6 +134,7 @@ export async function ingestCriteriaArtefact(
             phaseId,
             createdBy: `agent:${agentId}`,
             progress: 0,
+            executor: classifyExecutor(item.title),
           },
         });
         created++;

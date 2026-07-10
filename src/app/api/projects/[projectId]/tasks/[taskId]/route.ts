@@ -42,6 +42,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     parentId, sprintId,
     type, epic, labels, blocked,
     moscow, dodChecks, dorChecks,
+    executor, blockedReason,
   } = body;
 
   const data: Record<string, any> = {};
@@ -69,8 +70,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   if (moscow         !== undefined) data.moscow         = moscow;
   if (dodChecks      !== undefined) data.dodChecks      = dodChecks;
   if (dorChecks      !== undefined) data.dorChecks      = dorChecks;
+  if (executor       !== undefined) data.executor       = executor;
+  if (blockedReason  !== undefined) data.blockedReason  = blockedReason;
 
   data.lastEditedBy = (session.user as any).id || "user";
+
+  // Field-work loop: a human touching progress/status/blocked IS a status
+  // report — stamp it (updatedAt moves on any system write, so silence
+  // detection needs its own column; see /api/cron/field-checkins).
+  if (progress !== undefined || status !== undefined || blocked !== undefined) {
+    data.lastUpdateAt = new Date();
+  }
 
   // ── DoD gate ──────────────────────────────────────────────────────────
   // When the user (or agent) flips status to DONE, refuse if the project
@@ -231,7 +241,76 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     priorTitle = prev?.title ?? null;
   }
 
+  // Capture blocked state BEFORE the update so the risk fires only on the
+  // transition, not on every subsequent edit of an already-blocked task.
+  let wasBlocked = false;
+  const becomingBlocked = data.blocked === true || (data.status && data.status.toUpperCase() === "BLOCKED");
+  if (becomingBlocked) {
+    const prev = await db.task.findUnique({ where: { id: taskId }, select: { blocked: true, status: true } });
+    wasBlocked = !!prev && (prev.blocked || prev.status === "BLOCKED");
+  }
+
   const task = await db.task.update({ where: { id: taskId }, data });
+
+  // Field-work loop: any progress/status report answers the open check-ins
+  // on this task — the chase got what it asked for.
+  if (data.lastUpdateAt) {
+    db.checkIn.updateMany({
+      where: { taskId, status: "OPEN" },
+      data: {
+        status: "ANSWERED",
+        respondedAt: new Date(),
+        response: `Task updated: ${["status", "progress", "blocked"].filter((k) => k in data).map((k) => `${k}=${(data as any)[k]}`).join(", ")}`,
+      },
+    }).catch((e) => console.error("[task PATCH] check-in resolve failed:", e));
+  }
+
+  // Blocked → risk. A blocked task is a live delivery risk, and a blocked
+  // CRITICAL-PATH task moves the project finish — escalate accordingly.
+  if (becomingBlocked && !wasBlocked) {
+    (async () => {
+      try {
+        const riskTitle = `Task blocked: ${task.title.slice(0, 180)}`;
+        const existing = await db.risk.findFirst({
+          where: { projectId, title: riskTitle, status: "OPEN" },
+          select: { id: true },
+        });
+        if (!existing) {
+          await db.risk.create({
+            data: {
+              projectId,
+              title: riskTitle,
+              description:
+                (blockedReason ? `Reason: ${blockedReason}. ` : "") +
+                (task.isCriticalPath
+                  ? "This task is on the COMPUTED CRITICAL PATH — while it is blocked, the project finish date slips day-for-day."
+                  : "Raised automatically when the task was marked blocked.") +
+                " [source:blocked-task]",
+              probability: 4,
+              impact: task.isCriticalPath ? 4 : 3,
+              status: "OPEN",
+              category: "Delivery",
+              owner: task.assigneeName || null,
+            },
+          });
+        }
+        if (task.isCriticalPath) {
+          const orgIdForAlert = (session.user as any).orgId;
+          if (orgIdForAlert) {
+            const { dispatchNotification } = await import("@/lib/agents/notification-channels");
+            await dispatchNotification(orgIdForAlert, {
+              title: `Critical-path task blocked: ${task.title.slice(0, 80)}`,
+              body: `${blockedReason ? `Reason: ${blockedReason}. ` : ""}Every day this stays blocked pushes the forecast finish a day. Unblock or replan.`,
+              actionUrl: `/projects/${projectId}/schedule`,
+              urgency: "critical",
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[task PATCH] blocked→risk escalation failed:", e);
+      }
+    })();
+  }
 
   // Record the status transition for cycle-time analytics (best-effort).
   if (data.status !== undefined && priorStatus !== data.status) {

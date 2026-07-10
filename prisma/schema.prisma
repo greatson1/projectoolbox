@@ -240,6 +240,8 @@ model Project {
   calendarEvents CalendarEvent[]
   decisions      Decision[]
   sprints        Sprint[]
+  checkIns       CheckIn[]
+  defects        Defect[]
   // ── DoD / DoR criteria (parsed from approved artefacts) ────────────────
   // Populated when the Definition of Done / Definition of Ready artefact
   // for this project transitions to APPROVED — the markdown is parsed
@@ -540,6 +542,20 @@ model Task {
   // creating duplicates. Both nullable for tasks created any other way.
   sourceArtefactId String?
   sourceRowKey     String?
+  // ── Field-work loop (review P1) ───────────────────────────────────────
+  // executor: 'AGENT' = the agent produces this deliverable itself;
+  //   'HUMAN' = real-world work someone must do outside the platform.
+  //   NULL = not yet classified. HUMAN tasks in progress get check-in
+  //   chases when silent (see /api/cron/field-checkins).
+  // lastUpdateAt: when a human last reported progress — updatedAt moves on
+  //   every system write, so "silence" needs its own timestamp.
+  // blockedReason: why the task is blocked (pairs with `blocked`); feeds
+  //   the auto-raised risk on blockage.
+  executor        String?
+  lastUpdateAt    DateTime?
+  blockedReason   String?
+  checkIns        CheckIn[]
+  defects         Defect[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -550,6 +566,47 @@ model Task {
   @@index([projectId, status])
   @@index([projectId, endDate])
   @@index([sprintId])
+}
+
+// An agent chase on a silent or blocked HUMAN task: "this has been quiet
+// for N days — what's the status?". OPEN check-ins surface in chat and on
+// the project; any progress update on the task resolves them.
+model CheckIn {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  agentId     String?
+  question    String
+  status      String    @default("OPEN") // OPEN | ANSWERED | DISMISSED
+  response    String?
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@index([projectId, status])
+  @@index([taskId])
+}
+
+// Real defect/snag log (quality management). Backs the qa-testing page —
+// previously a re-skinned Issue list with no dedicated model.
+model Defect {
+  id             String    @id @default(cuid())
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId         String?
+  task           Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  title          String
+  description    String?   @db.Text
+  severity       String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status         String    @default("OPEN") // OPEN | IN_REVIEW | FIXED | CLOSED | WONT_FIX
+  raisedBy       String? // "agent:<id>" or "user:<id>"
+  resolutionNote String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  resolvedAt     DateTime?
+
+  @@index([projectId, status])
 }
 
 model Risk {

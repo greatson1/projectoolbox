@@ -1,8 +1,9 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useProjectIssues } from "@/hooks/use-api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,16 +17,25 @@ const SEVERITY_VARIANT: Record<string, "default" | "secondary" | "destructive" |
   LOW: "outline",
 };
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  OPEN: "destructive",
-  IN_PROGRESS: "secondary",
-  RESOLVED: "default",
-  CLOSED: "default",
-};
+const DEFECT_STATUSES = ["OPEN", "IN_REVIEW", "FIXED", "CLOSED", "WONT_FIX"];
+const OPEN_STATES = new Set(["OPEN", "IN_REVIEW", "IN_PROGRESS"]);
 
 export default function QATestingPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data: issues, isLoading } = useProjectIssues(projectId);
+  const qc = useQueryClient();
+  // Real Defect rows (quality management model added in review P1).
+  const { data: defects, isLoading: defectsLoading } = useQuery({
+    queryKey: ["defects", projectId],
+    queryFn: () =>
+      fetch(`/api/projects/${projectId}/defects`)
+        .then((r) => r.json())
+        .then((j) => j.data ?? []),
+    enabled: !!projectId,
+  });
+  // Legacy quality-tagged Issues logged before the Defect model existed —
+  // kept visible (read-only) so history doesn't vanish.
+  const { data: issues, isLoading: issuesLoading } = useProjectIssues(projectId);
+  const isLoading = defectsLoading || issuesLoading;
 
   if (isLoading) {
     return (
@@ -41,39 +51,59 @@ export default function QATestingPage() {
     );
   }
 
-  // Filter to quality-related issues if category field exists, otherwise show all
-  const allIssues = issues || [];
-  const items = allIssues.filter(
-    (issue: any) => !issue.category || issue.category === "quality" || issue.category === "defect" || issue.category === "qa"
+  const legacy = (issues || []).filter(
+    (issue: any) => issue.category === "quality" || issue.category === "defect" || issue.category === "qa",
   );
+  const items = [
+    ...(defects || []).map((d: any) => ({ ...d, kind: "defect" })),
+    ...legacy.map((i: any) => ({ ...i, kind: "legacy" })),
+  ];
 
-  const openCount = items.filter((d: any) => {
-    const s = (d.status || "").toUpperCase();
-    return s === "OPEN" || s === "IN_PROGRESS";
-  }).length;
-  const resolvedCount = items.filter((d: any) => {
-    const s = (d.status || "").toUpperCase();
-    return s === "RESOLVED" || s === "CLOSED";
-  }).length;
-  const hasCritical = items.some((d: any) => (d.severity || "").toUpperCase() === "CRITICAL");
+  const openCount = items.filter((d: any) => OPEN_STATES.has((d.status || "").toUpperCase())).length;
+  const resolvedCount = items.length - openCount;
+  const hasCritical = items.some(
+    (d: any) => (d.severity || "").toUpperCase() === "CRITICAL" && OPEN_STATES.has((d.status || "").toUpperCase()),
+  );
 
   const qualityGate = items.length === 0 ? "N/A" : hasCritical ? "FAILED" : openCount === 0 ? "PASSED" : "OPEN";
   const gateColor =
     qualityGate === "PASSED" ? "text-green-500" : qualityGate === "FAILED" ? "text-destructive" : "text-amber-500";
 
+  const refresh = () => qc.invalidateQueries({ queryKey: ["defects", projectId] });
+
   const handleAdd = () => {
     const title = prompt("Defect title:");
     if (!title) return;
-    fetch(`/api/projects/${projectId}/issues`, {
+    const severityRaw = prompt("Severity (LOW / MEDIUM / HIGH / CRITICAL):", "MEDIUM") || "MEDIUM";
+    fetch(`/api/projects/${projectId}/defects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, severity: "MEDIUM", status: "OPEN", category: "quality" }),
+      body: JSON.stringify({ title, severity: severityRaw.toUpperCase() }),
     })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(() => {
         toast.success("Defect logged");
-        window.location.reload();
+        refresh();
       })
       .catch(() => toast.error("Failed to log defect"));
+  };
+
+  const handleStatusChange = (defectId: string, status: string) => {
+    let resolutionNote: string | null = null;
+    if (status === "FIXED" || status === "WONT_FIX") {
+      resolutionNote = prompt(status === "FIXED" ? "What fixed it? (optional)" : "Why won't this be fixed? (optional)");
+    }
+    fetch(`/api/projects/${projectId}/defects/${defectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, ...(resolutionNote ? { resolutionNote } : {}) }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(() => {
+        toast.success("Defect updated");
+        refresh();
+      })
+      .catch(() => toast.error("Failed to update defect"));
   };
 
   return (
@@ -133,14 +163,12 @@ export default function QATestingPage() {
             </div>
           </div>
           {qualityGate === "FAILED" && (
-            <p className="text-xs text-muted-foreground">Critical defects must be resolved before gate can pass</p>
+            <p className="text-xs text-muted-foreground">Open critical defects must be resolved before the gate can pass</p>
           )}
           {qualityGate === "OPEN" && (
             <p className="text-xs text-muted-foreground">{openCount} open defect{openCount !== 1 ? "s" : ""} remaining</p>
           )}
-          {qualityGate === "PASSED" && (
-            <p className="text-xs text-green-500">All defects resolved</p>
-          )}
+          {qualityGate === "PASSED" && <p className="text-xs text-green-500">All defects resolved</p>}
         </div>
       </Card>
 
@@ -148,9 +176,9 @@ export default function QATestingPage() {
       {items.length === 0 ? (
         <div className="text-center py-20">
           <TestTube2 className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-lg font-bold mb-2">No quality issues logged</h2>
+          <h2 className="text-lg font-bold mb-2">No defects logged</h2>
           <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-            Your AI agent monitors quality gates and flags defects during execution.
+            Log snags and quality issues here — critical open defects fail the quality gate.
           </p>
           <Button size="sm" onClick={handleAdd}>
             <Plus className="w-4 h-4 mr-1" /> Log First Defect
@@ -162,7 +190,7 @@ export default function QATestingPage() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border">
-                  {["ID", "Title", "Severity", "Status", "Component", "Age"].map((h) => (
+                  {["ID", "Title", "Severity", "Status", "Task / Component", "Age", "Resolution"].map((h) => (
                     <th
                       key={h}
                       className="text-left py-2.5 px-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
@@ -173,37 +201,54 @@ export default function QATestingPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((issue: any, idx: number) => {
-                  const issueId = issue.id ? `DEF-${String(issue.id).slice(-3).padStart(3, "0")}` : `DEF-${idx + 1}`;
-                  const severity = (issue.severity || "MEDIUM").toUpperCase();
-                  const status = (issue.status || "OPEN").toUpperCase();
-                  const component = issue.component || issue.category || "-";
+                {items.map((item: any, idx: number) => {
+                  const rowId = item.id ? `DEF-${String(item.id).slice(-3).padStart(3, "0")}` : `DEF-${idx + 1}`;
+                  const severity = (item.severity || "MEDIUM").toUpperCase();
+                  const status = (item.status || "OPEN").toUpperCase();
+                  const component =
+                    item.kind === "defect" ? item.task?.title || "-" : item.component || item.category || "-";
 
-                  // Calculate age
                   let age = "-";
-                  if (issue.createdAt) {
-                    const days = Math.floor(
-                      (Date.now() - new Date(issue.createdAt).getTime()) / (1000 * 60 * 60 * 24)
-                    );
+                  if (item.createdAt) {
+                    const days = Math.floor((Date.now() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
                     age = days === 0 ? "today" : `${days}d`;
                   }
 
                   return (
-                    <tr key={issue.id || idx} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
-                      <td className="py-2.5 px-4 font-mono text-primary">{issueId}</td>
-                      <td className="py-2.5 px-4 font-medium max-w-[300px] truncate">{issue.title}</td>
+                    <tr key={`${item.kind}-${item.id || idx}`} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                      <td className="py-2.5 px-4 font-mono text-primary">{rowId}</td>
+                      <td className="py-2.5 px-4 font-medium max-w-[300px] truncate" title={item.description || item.title}>
+                        {item.title}
+                      </td>
                       <td className="py-2.5 px-4">
                         <Badge variant={SEVERITY_VARIANT[severity] || "secondary"} className="text-[10px]">
                           {severity}
                         </Badge>
                       </td>
                       <td className="py-2.5 px-4">
-                        <Badge variant={STATUS_VARIANT[status] || "outline"} className="text-[10px]">
-                          {status.replace("_", " ")}
-                        </Badge>
+                        {item.kind === "defect" ? (
+                          <select
+                            className="bg-transparent border border-border rounded-md px-1.5 py-0.5 text-[11px]"
+                            value={status}
+                            onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                          >
+                            {DEFECT_STATUSES.map((s) => (
+                              <option key={s} value={s}>
+                                {s.replace(/_/g, " ")}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]" title="Legacy issue — managed on the Issues page">
+                            {status.replace(/_/g, " ")} (legacy)
+                          </Badge>
+                        )}
                       </td>
-                      <td className="py-2.5 px-4 text-muted-foreground capitalize">{component}</td>
+                      <td className="py-2.5 px-4 text-muted-foreground max-w-[200px] truncate">{component}</td>
                       <td className="py-2.5 px-4 text-muted-foreground">{age}</td>
+                      <td className="py-2.5 px-4 text-muted-foreground max-w-[220px] truncate" title={item.resolutionNote || ""}>
+                        {item.resolutionNote || "-"}
+                      </td>
                     </tr>
                   );
                 })}
