@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { RequestAccess } from "./request-access";
 
 export const metadata: Metadata = {
   title: "Integrations — Projectoolbox",
@@ -60,6 +61,9 @@ export default function IntegrationsPage() {
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed"
                         dangerouslySetInnerHTML={{ __html: integration.desc }} />
+                      {integration.status === "coming-soon" && (
+                        <RequestAccess integrationName={integration.name} />
+                      )}
                     </div>
                   ))}
                 </div>

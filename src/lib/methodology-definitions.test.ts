@@ -124,10 +124,7 @@ describe("PMBOK methodology", () => {
   });
 });
 
-describe("SAFe + Kanban are currently disabled but legacy projects still load", () => {
-  // Both definitions stay in the registry so legacy projects render
-  // correctly, but isMethodologyActive returns false to keep them off
-  // the deploy wizard picker.
+describe("SAFe + Kanban resolve from the registry (re-enabled 2026-07-10)", () => {
   it("SAFe definition still resolves for legacy rows", () => {
     expect(getMethodology("safe").id).toBe("safe");
     expect(getMethodology("SAFE").id).toBe("safe");
@@ -138,21 +135,15 @@ describe("SAFe + Kanban are currently disabled but legacy projects still load", 
     expect(getMethodology("AGILE_KANBAN").id).toBe("kanban");
   });
 
-  // METHODOLOGY_LIST is the export the deploy wizard reads — it must
-  // NOT contain SAFe or Kanban while they're disabled.
-  // (Imported here so the assertion exercises the same export consumers use.)
-  it("METHODOLOGY_LIST excludes SAFe and Kanban while disabled", async () => {
+  // METHODOLOGY_LIST respects DISABLED_METHODOLOGY_IDS. SAFe and Kanban were
+  // re-enabled 2026-07-10 (review P3) after Kanban's full E2E run — every
+  // registered methodology is currently active.
+  it("METHODOLOGY_LIST includes every methodology now that none are disabled", async () => {
     const mod = await import("./methodology-definitions");
     const ids = mod.METHODOLOGY_LIST.map(m => m.id);
-    expect(ids).not.toContain("safe");
-    expect(ids).not.toContain("kanban");
-    // …but the active ones must still be present.
-    expect(ids).toContain("traditional");
-    expect(ids).toContain("pmbok");
-    expect(ids).toContain("scrum");
-    expect(ids).toContain("waterfall");
-    expect(ids).toContain("hybrid");
-    expect(ids).toContain("travel");
+    for (const id of ["safe", "kanban", "traditional", "pmbok", "scrum", "waterfall", "hybrid", "travel"]) {
+      expect(ids).toContain(id);
+    }
   });
 
   it("METHODOLOGY_LIST_INCLUDING_DISABLED has every methodology including SAFe + Kanban", async () => {

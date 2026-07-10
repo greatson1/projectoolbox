@@ -323,8 +323,8 @@ export default function SettingsPage() {
                   <Button size="sm">Generate Key</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  API documentation is available at{" "}
-                  <Link href="/docs" className="text-primary hover:underline">/docs</Link>.
+                  The public API is in private preview —{" "}
+                  <Link href="/contact" className="text-primary hover:underline">contact us</Link> for early access and documentation.
                 </p>
               </CardContent>
             </Card>

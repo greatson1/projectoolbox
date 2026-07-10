@@ -89,19 +89,18 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
   { id: "other", label: "Other", icon: "📁" },
 ];
 
-// Active methodology list for the deploy wizard. SAFe and Kanban are
-// intentionally NOT included while we focus on the core five — they
-// remain in the methodology-definitions registry so legacy projects
-// still load, but new users can't pick them. To reactivate, add their
-// entry back here AND remove them from DISABLED_METHODOLOGY_IDS in
-// methodology-definitions.ts. PMBOK replaces SAFe's role of "formal,
-// structured framework for governance-heavy projects".
+// Active methodology list for the deploy wizard. Keep in sync with
+// DISABLED_METHODOLOGY_IDS in methodology-definitions.ts — this array is
+// what users actually see. Kanban + SAFe re-enabled 2026-07-10 (review P3)
+// after Kanban's full E2E run and the P1 scheduling-engine work.
 const METHODOLOGIES = [
   { id: "scrum", name: "Scrum", icon: "🔄", desc: "Iterative sprints with ceremonies and retrospectives", bestFor: "Software teams needing fast feedback loops", rec: false },
+  { id: "kanban", name: "Kanban", icon: "📋", desc: "Pull-based continuous flow with WIP limits — no sprints, no big planning", bestFor: "Support desks, BAU work, teams with continuous intake", rec: false },
   { id: "traditional", name: "Traditional", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
   { id: "pmbok", name: "PMBOK", icon: "📘", desc: "PMI's five Process Groups with knowledge-area subsidiary plans", bestFor: "PMI-aligned teams, audit / certification requirements, PMP-led projects", rec: false },
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },
+  { id: "safe", name: "SAFe", icon: "🚂", desc: "Scaled agile with PI Planning, iteration cadence and Inspect & Adapt", bestFor: "Multi-team programmes scaling agile delivery", rec: false },
   { id: "travel", name: "Travel & Trip", icon: "✈️", desc: "Trip lifecycle: Plan → Book → Travel → Wrap-up", bestFor: "Holidays, business trips, family travel, short events", rec: false },
 ];
 

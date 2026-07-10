@@ -587,17 +587,17 @@ export default function LandingPage() {
                 { label: "Integrations", href: "/integrations" },
                 { label: "Changelog", href: "/changelog" },
               ]},
+              // Blog / Careers / Webinars / Community / Docs removed
+              // 2026-07-10 (review P3): they pointed at ComingSoon stubs,
+              // which erodes trust on a landing page. Re-add each link only
+              // when the destination actually exists.
               { title: "Company", links: [
                 { label: "About", href: "/about" },
-                { label: "Blog", href: "/blog" },
-                { label: "Careers", href: "/careers" },
                 { label: "Contact", href: "/contact" },
               ]},
               { title: "Training", links: [
                 { label: "AI in PM Course", href: "https://www.pmgts.co.uk", },
-                { label: "Webinars", href: "/webinars" },
-                { label: "Community", href: "/community" },
-                { label: "Docs", href: "/docs" },
+                { label: "PMGT Solutions", href: "https://www.pmgts.uk" },
               ]},
               { title: "Legal", links: [
                 { label: "Privacy", href: "/legal/privacy" },

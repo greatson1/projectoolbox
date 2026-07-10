@@ -1028,18 +1028,21 @@ export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
 
 /**
  * Methodologies that are CURRENTLY ACTIVE in the deploy wizard.
- * SAFe and Kanban are intentionally hidden — keep their definitions in
- * the registry so legacy projects still render correctly, but stop
- * surfacing them to new users until they're explicitly reactivated.
  *
- * To reactivate one: remove it from this set. To retire one: also
- * delete its METHODOLOGIES entry + Prisma enum value (irreversible —
+ * SAFe and Kanban were re-enabled 2026-07-10 (review P3): Kanban passed a
+ * full E2E delivery-to-closure run on 2026-07-08, SAFe passed smoke tests,
+ * and the P1 engine work (computed CPM, field-work loop) closed the gaps
+ * that had them benched. The set stays as the gating mechanism.
+ *
+ * To disable one: add it to this set AND remove its entry from the deploy
+ * wizard's METHODOLOGIES array (agents/deploy/page.tsx). To retire one:
+ * also delete its METHODOLOGIES entry + Prisma enum value (irreversible —
  * legacy projects with that methodology will break).
  *
  * Display code should read from METHODOLOGY_LIST (which respects this
  * filter) rather than iterating METHODOLOGIES directly.
  */
-const DISABLED_METHODOLOGY_IDS: Set<MethodologyId> = new Set(["safe", "kanban"]);
+const DISABLED_METHODOLOGY_IDS: Set<MethodologyId> = new Set([]);
 
 export function isMethodologyActive(id: string): boolean {
   const raw = String(id).toLowerCase().replace(/[^a-z0-9]/g, "");
