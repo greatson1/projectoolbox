@@ -18,7 +18,9 @@ export type MethodologyId =
   | "safe"
   | "hybrid"
   | "travel"
-  | "pmbok";
+  | "pmbok"
+  | "prince2"
+  | "agilepm";
 
 export type GateStatus =
   | "NOT_STARTED"
@@ -1013,6 +1015,210 @@ const PMBOK: MethodologyDefinition = {
   ],
 };
 
+// PRINCE2 — first-class as of 2026-07-10 (review P3b). Previously an alias
+// to Traditional, which meant a certified PRINCE2 practitioner picking
+// "PRINCE2" got generic stage-gate phases instead of the framework's actual
+// process model. Phase structure follows the canonical processes: Starting
+// Up → Initiating → two Delivery Stages (management stages with boundary
+// gates = management by exception) → Closing.
+const PRINCE2: MethodologyDefinition = {
+  id: "prince2",
+  name: "PRINCE2",
+  framework: "traditional",
+  description: "PRINCE2 process model: business-justification-led stages with boundary gates and management by exception",
+  phases: [
+    {
+      name: "Starting Up",
+      description: "Confirm the mandate and whether the project is worth initiating — appoint the executive and project manager",
+      color: "#6366F1",
+      artefacts: [
+        { name: "Project Brief", required: true, aiGeneratable: true },
+        { name: "Outline Business Case", required: true, aiGeneratable: true },
+        { name: "Daily Log", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Authorise Initiation",
+        criteria: "Project Brief approved by the Project Board; the project is a worthwhile investment to initiate",
+        preRequisites: [
+          { description: "Executive / sponsor confirmed", category: "approval", isMandatory: true, requiresHumanApproval: true },
+          { description: "Project Brief reviewed by the Project Board", category: "review", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Initiating",
+      description: "Establish the PID, business justification and the management approaches (quality, risk, communication)",
+      color: "#8B5CF6",
+      artefacts: [
+        { name: "Project Initiation Documentation (PID)", required: true, aiGeneratable: true },
+        { name: "Business Case", required: true, aiGeneratable: true },
+        { name: "Quality Management Approach", required: false, aiGeneratable: true },
+        { name: "Risk Management Approach", required: false, aiGeneratable: true },
+        { name: "Communication Management Approach", required: false, aiGeneratable: true },
+        { name: "Benefits Management Approach", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Authorise the Project",
+        criteria: "PID approved; business justification stands; Stage 1 plan agreed with tolerances",
+        preRequisites: [
+          { description: "PID approved by the Project Board", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Business Case confirms continued justification", category: "review", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Delivery Stage 1",
+      description: "Deliver the first management stage's products within agreed tolerances — long-lead and enabling work first",
+      color: "#3B82F6",
+      artefacts: [
+        { name: "Stage Plan — Stage 1", required: true, aiGeneratable: true },
+        { name: "Highlight Report", required: true, aiGeneratable: true },
+        { name: "Issue Register", required: false, aiGeneratable: true },
+        { name: "End Stage Report — Stage 1", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Stage Boundary: Authorise Stage 2",
+        criteria: "Stage 1 products delivered within tolerance; business justification still stands; Stage 2 plan approved",
+        preRequisites: [
+          { description: "Stage 1 products accepted", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Business Case re-validated at the boundary", category: "review", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Delivery Stage 2",
+      description: "Deliver the remaining products and prepare for handover",
+      color: "#06B6D4",
+      artefacts: [
+        { name: "Stage Plan — Stage 2", required: true, aiGeneratable: true },
+        { name: "Highlight Report — Stage 2", required: true, aiGeneratable: true },
+        { name: "Product Status Account", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Authorise Project Closure",
+        criteria: "All products delivered and accepted; project ready to close",
+        preRequisites: [
+          { description: "All products delivered and accepted", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Closing",
+      description: "Hand over products, confirm acceptance, capture lessons and close the project",
+      color: "#10B981",
+      artefacts: [
+        { name: "End Project Report", required: true, aiGeneratable: true },
+        { name: "Lessons Report", required: true, aiGeneratable: true },
+        { name: "Benefits Review Plan", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Project Closure Confirmed",
+        criteria: "End Project Report approved; ownership handed over; benefits review scheduled",
+        preRequisites: [
+          { description: "End Project Report approved by the Project Board", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Lessons Report captured", category: "document", isMandatory: true, requiresHumanApproval: false },
+        ],
+      },
+    },
+  ],
+};
+
+// AgilePM (DSDM) — first-class as of 2026-07-10 (review P3b). The DSDM
+// lifecycle: viability first, then firm foundations, then timeboxed
+// evolutionary delivery guarding the Must Haves (MoSCoW), deployment into
+// live use, and a post-project benefits check.
+const AGILEPM: MethodologyDefinition = {
+  id: "agilepm",
+  name: "AgilePM (DSDM)",
+  framework: "agile",
+  description: "DSDM lifecycle: MoSCoW-prioritised, timeboxed delivery that flexes scope — never quality or deadline",
+  phases: [
+    {
+      name: "Feasibility",
+      description: "Establish whether the project is viable and worth the foundations effort",
+      color: "#6366F1",
+      artefacts: [
+        { name: "Feasibility Assessment", required: true, aiGeneratable: true },
+        { name: "Outline Business Case", required: true, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Feasibility Approved",
+        criteria: "The project is technically feasible and the business case is worth developing",
+        preRequisites: [
+          { description: "Feasibility Assessment reviewed", category: "review", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Foundations",
+      description: "Set the business, solution and management foundations — MoSCoW-prioritised scope with Must Haves near 60% of effort",
+      color: "#8B5CF6",
+      artefacts: [
+        { name: "Business Case", required: true, aiGeneratable: true },
+        { name: "Prioritised Requirements List (MoSCoW)", required: true, aiGeneratable: true },
+        { name: "Solution Architecture Definition", required: false, aiGeneratable: true },
+        { name: "Management Approach Definition", required: false, aiGeneratable: true },
+        { name: "Delivery Plan", required: false, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Foundations Approved",
+        criteria: "Foundations firm enough to start evolutionary development; PRL agreed with MoSCoW priorities",
+        preRequisites: [
+          { description: "Prioritised Requirements List agreed", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+          { description: "Business Case approved", category: "review", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Evolutionary Development",
+      description: "Deliver the solution iteratively in timeboxes — flex Shoulds and Coulds, never quality or the deadline",
+      color: "#3B82F6",
+      artefacts: [
+        { name: "Timebox Plan", required: true, aiGeneratable: true },
+        { name: "Timebox Review Record", required: true, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Increment Accepted",
+        criteria: "Must Have requirements delivered and accepted; solution ready to deploy",
+        preRequisites: [
+          { description: "Must Have requirements demonstrably delivered", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Deployment",
+      description: "Bring the solution increment into live use and review the project",
+      color: "#06B6D4",
+      artefacts: [
+        { name: "Deployment Plan", required: true, aiGeneratable: true },
+        { name: "Project Review Report", required: true, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Deployment Approved",
+        criteria: "Solution live and accepted by the business; project review complete",
+        preRequisites: [
+          { description: "Business acceptance of the deployed solution", category: "sign_off", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+    {
+      name: "Post-Project",
+      description: "Confirm the expected benefits are actually being realised in live use",
+      color: "#10B981",
+      artefacts: [
+        { name: "Benefits Assessment", required: true, aiGeneratable: true },
+      ],
+      gate: {
+        name: "Benefits Confirmed",
+        criteria: "Benefits Assessment reviewed; realised benefits compared against the Business Case",
+        preRequisites: [
+          { description: "Benefits Assessment reviewed by the sponsor", category: "review", isMandatory: true, requiresHumanApproval: true },
+        ],
+      },
+    },
+  ],
+};
+
 // ─── Registry ───
 
 export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
@@ -1024,6 +1230,8 @@ export const METHODOLOGIES: Record<MethodologyId, MethodologyDefinition> = {
   hybrid: HYBRID,
   travel: TRAVEL,
   pmbok: PMBOK,
+  prince2: PRINCE2,
+  agilepm: AGILEPM,
 };
 
 /**
@@ -1046,9 +1254,6 @@ const DISABLED_METHODOLOGY_IDS: Set<MethodologyId> = new Set([]);
 
 export function isMethodologyActive(id: string): boolean {
   const raw = String(id).toLowerCase().replace(/[^a-z0-9]/g, "");
-  // Don't disable based on raw match for legacy aliases like prince2
-  // — those resolve to traditional, which IS active.
-  if (raw === "prince2") return true;
   return !DISABLED_METHODOLOGY_IDS.has(raw as MethodologyId);
 }
 
@@ -1095,6 +1300,10 @@ const FEATURE_MAP: Record<MethodologyId, MethodologyFeatures> = {
   hybrid:      { sprints: true,  agileBoard: true,  evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
   travel:      { sprints: false, agileBoard: false, evm: false, procurement: false, wbs: false, safeStructural: false, travelStructural: true,  kanbanStructural: false },
   pmbok:       { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
+  prince2:     { sprints: false, agileBoard: false, evm: true,  procurement: true,  wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
+  // AgilePM: timeboxes reuse the sprint infrastructure; the PRL renders
+  // well on the WBS/scope pages, so keep wbs on despite the agile framing.
+  agilepm:     { sprints: true,  agileBoard: true,  evm: false, procurement: false, wbs: true,  safeStructural: false, travelStructural: false, kanbanStructural: false },
 };
 
 /**
@@ -1149,7 +1358,8 @@ export function getMethodology(id: string): MethodologyDefinition {
   // Handle aliases before casting to MethodologyId
   if (raw === "agile" || raw === "agilescrum") return METHODOLOGIES.scrum;
   if (raw === "agilekanban") return METHODOLOGIES.kanban;
-  if (raw === "prince2") return METHODOLOGIES.traditional; // legacy alias
+  // prince2 resolves to its own first-class definition since 2026-07-10
+  // (was a legacy alias → traditional).
   const key = raw as MethodologyId;
   return METHODOLOGIES[key] || METHODOLOGIES.traditional;
 }
@@ -1179,7 +1389,9 @@ export function getMethodology(id: string): MethodologyDefinition {
 export function getMethodologyLabel(id: string | null | undefined): string {
   if (!id) return "Unknown";
   const raw = String(id).toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (raw === "prince2" || raw === "traditional") return "Traditional";
+  if (raw === "prince2") return "PRINCE2"; // first-class since 2026-07-10
+  if (raw === "agilepm") return "AgilePM (DSDM)";
+  if (raw === "traditional") return "Traditional";
   if (raw === "waterfall") return "Waterfall";
   if (raw === "agilescrum" || raw === "scrum" || raw === "agile") return "Scrum";
   if (raw === "agilekanban" || raw === "kanban") return "Kanban";
@@ -1213,7 +1425,9 @@ export function getMethodologyLabel(id: string | null | undefined): string {
 export function toMethodologyEnum(input: string | null | undefined): string | null {
   if (!input) return null;
   const raw = String(input).toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (raw === "traditional" || raw === "prince2") return "TRADITIONAL";
+  if (raw === "traditional") return "TRADITIONAL";
+  if (raw === "prince2") return "PRINCE2"; // first-class since 2026-07-10
+  if (raw === "agilepm") return "AGILEPM";
   if (raw === "waterfall") return "WATERFALL";
   if (raw === "scrum" || raw === "agile" || raw === "agilescrum") return "AGILE_SCRUM";
   if (raw === "kanban" || raw === "agilekanban") return "AGILE_KANBAN";

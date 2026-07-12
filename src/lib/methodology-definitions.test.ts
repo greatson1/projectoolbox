@@ -141,9 +141,45 @@ describe("SAFe + Kanban resolve from the registry (re-enabled 2026-07-10)", () =
   it("METHODOLOGY_LIST includes every methodology now that none are disabled", async () => {
     const mod = await import("./methodology-definitions");
     const ids = mod.METHODOLOGY_LIST.map(m => m.id);
-    for (const id of ["safe", "kanban", "traditional", "pmbok", "scrum", "waterfall", "hybrid", "travel"]) {
+    for (const id of ["safe", "kanban", "traditional", "pmbok", "scrum", "waterfall", "hybrid", "travel", "prince2", "agilepm"]) {
       expect(ids).toContain(id);
     }
+  });
+});
+
+describe("PRINCE2 + AgilePM are first-class methodologies (2026-07-10)", () => {
+  it("prince2 resolves to its own process-model definition, not Traditional", () => {
+    const def = getMethodology("prince2");
+    expect(def.id).toBe("prince2");
+    expect(def.phases.map(p => p.name)).toEqual([
+      "Starting Up", "Initiating", "Delivery Stage 1", "Delivery Stage 2", "Closing",
+    ]);
+    // DB enum value round-trips to the same definition
+    expect(getMethodology("PRINCE2").id).toBe("prince2");
+  });
+
+  it("PRINCE2 Initiating requires the PID and carries the management approaches", () => {
+    const initiating = getMethodology("prince2").phases.find(p => p.name === "Initiating")!;
+    const required = initiating.artefacts.filter(a => a.required).map(a => a.name);
+    expect(required).toContain("Project Initiation Documentation (PID)");
+    expect(required).toContain("Business Case");
+    expect(initiating.artefacts.map(a => a.name)).toContain("Communication Management Approach");
+  });
+
+  it("agilepm resolves to the DSDM lifecycle", () => {
+    const def = getMethodology("agilepm");
+    expect(def.id).toBe("agilepm");
+    expect(def.phases.map(p => p.name)).toEqual([
+      "Feasibility", "Foundations", "Evolutionary Development", "Deployment", "Post-Project",
+    ]);
+    expect(getMethodology("AGILEPM").id).toBe("agilepm");
+  });
+
+  it("AgilePM Foundations requires the MoSCoW-prioritised requirements list", () => {
+    const foundations = getMethodology("agilepm").phases.find(p => p.name === "Foundations")!;
+    const required = foundations.artefacts.filter(a => a.required).map(a => a.name);
+    expect(required).toContain("Prioritised Requirements List (MoSCoW)");
+    expect(required).toContain("Business Case");
   });
 
   it("METHODOLOGY_LIST_INCLUDING_DISABLED has every methodology including SAFe + Kanban", async () => {
@@ -205,11 +241,21 @@ describe("methodologyFeatures — per-methodology capability flags", () => {
     expect(f.agileBoard).toBe(true);
   });
 
-  it("legacy ids resolve correctly (prince2 → traditional flags)", async () => {
+  it("prince2 resolves to its own flags (first-class since 2026-07-10)", async () => {
     const { methodologyFeatures } = await import("./methodology-definitions");
     expect(methodologyFeatures("prince2").sprints).toBe(false);
-    expect(methodologyFeatures("PRINCE2").sprints).toBe(false);
+    expect(methodologyFeatures("PRINCE2").evm).toBe(true);
+    expect(methodologyFeatures("PRINCE2").wbs).toBe(true);
     expect(methodologyFeatures("AGILE_SCRUM").sprints).toBe(true);
+  });
+
+  it("agilepm gets timeboxes (sprints), agile board AND wbs", async () => {
+    const { methodologyFeatures } = await import("./methodology-definitions");
+    const f = methodologyFeatures("agilepm");
+    expect(f.sprints).toBe(true);
+    expect(f.agileBoard).toBe(true);
+    expect(f.wbs).toBe(true);
+    expect(f.evm).toBe(false);
   });
 
   it("returns safe defaults when methodology is missing / unknown", async () => {
@@ -251,7 +297,8 @@ describe("getMethodologyLabel — UI display normalisation", () => {
   // page that calls getMethodologyLabel gets the right answer.
 
   it("maps every legacy Prisma enum value to its UI label", () => {
-    expect(getMethodologyLabel("PRINCE2")).toBe("Traditional");
+    expect(getMethodologyLabel("PRINCE2")).toBe("PRINCE2"); // first-class since 2026-07-10
+    expect(getMethodologyLabel("AGILEPM")).toBe("AgilePM (DSDM)");
     expect(getMethodologyLabel("WATERFALL")).toBe("Waterfall");
     expect(getMethodologyLabel("AGILE_SCRUM")).toBe("Scrum");
     expect(getMethodologyLabel("AGILE_KANBAN")).toBe("Kanban");
@@ -297,14 +344,15 @@ describe("toMethodologyEnum — DB write normalisation", () => {
   // new Traditional rows, and unknown inputs return null so the
   // caller can decide the default.
 
-  it("traditional ids map to TRADITIONAL (not PRINCE2)", () => {
+  it("traditional ids map to TRADITIONAL; prince2 is its own enum (first-class since 2026-07-10)", () => {
     expect(toMethodologyEnum("traditional")).toBe("TRADITIONAL");
     expect(toMethodologyEnum("Traditional")).toBe("TRADITIONAL");
     expect(toMethodologyEnum("TRADITIONAL")).toBe("TRADITIONAL");
-    // Legacy PRINCE2 input still maps to TRADITIONAL (idempotent),
-    // so a legacy row passed through this helper round-trips correctly.
-    expect(toMethodologyEnum("prince2")).toBe("TRADITIONAL");
-    expect(toMethodologyEnum("PRINCE2")).toBe("TRADITIONAL");
+    expect(toMethodologyEnum("prince2")).toBe("PRINCE2");
+    expect(toMethodologyEnum("PRINCE2")).toBe("PRINCE2");
+    expect(toMethodologyEnum("agilepm")).toBe("AGILEPM");
+    expect(toMethodologyEnum("AgilePM")).toBe("AGILEPM");
+    expect(toMethodologyEnum("AGILEPM")).toBe("AGILEPM");
   });
 
   it("travel ids map to TRAVEL (previously silently fell back to WATERFALL)", () => {

@@ -97,6 +97,8 @@ const METHODOLOGIES = [
   { id: "scrum", name: "Scrum", icon: "🔄", desc: "Iterative sprints with ceremonies and retrospectives", bestFor: "Software teams needing fast feedback loops", rec: false },
   { id: "kanban", name: "Kanban", icon: "📋", desc: "Pull-based continuous flow with WIP limits — no sprints, no big planning", bestFor: "Support desks, BAU work, teams with continuous intake", rec: false },
   { id: "traditional", name: "Traditional", icon: "👑", desc: "Structured stage-gate governance with controlled start/end", bestFor: "Regulated industries, large programmes, formal governance", rec: false },
+  { id: "prince2", name: "PRINCE2", icon: "🏛️", desc: "Business-justification-led stages with boundary gates and management by exception", bestFor: "PRINCE2-certified teams, UK public sector, board-governed projects", rec: false },
+  { id: "agilepm", name: "AgilePM (DSDM)", icon: "🎯", desc: "MoSCoW-prioritised timeboxes — flex scope, never quality or deadline", bestFor: "AgilePM-certified teams, fixed-deadline agile delivery", rec: false },
   { id: "pmbok", name: "PMBOK", icon: "📘", desc: "PMI's five Process Groups with knowledge-area subsidiary plans", bestFor: "PMI-aligned teams, audit / certification requirements, PMP-led projects", rec: false },
   { id: "waterfall", name: "Waterfall", icon: "🌊", desc: "Sequential phases with fixed scope and schedule", bestFor: "Construction, hardware, fixed-requirements projects", rec: false },
   { id: "hybrid", name: "Hybrid", icon: "⚡", desc: "Predictive governance with agile delivery sprints", bestFor: "Mixed environments needing governance + flexibility", rec: false },

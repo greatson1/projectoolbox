@@ -1290,8 +1290,11 @@ enum Methodology {
   WATERFALL
   AGILE_SCRUM
   AGILE_KANBAN
-  // PRINCE2 is the legacy storage name for the Traditional methodology.
-  // Kept so existing rows continue to load; new projects store TRADITIONAL.
+  // PRINCE2 — first-class since 2026-07-10 (review P3b): resolves to its own
+  // process-model definition (Starting Up → Initiating → Delivery Stages →
+  // Closing). Before that it was the legacy storage alias for Traditional;
+  // the one pre-existing PRINCE2 row (archived) renders under the new
+  // definition, which is closer to what its creator picked anyway.
   PRINCE2
   // TRADITIONAL — canonical name going forward (see api/projects/route.ts).
   TRADITIONAL
@@ -1306,6 +1309,10 @@ enum Methodology {
   // → Monitoring & Controlling → Closing). Distinct from Traditional in
   // vocabulary and in giving Monitoring & Controlling its own phase.
   PMBOK
+  // AGILEPM — AgilePM (DSDM) lifecycle (Feasibility → Foundations →
+  // Evolutionary Development → Deployment → Post-Project), MoSCoW-driven
+  // timeboxed delivery. Added 2026-07-10 (review P3b).
+  AGILEPM
 }
 
 enum AgentStatus {

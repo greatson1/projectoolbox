@@ -91,7 +91,9 @@ const DEFAULT_CONFIG: PhaseCompletionConfig = {
 // Phases whose completion genuinely reflects sprint-execution work. Setup /
 // planning phases (Sprint Zero, Pre-Project, Initiation, Planning, …) must
 // NOT gate on `[source:sprint]` backlog items — that work belongs to sprints.
-const SPRINT_EXECUTION_PHASE = /cadence|release|execution|delivery|closing/i;
+// "evolutionary development" + "deployment" cover AgilePM (DSDM) timebox
+// phases; "iteration" covers SAFe's Iteration Cadence.
+const SPRINT_EXECUTION_PHASE = /cadence|release|execution|delivery|closing|evolutionary development|deployment|iteration/i;
 
 // ─── Core Function ──────────────────────────────────────────────────────────
 
