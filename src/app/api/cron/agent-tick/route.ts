@@ -489,12 +489,19 @@ export async function GET(req: NextRequest) {
         const result = (job.result as any) ?? null;
         const projectId: string | null = payload?.projectId ?? null;
         if (job.type === "lifecycle_init" && projectId) {
-          const artCount = await db.agentArtefact.count({ where: { projectId } });
-          if (artCount === 0) {
+          // The VPS init handler's work product is PHASE scaffolding (it
+          // queues an autonomous_cycle for artefact generation afterwards),
+          // so "no phases AND no artefacts" is the failure signature — a
+          // phases-only project right after init is healthy.
+          const [artCount, phaseCount] = await Promise.all([
+            db.agentArtefact.count({ where: { projectId } }),
+            db.phase.count({ where: { projectId } }),
+          ]);
+          if (artCount === 0 && phaseCount === 0) {
             const { failJob } = await import("@/lib/agents/job-queue");
-            await failJob(job.id, "evidence check: COMPLETED but the project has no artefacts — sent back for retry");
+            await failJob(job.id, "evidence check: COMPLETED but the project has no phases and no artefacts — sent back for retry");
             await recordDrift("DRIFT_JOB_EVIDENCE_MISSING", "job", [{ entityId: job.id, projectId }],
-              "A lifecycle_init job was marked COMPLETED (by the VPS backend) but the project has zero artefacts — no work product exists. Job returned to the retry path.");
+              "A lifecycle_init job was marked COMPLETED (by the VPS backend) but the project has neither phases nor artefacts — no work product exists. Job returned to the retry path.");
           }
         } else if (!result || Object.keys(result).length === 0) {
           await recordDrift("DRIFT_JOB_EVIDENCE_MISSING", "job", [{ entityId: job.id, projectId }],

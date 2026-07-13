@@ -1114,6 +1114,14 @@ model CostEntry {
   invoiceRef  String?              // Invoice reference for actuals
   unitQty     Float?               // Quantity (e.g. 10 licenses, 5 days)
   unitRate    Float?               // Rate per unit (e.g. £500/license, £800/day)
+  // ── FX audit trail ────────────────────────────────────────────────────
+  // Costs incurred in a foreign currency are converted to the org base
+  // currency at write time with a USER-SUPPLIED rate (never invented);
+  // `amount` always holds the base value so SUM/EVM/CPI stay currency-
+  // blind. NULL = booked directly in base currency.
+  originalAmount   Float?          // as incurred (e.g. 1200)
+  originalCurrency String?         // currency incurred in (e.g. EUR)
+  fxRate           Float?          // base per unit of original (e.g. 0.85)
   recordedAt  DateTime @default(now())
   createdBy   String?              // agent:<id> or user:<id>
 

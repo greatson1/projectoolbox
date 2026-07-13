@@ -156,26 +156,44 @@ export default function CostManagementPage() {
   async function handleAddCost() {
     const desc = prompt("Cost description:");
     if (!desc) return;
-    const amountStr = prompt("Amount (£):");
+    const amountStr = prompt(`Amount (${currency}, or enter the foreign amount and set the currency next):`);
     if (!amountStr) return;
     const amount = parseFloat(amountStr);
     if (isNaN(amount)) { alert("Invalid amount"); return; }
+    // FX: costs incurred in another currency are converted at a USER-supplied
+    // rate (never assumed) and stored in the org base currency with the
+    // original preserved for audit.
+    const entryCurrency = (prompt(`Currency of this cost:`, currency) || currency).toUpperCase();
+    let fxRate: number | undefined;
+    if (entryCurrency !== currency.toUpperCase()) {
+      const rateStr = prompt(`Exchange rate — how many ${currency} is 1 ${entryCurrency} worth? (e.g. 0.85)`);
+      if (!rateStr) return;
+      fxRate = parseFloat(rateStr);
+      if (isNaN(fxRate) || fxRate <= 0) { alert("Invalid exchange rate"); return; }
+    }
     const entryType = prompt("Type (ESTIMATE/ACTUAL/COMMITMENT):", "ACTUAL") || "ACTUAL";
     const category = prompt("Category (LABOUR/MATERIALS/EQUIPMENT/SUBCONTRACTOR/OTHER):", "OTHER") || "OTHER";
 
     setAdding(true);
     try {
-      await fetch(`/api/projects/${projectId}/costs`, {
+      const res = await fetch(`/api/projects/${projectId}/costs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: desc,
           amount,
+          currency: entryCurrency,
+          ...(fxRate ? { fxRate } : {}),
           entryType: entryType.toUpperCase(),
           category: category.toUpperCase(),
           recordedAt: new Date().toISOString().slice(0, 10),
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Failed to log cost");
+        return;
+      }
       // Reload cost data
       const r = await fetch(`/api/projects/${projectId}/costs`);
       const d = await r.json();
@@ -435,7 +453,17 @@ export default function CostManagementPage() {
                             {c.entryType}
                           </Badge>
                         </td>
-                        <td className="py-2 px-3 font-mono font-medium">{fmt(c.amount)}</td>
+                        <td className="py-2 px-3 font-mono font-medium">
+                          {fmt(c.amount)}
+                          {(c as any).originalAmount && (c as any).originalCurrency && (
+                            <span
+                              className="block text-[9px] font-normal text-muted-foreground"
+                              title={`Booked as ${(c as any).originalCurrency} ${(c as any).originalAmount} and converted at a user-supplied rate of ${(c as any).fxRate}`}
+                            >
+                              {(c as any).originalCurrency} {(c as any).originalAmount} @ {(c as any).fxRate}
+                            </span>
+                          )}
+                        </td>
                       </tr>
                       {/* "Why this number?" expandable — visible only when row has parsed reasoning */}
                       {isExpanded && hasReasoning && (

@@ -55,14 +55,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     if (proj?.org?.currency) orgCurrency = proj.org.currency;
   } catch {}
 
+  // ── FX conversion at write time ─────────────────────────────────────────
+  // Every SUM/EVM/CPI path reads CostEntry.amount currency-blind, so a
+  // foreign-currency cost MUST land in `amount` already converted to the
+  // org base currency. The rate comes from the USER (zero-fabrication —
+  // we never invent exchange rates); the original figure is preserved on
+  // the row for audit. Same-currency entries pass through untouched.
+  const entryCurrency = (body.currency || orgCurrency).toUpperCase();
+  const rawAmount = Number(body.amount);
+  if (!Number.isFinite(rawAmount) || rawAmount < 0) {
+    return NextResponse.json({ error: "A valid amount is required" }, { status: 400 });
+  }
+  let amount = rawAmount;
+  let fx: { originalAmount: number; originalCurrency: string; fxRate: number } | null = null;
+  if (entryCurrency !== orgCurrency.toUpperCase()) {
+    const fxRate = Number(body.fxRate);
+    if (!Number.isFinite(fxRate) || fxRate <= 0) {
+      return NextResponse.json(
+        {
+          error: `Amount is in ${entryCurrency} but the project books costs in ${orgCurrency} — provide fxRate (how many ${orgCurrency} one ${entryCurrency} is worth). Rates are never assumed.`,
+          reason: "fx_rate_required",
+        },
+        { status: 400 },
+      );
+    }
+    amount = Math.round(rawAmount * fxRate * 100) / 100;
+    fx = { originalAmount: rawAmount, originalCurrency: entryCurrency, fxRate };
+  }
+
   const entry = await db.costEntry.create({
     data: {
       projectId,
       taskId: body.taskId || null,
       entryType: body.entryType || "ACTUAL",
       category: body.category || "OTHER",
-      amount: body.amount,
-      currency: body.currency || orgCurrency,
+      amount,
+      currency: orgCurrency,
+      ...(fx ?? {}),
       description: body.description || null,
       vendorName: body.vendorName || null,
       poNumber: body.poNumber || null,
@@ -81,13 +110,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       userId: session.user.id,
       projectId,
       action: `Logged ${body.entryType || "ACTUAL"} cost: ${body.category || "OTHER"}`,
-      target: body.description || `£${body.amount}`,
+      target:
+        (body.description || `${orgCurrency} ${amount}`) +
+        (fx ? ` (${fx.originalCurrency} ${fx.originalAmount} @ ${fx.fxRate})` : ""),
     },
   });
 
-  // Track cost entries in KB
+  // Track cost entries in KB (converted base-currency amount)
   import("@/lib/agents/kb-event-tracker").then(({ trackCostEntry }) => {
-    trackCostEntry(projectId, body.entryType || "ACTUAL", body.amount, body.category || "OTHER", body.description).catch(() => {});
+    trackCostEntry(projectId, body.entryType || "ACTUAL", amount, body.category || "OTHER", body.description).catch(() => {});
   }).catch(() => {});
 
   // Reverse sync to Cost Management Plan artefact — keeps the

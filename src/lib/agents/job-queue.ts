@@ -82,7 +82,11 @@ export async function markRunning(jobId: string) {
  * COMPLETED when its result carries proof the work actually happened. The
  * 3-week billed-while-broken incident was jobs flipping COMPLETED with no
  * output and nothing noticing.
- *   - lifecycle_init:   artefacts must have been produced
+ *   - lifecycle_init:   artefacts OR phases must have been produced (the
+ *                       VPS handler scaffolds Phase rows and queues an
+ *                       autonomous_cycle for artefact generation — phases
+ *                       ARE its work product; Vercel's inline handler
+ *                       generates artefacts directly)
  *   - report_generate:  a report row must exist
  *   - everything else:  a non-empty result object (cycles legitimately
  *                       conclude "no action needed", but must SAY so)
@@ -90,10 +94,15 @@ export async function markRunning(jobId: string) {
 export function jobEvidenceError(type: string, result?: Record<string, unknown> | null): string | null {
   const r = result ?? {};
   if (type === "lifecycle_init") {
-    const created = (r as any).artefactsCreated;
+    const artefacts = (r as any).artefactsCreated;
     const ids = (r as any).artefactIds;
-    if ((typeof created === "number" && created > 0) || (Array.isArray(ids) && ids.length > 0)) return null;
-    return "completed without output evidence: lifecycle_init must report artefactsCreated > 0 or artefactIds";
+    const phases = (r as any).phasesCreated;
+    if (
+      (typeof artefacts === "number" && artefacts > 0) ||
+      (Array.isArray(ids) && ids.length > 0) ||
+      (typeof phases === "number" && phases > 0)
+    ) return null;
+    return "completed without output evidence: lifecycle_init must report artefactsCreated, artefactIds or phasesCreated";
   }
   if (type === "report_generate") {
     if ((r as any).reportId) return null;
