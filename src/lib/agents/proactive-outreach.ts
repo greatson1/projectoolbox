@@ -14,6 +14,7 @@
  */
 
 import { db } from "@/lib/db";
+import { transitionPhaseStatus } from "./lifecycle-machine";
 
 import { MODELS } from "@/lib/ai-models";
 
@@ -512,10 +513,12 @@ export async function processTimedOutQuestions(agentId: string): Promise<number>
           select: { id: true, phaseStatus: true, projectId: true, currentPhase: true },
         });
         if (deployment && ["researching", "awaiting_clarification"].includes(deployment.phaseStatus ?? "")) {
-          await db.agentDeployment.update({
-            where: { id: deployment.id },
-            data: {
-              phaseStatus: "active",
+          await transitionPhaseStatus({
+            deploymentId: deployment.id,
+            to: "active",
+            source: "outreach:unlock",
+            reason: "Clarification question timed out — proceeding with default so artefact generation can continue",
+            extraData: {
               nextCycleAt: new Date(), // trigger a cycle immediately
             },
           });

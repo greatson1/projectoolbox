@@ -381,6 +381,9 @@ export async function getNextRequiredStep({
           nextPhaseName: nextName,
           agentId,
           urgency: "MEDIUM",
+          // The resolver already ran getPhaseCompletion this pass (step 3) —
+          // reuse it so the guard doesn't evaluate the same phase twice.
+          precomputedCompletion: completion,
         });
         if (!outcome.skipped) {
           console.log(`[phase-next-action] self-submitted ${phaseName} gate (→ ${nextName})`);
@@ -401,7 +404,11 @@ export async function getNextRequiredStep({
   // Step 7 — gate approved, ready to advance to next phase. The advance
   // itself is triggered by the approval handler; the resolver returns
   // "advance" so callers can detect the green-light state.
-  if (deployment?.phaseStatus !== "advanced") {
+  // (Was `!== "advanced"` — a phantom value nothing ever wrote, which made
+  // the "complete" tail below unreachable. The lifecycle machine's
+  // normaliser maps the real terminal state.)
+  const { normalizePhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+  if (normalizePhaseStatus(deployment?.phaseStatus) !== "complete") {
     return {
       step: "advance",
       reason: `${phaseName} complete — ready to advance to next phase.`,

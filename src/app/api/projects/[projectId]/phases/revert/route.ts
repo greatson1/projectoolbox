@@ -183,11 +183,14 @@ async function executeReversion(
 
   // 3. Update deployment
   if (deploymentId) {
-    await db.agentDeployment.update({
-      where: { id: deploymentId },
-      data: {
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId,
+      to: "active",
+      source: "phase-revert",
+      reason: `Phase reverted to "${target.name}": ${reason}`,
+      extraData: {
         currentPhase: target.name,
-        phaseStatus: "active",
       },
     });
   }

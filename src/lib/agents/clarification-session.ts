@@ -19,6 +19,7 @@
  */
 
 import { db } from "@/lib/db";
+import { transitionPhaseStatus } from "./lifecycle-machine";
 import { RULE_RESEARCH_BEFORE_ASK, detectMetaQuestion } from "./agent-operating-rules";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -973,10 +974,12 @@ export async function answerQuestionInSession(
         select: { id: true },
       });
       if (deploymentSync) {
-        await db.agentDeployment.update({
-          where: { id: deploymentSync.id },
-          data: {
-            phaseStatus: "active",
+        await transitionPhaseStatus({
+          deploymentId: deploymentSync.id,
+          to: "active",
+          source: "clarification:complete",
+          reason: "Clarification session complete — unlocking phaseStatus before regeneration kicks off",
+          extraData: {
             nextCycleAt: new Date(Date.now() + 10 * 60_000),
           },
         });
@@ -996,10 +999,12 @@ export async function answerQuestionInSession(
         });
         if (deployment?.projectId) {
           // Ensure phaseStatus is active (idempotent with sync update above)
-          await db.agentDeployment.update({
-            where: { id: deployment.id },
-            data: {
-              phaseStatus: "active",
+          await transitionPhaseStatus({
+            deploymentId: deployment.id,
+            to: "active",
+            source: "clarification:complete",
+            reason: "Clarification complete — ensuring phaseStatus is active before artefact regeneration",
+            extraData: {
               nextCycleAt: new Date(Date.now() + 10 * 60_000),
             },
           });

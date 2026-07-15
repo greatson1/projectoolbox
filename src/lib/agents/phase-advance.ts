@@ -18,6 +18,7 @@
  */
 
 import { db } from "@/lib/db";
+import { transitionPhaseStatus } from "@/lib/agents/lifecycle-machine";
 
 export interface PhaseAdvanceContext {
   agentId: string;
@@ -67,9 +68,11 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
   // __RESEARCH_FINDINGS__ card and the clarification seeder don't need
   // to branch on which scan ran.
   try {
-    await db.agentDeployment.update({
-      where: { id: ctx.deploymentId },
-      data: { phaseStatus: "researching" },
+    await transitionPhaseStatus({
+      deploymentId: ctx.deploymentId,
+      to: "researching",
+      source: "phase-advance:start-research",
+      reason: `Advancing into ${ctx.toPhase} — running phase context-gathering research`,
     }).catch(() => {});
 
     const { classifyPhase } = await import("@/lib/agents/phase-class");
@@ -198,9 +201,11 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
       }).catch(() => 0);
 
       if (pendingResearchApprovals > 0) {
-        await db.agentDeployment.update({
-          where: { id: ctx.deploymentId },
-          data: { phaseStatus: "awaiting_research_approval" },
+        await transitionPhaseStatus({
+          deploymentId: ctx.deploymentId,
+          to: "awaiting_research_approval",
+          source: "phase-advance:research-approval",
+          reason: `${ctx.toPhase} research complete — pending research-finding approvals must be cleared before clarification`,
         }).catch(() => {});
         await db.chatMessage.create({
           data: {
@@ -223,9 +228,11 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
         return;
       }
 
-      await db.agentDeployment.update({
-        where: { id: ctx.deploymentId },
-        data: { phaseStatus: "awaiting_clarification" },
+      await transitionPhaseStatus({
+        deploymentId: ctx.deploymentId,
+        to: "awaiting_clarification",
+        source: "phase-advance:clarification",
+        reason: `${ctx.toPhase} research complete with no pending approvals — starting clarification`,
       }).catch(() => {});
       const { startClarificationSession } = await import("@/lib/agents/clarification-session");
       const { markClarificationSkipped } = await import("@/lib/agents/phase-next-action");
@@ -266,9 +273,11 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
 
   // 3. No clarifiable artefacts — generate now and create the gate approval
   try {
-    await db.agentDeployment.update({
-      where: { id: ctx.deploymentId },
-      data: { phaseStatus: "active" },
+    await transitionPhaseStatus({
+      deploymentId: ctx.deploymentId,
+      to: "active",
+      source: "phase-advance:generated",
+      reason: `No clarifiable artefacts for ${ctx.toPhase} — generating immediately`,
     }).catch(() => {});
 
     const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
@@ -314,9 +323,11 @@ export async function runPhaseAdvanceFlow(ctx: PhaseAdvanceContext): Promise<voi
           summary: `${ctx.toPhase} gate approval requested — ${result.generated} artefact(s) ready for review`,
         },
       }).catch(() => {});
-      await db.agentDeployment.update({
-        where: { id: ctx.deploymentId },
-        data: { phaseStatus: "waiting_approval" },
+      await transitionPhaseStatus({
+        deploymentId: ctx.deploymentId,
+        to: "waiting_approval",
+        source: "phase-advance:gate-pending",
+        reason: `${ctx.toPhase} artefacts generated — gate approval requested`,
       }).catch(() => {});
     }
   } catch (e) {

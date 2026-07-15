@@ -114,9 +114,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           });
 
           // Set deployment back to active (not pending_approval)
-          await db.agentDeployment.update({
-            where: { id: deployment.id },
-            data: { phaseStatus: "active" },
+          const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+          await transitionPhaseStatus({
+            deploymentId: deployment.id,
+            to: "active",
+            source: "approval:unlock",
+            reason: "Phase gate rejected — artefacts re-opened as DRAFT for revision",
           });
 
           // Increment iteration count for resubmission tracking
@@ -190,9 +193,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (deployment) {
     if (action === "approve") {
       // Unblock the deployment phase
-      await db.agentDeployment.update({
-        where: { id: deployment.id },
-        data: { phaseStatus: "active" },
+      const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+      await transitionPhaseStatus({
+        deploymentId: deployment.id,
+        to: "active",
+        source: "approval:unlock",
+        reason: "Approval granted — unblocking the deployment phase",
       });
 
       // ── PHASE_GATE: check 3-layer completion before advancing ──
@@ -234,9 +240,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     metadata: { completion } as any,
                   },
                 });
-                await db.agentDeployment.update({
-                  where: { id: deployment.id },
-                  data: { phaseStatus: "blocked_tasks_incomplete" },
+                await transitionPhaseStatus({
+                  deploymentId: deployment.id,
+                  to: "blocked_tasks_incomplete",
+                  source: "approval:blocked-tasks",
+                  reason: `Phase gate approved but advancement blocked: ${completion.blockers.join("; ")}`,
                 });
                 return NextResponse.json({
                   data: updated,
@@ -250,11 +258,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             if (nextPhase) {
 
               // 1. Advance the phase in DB
-              await db.agentDeployment.update({
-                where: { id: deployment.id },
-                data: {
+              await transitionPhaseStatus({
+                deploymentId: deployment.id,
+                to: "active",
+                source: "approval:gate-approved-advance",
+                reason: `Phase gate approved: "${currentPhase}" → "${nextPhase}" — advancing phase`,
+                extraData: {
                   currentPhase: nextPhase,
-                  phaseStatus: "active",
                   lastCycleAt: new Date(),
                   nextCycleAt: new Date(Date.now() + 2 * 60_000), // re-cycle in 2 min
                 },

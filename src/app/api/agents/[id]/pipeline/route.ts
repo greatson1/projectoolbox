@@ -167,9 +167,12 @@ export async function GET(
   // post-research update didn't fire.
   if (phaseStatus === "researching" && researchItems.length > 0) {
     const newStatus = activeClarificationSession ? "awaiting_clarification" : "active";
-    await db.agentDeployment.update({
-      where: { id: deployment.id },
-      data: { phaseStatus: newStatus },
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId: deployment.id,
+      to: newStatus,
+      source: "pipeline:self-heal",
+      reason: "Stale researching status — research facts already exist in KB; advancing to reflect actual state",
     }).catch(() => {});
     phaseStatus = newStatus;
   }
@@ -180,9 +183,12 @@ export async function GET(
   // saying "Questions waiting" when there are none. Source-of-truth: the active
   // session entry in KB, NOT the deployment column.
   if (phaseStatus === "awaiting_clarification" && !activeClarificationSession) {
-    await db.agentDeployment.update({
-      where: { id: deployment.id },
-      data: { phaseStatus: "active" },
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId: deployment.id,
+      to: "active",
+      source: "pipeline:self-heal",
+      reason: "awaiting_clarification with no active session in KB — session finished or abandoned; flipping to active",
     }).catch(() => {});
     phaseStatus = "active";
   }
@@ -258,9 +264,12 @@ export async function GET(
       // 3-layer completion now passes. Clear it so the BLOCKED badge and
       // "Tasks blocking advance" banner stop showing.
       if (phaseStatus === "blocked_tasks_incomplete" && completion.canAdvance) {
-        await db.agentDeployment.update({
-          where: { id: deployment.id },
-          data: { phaseStatus: pendingGateForPhase ? "waiting_approval" : "active" },
+        const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+        await transitionPhaseStatus({
+          deploymentId: deployment.id,
+          to: pendingGateForPhase ? "waiting_approval" : "active",
+          source: "pipeline:self-heal",
+          reason: "Stale blocked_tasks_incomplete — 3-layer completion check now passes; clearing blocked status",
         }).catch(() => {});
         phaseStatus = pendingGateForPhase ? "waiting_approval" : "active";
       }

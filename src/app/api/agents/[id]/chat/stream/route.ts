@@ -213,9 +213,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           },
         }).catch(() => 0);
         if (factCount > 0) {
-          await db.agentDeployment.update({
-            where: { id: deployment0.id },
-            data: { phaseStatus: "active" },
+          const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+          await transitionPhaseStatus({
+            deploymentId: deployment0.id,
+            to: "active",
+            source: "chat:self-heal-unlock",
+            reason: `Stuck in awaiting_clarification with no active session but ${factCount} confirmed facts — unlocking`,
           }).catch(() => {});
           await db.agentActivity.create({
             data: {
@@ -409,9 +412,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             // Trigger generation in background
             (async () => {
               try {
-                await db.agentDeployment.update({
-                  where: { id: dep0.id },
-                  data: { phaseStatus: "active", nextCycleAt: new Date(Date.now() + 10 * 60_000) },
+                const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+                await transitionPhaseStatus({
+                  deploymentId: dep0.id,
+                  to: "active",
+                  source: "chat:self-heal-unlock",
+                  reason: "User approved generation from the pending-approval card — unlocking for artefact generation",
+                  extraData: { nextCycleAt: new Date(Date.now() + 10 * 60_000) },
                 });
                 const { generatePhaseArtefacts } = await import("@/lib/agents/lifecycle-init");
                 await generatePhaseArtefacts(agentId, dep0.projectId, dep0.currentPhase ?? undefined);
@@ -2155,9 +2162,12 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
 
             // Fire-and-forget research
             // Flip phaseStatus to "researching" so UI surfaces reflect the live state
-            await db.agentDeployment.update({
-              where: { id: deployment.id },
-              data: { phaseStatus: "researching" },
+            const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+            await transitionPhaseStatus({
+              deploymentId: deployment.id,
+              to: "researching",
+              source: "chat:start-research",
+              reason: `Auto-research triggered for ${deployment.currentPhase} — no phase facts yet`,
             }).catch(() => {});
 
             import("@/lib/agents/feasibility-research").then(async ({ runPhaseResearch }) => {
@@ -2183,9 +2193,11 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
                   }).catch(() => {});
                 }
                 // Research complete — advance to clarification so UI reflects progress
-                await db.agentDeployment.update({
-                  where: { id: deployment.id },
-                  data: { phaseStatus: "awaiting_clarification" },
+                await transitionPhaseStatus({
+                  deploymentId: deployment.id,
+                  to: "awaiting_clarification",
+                  source: "chat:clarification",
+                  reason: `Auto-research complete (${research.factsDiscovered} facts) for ${deployment.currentPhase} — ready for clarification`,
                 }).catch(() => {});
                 // Log transition for status bar + activity feed
                 await db.agentActivity.create({
@@ -2198,9 +2210,11 @@ _(${rendered.length} of ${knowledgeItems.length} items shown — prioritised by 
               } catch (e) {
                 console.error("[chat/stream] auto-research failed:", e);
                 // On failure, don't leave state stuck at "researching"
-                await db.agentDeployment.update({
-                  where: { id: deployment.id },
-                  data: { phaseStatus: "active" },
+                await transitionPhaseStatus({
+                  deploymentId: deployment.id,
+                  to: "active",
+                  source: "chat:research-failed-unlock",
+                  reason: "Auto-research failed — unlocking so the deployment is not stuck at researching",
                 }).catch(() => {});
               }
             }).catch(() => {});

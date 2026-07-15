@@ -13,6 +13,7 @@
  */
 
 import { db } from "@/lib/db";
+import { transitionPhaseStatus } from "./lifecycle-machine";
 
 import { HEAVY_MODEL_REQUEST } from "@/lib/ai-models";
 
@@ -218,10 +219,19 @@ Be specific to this project's actual data. Reference real artefact names, task c
         });
 
         // Deactivate all agent deployments
-        await db.agentDeployment.updateMany({
+        const activeDeployments = await db.agentDeployment.findMany({
           where: { projectId, isActive: true },
-          data: { isActive: false, phaseStatus: "complete" },
+          select: { id: true },
         });
+        for (const dep of activeDeployments) {
+          await transitionPhaseStatus({
+            deploymentId: dep.id,
+            to: "complete",
+            source: "closure:complete",
+            reason: "Project lifecycle complete — all phases approved; archiving project and deactivating deployments",
+            extraData: { isActive: false },
+          });
+        }
 
         // Archive the agent
         await db.agent.updateMany({

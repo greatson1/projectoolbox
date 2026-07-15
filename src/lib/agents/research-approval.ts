@@ -25,6 +25,7 @@
  */
 
 import { db } from "@/lib/db";
+import { transitionPhaseStatus } from "./lifecycle-machine";
 
 export interface ResearchFindingMetadata {
   subtype: "research_finding";
@@ -199,9 +200,11 @@ export async function applyResearchApprovalDecision(
           const artefactNames = Array.isArray(phaseRow?.artefacts) ? (phaseRow.artefacts as string[]) : [];
           if (artefactNames.length > 0 && orgId) {
             // Flip to awaiting_clarification + start the session.
-            await db.agentDeployment.update({
-              where: { id: deployment.id },
-              data: { phaseStatus: "awaiting_clarification" },
+            await transitionPhaseStatus({
+              deploymentId: deployment.id,
+              to: "awaiting_clarification",
+              source: "research-approval:approved",
+              reason: "All research-finding approvals cleared — starting clarification session",
             }).catch(() => {});
             const { startClarificationSession } = await import("@/lib/agents/clarification-session");
             const { markClarificationSkipped } = await import("@/lib/agents/phase-next-action");

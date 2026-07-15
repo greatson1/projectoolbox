@@ -234,9 +234,13 @@ export async function GET(req: NextRequest) {
         // Unstick if: no session active AND (no artefacts OR user has answered questions)
         const shouldUnstick = !hasSession && (artCount === 0 || factCount > 0);
         if (shouldUnstick) {
-          await db.agentDeployment.update({
-            where: { id: dep.id },
-            data: { phaseStatus: "active", lastCycleAt: new Date() },
+          const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+          await transitionPhaseStatus({
+            deploymentId: dep.id,
+            to: "active",
+            source: "self-heal:stuck-deployment",
+            reason: `Deployment stuck in "${dep.phaseStatus}" for over 1 hour with no active clarification session — reset to active`,
+            extraData: { lastCycleAt: new Date() },
           });
           const reason = factCount > 0
             ? `${factCount} user-confirmed facts exist — user has answered clarification but state was stuck in "${dep.phaseStatus}".`

@@ -24,7 +24,8 @@ export type DriftAction =
   | "DRIFT_STALE_GATE_DEFERRED" // phase gate no longer advance-ready → deferred
   | "DRIFT_MISSING_ARTEFACTS_BACKFILL" // active phase had 0 artefacts → regeneration fired
   | "DRIFT_VPS_INIT_FALLBACK" // VPS never processed a lifecycle_init job → ran inline
-  | "DRIFT_JOB_EVIDENCE_MISSING"; // job marked COMPLETED with no verifiable output
+  | "DRIFT_JOB_EVIDENCE_MISSING" // job marked COMPLETED with no verifiable output
+  | "DRIFT_INVALID_TRANSITION"; // phaseStatus change outside the lifecycle matrix
 
 export interface DriftRow {
   /** id of the repaired row (artefact/task/phase/approval/deployment/job) */

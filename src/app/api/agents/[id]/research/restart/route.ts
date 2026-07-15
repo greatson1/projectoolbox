@@ -86,9 +86,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       await markResearchComplete(projectId, phaseName);
       nextStatus = "active";
     }
-    await db.agentDeployment.update({
-      where: { id: deployment.id },
-      data: { phaseStatus: nextStatus },
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId: deployment.id,
+      to: nextStatus,
+      source: "research-restart",
+      reason: `${phaseName}: research restarted by user — ${research.factsDiscovered} fact(s) found`,
     });
 
     await db.agentActivity.create({

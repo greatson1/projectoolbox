@@ -6,6 +6,7 @@
  */
 
 import { db } from "@/lib/db";
+import { transitionPhaseStatus } from "@/lib/agents/lifecycle-machine";
 import { getMethodology } from "@/lib/methodology-definitions";
 import { getPlaybook } from "./methodology-playbooks";
 import { isSpreadsheetArtefact, getArtefactColumns } from "@/lib/artefact-types";
@@ -151,9 +152,11 @@ export async function generatePhaseArtefacts(
         }).catch(() => null);
         if (phaseRow?.researchCompletedAt) {
           console.warn(`[generatePhaseArtefacts] phaseStatus=researching but research completed ${phaseRow.researchCompletedAt.toISOString()} — repairing stale status for agent=${agentId}`);
-          await db.agentDeployment.update({
-            where: { id: deployment.id },
-            data: { phaseStatus: "active" },
+          await transitionPhaseStatus({
+            deploymentId: deployment.id,
+            to: "active",
+            source: "lifecycle-init:unlock",
+            reason: "Stale researching status — Phase row shows research completed; repairing to unblock generation",
           }).catch(() => {});
           deployment.phaseStatus = "active";
         }
@@ -799,11 +802,13 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
   // Research → Review → Clarification → Generate.
   // nextCycleAt is set far in the future so the cron doesn't interfere.
   const firstPhase = methodology.phases[0];
-  await db.agentDeployment.update({
-    where: { id: deploymentId },
-    data: {
+  await transitionPhaseStatus({
+    deploymentId,
+    to: "researching",
+    source: "lifecycle-init:start-research",
+    reason: "Deployment initialised — feasibility research starts before onboarding flow",
+    extraData: {
       currentPhase: firstPhase.name,
-      phaseStatus: "researching",
       lastCycleAt: new Date(),
       nextCycleAt: new Date(Date.now() + 24 * 60 * 60_000), // 24h — no cron interference
     },
@@ -1035,9 +1040,11 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       }).catch(() => 0);
 
       if (pendingResearchApprovals > 0) {
-        await db.agentDeployment.update({
-          where: { id: deploymentId },
-          data: { phaseStatus: "awaiting_research_approval" },
+        await transitionPhaseStatus({
+          deploymentId,
+          to: "awaiting_research_approval",
+          source: "lifecycle-init:research-approval",
+          reason: "Research complete — pending research-finding approvals must be reviewed before clarification",
         });
         await db.chatMessage.create({
           data: {
@@ -1061,9 +1068,11 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
       }
 
       // No pending research approvals → continue with original flow.
-      await db.agentDeployment.update({
-        where: { id: deploymentId },
-        data: { phaseStatus: "awaiting_clarification" },
+      await transitionPhaseStatus({
+        deploymentId,
+        to: "awaiting_clarification",
+        source: "lifecycle-init:clarification",
+        reason: "Research complete with no pending approvals — starting clarification flow",
       });
 
       // ── 3d: Start clarification session (informed by research) ──
@@ -1124,9 +1133,11 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
             } as any,
           },
         }).catch(() => {});
-        await db.agentDeployment.update({
-          where: { id: deploymentId },
-          data: { phaseStatus: "awaiting_clarification" },
+        await transitionPhaseStatus({
+          deploymentId,
+          to: "awaiting_clarification",
+          source: "lifecycle-init:clarification",
+          reason: "Clarification session failed — user prompted to retry or explicitly skip",
         }).catch(() => {});
         await db.agentActivity.create({
           data: { agentId, type: "chat", summary: `Clarification FAILED (${clarificationOutcome.reason}) — user prompted to retry or explicitly skip` },
@@ -1173,9 +1184,11 @@ export async function runLifecycleInit(agentId: string, deploymentId: string) {
 
         // Keep status as awaiting_clarification — artefacts will be generated
         // when the user replies with approval (handled by chat response logic)
-        await db.agentDeployment.update({
-          where: { id: deploymentId },
-          data: { phaseStatus: "awaiting_clarification" },
+        await transitionPhaseStatus({
+          deploymentId,
+          to: "awaiting_clarification",
+          source: "lifecycle-init:clarification",
+          reason: "No clarification questions needed — assumptions presented, awaiting user go-ahead before generation",
         });
 
         await db.agentActivity.create({

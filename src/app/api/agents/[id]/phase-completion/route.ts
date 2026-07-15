@@ -73,9 +73,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (nextPhase) {
     const fromPhase = deployment.currentPhase;
-    await db.agentDeployment.update({
-      where: { id: deployment.id },
-      data: { currentPhase: nextPhase, phaseStatus: "active", lastCycleAt: new Date(), nextCycleAt: new Date(Date.now() + 2 * 60_000) },
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId: deployment.id,
+      to: "active",
+      source: "phase-completion:advance",
+      reason: `Phase advanced: "${fromPhase}" → "${nextPhase}" — all completion requirements met`,
+      extraData: { currentPhase: nextPhase, lastCycleAt: new Date(), nextCycleAt: new Date(Date.now() + 2 * 60_000) },
     });
     await db.phase.updateMany({
       where: { projectId: deployment.projectId, name: fromPhase },
@@ -115,9 +119,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   } else {
     // Final phase — project complete
-    await db.agentDeployment.update({
-      where: { id: deployment.id },
-      data: { phaseStatus: "complete", isActive: false },
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId: deployment.id,
+      to: "complete",
+      source: "phase-completion:final-complete",
+      reason: `Final phase complete: "${deployment.currentPhase}" — project lifecycle complete`,
+      extraData: { isActive: false },
     });
     await db.agentActivity.create({
       data: { agentId, type: "approval", summary: `Final phase complete: "${deployment.currentPhase}". Project lifecycle complete.` },

@@ -100,11 +100,14 @@ export async function POST(
 
     // ── Step 5: Set deployment to awaiting_clarification — defer generation until user approves ──
     // Instead of auto-generating, the agent will present assumptions and wait for approval.
-    await db.agentDeployment.update({
-      where: { id: deployment.id },
-      data: {
+    const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+    await transitionPhaseStatus({
+      deploymentId: deployment.id,
+      to: "awaiting_clarification",
+      source: "reset-lifecycle",
+      reason: "Lifecycle reset — deferring generation until the user reviews and approves",
+      extraData: {
         currentPhase: firstPhase.name,
-        phaseStatus: "awaiting_clarification",
         lastCycleAt: new Date(),
         nextCycleAt: new Date(Date.now() + 24 * 60 * 60_000), // 24h — no cron interference
       },

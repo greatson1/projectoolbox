@@ -31,7 +31,7 @@
  */
 
 import { db } from "@/lib/db";
-import { getPhaseCompletion } from "./phase-completion";
+import { getPhaseCompletion, type PhaseCompletionStatus } from "./phase-completion";
 
 export interface GateReadinessResult {
   ready: boolean;
@@ -44,11 +44,17 @@ export interface GateReadinessResult {
 /**
  * Returns whether the phase can advance, with the blocker list straight
  * from getPhaseCompletion plus a duplicate-approval check.
+ *
+ * `precomputedCompletion`: callers that have ALREADY run getPhaseCompletion
+ * on this pass (the next-action resolver does, one step earlier) pass it in
+ * so the check isn't evaluated twice per resolution — the review flagged
+ * the resolver → guard → completion chain re-running the same heavy query.
  */
 export async function assertPhaseAdvanceReady(
   projectId: string,
   phaseName: string,
   agentId: string,
+  precomputedCompletion?: PhaseCompletionStatus,
 ): Promise<GateReadinessResult> {
   const blockers: string[] = [];
 
@@ -69,9 +75,9 @@ export async function assertPhaseAdvanceReady(
     }
   }
 
-  // Layer 2: getPhaseCompletion blockers
+  // Layer 2: getPhaseCompletion blockers (reuse the caller's result when given)
   try {
-    const completion = await getPhaseCompletion(projectId, phaseName, agentId);
+    const completion = precomputedCompletion ?? (await getPhaseCompletion(projectId, phaseName, agentId));
     if (!completion.canAdvance) {
       blockers.push(...completion.blockers);
     }
@@ -91,6 +97,8 @@ export interface CreatePhaseGateInput {
   /** Optional richer description; default mentions readiness state. */
   description?: string;
   urgency?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  /** Already-computed completion for this phase (avoids re-running the check). */
+  precomputedCompletion?: PhaseCompletionStatus;
 }
 
 export type CreateGateOutcome =
@@ -104,7 +112,7 @@ export type CreateGateOutcome =
 export async function createPhaseGateApprovalIfReady(
   input: CreatePhaseGateInput,
 ): Promise<CreateGateOutcome> {
-  const readiness = await assertPhaseAdvanceReady(input.projectId, input.phaseName, input.agentId);
+  const readiness = await assertPhaseAdvanceReady(input.projectId, input.phaseName, input.agentId, input.precomputedCompletion);
   if (!readiness.ready) {
     return {
       skipped: true,

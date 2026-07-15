@@ -570,9 +570,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               if (outcome.skipped) {
                 console.log(`[artefact-approval] PHASE_GATE creation skipped (${outcome.reason}): ${outcome.blockers.join("; ")}`);
               } else {
-                await db.agentDeployment.update({
-                  where: { id: dep.id },
-                  data: { phaseStatus: "pending_approval" },
+                const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+                await transitionPhaseStatus({
+                  deploymentId: dep.id,
+                  to: "waiting_approval",
+                  source: "artefact-review",
+                  reason: `All ${artefact.phaseId} artefacts approved — phase gate raised, awaiting approval to advance to ${nextPhase.name}`,
                 });
                 await db.agentActivity.create({
                   data: {

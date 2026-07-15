@@ -156,11 +156,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         // run the same research → clarification → generation pipeline that
         // the phase-gate APPROVED handler uses, so this fast-path produces
         // the same quality output as the official path.
-        await db.agentDeployment.update({
-          where: { id: deployment.id },
-          data: {
+        const { transitionPhaseStatus } = await import("@/lib/agents/lifecycle-machine");
+        await transitionPhaseStatus({
+          deploymentId: deployment.id,
+          to: "researching",
+          source: "artefact-generate:start-research",
+          reason: `Phase advanced: "${deployment.currentPhase}" → "${requestedPhase}" via generate fast-path — running phase research`,
+          extraData: {
             currentPhase: requestedPhase,
-            phaseStatus: "researching",
             lastCycleAt: new Date(),
             nextCycleAt: new Date(Date.now() + 2 * 60_000),
           },
